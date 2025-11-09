@@ -1,0 +1,81 @@
+{
+  "info": {
+    "name": "PO API",
+    "_postman_id": "3d9cfe9a-61d4-45f3-8a7c-fakeid",
+    "description": "Test endpoints for your COINS-lite PO system",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:3001/health",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3001",
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "Create PO",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"type\": \"Materials\",\n  \"supplierId\": \"acme-sup-001\",\n  \"costRef\": {\n    \"jobId\": \"job-001\",\n    \"jobCode\": \"CO-CP-001\",\n    \"costCode\": \"1202\"\n  },\n  \"title\": \"Concrete & mesh for raft\",\n  \"vatRateDefault\": 0.2,\n  \"items\": [\n    { \"description\": \"C30 concrete\", \"uom\": \"m3\", \"qty\": 25, \"rate\": 125, \"costCode\": \"1202\" },\n    { \"description\": \"A393 mesh\",    \"uom\": \"m2\", \"qty\": 180, \"rate\": 6.5, \"costCode\": \"1202\" }\n  ],\n  \"createdBy\": \"david@dmcc\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3001/api/pos",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3001",
+          "path": ["api", "pos"]
+        }
+      }
+    },
+    {
+      "name": "List POs",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:3001/api/pos?job=CO-CP-001",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3001",
+          "path": ["api", "pos"],
+          "query": [
+            { "key": "job", "value": "CO-CP-001" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Approve PO",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"Approved\",\n  \"approver\": \"david@dmcc\",\n  \"note\": \"Looks good\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3001/api/pos/CO-CP-001/M-2025-0001/approve",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3001",
+          "path": ["api", "pos", "CO-CP-001", "M-2025-0001", "approve"]
+        }
+      }
+    }
+  ]
+}

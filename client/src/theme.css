@@ -1,0 +1,48 @@
+:root {
+  --bg: #0a0a0a;
+  --panel: #111;
+  --text: #fff;
+  --text-muted: #aaa;
+  --accent: #39ff14;
+  --accent-hover: #5aff2e;
+  --border: #222;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+button {
+  background: var(--accent);
+  border: none;
+  color: #000;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+button:hover {
+  background: var(--accent-hover);
+}
+input, select, textarea {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px;
+  border-radius: 4px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 8px;
+}
+th {
+  background: #151515;
+  color: var(--accent);
+}

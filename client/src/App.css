@@ -1,0 +1,356 @@
+/* --- Page layout: widen the form column --- */
+.po-page-container{
+  display:grid;
+  grid-template-columns: 1.35fr 1.65fr; /* form wider */
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 1200px){
+  .po-page-container{ grid-template-columns: 1fr; }
+}
+
+/* --- Card look for the form --- */
+.po-form-container{
+  background:#fff;
+  border:1px solid #e5e7eb;
+  border-radius:10px;
+  padding:16px;
+  width:100%;
+  box-sizing:border-box;
+  /* IMPORTANT: let dropdowns overlap outside the card */
+  overflow: visible;
+}
+
+/* header grid in the form */
+.po-form-grid{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+/* lines area */
+.po-lines-card{
+  border:1px solid #e5e7eb;
+  border-radius:8px;
+  overflow: visible; /* allow selects/menus to render outside */
+}
+
+/* table is full-width and roomy */
+.po-lines-table{
+  width:100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: auto;
+  font-size:14px;
+}
+.po-lines-table thead th{
+  background:#f9fafb;
+  text-align:left;
+  padding:8px;
+}
+.po-lines-table td{
+  padding:6px 8px;
+  border-top:1px solid #e5e7eb;
+}
+
+/* make first column flexible, others fixed-ish */
+.po-col-desc{ width:auto; }
+.po-col-uom{ width:90px; }
+.po-col-qty{ width:90px; text-align:right; }
+.po-col-rate{ width:120px; text-align:right; }
+.po-col-amt{ width:130px; text-align:right; }
+.po-col-actions{ width:70px; text-align:center; }
+
+/* inputs fill their cell */
+.po-lines-table input{
+  width:100%;
+  box-sizing:border-box;
+}
+
+/* sometimes native selects need stacking */
+.po-form-container select{
+  position: relative;
+  z-index: 2;
+}
+
+/* totals box */
+.po-totals{
+  border:1px solid #e5e7eb;
+  border-radius:8px;
+  padding:8px;
+}
+.po-total-row{
+  display:flex;
+  justify-content:space-between;
+  padding:4px 0;
+}
+.po-total-divider{
+  border-top:1px solid #e5e7eb;
+  margin-top:6px;
+  padding-top:6px;
+}
+/* === Layout: force a non-overlapping 2-column grid === */
+.po-page{
+  display: grid;
+  grid-template-columns: minmax(420px, 1fr) 2fr;
+  gap: 24px;
+  align-items: start;
+  width: 100%;
+  box-sizing: border-box;
+  /* nothing should clip children */
+  overflow: visible;
+}
+
+@media (max-width: 1200px){
+  .po-page{ grid-template-columns: 1fr; }
+}
+
+/* Columns themselves shouldn’t clip popovers/dropdowns */
+.po-col { overflow: visible; position: relative; }
+
+/* --- Form card --- */
+.po-form-container{
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 16px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: visible;            /* allow selects to open */
+  position: relative;
+  z-index: 1;                   /* keep above backgrounds only */
+}
+
+/* Header fields grid inside the form */
+.po-form-grid{
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+/* --- Lines table --- */
+.po-lines-card{
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: visible;            /* allow dropdowns to extend */
+}
+.po-lines-table{
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: auto;
+  font-size: 14px;
+}
+.po-lines-table thead th{ background: #f9fafb; text-align: left; padding: 8px; }
+.po-lines-table td{ padding: 6px 8px; border-top: 1px solid #e5e7eb; }
+.po-col-desc{ width: auto; }
+.po-col-uom{ width: 90px; }
+.po-col-qty{ width: 90px; text-align: right; }
+.po-col-rate{ width: 120px; text-align: right; }
+.po-col-amt{ width: 130px; text-align: right; }
+.po-col-actions{ width: 70px; text-align: center; }
+.po-lines-table input{ width: 100%; box-sizing: border-box; }
+
+/* Make native selects render above nearby content if needed */
+.po-form-container select,
+.po-form-container input[type="date"]{
+  position: relative;
+  z-index: 2;
+}
+
+/* --- List side: ensure it's NOT positioned/overlapping --- */
+.po-list-container{
+  position: static !important;   /* cancel any absolute/fixed rules */
+  width: 100% !important;
+  max-width: none !important;
+  overflow: visible;
+  z-index: 0;
+}
+/* Force a clean 2-column layout */
+.po-page{
+  display: grid;
+  grid-template-columns: 620px 1fr;  /* left is fixed wide, right fills */
+  gap: 24px;
+  align-items: start;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+@media (max-width: 1200px){
+  .po-page{ grid-template-columns: 1fr; }
+}
+
+/* Ensure the left column can actually occupy the space */
+.po-col.po-left{
+  min-width: 620px;
+  width: 100%;
+  max-width: none !important;
+  overflow: visible;
+}
+
+/* Form card must not cap its width */
+.po-form-container{
+  width: 100% !important;
+  max-width: none !important;
+  overflow: visible;   /* lets dropdowns open */
+  position: relative;
+  z-index: 1;
+}
+
+/* Kill any legacy max-widths on inputs/selects in the form */
+.po-form-container input,
+.po-form-container select{
+  width: 100% !important;
+  max-width: none !important;
+}
+
+/* Lines table stays roomy */
+.po-lines-card{ overflow: visible; }
+.po-lines-table{ width: 100%; table-layout: auto; }
+.po-col-desc{ width: auto; }
+.po-col-uom{ width: 90px; }
+.po-col-qty{ width: 90px; text-align: right; }
+.po-col-rate{ width: 120px; text-align: right; }
+.po-col-amt{ width: 130px; text-align: right; }
+.po-col-actions{ width: 70px; text-align: center; }
+
+/* Ensure the list panel never overlaps the form */
+.po-list-container{
+  position: static !important;
+  width: 100% !important;
+  max-width: none !important;
+  overflow: visible !important;
+  z-index: 0;
+}
+/* Widen the left column further */
+.po-page{
+  display: grid;
+  grid-template-columns: 760px 1fr;   /* was 620px */
+  gap: 24px;
+  align-items: start;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: visible;
+}
+@media (max-width: 1200px){
+  .po-page{ grid-template-columns: 1fr; }
+}
+
+/* Ensure the left (form) column can actually be wide */
+.po-col.po-left{
+  min-width: 760px;
+  width: 100%;
+  max-width: none !important;
+  overflow: visible;
+  position: relative;
+  z-index: 50;                 /* sit above the right pane for dropdowns */
+}
+
+/* Keep the right (list) underneath so it never steals clicks/overlaps */
+.po-col.po-right,
+.po-list-container{
+  position: relative !important;
+  z-index: 1 !important;
+  overflow: visible !important;
+}
+
+/* Form card must not cap its width, and allow popovers */
+.po-form-container{
+  width: 100% !important;
+  max-width: none !important;
+  overflow: visible;
+  position: relative;
+  z-index: 50;                 /* ensure native selects show above neighbors */
+}
+
+/* Inputs/selects fill their cells and render above neighbors if needed */
+.po-form-container input,
+.po-form-container select{
+  width: 100% !important;
+  max-width: none !important;
+  position: relative;
+  z-index: 2;
+}
+
+/* Lines table: make Description big, others compact */
+.po-lines-table{ width: 100%; table-layout: auto; }
+.po-col-desc{ width: auto; min-width: 420px; }   /* <— much larger */
+.po-col-uom { width: 70px;  }
+.po-col-qty { width: 70px;  text-align: right; }
+.po-col-rate{ width: 100px; text-align: right; }
+.po-col-amt { width: 110px; text-align: right; }
+.po-col-actions{ width: 70px; text-align: center; }
+
+.po-lines-card{ overflow: visible; } /* let dropdowns expand if you add any */
+/* --- Wider columns for lines --- */
+.po-col-desc { width: auto;  min-width: 420px; }
+.po-col-uom  { width: 120px; }        /* was 70/90 */
+.po-col-qty  { width: 120px; text-align: right; }
+.po-col-rate { width: 140px; text-align: right; }
+.po-col-amt  { width: 130px; text-align: right; }
+
+/* Make inputs/selects comfortable and not tiny */
+.po-lines-table td{ vertical-align: middle; }
+.po-lines-table input,
+.po-lines-table select{
+  width: 100%;
+  height: 36px;
+  font-size: 14px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+
+/* Ensure dropdowns open above neighbors */
+.po-lines-card{ overflow: visible; }
+.po-lines-table select{ position: relative; z-index: 3; }
+.ccs-wrap { position: relative; }
+.ccs-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.ccs-panel {
+  position: absolute;
+  z-index: 30;
+  left: 0; right: 0; top: calc(100% + 4px);
+  max-height: 260px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+}
+.ccs-opt {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  align-items: center;
+}
+.ccs-opt:hover, .ccs-opt.active { background: #f1f5f9; }
+.ccs-code { font-weight: 600; color: #0f172a; }
+.ccs-label { color: #334155; font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ccs-pill {
+  background: #eef2ff; color: #4f46e5;
+  padding: 2px 6px; border-radius: 999px; font-size: 12px;
+}
+/* BuildLite dark panels around columns */
+.po-page {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.po-col {
+  background: var(--panel, #111);
+  border: 1px solid var(--border, #222);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+
+

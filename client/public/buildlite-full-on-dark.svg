@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 150" width="660" height="150">
+  <style>
+    .wordmark { font-family: 'Montserrat', 'Poppins', 'Open Sans', sans-serif; font-weight: 800; }
+    .tagline  { font-family: 'Roboto', 'Lato', 'Open Sans', sans-serif; font-weight: 400; }
+    .white { fill: #FFFFFF; }
+    .highlight { fill: #39FF14; }
+    .grey { fill: #CCCCCC; }
+    .teal { fill: #00BFA6; }
+  </style>
+
+  <!-- Background panel -->
+  <rect x="0" y="0" width="660" height="150" rx="16" fill="#0B0F11"/>
+
+  <!-- Wordmark -->
+  <text x="24" y="72" class="wordmark" font-size="56" dominant-baseline="alphabetic">
+    <tspan class="white">Build</tspan><tspan class="highlight">Lite</tspan>
+  </text>
+
+  <!-- Tagline -->
+  <text x="24" y="108" class="tagline grey" font-size="16" letter-spacing="6" dominant-baseline="alphabetic">
+    LEAN COMMERCIAL CONTROL
+  </text>
+
+  <!-- by SmartBuild AI -->
+  <text x="24" y="130" class="tagline grey" font-size="16" dominant-baseline="alphabetic">
+    <tspan>by </tspan><tspan class="teal" font-weight="600">SmartBuild </tspan><tspan class="highlight" font-weight="700">AI</tspan>
+  </text>
+</svg>

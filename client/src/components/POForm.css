@@ -1,0 +1,196 @@
+/* --- BuildLite Dark Theme for POForm (consolidated) --- */
+
+:root {
+  --bg: #0a0a0a;
+  --panel: #111;
+  --text: #fff;
+  --text-muted: #aaa;
+  --accent: #39ff14;
+  --accent-hover: #5aff2e;
+  --border: #222;
+}
+
+/* Card */
+.po-form-container {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 0 0 1px var(--border), 0 8px 20px rgba(0,0,0,.35);
+}
+
+/* Header grid */
+.po-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)); /* 2 columns by default */
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+@media (min-width: 1100px) {
+  .po-form-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* Each field block */
+.po-form-grid > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* prevents overflow in grid cells */
+}
+
+/* Labels */
+.po-form-container label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  letter-spacing: .02em;
+}
+
+/* Inputs/selects/textarea: consistent look + sizing */
+.po-form-container input,
+.po-form-container select,
+.po-form-container textarea {
+  width: 100%;
+  box-sizing: border-box;
+  height: 38px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #2a2a2a;
+  background: #101010;
+  color: var(--text);
+}
+
+.po-form-container textarea {
+  min-height: 90px;
+  height: auto;
+  resize: vertical;
+}
+
+.po-form-container input::placeholder,
+.po-form-container textarea::placeholder {
+  color: #7a7a7a;
+}
+
+/* Lines toolbar */
+.po-form-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 8px 0 4px;
+}
+
+.po-form-toolbar .quiet {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* Lines card & table */
+.po-lines-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.po-lines-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.po-lines-table thead th {
+  background: #121212;
+  color: var(--accent);
+  text-align: left;
+  padding: 8px;
+  font-weight: 700;
+}
+
+.po-lines-table td {
+  border-top: 1px solid var(--border);
+  padding: 8px;
+  vertical-align: middle;
+}
+
+.po-lines-table td input {
+  height: 34px;
+  border-radius: 6px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.po-lines-table td:last-child {
+  width: 56px; /* keeps the bin column narrow */
+  text-align: center;
+}
+
+/* Totals */
+.po-totals {
+  background: #0f0f0f;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.po-total-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 4px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.po-total-row span { color: var(--text-muted); }
+
+.po-total-divider {
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+  padding-top: 8px;
+}
+
+/* Buttons */
+.po-form-container button {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.po-form-container button:hover { background: var(--accent-hover); }
+
+.primary {
+  background: var(--accent);
+  color: #000;
+}
+.primary:hover { background: var(--accent-hover); }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,11 @@
+<svg width="220" height="28" viewBox="0 0 220 28" xmlns="http://www.w3.org/2000/svg">
+  <!-- Mark -->
+  <g>
+    <rect x="2" y="6" width="16" height="16" rx="4" fill="#7CFF6B"/>
+    <path d="M6 14h8" stroke="#071007" stroke-width="2" stroke-linecap="round"/>
+    <path d="M10 10v8" stroke="#071007" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <!-- Wordmark -->
+  <text x="26" y="19" font-family="Inter, Segoe UI, Roboto, Arial, sans-serif" font-weight="800" font-size="16" fill="#E7F7EC" letter-spacing="0.5">BUILD</text>
+  <text x="78" y="19" font-family="Inter, Segoe UI, Roboto, Arial, sans-serif" font-weight="900" font-size="16" fill="#7CFF6B">LITE</text>
+</svg>

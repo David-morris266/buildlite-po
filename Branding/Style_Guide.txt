@@ -1,0 +1,18 @@
+BuildLite Brand Style Guide
+
+Colours:
+- Neon Green: #39FF14
+- Teal: #00BFA6
+- Dark Background: #0A0A0A
+- White: #FFFFFF
+- Grey: #CCCCCC
+
+Typography:
+- Logo font: Bold sans-serif (suggested: Montserrat, Poppins, or Open Sans)
+- Body font: Clean sans-serif (Roboto, Lato, or Open Sans)
+
+Usage:
+- Full logo for splash/login screens and documents
+- Compact logo for navbars/headers
+- Icon for favicon and app icons
+- Use dark background version for UI, light version for documents/PDFs

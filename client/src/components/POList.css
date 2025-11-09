@@ -1,0 +1,59 @@
+/* --- BuildLite Dark Theme for POList --- */
+.po-list-container {
+  background: var(--panel, #111);
+  color: var(--text, #fff);
+  border: 1px solid var(--border, #222);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.search-input {
+  width: 100%;
+  margin: 8px 0 12px;
+  background: var(--panel, #111);
+  color: var(--text, #fff);
+  border: 1px solid var(--border, #222);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.po-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.po-table th,
+.po-table td {
+  border-top: 1px solid var(--border, #222);
+  padding: 8px;
+}
+
+.po-table thead th {
+  background: #151515;
+  color: var(--accent, #39ff14);
+  text-align: left;
+}
+
+.po-table tbody tr:hover {
+  background: #121212;
+}
+
+.delete-btn {
+  background: #ff4d4f;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.delete-btn:hover { background: #ff6668; }
+
+
+
+
+
+
+
+
+

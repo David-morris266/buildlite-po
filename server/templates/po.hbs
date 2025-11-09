@@ -1,0 +1,260 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Purchase Order {{po.number}}</title>
+  <style>
+    :root{
+      --brand: {{brand.color}};
+      --text:#222; --muted:#666;
+      --table-border:#e1e3e8; --table-head:#f3f4f7;
+      --approved:#1a7f37; --rejected:#d92d20; --pending:#9aa0b1;
+    }
+    body{font-family:Arial,Helvetica,sans-serif;color:var(--text);margin:0}
+
+    /* Reserve space for fixed footer (28mm + gap) */
+    .page{padding:22mm 12mm 44mm 12mm;position:relative}
+
+    /* Header */
+    .banner{display:flex;align-items:center;gap:16px;border-bottom:3px solid var(--brand);padding-bottom:10px;margin-bottom:12px}
+    .logo{height:54px}
+    .brand-title{font-size:18px;color:var(--brand);font-weight:700;letter-spacing:.2px}
+    .strap{font-size:11px;color:var(--muted);margin-top:2px}
+
+    /* Title block */
+    .title-row{display:grid;grid-template-columns:1fr auto;align-items:end;gap:12px;margin:6px 0 2px}
+    .po-title{font-size:20px;font-weight:700}
+    .type-line{font-size:11px;color:var(--muted);margin-bottom:8px}
+    .meta{font-size:12px;color:var(--muted)}
+    .meta b{color:var(--text)}
+    .project{font-size:12px;margin:4px 0 8px}
+    .project b{color:var(--text)}
+
+    /* Clauses box */
+    .clauses{font-size:12px;margin:8px 0 14px;padding:8px 10px;border-left:3px solid var(--brand);background:#f9fafb}
+    .clauses h3{margin:0 0 4px;font-size:12px}
+    .clauses ul{margin:0;padding-left:18px}
+    .clauses li{margin:2px 0}
+
+    /* Tables + pagination hints */
+    table{width:100%;border-collapse:collapse;page-break-inside:auto}
+    thead{display:table-header-group}
+    tfoot{display:table-footer-group}
+    tr{page-break-inside:avoid}
+    .avoid-break{break-inside:avoid-page;page-break-inside:avoid}
+
+    th,td{border:1px solid var(--table-border);padding:7px 8px;font-size:12px;vertical-align:top}
+    th{background:var(--table-head);text-align:left}
+    td.right,th.right{text-align:right}
+    .totals td{border-top:none}
+    .grand td{font-weight:700}
+
+    /* Signature */
+    .sig{margin-top:18px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;font-size:12px}
+    .sig .box{border:1px solid var(--table-border);padding:10px;height:70px}
+    .sig label{display:block;font-size:11px;color:var(--muted);margin-bottom:6px}
+
+    /* Footer (fixed with explicit height) */
+    .footer{
+      position:fixed;left:12mm;right:12mm;bottom:0mm;
+      height:10mm;
+      font-size:10px;color:var(--muted);
+      border-top:1px solid var(--table-border);padding-top:6px
+    }
+    .footer .cols{display:grid;grid-template-columns:2fr 1.2fr 1fr;gap:16px}
+    .footer a{color:var(--muted);text-decoration:none}
+
+    /* Watermark */
+    .wm{
+      position:fixed;
+      top:50%;
+      left:50%;
+      transform:translate(-50%, -50%) rotate(-18deg);
+      text-align:center;
+      font-size:80px;
+      font-weight:800;
+      color:var(--pending);
+      opacity:0.12;
+      line-height:1.1;
+      white-space:pre;
+      pointer-events:none;
+    }
+
+    .stamp{position:absolute;right:14mm;top:26mm;border:2px solid var(--approved);color:var(--approved);padding:6px 10px;font-size:12px;font-weight:700;border-radius:6px}
+    .stamp.rejected{border-color:var(--rejected);color:var(--rejected)}
+    .muted{color:var(--muted)}
+  </style>
+</head>
+<body>
+{{#if flags.isPending}}
+  <div class="wm">PENDING
+APPROVAL</div>
+{{/if}}
+{{#if flags.isApproved}}
+  <div class="stamp">
+    APPROVED
+    {{#if approval.decidedAt}} · {{formatDate approval.decidedAt}}{{/if}}
+    {{#if approval.approver}} · {{approval.approver}}{{/if}}
+  </div>
+{{/if}}
+{{#if flags.isRejected}}
+  <div class="stamp rejected">
+    REJECTED
+    {{#if approval.decidedAt}} · {{formatDate approval.decidedAt}}{{/if}}
+  </div>
+{{/if}}
+
+  <div class="page">
+    <!-- Header -->
+    <div class="banner">
+      {{#if brand.logo}}
+        <img class="logo" src="{{brand.logo}}" alt="{{brand.company}}"/>
+      {{/if}}
+      {{#if brand.showWordmark}}
+        <div>
+          <div class="brand-title">{{brand.shortName}}</div>
+          {{#if brand.strapline}}<div class="strap">{{brand.strapline}}</div>{{/if}}
+        </div>
+      {{/if}}
+    </div>
+
+    <!-- Title -->
+    <div class="title-row">
+      <div class="po-title">Purchase Order {{po.number}}</div>
+      <div class="meta">
+        <b>Date:</b> {{formatDate po.date}}
+        &nbsp;&nbsp;&nbsp; <b>Status:</b> {{po.status}}
+      </div>
+    </div>
+    <div class="type-line">
+      {{po.typeLabel}} · Currency: {{po.currency}}
+    </div>
+
+    <!-- Project reference -->
+    {{#if project.label}}
+      <div class="project">
+        <b>Project:</b> {{project.label}}
+        {{#if project.addressLines}}
+          <div class="muted">
+            {{#each project.addressLines}}
+              {{this}}<br/>
+            {{/each}}
+          </div>
+        {{/if}}
+      </div>
+    {{else}}
+      {{#if project.jobCode}}
+        <div class="project">
+          <b>Project:</b> {{project.jobCode}}{{#if project.jobId}} — {{project.jobId}}{{/if}}
+        </div>
+      {{/if}}
+    {{/if}}
+
+    <!-- Order title -->
+    {{#if po.title}}
+      <div class="project">
+        <b>Order Title:</b> {{po.title}}
+      </div>
+    {{/if}}
+
+    <!-- Contract clauses / references -->
+    {{#if hasClauses}}
+      <div class="clauses avoid-break">
+        <h3>Contract Clauses / References</h3>
+        <ul>
+          {{#each clauses}}
+            <li>{{this}}</li>
+          {{/each}}
+        </ul>
+      </div>
+    {{/if}}
+
+    <!-- Supplier -->
+    <h3>Supplier</h3>
+    <div style="font-size:12px;line-height:1.35;">
+      <b>{{supplier.name}}</b><br>
+      {{supplier.address.line1}}<br>
+      {{supplier.address.town}} {{supplier.address.postcode}}<br>
+      {{#if supplier.contactName}}Contact: {{supplier.contactName}}{{/if}}
+    </div>
+
+    <!-- Items -->
+    <h3 style="margin-top:14px;">Items ({{lines.length}})</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Description</th>
+          {{#if hasCostCode}}<th>Cost Code</th>{{/if}}
+          <th class="right" style="width:55px;">Qty</th>
+          <th style="width:60px;">Unit</th>
+          <th class="right" style="width:90px;">Rate</th>
+          <th class="right" style="width:110px;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each lines}}
+        <tr>
+          <td>{{description}}</td>
+          {{#if ../hasCostCode}}<td>{{costCode}}</td>{{/if}}
+          <td class="right">{{formatQty qty}}</td>
+          <td>{{unit}}</td>
+          <td class="right">{{formatMoney rate ../po.currency}}</td>
+          <td class="right">{{formatMoney total ../po.currency}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    <!-- Totals (kept together) -->
+    <div class="avoid-break" style="margin-top:10px;">
+      <table>
+        <tbody>
+          <tr class="totals">
+            <td style="border:none;"></td><td style="border:none;"></td><td style="border:none;"></td><td style="border:none;"></td>
+            <td>Subtotal</td>
+            <td class="right">{{formatMoney po.subtotal po.currency}}</td>
+          </tr>
+          <tr class="totals">
+            <td style="border:none;"></td><td style="border:none;"></td><td style="border:none;"></td><td style="border:none;"></td>
+            <td>VAT</td>
+            <td class="right">{{formatMoney po.vat po.currency}}</td>
+          </tr>
+          <tr class="grand">
+            <td style="border:none;"></td><td style="border:none;"></td><td style="border:none;"></td><td style="border:none;"></td>
+            <td>Grand Total</td>
+            <td class="right">{{formatMoney po.total po.currency}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Signature (kept together) -->
+    <div class="sig avoid-break">
+      <div class="box">
+        <label>Approved By</label>
+        {{#if approval.approver}}{{approval.approver}}{{else}}__________________________{{/if}}
+      </div>
+      <div class="box">
+        <label>Signature</label>
+        __________________________
+      </div>
+      <div class="box">
+        <label>Date</label>
+        {{#if approval.decidedAt}}{{formatDate approval.decidedAt}}{{else}}__________________________{{/if}}
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="cols">
+      <div>{{brand.company}} · Registered Office: {{brand.address}}</div>
+      <div>Company No: {{brand.companyNo}} · VAT: {{brand.vatNo}}</div>
+      <div style="text-align:right;">
+        {{brand.phone}} · <a href="mailto:{{brand.email}}">{{brand.email}}</a> ·
+        <a href="https://{{brand.website}}">{{brand.website}}</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
