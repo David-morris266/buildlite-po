@@ -1,20 +1,15 @@
 // client/src/api.js
 
-// Decide API base URL
-// - On Netlify production we want the Render backend
-// - On localhost dev we want http://localhost:3001
+// Base URL for the API.
+// In production (Netlify) we set VITE_API_BASE_URL to:
+//   https://buildlite-po-api.onrender.com
+// For local dev, you can set VITE_API_BASE_URL=http://localhost:3001
+// in a .env file in the client folder.
 
-const RAW_ENV_BASE = import.meta.env.VITE_API_BASE_URL;
-
-// If env var exists, use it. Otherwise:
-//   - if we're on localhost: use local server
-//   - otherwise: use the Render URL directly.
 const API_BASE = (
-  (RAW_ENV_BASE && RAW_ENV_BASE.trim()) ||
-  (window.location.hostname === 'localhost'
-    ? 'http://localhost:3001'
-    : 'https://buildlite-po-api.onrender.com')
-).replace(/\/+$/, ''); // strip trailing slash
+  import.meta.env.VITE_API_BASE_URL ||
+  'https://buildlite-po-api.onrender.com'
+).trim().replace(/\/+$/, ''); // strip trailing slash
 
 const buildUrl = (path) =>
   `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`;
@@ -33,7 +28,7 @@ export async function listSuppliers(q = '') {
     ? buildUrl(`/api/suppliers?q=${encodeURIComponent(q)}`)
     : buildUrl('/api/suppliers');
   const res = await fetch(url);
-  return handleJson(res); // array
+  return handleJson(res);
 }
 
 /* ---------- Jobs ---------- */
@@ -42,13 +37,13 @@ export async function listJobs(q = '') {
     ? buildUrl(`/api/jobs?q=${encodeURIComponent(q)}`)
     : buildUrl('/api/jobs');
   const res = await fetch(url);
-  return handleJson(res); // array
+  return handleJson(res);
 }
 
 export async function getJob(id) {
   const url = buildUrl(`/api/jobs/${encodeURIComponent(id)}`);
   const res = await fetch(url);
-  return handleJson(res); // object
+  return handleJson(res);
 }
 
 /* ---------- Cost Codes ---------- */
@@ -70,7 +65,7 @@ export async function listPOs(params = {}) {
   const query = new URLSearchParams(params).toString();
   const url = buildUrl(`/api/po${query ? `?${query}` : ''}`);
   const res = await fetch(url);
-  return handleJson(res); // { items: [...] } or array depending on server
+  return handleJson(res);
 }
 
 export async function getPO(number) {
