@@ -1,15 +1,17 @@
 // client/src/api.js
 
-// Base URL for the API.
-// In production (Netlify) we set VITE_API_BASE_URL to:
-//   https://buildlite-po-api.onrender.com
-// For local dev, you can set VITE_API_BASE_URL=http://localhost:3001
-// in a .env file in the client folder.
+// Decide API base URL
+// - On Netlify: Render backend (from env or hard-coded fallback)
+// - On localhost dev: http://localhost:3001
+
+const RAW_ENV_BASE = import.meta.env.VITE_API_BASE_URL;
 
 const API_BASE = (
-  import.meta.env.VITE_API_BASE_URL ||
-  'https://buildlite-po-api.onrender.com'
-).trim().replace(/\/+$/, ''); // strip trailing slash
+  (RAW_ENV_BASE && RAW_ENV_BASE.trim()) ||
+  (window.location.hostname === 'localhost'
+    ? 'http://localhost:3001'
+    : 'https://buildlite-po-api.onrender.com')
+).replace(/\/+$/, ''); // strip trailing slash
 
 const buildUrl = (path) =>
   `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`;
