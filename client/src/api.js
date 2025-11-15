@@ -1,17 +1,23 @@
 // client/src/api.js
 
-// Determine API base URL
-// - In production: set VITE_API_BASE_URL in Netlify env (e.g. https://buildlite-po-backend.onrender.com)
-// - In dev: falls back to http://localhost:3001
-const API_BASE = (
-  import.meta.env.VITE_API_BASE_URL ||
-  'http://localhost:3001'
-).replace(/\/+$/, ''); // strip trailing slash just in case
+// Decide API base URL
+// - On Netlify production we want the Render backend
+// - On localhost dev we want http://localhost:3001
 
-const buildUrl = (path) => {
-  // ensure exactly one slash between base and path
-  return `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`;
-};
+const RAW_ENV_BASE = import.meta.env.VITE_API_BASE_URL;
+
+// If env var exists, use it. Otherwise:
+//   - if we're on localhost: use local server
+//   - otherwise: use the Render URL directly.
+const API_BASE = (
+  (RAW_ENV_BASE && RAW_ENV_BASE.trim()) ||
+  (window.location.hostname === 'localhost'
+    ? 'http://localhost:3001'
+    : 'https://buildlite-po-api.onrender.com')
+).replace(/\/+$/, ''); // strip trailing slash
+
+const buildUrl = (path) =>
+  `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`;
 
 async function handleJson(res) {
   if (!res.ok) {
@@ -43,6 +49,20 @@ export async function getJob(id) {
   const url = buildUrl(`/api/jobs/${encodeURIComponent(id)}`);
   const res = await fetch(url);
   return handleJson(res); // object
+}
+
+/* ---------- Cost Codes ---------- */
+export async function listCostCodes(params = '') {
+  const query =
+    typeof params === 'string'
+      ? params
+      : new URLSearchParams(params || {}).toString();
+
+  const url = buildUrl(
+    `/api/po/cost-codes${query ? `?${query}` : ''}`
+  );
+  const res = await fetch(url);
+  return handleJson(res);
 }
 
 /* ---------- POs ---------- */

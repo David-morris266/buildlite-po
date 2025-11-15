@@ -1,8 +1,6 @@
 // client/src/components/SupplierSelect.jsx
 import React, { useEffect, useMemo, useState } from 'react';
-
-// Use the server route from poRoutes.js (mounted at /api)
-const API = '/api/po/suppliers';
+import { listSuppliers } from '../api';
 
 /**
  * SupplierSelect
@@ -11,7 +9,6 @@ const API = '/api/po/suppliers';
  * - onChange: called with { id, name } OR null
  * - onSelectFull: (optional) full supplier object on select/create
  * - showLabel: show the internal <label> (default true).
- *              Set to false when the parent renders its own label.
  */
 export default function SupplierSelect({
   value,
@@ -20,10 +17,9 @@ export default function SupplierSelect({
   showLabel = true,
 }) {
   const [suppliers, setSuppliers] = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
 
-  // New-supplier form state
   const [form, setForm] = useState({
     name: '',
     address1: '',
@@ -35,34 +31,38 @@ export default function SupplierSelect({
     contactPhone: '',
     vatNumber: '',
     termsDays: 30,
-    notes: ''
+    notes: '',
   });
 
-  // Normalize current value to an id for the <select>
   const currentId = useMemo(() => {
     if (!value) return '';
     if (typeof value === 'string') return value;
     if (typeof value === 'object') {
-      // support both { id, name } and nested snapshots
       return value.id || value?.supplierId || '';
     }
     return '';
   }, [value]);
 
-  // Load suppliers once
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
       try {
         setLoading(true);
-        const res  = await fetch(API);
-        const data = await res.json();
-        setSuppliers(Array.isArray(data) ? data : []);
+        const data = await listSuppliers('');
+        if (!cancelled) {
+          setSuppliers(Array.isArray(data) ? data : []);
+        }
       } catch (e) {
         console.error('suppliers GET failed:', e);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const selectAndEmit = (sup) => {
@@ -80,14 +80,15 @@ export default function SupplierSelect({
       setShowModal(true);
       return;
     }
-    const full = suppliers.find(s => String(s.id) === String(id)) || null;
+    const full =
+      suppliers.find((s) => String(s.id) === String(id)) || null;
     selectAndEmit(full);
   };
 
   const saveSupplier = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(API, {
+      const res = await fetch('/api/suppliers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
@@ -98,11 +99,9 @@ export default function SupplierSelect({
       }
       const saved = await res.json();
 
-      // Add to local list (on top) and select it
-      setSuppliers(prev => [saved, ...prev]);
+      setSuppliers((prev) => [saved, ...prev]);
       selectAndEmit(saved);
 
-      // reset modal + form
       setShowModal(false);
       setForm({
         name: '',
@@ -115,7 +114,7 @@ export default function SupplierSelect({
         contactPhone: '',
         vatNumber: '',
         termsDays: 30,
-        notes: ''
+        notes: '',
       });
     } catch (err) {
       alert(err.message);
@@ -126,7 +125,9 @@ export default function SupplierSelect({
     return (
       <div className="field">
         {showLabel && <label>Supplier</label>}
-        <select disabled><option>Loading…</option></select>
+        <select disabled>
+          <option>Loading…</option>
+        </select>
       </div>
     );
   }
@@ -136,69 +137,169 @@ export default function SupplierSelect({
       {showLabel && <label>Supplier</label>}
       <select value={currentId} onChange={handleSelect}>
         <option value="">Select supplier…</option>
-        {suppliers.map(s => (
-          <option key={s.id} value={s.id}>{s.name}</option>
+        {suppliers.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
+          </option>
         ))}
         <option value="__new__">➕ Add new supplier…</option>
       </select>
 
       {showModal && (
-        <div className="modal-backdrop" onMouseDown={() => setShowModal(false)}>
-          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+        <div
+          className="modal-backdrop"
+          onMouseDown={() => setShowModal(false)}
+        >
+          <div
+            className="modal"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <h3>New Supplier</h3>
             <form className="grid2" onSubmit={saveSupplier}>
-              <label>Name
-                <input required value={form.name}
-                  onChange={(e)=>setForm({...form, name:e.target.value})} />
+              <label>
+                Name
+                <input
+                  required
+                  value={form.name}
+                  onChange={(e) =>
+                    setForm({ ...form, name: e.target.value })
+                  }
+                />
               </label>
-              <label>VAT No.
-                <input value={form.vatNumber}
-                  onChange={(e)=>setForm({...form, vatNumber:e.target.value})} />
-              </label>
-
-              <label>Address 1
-                <input value={form.address1}
-                  onChange={(e)=>setForm({...form, address1:e.target.value})} />
-              </label>
-              <label>Address 2
-                <input value={form.address2}
-                  onChange={(e)=>setForm({...form, address2:e.target.value})} />
-              </label>
-
-              <label>City/Town
-                <input value={form.city}
-                  onChange={(e)=>setForm({...form, city:e.target.value})} />
-              </label>
-              <label>Postcode
-                <input value={form.postcode}
-                  onChange={(e)=>setForm({...form, postcode:e.target.value})} />
+              <label>
+                VAT No.
+                <input
+                  value={form.vatNumber}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      vatNumber: e.target.value,
+                    })
+                  }
+                />
               </label>
 
-              <label>Contact Name
-                <input value={form.contactName}
-                  onChange={(e)=>setForm({...form, contactName:e.target.value})} />
+              <label>
+                Address 1
+                <input
+                  value={form.address1}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      address1: e.target.value,
+                    })
+                  }
+                />
               </label>
-              <label>Contact Email
-                <input type="email" value={form.contactEmail}
-                  onChange={(e)=>setForm({...form, contactEmail:e.target.value})} />
+              <label>
+                Address 2
+                <input
+                  value={form.address2}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      address2: e.target.value,
+                    })
+                  }
+                />
               </label>
 
-              <label>Contact Phone
-                <input value={form.contactPhone}
-                  onChange={(e)=>setForm({...form, contactPhone:e.target.value})} />
+              <label>
+                City/Town
+                <input
+                  value={form.city}
+                  onChange={(e) =>
+                    setForm({ ...form, city: e.target.value })
+                  }
+                />
               </label>
-              <label>Terms (days)
-                <input type="number" min="0" value={form.termsDays}
-                  onChange={(e)=>setForm({...form, termsDays:e.target.value})} />
+              <label>
+                Postcode
+                <input
+                  value={form.postcode}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      postcode: e.target.value,
+                    })
+                  }
+                />
               </label>
 
-              <label style={{ gridColumn: '1 / -1' }}>Notes
-                <textarea rows={3} value={form.notes}
-                  onChange={(e)=>setForm({...form, notes:e.target.value})} />
+              <label>
+                Contact Name
+                <input
+                  value={form.contactName}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      contactName: e.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Contact Email
+                <input
+                  type="email"
+                  value={form.contactEmail}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      contactEmail: e.target.value,
+                    })
+                  }
+                />
               </label>
 
-              <div className="modal-actions" style={{ gridColumn: '1 / -1' }}>
-                <button type="button" onClick={() => setShowModal(false)}>Cancel</button>
+              <label>
+                Contact Phone
+                <input
+                  value={form.contactPhone}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      contactPhone: e.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Terms (days)
+                <input
+                  type="number"
+                  min="0"
+                  value={form.termsDays}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      termsDays: e.target.value,
+                    })
+                  }
+                />
+              </label>
+
+              <label style={{ gridColumn: '1 / -1' }}>
+                Notes
+                <textarea
+                  rows={3}
+                  value={form.notes}
+                  onChange={(e) =>
+                    setForm({ ...form, notes: e.target.value })
+                  }
+                />
+              </label>
+
+              <div
+                className="modal-actions"
+                style={{ gridColumn: '1 / -1' }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                >
+                  Cancel
+                </button>
                 <button type="submit">Save Supplier</button>
               </div>
             </form>
