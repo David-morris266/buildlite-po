@@ -34,6 +34,16 @@ export async function listSuppliers(q = '') {
   return handleJson(res);
 }
 
+export async function createSupplier(body = {}) {
+  const url = buildUrl('/api/po/suppliers');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return handleJson(res);
+}
+
 /* ---------- Jobs ---------- */
 export async function listJobs(q = '') {
   const url = q

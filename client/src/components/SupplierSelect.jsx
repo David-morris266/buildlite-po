@@ -1,8 +1,6 @@
 // client/src/components/SupplierSelect.jsx
 import React, { useEffect, useMemo, useState } from 'react';
-
-// IMPORTANT: matches routes in poRoutes.js -> /api/po/suppliers
-const API = '/api/po/suppliers';
+import { listSuppliers, createSupplier } from '../api';
 
 /**
  * SupplierSelect
@@ -47,14 +45,12 @@ export default function SupplierSelect({
     return '';
   }, [value]);
 
-  // Load suppliers
+  // Load suppliers from API helper
   useEffect(() => {
     (async () => {
       try {
         setLoading(true);
-        const res = await fetch(API);
-        if (!res.ok) throw new Error('Failed to load suppliers');
-        const data = await res.json();
+        const data = await listSuppliers('');
         setSuppliers(Array.isArray(data) ? data : []);
       } catch (e) {
         console.error('suppliers GET failed:', e);
@@ -84,43 +80,42 @@ export default function SupplierSelect({
     selectAndEmit(full);
   };
 
+  const handleChangeField = (field) => (e) => {
+    const value =
+      field === 'termsDays' ? Number(e.target.value || 0) : e.target.value;
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setForm({
+      name: '',
+      address1: '',
+      address2: '',
+      city: '',
+      postcode: '',
+      contactName: '',
+      contactEmail: '',
+      contactPhone: '',
+      vatNumber: '',
+      termsDays: 30,
+      notes: '',
+    });
+  };
+
   const saveSupplier = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(API, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
+      const saved = await createSupplier(form);
 
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(
-          errBody.message || 'Failed to save supplier'
-        );
-      }
-
-      const saved = await res.json();
-
+      // Add to list and select it
       setSuppliers((prev) => [saved, ...prev]);
       selectAndEmit(saved);
 
-      setShowModal(false);
-      setForm({
-        name: '',
-        address1: '',
-        address2: '',
-        city: '',
-        postcode: '',
-        contactName: '',
-        contactEmail: '',
-        contactPhone: '',
-        vatNumber: '',
-        termsDays: 30,
-        notes: '',
-      });
+      closeModal();
     } catch (err) {
-      alert(err.message);
+      console.error('createSupplier failed:', err);
+      alert(err.message || 'Failed to save supplier');
     }
   };
 
@@ -151,7 +146,7 @@ export default function SupplierSelect({
       {showModal && (
         <div
           className="modal-backdrop"
-          onMouseDown={() => setShowModal(false)}
+          onMouseDown={closeModal}
         >
           <div
             className="modal"
@@ -164,18 +159,14 @@ export default function SupplierSelect({
                 <input
                   required
                   value={form.name}
-                  onChange={(e) =>
-                    setForm({ ...form, name: e.target.value })
-                  }
+                  onChange={handleChangeField('name')}
                 />
               </label>
               <label>
                 VAT No.
                 <input
                   value={form.vatNumber}
-                  onChange={(e) =>
-                    setForm({ ...form, vatNumber: e.target.value })
-                  }
+                  onChange={handleChangeField('vatNumber')}
                 />
               </label>
 
@@ -183,18 +174,14 @@ export default function SupplierSelect({
                 Address 1
                 <input
                   value={form.address1}
-                  onChange={(e) =>
-                    setForm({ ...form, address1: e.target.value })
-                  }
+                  onChange={handleChangeField('address1')}
                 />
               </label>
               <label>
                 Address 2
                 <input
                   value={form.address2}
-                  onChange={(e) =>
-                    setForm({ ...form, address2: e.target.value })
-                  }
+                  onChange={handleChangeField('address2')}
                 />
               </label>
 
@@ -202,18 +189,14 @@ export default function SupplierSelect({
                 City/Town
                 <input
                   value={form.city}
-                  onChange={(e) =>
-                    setForm({ ...form, city: e.target.value })
-                  }
+                  onChange={handleChangeField('city')}
                 />
               </label>
               <label>
                 Postcode
                 <input
                   value={form.postcode}
-                  onChange={(e) =>
-                    setForm({ ...form, postcode: e.target.value })
-                  }
+                  onChange={handleChangeField('postcode')}
                 />
               </label>
 
@@ -221,12 +204,7 @@ export default function SupplierSelect({
                 Contact Name
                 <input
                   value={form.contactName}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      contactName: e.target.value,
-                    })
-                  }
+                  onChange={handleChangeField('contactName')}
                 />
               </label>
               <label>
@@ -234,12 +212,7 @@ export default function SupplierSelect({
                 <input
                   type="email"
                   value={form.contactEmail}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      contactEmail: e.target.value,
-                    })
-                  }
+                  onChange={handleChangeField('contactEmail')}
                 />
               </label>
 
@@ -247,12 +220,7 @@ export default function SupplierSelect({
                 Contact Phone
                 <input
                   value={form.contactPhone}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      contactPhone: e.target.value,
-                    })
-                  }
+                  onChange={handleChangeField('contactPhone')}
                 />
               </label>
               <label>
@@ -261,12 +229,7 @@ export default function SupplierSelect({
                   type="number"
                   min="0"
                   value={form.termsDays}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      termsDays: e.target.value,
-                    })
-                  }
+                  onChange={handleChangeField('termsDays')}
                 />
               </label>
 
@@ -275,9 +238,7 @@ export default function SupplierSelect({
                 <textarea
                   rows={3}
                   value={form.notes}
-                  onChange={(e) =>
-                    setForm({ ...form, notes: e.target.value })
-                  }
+                  onChange={handleChangeField('notes')}
                 />
               </label>
 
@@ -287,7 +248,7 @@ export default function SupplierSelect({
               >
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
+                  onClick={closeModal}
                 >
                   Cancel
                 </button>
