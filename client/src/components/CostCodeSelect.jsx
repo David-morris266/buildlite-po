@@ -29,16 +29,23 @@ export default function CostCodeSelect({
     const f = filter.trim().toLowerCase();
     if (!f) return codes;
     return codes.filter((c) => {
-      const code = String(c.code || c.CostCode || '').toLowerCase();
-      const label =
-        String(
-          c.label ||
-          c.description ||
-          c.Element ||
-          c.element ||
-          ''
-        ).toLowerCase();
-      return code.includes(f) || label.includes(f);
+      const parts = [
+        c.code,
+        c.CostCode,
+        c.subHeading,
+        c['Sub-Heading'],
+        c.trade,
+        c.Trade,
+        c.element,
+        c.Element,
+        c.label,
+        c.description,
+      ];
+      const hay = parts
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(f);
     });
   }, [codes, filter]);
 
@@ -51,7 +58,6 @@ export default function CostCodeSelect({
     const full = filtered.find(
       (c) => String(c.code || c.CostCode) === code
     );
-    // pass just the code string (as before), plus full if caller wants it
     onChange?.(code, full);
   };
 

@@ -1,6 +1,8 @@
 // client/src/components/SupplierSelect.jsx
 import React, { useEffect, useMemo, useState } from 'react';
-import { listSuppliers } from '../api';
+
+// IMPORTANT: matches routes in poRoutes.js -> /api/po/suppliers
+const API = '/api/po/suppliers';
 
 /**
  * SupplierSelect
@@ -20,6 +22,7 @@ export default function SupplierSelect({
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
 
+  // New-supplier form state
   const [form, setForm] = useState({
     name: '',
     address1: '',
@@ -34,6 +37,7 @@ export default function SupplierSelect({
     notes: '',
   });
 
+  // Normalise current value to an id
   const currentId = useMemo(() => {
     if (!value) return '';
     if (typeof value === 'string') return value;
@@ -43,26 +47,21 @@ export default function SupplierSelect({
     return '';
   }, [value]);
 
+  // Load suppliers
   useEffect(() => {
-    let cancelled = false;
-
     (async () => {
       try {
         setLoading(true);
-        const data = await listSuppliers('');
-        if (!cancelled) {
-          setSuppliers(Array.isArray(data) ? data : []);
-        }
+        const res = await fetch(API);
+        if (!res.ok) throw new Error('Failed to load suppliers');
+        const data = await res.json();
+        setSuppliers(Array.isArray(data) ? data : []);
       } catch (e) {
         console.error('suppliers GET failed:', e);
       } finally {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   const selectAndEmit = (sup) => {
@@ -88,15 +87,19 @@ export default function SupplierSelect({
   const saveSupplier = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/suppliers', {
+      const res = await fetch(API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
+
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || 'Failed to save supplier');
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(
+          errBody.message || 'Failed to save supplier'
+        );
       }
+
       const saved = await res.json();
 
       setSuppliers((prev) => [saved, ...prev]);
@@ -171,10 +174,7 @@ export default function SupplierSelect({
                 <input
                   value={form.vatNumber}
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      vatNumber: e.target.value,
-                    })
+                    setForm({ ...form, vatNumber: e.target.value })
                   }
                 />
               </label>
@@ -184,10 +184,7 @@ export default function SupplierSelect({
                 <input
                   value={form.address1}
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      address1: e.target.value,
-                    })
+                    setForm({ ...form, address1: e.target.value })
                   }
                 />
               </label>
@@ -196,10 +193,7 @@ export default function SupplierSelect({
                 <input
                   value={form.address2}
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      address2: e.target.value,
-                    })
+                    setForm({ ...form, address2: e.target.value })
                   }
                 />
               </label>
@@ -218,10 +212,7 @@ export default function SupplierSelect({
                 <input
                   value={form.postcode}
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      postcode: e.target.value,
-                    })
+                    setForm({ ...form, postcode: e.target.value })
                   }
                 />
               </label>
