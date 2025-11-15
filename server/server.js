@@ -3,46 +3,24 @@
 require('dotenv').config();
 
 const express = require('express');
-const cors = require('cors');
+const cors    = require('cors');
 
 // Routers
-const poRoutes       = require('./routes/poRoutes');       // defines routes starting with '/po'
-const jobRoutes      = require('./routes/jobRoutes');      // expects to be mounted at '/api/jobs'
-const supplierRoutes = require('./routes/supplierRoutes'); // defines '/suppliers' endpoints
+const poRoutes  = require('./routes/poRoutes');   // /po...
+const jobRoutes = require('./routes/jobRoutes');  // /jobs...
 
-const app = express();
+const app  = express();
 const PORT = process.env.PORT || 3001;
 
 /* ------------------------------------------------------------ *
  * CORS (allow Netlify frontend + local dev to call this API)
  * ------------------------------------------------------------ */
-app.use((req, res, next) => {
-  // For now, allow all origins (Netlify site, localhost, etc.)
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header(
-    'Access-Control-Allow-Methods',
-    'GET,POST,PUT,PATCH,DELETE,OPTIONS'
-  );
-  res.header(
-    'Access-Control-Allow-Headers',
-    'Content-Type, Authorization'
-  );
-
-  // Short-circuit preflight
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(204);
-  }
-  next();
-});
-
-// You can keep cors() as a backup; it won’t hurt.
-app.use(
-  cors({
-    origin: '*',
-    methods: 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-    allowedHeaders: 'Content-Type, Authorization',
-  })
-);
+app.use(cors({
+  origin: '*', // allow Netlify, localhost, etc.
+  methods: 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+  allowedHeaders: 'Content-Type, Authorization',
+}));
+app.options('*', cors());
 
 /* ------------------------------------------------------------ *
  * GLOBAL MIDDLEWARES
@@ -59,14 +37,13 @@ app.get('/health', (_req, res) => {
 /* ------------------------------------------------------------ *
  * ROUTES
  * ------------------------------------------------------------ */
-// IMPORTANT: poRoutes already prefixes its handlers with '/po'
-app.use('/api', poRoutes);             // -> /api/po, /api/po/:poNumber, etc.
+// POs (and suppliers, cost codes) live inside poRoutes
+// -> /api/po, /api/po/:poNumber, /api/po/suppliers, /api/po/cost-codes, ...
+app.use('/api', poRoutes);
 
 // Jobs API is scoped under /api/jobs
-app.use('/api/jobs', jobRoutes);       // -> /api/jobs, /api/jobs/:id
-
-// Suppliers API defines '/suppliers' paths; mount at /api
-app.use('/api', supplierRoutes);       // -> /api/suppliers, /api/suppliers/:id
+// -> /api/jobs, /api/jobs/:id
+app.use('/api/jobs', jobRoutes);
 
 /* ------------------------------------------------------------ *
  * 404
