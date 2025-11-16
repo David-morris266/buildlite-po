@@ -3,7 +3,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import CostCodeSelect from './CostCodeSelect';
 import SupplierSelect from './SupplierSelect';
 import JobSelect from './JobSelect';
-import { listJobs } from '../api';
+import {
+  listJobs,
+  savePO,
+  updatePO,
+  requestApproval,
+} from '../api';
 import './POForm.css';
 
 const toNumber = (v) => {
@@ -300,35 +305,21 @@ export default function POForm({ initialPo = null, onSaved = null }) {
     try {
       setSavingDraft(true);
 
-      let res;
+      let po;
       if (isEdit && initialPo?.poNumber) {
         // Update existing Draft/Rejected
-        res = await fetch(`/api/po/${encodeURIComponent(initialPo.poNumber)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...body,
-            updatedBy: 'david@dmcc'
-          }),
+        po = await updatePO(initialPo.poNumber, {
+          ...body,
+          updatedBy: 'david@dmcc',
         });
       } else {
         // New Draft
-        res = await fetch('/api/po', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...body,
-            status: 'Draft',
-          }),
+        po = await savePO({
+          ...body,
+          status: 'Draft',
         });
       }
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || `Save failed (${res.status})`);
-      }
-
-      const po = await res.json();
       alert(`PO ${po.poNumber || ''} saved as Draft`);
 
       if (!isEdit) {
@@ -338,7 +329,7 @@ export default function POForm({ initialPo = null, onSaved = null }) {
       if (onSaved) onSaved(po);
     } catch (e) {
       console.error(e);
-      alert(e.message);
+      alert(e.message || 'Save failed');
     } finally {
       setSavingDraft(false);
     }
@@ -358,53 +349,26 @@ export default function POForm({ initialPo = null, onSaved = null }) {
 
       // 1) Create or update PO as Draft
       if (isEdit && initialPo?.poNumber) {
-        const res = await fetch(`/api/po/${encodeURIComponent(initialPo.poNumber)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...body,
-            updatedBy: 'david@dmcc'
-          }),
+        const po = await updatePO(initialPo.poNumber, {
+          ...body,
+          updatedBy: 'david@dmcc',
         });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.message || `Update failed (${res.status})`);
-        }
-        const po = await res.json();
         poNumber = po.poNumber;
       } else {
-        const res = await fetch('/api/po', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...body,
-            status: 'Draft',
-          }),
+        const po = await savePO({
+          ...body,
+          status: 'Draft',
         });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.message || `Save failed (${res.status})`);
-        }
-        const po = await res.json();
         poNumber = po.poNumber;
       }
 
       if (!poNumber) throw new Error('PO number missing after save');
 
       // 2) Request approval
-      const res2 = await fetch(`/api/po/${encodeURIComponent(poNumber)}/request-approval`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          by: 'david@dmcc',
-          note: '',
-        }),
+      const poAfter = await requestApproval(poNumber, {
+        by: 'david@dmcc',
+        note: '',
       });
-      if (!res2.ok) {
-        const err = await res2.json().catch(() => ({}));
-        throw new Error(err.message || `Approval request failed (${res2.status})`);
-      }
-      const poAfter = await res2.json();
 
       alert(`PO ${poAfter.poNumber || ''} sent for approval`);
 
@@ -415,7 +379,7 @@ export default function POForm({ initialPo = null, onSaved = null }) {
       if (onSaved) onSaved(poAfter);
     } catch (e) {
       console.error(e);
-      alert(e.message);
+      alert(e.message || 'Save & Send failed');
     } finally {
       setSavingAndSending(false);
     }

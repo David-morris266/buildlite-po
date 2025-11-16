@@ -18,7 +18,7 @@ const buildUrl = (path) =>
 
 async function handleJson(res) {
   if (!res.ok) {
-    const text = await res.text();
+    const text = await res.text().catch(() => '');
     throw new Error(text || res.statusText || 'Request failed');
   }
   return res.json();
@@ -71,7 +71,7 @@ export async function listCostCodes(params = '') {
   return handleJson(res);
 }
 
-/* ---------- POs ---------- */
+/* ---------- POs (list / read / save) ---------- */
 export async function listPOs(params = {}) {
   const query = new URLSearchParams(params).toString();
   const url = buildUrl(`/api/po${query ? `?${query}` : ''}`);
@@ -90,6 +90,30 @@ export async function deletePO(number) {
   const res = await fetch(url, { method: 'DELETE' });
   return handleJson(res);
 }
+
+/** Create a new PO (POST /api/po) */
+export async function savePO(body = {}) {
+  const url = buildUrl('/api/po');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return handleJson(res);
+}
+
+/** Update an existing PO (PUT /api/po/:poNumber) */
+export async function updatePO(poNumber, body = {}) {
+  const url = buildUrl(`/api/po/${encodeURIComponent(poNumber)}`);
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return handleJson(res);
+}
+
+/* ---------- Approvals ---------- */
 
 export async function approvePO(number, body) {
   const url = buildUrl(`/api/po/${encodeURIComponent(number)}/approve`);
