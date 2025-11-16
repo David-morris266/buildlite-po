@@ -58,7 +58,15 @@ export async function getJob(id) {
   const res = await fetch(url);
   return handleJson(res);
 }
-
+export async function createJob(body = {}) {
+  const url = buildUrl('/api/jobs');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return handleJson(res);
+}
 /* ---------- Cost Codes ---------- */
 export async function listCostCodes(params = '') {
   const query =
