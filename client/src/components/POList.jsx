@@ -1,6 +1,13 @@
 // client/src/POList.jsx
 import { useEffect, useMemo, useState } from 'react';
-import { listPOs, deletePO, getPO, approvePO, requestApproval } from '../api';
+import {
+  listPOs,
+  deletePO,
+  getPO,
+  approvePO,
+  requestApproval,
+  poPdfUrl,
+} from '../api';
 import POForm from './POForm';
 import './POList.css';
 
@@ -14,14 +21,10 @@ const asMoney = (v) => {
     : '0.00';
 };
 
-// Open PDF helper
+// Open PDF helper (now uses poPdfUrl from api.js)
 const openPdf = (poNumber) => {
   if (!poNumber) return;
-  window.open(
-    `/api/po/${encodeURIComponent(poNumber)}/pdf`,
-    '_blank',
-    'noopener'
-  );
+  window.open(poPdfUrl(poNumber), '_blank', 'noopener');
 };
 
 export default function POList() {
@@ -43,34 +46,34 @@ export default function POList() {
   const [editMode, setEditMode] = useState(false);
 
   // --- ROLE HANDLING -------------------------------------------------
-const rawRole =
-  (localStorage.getItem('role') ||
-    localStorage.getItem('userRole') ||
-    'requester') + '';
-const normalisedRole = rawRole.toLowerCase();
-const isApprover = normalisedRole === 'approver';
-const userRoleLabel = isApprover ? 'Approver' : 'Requester';
+  const rawRole =
+    (localStorage.getItem('role') ||
+      localStorage.getItem('userRole') ||
+      'requester') + '';
+  const normalisedRole = rawRole.toLowerCase();
+  const isApprover = normalisedRole === 'approver';
+  const userRoleLabel = isApprover ? 'Approver' : 'Requester';
 
-// Logged-in user email
-const userEmail = localStorage.getItem('userEmail') || '';
+  // Logged-in user email
+  const userEmail = localStorage.getItem('userEmail') || '';
 
-// Allow toggle only for authorised emails
-const allowedEmails = [
-  'david@dmcommercialconsulting.co.uk',
-  // Add others below if needed, e.g.:
-  // 'russell@cotswoldoak.co.uk',
-  // 'karl@levisonrose.co.uk',
-];
-const canToggleRole = allowedEmails.some(
-  (e) => e.toLowerCase() === userEmail.toLowerCase()
-);
+  // Allow toggle only for authorised emails
+  const allowedEmails = [
+    'david@dmcommercialconsulting.co.uk',
+    // Add others below if needed, e.g.:
+    // 'russell@cotswoldoak.co.uk',
+    // 'karl@levisonrose.co.uk',
+  ];
+  const canToggleRole = allowedEmails.some(
+    (e) => e.toLowerCase() === userEmail.toLowerCase()
+  );
 
-const handleToggleRole = () => {
-  const next = isApprover ? 'requester' : 'approver';
-  localStorage.setItem('role', next);
-  localStorage.setItem('userRole', next);
-  window.location.reload();
-};
+  const handleToggleRole = () => {
+    const next = isApprover ? 'requester' : 'approver';
+    localStorage.setItem('role', next);
+    localStorage.setItem('userRole', next);
+    window.location.reload();
+  };
   // -------------------------------------------------------------------
 
   async function fetchData() {
@@ -210,62 +213,63 @@ const handleToggleRole = () => {
       style={{ maxWidth: 1600, margin: '1rem auto', padding: '0 24px 24px' }}
     >
       {/* HEADER WITH ROLE + TOGGLE */}
-<div
-  style={{
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginBottom: 8,
-  }}
->
-  <h2 style={{ marginBottom: 0 }}>Purchase Orders</h2>
-
-  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-    {/* Role badge */}
-    <span
-      style={{
-        fontSize: 12,
-        padding: '2px 10px',
-        borderRadius: 999,
-        border: '1px solid #4b5563',
-        background: isApprover ? '#14532d' : '#111827',
-        color: '#e5e7eb',
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
-      }}
-      title={
-        isApprover
-          ? 'Approver mode: you can approve or reject POs that are pending.'
-          : 'Requester mode: you can create POs and send them for approval.'
-      }
-    >
-      {isApprover ? 'APPROVER MODE' : 'REQUESTER MODE'}
-    </span>
-
-    {/* Toggle button (only for authorised emails) */}
-    {canToggleRole && (
-      <button
-        onClick={handleToggleRole}
-        title={
-          isApprover
-            ? 'Switch back to Requester mode (no approve/reject buttons).'
-            : 'Switch to Approver mode so you can approve/reject POs.'
-        }
+      <div
         style={{
-          fontSize: 12,
-          padding: '4px 10px',
-          borderRadius: 999,
-          border: '1px solid #4b5563',
-          background: '#111827',
-          color: '#e5e7eb',
-          cursor: 'pointer',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          marginBottom: 8,
         }}
       >
-        Switch to {isApprover ? 'Requester' : 'Approver'}
-      </button>
-    )}
-  </div>
-</div>
+        <h2 style={{ marginBottom: 0 }}>Purchase Orders</h2>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {/* Role badge */}
+          <span
+            style={{
+              fontSize: 12,
+              padding: '2px 10px',
+              borderRadius: 999,
+              border: '1px solid #4b5563',
+              background: isApprover ? '#14532d' : '#111827',
+              color: '#e5e7eb',
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+            }}
+            title={
+              isApprover
+                ? 'Approver mode: you can approve or reject POs that are pending.'
+                : 'Requester mode: you can create POs and send them for approval.'
+            }
+          >
+            {isApprover ? 'APPROVER MODE' : 'REQUESTER MODE'}
+          </span>
+
+          {/* Toggle button (only for authorised emails) */}
+          {canToggleRole && (
+            <button
+              onClick={handleToggleRole}
+              title={
+                isApprover
+                  ? 'Switch back to Requester mode (no approve/reject buttons).'
+                  : 'Switch to Approver mode so you can approve/reject POs.'
+              }
+              style={{
+                fontSize: 12,
+                padding: '4px 10px',
+                borderRadius: 999,
+                border: '1px solid #4b5563',
+                background: '#111827',
+                color: '#e5e7eb',
+                cursor: 'pointer',
+              }}
+            >
+              Switch to {isApprover ? 'Requester' : 'Approver'}
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Filters */}
       <div
         style={{

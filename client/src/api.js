@@ -58,6 +58,7 @@ export async function getJob(id) {
   const res = await fetch(url);
   return handleJson(res);
 }
+
 export async function createJob(body = {}) {
   const url = buildUrl('/api/jobs');
   const res = await fetch(url, {
@@ -67,6 +68,7 @@ export async function createJob(body = {}) {
   });
   return handleJson(res);
 }
+
 /* ---------- Cost Codes ---------- */
 export async function listCostCodes(params = '') {
   const query =
@@ -143,4 +145,10 @@ export async function requestApproval(number, body) {
     body: JSON.stringify(body || {}),
   });
   return handleJson(res);
+}
+
+/* ---------- PO PDF helper ---------- */
+
+export function poPdfUrl(number) {
+  return buildUrl(`/api/po/${encodeURIComponent(number)}/pdf`);
 }
