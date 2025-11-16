@@ -2,22 +2,23 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const { pool } = require('../db');
 const { mapPOToContext, renderPOToPDF } = require('../services/pdf');
 
 const router = express.Router();
 
 /* =========================================
- * STORAGE + HELPERS
+ * COST CODES (still from JSON file)
  * ======================================= */
 
 const DATA_DIR       = path.join(__dirname, '..', 'data');
-const PO_PATH        = path.join(DATA_DIR, 'po-data.json');
-const SUPPLIERS_PATH = path.join(DATA_DIR, 'suppliers.json');
 const COSTCODES_PATH = path.join(DATA_DIR, 'cost_codes.json');
 
-function ensureFile(p, def = JSON.stringify({ items: [] }, null, 2)) {
+function ensureCostCodesFile() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(p)) fs.writeFileSync(p, def, 'utf8');
+  if (!fs.existsSync(COSTCODES_PATH)) {
+    fs.writeFileSync(COSTCODES_PATH, JSON.stringify([], null, 2), 'utf8');
+  }
 }
 
 function readJSONSafe(p, fallback) {
@@ -30,40 +31,8 @@ function readJSONSafe(p, fallback) {
   }
 }
 
-/* ----- POs: support [] or { items: [] } ----- */
-function readPOs() {
-  ensureFile(PO_PATH);
-  const data = readJSONSafe(PO_PATH, { items: [] });
-  if (Array.isArray(data)) return data;
-  if (data && Array.isArray(data.items)) return data.items;
-  return [];
-}
-
-function writePOs(items) {
-  ensureFile(PO_PATH);
-  const out = { items: Array.isArray(items) ? items : [] };
-  fs.writeFileSync(PO_PATH, JSON.stringify(out, null, 2), 'utf8');
-}
-
-/* ----- Suppliers: always an array ----- */
-function readSuppliers() {
-  ensureFile(SUPPLIERS_PATH, JSON.stringify([], null, 2));
-  const data = readJSONSafe(SUPPLIERS_PATH, []);
-  return Array.isArray(data) ? data : [];
-}
-
-function writeSuppliers(items) {
-  ensureFile(SUPPLIERS_PATH, JSON.stringify([], null, 2));
-  fs.writeFileSync(
-    SUPPLIERS_PATH,
-    JSON.stringify(Array.isArray(items) ? items : [], null, 2),
-    'utf8'
-  );
-}
-
-/* ----- Cost codes ----- */
 function readCostCodes() {
-  ensureFile(COSTCODES_PATH, JSON.stringify([], null, 2));
+  ensureCostCodesFile();
   const data = readJSONSafe(COSTCODES_PATH, []);
   return (Array.isArray(data) ? data : []).map((row) => {
     const code    = row.code || row.Code || row['Cost Code'] || '';
@@ -75,7 +44,87 @@ function readCostCodes() {
   });
 }
 
-/* ----- Misc helpers ----- */
+/* =========================================
+ * DB HELPERS (POs + Suppliers in Postgres)
+ * ======================================= */
+
+// Suppliers
+
+async function dbReadSuppliers() {
+  const { rows } = await pool.query(
+    'SELECT payload FROM suppliers ORDER BY name ASC'
+  );
+  return rows.map((r) => r.payload);
+}
+
+async function dbCreateSupplier(supplier) {
+  await pool.query(
+    `
+    INSERT INTO suppliers (id, name, payload)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (id)
+    DO UPDATE SET name = EXCLUDED.name, payload = EXCLUDED.payload
+    `,
+    [supplier.id, supplier.name, supplier]
+  );
+}
+
+async function dbFindSupplierByName(name) {
+  const { rows } = await pool.query(
+    'SELECT payload FROM suppliers WHERE lower(name) = lower($1) LIMIT 1',
+    [name]
+  );
+  return rows[0]?.payload || null;
+}
+
+async function dbFindSupplierById(id) {
+  const { rows } = await pool.query(
+    'SELECT payload FROM suppliers WHERE id = $1 LIMIT 1',
+    [id]
+  );
+  return rows[0]?.payload || null;
+}
+
+// POs
+
+async function dbReadPOs() {
+  const { rows } = await pool.query(
+    'SELECT payload FROM purchase_orders'
+  );
+  return rows.map((r) => r.payload);
+}
+
+async function dbGetPO(poNumber) {
+  const { rows } = await pool.query(
+    'SELECT payload FROM purchase_orders WHERE po_number = $1 LIMIT 1',
+    [poNumber]
+  );
+  return rows[0]?.payload || null;
+}
+
+async function dbSavePO(po) {
+  await pool.query(
+    `
+    INSERT INTO purchase_orders (po_number, payload)
+    VALUES ($1, $2)
+    ON CONFLICT (po_number)
+    DO UPDATE SET payload = EXCLUDED.payload
+    `,
+    [po.poNumber, po]
+  );
+}
+
+async function dbDeletePO(poNumber) {
+  await pool.query(
+    'DELETE FROM purchase_orders WHERE po_number = $1',
+    [poNumber]
+  );
+}
+
+/* =========================================
+ * SHARED HELPERS (unchanged logic)
+ * ======================================= */
+
 function nextNumberForType(all, type) {
   const prefix = String(type || 'M').toUpperCase();
   const nums = all
@@ -115,43 +164,42 @@ function pushHistory(po, action, by = '', note = '') {
 }
 
 /* =========================================
- * ROUTES — DEBUG / LOOKUPS (BEFORE :poNumber)
+ * ROUTES — DEBUG / LOOKUPS
  * ======================================= */
 
 // Debug POs
-router.get('/po/_debug', (_req, res) => {
-  const items = readPOs();
+router.get('/po/_debug', async (_req, res) => {
+  const items = await dbReadPOs();
   res.json({
-    path: PO_PATH,
+    source: 'postgres',
     count: items.length,
     first: items[0]?.poNumber || null,
   });
 });
 
-// Cost codes
+// Cost codes from file
 router.get('/po/cost-codes', (_req, res) => {
   res.json(readCostCodes());
 });
 
 // Suppliers
-router.get('/po/suppliers', (_req, res) => {
-  res.json(readSuppliers());
+router.get('/po/suppliers', async (_req, res) => {
+  const suppliers = await dbReadSuppliers();
+  res.json(suppliers);
 });
 
-router.post('/po/suppliers', (req, res) => {
+router.post('/po/suppliers', async (req, res) => {
   const b = req.body || {};
   if (!b.name || !String(b.name).trim()) {
     return res.status(400).json({ message: "Field 'name' is required" });
   }
 
-  const all = readSuppliers();
-  const exists = all.find(
-    (s) => s.name.trim().toLowerCase() === String(b.name).trim().toLowerCase()
-  );
-  if (exists) {
+  const existing = await dbFindSupplierByName(String(b.name).trim());
+  if (existing) {
     return res.status(409).json({ message: 'Supplier already exists' });
   }
 
+  const now = new Date().toISOString();
   const sup = {
     id: b.id || `sup-${Date.now()}`,
     name: String(b.name).trim(),
@@ -165,11 +213,11 @@ router.post('/po/suppliers', (req, res) => {
     vatNumber: b.vatNumber || '',
     termsDays: Number(b.termsDays || 30),
     notes: b.notes || '',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
   };
 
-  writeSuppliers([sup, ...all]);
+  await dbCreateSupplier(sup);
   res.status(201).json(sup);
 });
 
@@ -177,7 +225,7 @@ router.post('/po/suppliers', (req, res) => {
  * ROUTES — LIST
  * ======================================= */
 
-router.get('/po', (req, res) => {
+router.get('/po', async (req, res) => {
   const {
     q = '',
     job = '',
@@ -186,7 +234,7 @@ router.get('/po', (req, res) => {
     archived = 'false',
   } = req.query || {};
 
-  const all = readPOs();
+  const all = await dbReadPOs();
 
   const t  = String(q).trim().toLowerCase();
   const j  = String(job).trim().toLowerCase();
@@ -239,7 +287,7 @@ router.get('/po', (req, res) => {
 });
 
 /* =========================================
- * ROUTES — PDF (BEFORE /:poNumber)
+ * ROUTES — PDF
  * ======================================= */
 
 router.get('/po/:poNumber/pdf', async (req, res) => {
@@ -247,8 +295,7 @@ router.get('/po/:poNumber/pdf', async (req, res) => {
     const { poNumber } = req.params;
     const { download } = req.query;
 
-    const all = readPOs();
-    const po = all.find((p) => p.poNumber === poNumber);
+    const po = await dbGetPO(poNumber);
     if (!po) {
       return res
         .status(404)
@@ -278,12 +325,11 @@ router.get('/po/:poNumber/pdf', async (req, res) => {
 });
 
 /* =========================================
- * ROUTES — APPROVAL HISTORY (BEFORE /:poNumber)
+ * ROUTES — APPROVAL HISTORY
  * ======================================= */
 
-router.get('/po/:poNumber/history', (req, res) => {
-  const all = readPOs();
-  const po = all.find((p) => p.poNumber === req.params.poNumber);
+router.get('/po/:poNumber/history', async (req, res) => {
+  const po = await dbGetPO(req.params.poNumber);
   if (!po) return res.status(404).json({ message: 'PO not found' });
   res.json(po.approval?.history || []);
 });
@@ -292,15 +338,14 @@ router.get('/po/:poNumber/history', (req, res) => {
  * ROUTES — CREATE
  * ======================================= */
 
-router.post('/po', (req, res) => {
+router.post('/po', async (req, res) => {
   const body = req.body || {};
-  const all  = readPOs();
+  const all  = await dbReadPOs();
 
   const type     = (body.type || 'M').toUpperCase();
   const poNumber = body.poNumber || nextNumberForType(all, type);
   const now      = new Date().toISOString();
 
-  // Decide initial status (default to Draft)
   let status = body.status || 'Draft';
   const statusLc = String(status).toLowerCase();
 
@@ -312,7 +357,6 @@ router.post('/po', (req, res) => {
   } else if (statusLc === 'approved') {
     approvalStatus = 'Approved';
   } else {
-    // Issued / anything else
     status = 'Issued';
     approvalStatus = 'Pending';
   }
@@ -321,17 +365,13 @@ router.post('/po', (req, res) => {
   let supplierSnapshot = body.supplierSnapshot || null;
   let supplierId = body.supplierId || '';
   if (supplierId) {
-    const suppliers = readSuppliers();
-    const found = suppliers.find(
-      (s) => String(s.id) === String(supplierId)
-    );
+    const found = await dbFindSupplierById(String(supplierId));
     supplierSnapshot =
       found ||
       supplierSnapshot ||
       { id: supplierId, name: body.supplierName || String(supplierId) };
   }
 
-  // --- line items ---
   const items = Array.isArray(body.items)
     ? body.items.map((it) => ({
         description: it.description || '',
@@ -352,15 +392,13 @@ router.post('/po', (req, res) => {
     ) || 0;
 
   const totals = computeTotals(items, vatRateDefault);
-
-  // Clauses / references from the form (for PDF)
   const clauses = body.clauses || {};
 
   const po = {
     poNumber,
     type,
 
-    supplierId: supplierId,
+    supplierId,
     supplierSnapshot,
 
     costRef: {
@@ -370,7 +408,7 @@ router.post('/po', (req, res) => {
       element: body.costRef?.element || '',
     },
 
-    job: body.job || null, // full job snapshot
+    job: body.job || null,
 
     title: body.title || '',
     clauses,
@@ -401,23 +439,21 @@ router.post('/po', (req, res) => {
     status === 'Draft' ? 'Draft created' : `Created with status ${status}`
   );
 
-  writePOs([po, ...all]);
+  await dbSavePO(po);
   res.status(201).json(po);
 });
 
 /* =========================================
- * ROUTES — UPDATE (EDIT DRAFT / REJECTED)
+ * ROUTES — UPDATE
  * ======================================= */
 
-router.put('/po/:poNumber', (req, res) => {
+router.put('/po/:poNumber', async (req, res) => {
   const body = req.body || {};
-  const all = readPOs();
-  const idx = all.findIndex((p) => p.poNumber === req.params.poNumber);
-  if (idx === -1) {
+  const po = await dbGetPO(req.params.poNumber);
+  if (!po) {
     return res.status(404).json({ message: 'PO not found' });
   }
 
-  const po = all[idx];
   const currentStatus = String(po.status || '').toLowerCase();
   const editableStatuses = ['draft', 'rejected'];
 
@@ -429,7 +465,7 @@ router.put('/po/:poNumber', (req, res) => {
 
   const now = new Date().toISOString();
 
-  // --- supplier snapshot (allow update) ---
+  // supplier snapshot
   let supplierId = po.supplierId;
   let supplierSnapshot = po.supplierSnapshot;
 
@@ -438,10 +474,7 @@ router.put('/po/:poNumber', (req, res) => {
     if (body.supplierSnapshot) {
       supplierSnapshot = body.supplierSnapshot;
     } else if (supplierId) {
-      const suppliers = readSuppliers();
-      const found = suppliers.find(
-        (s) => String(s.id) === String(supplierId)
-      );
+      const found = await dbFindSupplierById(String(supplierId));
       supplierSnapshot =
         found ||
         supplierSnapshot ||
@@ -449,7 +482,7 @@ router.put('/po/:poNumber', (req, res) => {
     }
   }
 
-  // --- line items ---
+  // items
   let items = po.items || [];
   if (Array.isArray(body.items)) {
     items = body.items.map((it) => ({
@@ -461,7 +494,8 @@ router.put('/po/:poNumber', (req, res) => {
         it.amount != null
           ? Number(it.amount) || 0
           : Number(it.qty || 0) * Number(it.rate || 0),
-      costCode: it.costCode || body.costRef?.costCode || po.costRef?.costCode || '',
+      costCode:
+        it.costCode || body.costRef?.costCode || po.costRef?.costCode || '',
     }));
   }
 
@@ -474,7 +508,6 @@ router.put('/po/:poNumber', (req, res) => {
 
   const totals = computeTotals(items, vatRateDefault);
 
-  // --- apply updates (keeping existing where not supplied) ---
   po.supplierId = supplierId;
   po.supplierSnapshot = supplierSnapshot;
 
@@ -486,7 +519,6 @@ router.put('/po/:poNumber', (req, res) => {
   };
 
   po.job = body.job ?? po.job ?? null;
-
   po.title = body.title ?? po.title ?? '';
   po.clauses = body.clauses ?? po.clauses ?? {};
 
@@ -515,8 +547,7 @@ router.put('/po/:poNumber', (req, res) => {
     body.updateNote || 'Draft/Rejected PO amended'
   );
 
-  all[idx] = po;
-  writePOs(all);
+  await dbSavePO(po);
   res.json(po);
 });
 
@@ -524,16 +555,14 @@ router.put('/po/:poNumber', (req, res) => {
  * ROUTES — APPROVALS
  * ======================================= */
 
-router.post('/po/:poNumber/request-approval', (req, res) => {
-  const all = readPOs();
-  const idx = all.findIndex((p) => p.poNumber === req.params.poNumber);
-  if (idx === -1) return res.status(404).json({ message: 'PO not found' });
+router.post('/po/:poNumber/request-approval', async (req, res) => {
+  const po = await dbGetPO(req.params.poNumber);
+  if (!po) return res.status(404).json({ message: 'PO not found' });
 
-  const po = all[idx];
-
-  // Prevent sending already approved POs back for approval
   if (String(po.status || '').toLowerCase() === 'approved') {
-    return res.status(400).json({ message: 'Cannot request approval for an Approved PO' });
+    return res
+      .status(400)
+      .json({ message: 'Cannot request approval for an Approved PO' });
   }
 
   po.status = 'Issued';
@@ -546,15 +575,13 @@ router.post('/po/:poNumber/request-approval', (req, res) => {
   );
   po.updatedAt = new Date().toISOString();
 
-  all[idx] = po;
-  writePOs(all);
+  await dbSavePO(po);
   res.json(po);
 });
 
-router.post('/po/:poNumber/approve', (req, res) => {
-  const all = readPOs();
-  const idx = all.findIndex((p) => p.poNumber === req.params.poNumber);
-  if (idx === -1) return res.status(404).json({ message: 'PO not found' });
+router.post('/po/:poNumber/approve', async (req, res) => {
+  const po = await dbGetPO(req.params.poNumber);
+  if (!po) return res.status(404).json({ message: 'PO not found' });
 
   const { status = 'Approved', approver = '', note = '' } = req.body || {};
   const norm = String(status).toLowerCase();
@@ -564,7 +591,6 @@ router.post('/po/:poNumber/approve', (req, res) => {
       .json({ message: "status must be 'Approved' or 'Rejected'" });
   }
 
-  const po  = all[idx];
   const now = new Date().toISOString();
 
   po.status = norm === 'approved' ? 'Approved' : 'Rejected';
@@ -583,35 +609,31 @@ router.post('/po/:poNumber/approve', (req, res) => {
   );
   po.updatedAt = now;
 
-  all[idx] = po;
-  writePOs(all);
+  await dbSavePO(po);
   res.json(po);
 });
 
 /* =========================================
- * ROUTES — READ & DELETE (catch-all at end)
+ * ROUTES — READ & DELETE
  * ======================================= */
 
-router.get('/po/:poNumber', (req, res) => {
-  const all = readPOs();
-  const po = all.find((p) => p.poNumber === req.params.poNumber);
+router.get('/po/:poNumber', async (req, res) => {
+  const po = await dbGetPO(req.params.poNumber);
   if (!po) return res.status(404).json({ message: 'PO not found' });
   res.json(po);
 });
 
-router.delete('/po/:poNumber', (req, res) => {
-  const all = readPOs();
-  const idx = all.findIndex((p) => p.poNumber === req.params.poNumber);
-  if (idx === -1) return res.status(404).json({ message: 'PO not found' });
+router.delete('/po/:poNumber', async (req, res) => {
+  const po = await dbGetPO(req.params.poNumber);
+  if (!po) return res.status(404).json({ message: 'PO not found' });
 
-  if ((all[idx].approval?.status || '').toLowerCase() === 'approved') {
+  if ((po.approval?.status || '').toLowerCase() === 'approved') {
     return res
       .status(400)
       .json({ message: 'Cannot delete an Approved PO' });
   }
 
-  all.splice(idx, 1);
-  writePOs(all);
+  await dbDeletePO(req.params.poNumber);
   res.json({ ok: true });
 });
 

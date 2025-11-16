@@ -4,6 +4,7 @@ require('dotenv').config();
 
 const express = require('express');
 const cors    = require('cors');
+const { init } = require('./db');
 
 // Routers
 const poRoutes  = require('./routes/poRoutes');   // /po...
@@ -55,8 +56,15 @@ app.use((req, res) => {
 });
 
 /* ------------------------------------------------------------ *
- * START
+ * START (only after DB init)
  * ------------------------------------------------------------ */
-app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}`);
-});
+init()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`✅ Server running on http://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('❌ DB init failed:', err);
+    process.exit(1);
+  });
