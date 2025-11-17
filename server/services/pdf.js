@@ -304,13 +304,19 @@ async function renderPOToPDF(ctx, { draft = false } = {}) {
   }
 
   const browser = await puppeteer.launch({
-    args: ['--no-sandbox'],
+    headless: 'new', // or true – fine on Render
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
 
   try {
     const page = await browser.newPage();
     await page.emulateMediaType('screen');
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+
+    // Less strict wait + finite timeout to avoid 30s "navigation timeout"
+    await page.setContent(html, {
+      waitUntil: 'domcontentloaded', // DOM ready is enough for static HTML
+      timeout: 15000,                // 15s cap – adjust if needed
+    });
 
     const pdf = await page.pdf({
       format: 'A4',
