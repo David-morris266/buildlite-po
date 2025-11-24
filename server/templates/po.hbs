@@ -13,7 +13,8 @@
     body{font-family:Arial,Helvetica,sans-serif;color:var(--text);margin:0}
 
     /* Reserve space for fixed footer (28mm + gap) */
-    .page{padding:22mm 12mm 44mm 12mm;position:relative}
+    /* Reduced top padding to tighten header gap */
+    .page{padding:14mm 12mm 40mm 12mm;position:relative}
 
     /* Header */
     .banner{display:flex;align-items:center;gap:16px;border-bottom:3px solid var(--brand);padding-bottom:10px;margin-bottom:12px}
@@ -120,14 +121,15 @@ APPROVAL</div>
 
     <!-- Title -->
     <div class="title-row">
-      <div class="po-title">Purchase Order {{po.number}}</div>
+      <!-- Use typeLabel to avoid duplicate “Purchase Order” line -->
+      <div class="po-title">{{po.typeLabel}} {{po.number}}</div>
       <div class="meta">
         <b>Date:</b> {{formatDate po.date}}
         &nbsp;&nbsp;&nbsp; <b>Status:</b> {{po.status}}
       </div>
     </div>
     <div class="type-line">
-      {{po.typeLabel}} · Currency: {{po.currency}}
+      Currency: {{po.currency}}
     </div>
 
     <!-- Project reference -->
@@ -139,6 +141,19 @@ APPROVAL</div>
             {{#each project.addressLines}}
               {{this}}<br/>
             {{/each}}
+          </div>
+        {{/if}}
+
+        {{#if project.siteManager}}
+          <div class="muted">
+            Site Manager: {{project.siteManager}}
+            {{#if project.sitePhone}} · {{project.sitePhone}}{{/if}}
+          </div>
+        {{/if}}
+
+        {{#if project.client}}
+          <div class="muted">
+            Client: {{project.client}}
           </div>
         {{/if}}
       </div>
@@ -175,7 +190,9 @@ APPROVAL</div>
       <b>{{supplier.name}}</b><br>
       {{supplier.address.line1}}<br>
       {{supplier.address.town}} {{supplier.address.postcode}}<br>
-      {{#if supplier.contactName}}Contact: {{supplier.contactName}}{{/if}}
+      {{#if supplier.contactName}}Contact: {{supplier.contactName}}<br>{{/if}}
+      {{#if supplier.phone}}Tel: {{supplier.phone}}<br>{{/if}}
+      {{#if supplier.email}}Email: {{supplier.email}}{{/if}}
     </div>
 
     <!-- Items -->
