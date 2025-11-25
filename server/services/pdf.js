@@ -82,6 +82,8 @@ function mapPOToContext(po) {
     name: supplierSnap.name || String(po.supplierId || ''),
     address,
     contactName: supplierSnap.contactName || '',
+    phone: supplierSnap.phone || supplierSnap.contactPhone || '',
+    email: supplierSnap.email || supplierSnap.contactEmail || '',
   };
 
   /* ----- Lines ----- */
