@@ -340,6 +340,7 @@ export default function POList() {
                   <th style={{ padding: 10 }}>Date</th>
                   <th style={{ padding: 10 }}>PO No</th>
                   <th style={{ padding: 10 }}>Type</th>
+                  <th style={{ padding: 10 }}>Job</th>
                   <th style={{ padding: 10 }}>Supplier</th>
                   <th style={{ padding: 10 }}>Title / Description</th>
                   <th style={{ padding: 10, textAlign: 'right' }}>Total</th>
@@ -348,7 +349,7 @@ export default function POList() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((po, idx) => {
+             {rows.map((po, idx) => {
                   const number = po.poNumber || po.number || po.id || idx;
                   const date = (po.createdAt || po.date || '').slice(0, 10);
                   const supplierName =
@@ -357,6 +358,16 @@ export default function POList() {
                     po.supplier ||
                     '';
                   const title = po.title || po.description || '-';
+
+                  const jobSnap = po.job || {};
+                  const jobTag =
+                    jobSnap.jobNumber ||
+                    jobSnap.jobCode ||
+                    po.costRef?.jobCode ||
+                    '';
+                  const jobLabel = [jobSnap.name, jobTag]
+                    .filter(Boolean)
+                    .join(' · ');
                   const amount =
                     po.subtotal ?? po.totals?.net ?? po.amount ?? 0;
                   const approvalStatus = po.approval?.status;
@@ -384,6 +395,9 @@ export default function POList() {
                       <td style={{ padding: 10 }}>{number}</td>
                       <td style={{ padding: 10 }}>
                         {(po.type || '').toUpperCase()}
+                      </td>
+                      <td style={{ padding: 10 }}>
+                        {jobLabel || '—'}
                       </td>
                       <td style={{ padding: 10 }}>{supplierName}</td>
                       <td
