@@ -121,7 +121,7 @@ function mapPOToContext(po) {
     address:
       'Unit 4, Weston Industrial Estate, Honeybourne, Evesham, Worcestershire, WR11 7QB',
     companyNo: '05041616',
-    vatNo: 'TBC',
+    vatNo: '851257724',
     phone: '01633 898086',
     email: 'applications@cotswoldoakltd.co.uk',
     website: 'www.cotswoldoak.co.uk',
