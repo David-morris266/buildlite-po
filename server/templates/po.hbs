@@ -14,10 +14,10 @@
 
     /* Reserve space for fixed footer (28mm + gap) */
     /* Reduced top padding to tighten header gap */
-    .page{padding:14mm 12mm 40mm 12mm;position:relative}
+    .page{padding:8mm 12mm 40mm 12mm;position:relative}
 
     /* Header */
-    .banner{display:flex;align-items:center;gap:16px;border-bottom:3px solid var(--brand);padding-bottom:10px;margin-bottom:12px}
+    .banner{display:flex;align-items:center;gap:16px;border-bottom:3px solid var(--brand);padding-bottom:10px;margin-bottom:8px}
     .logo{height:54px}
     .brand-title{font-size:18px;color:var(--brand);font-weight:700;letter-spacing:.2px}
     .strap{font-size:11px;color:var(--muted);margin-top:2px}
@@ -81,8 +81,22 @@
       pointer-events:none;
     }
 
-    .stamp{position:absolute;right:14mm;top:26mm;border:2px solid var(--approved);color:var(--approved);padding:6px 10px;font-size:12px;font-weight:700;border-radius:6px}
-    .stamp.rejected{border-color:var(--rejected);color:var(--rejected)}
+.stamp{
+  position:fixed;
+  right:12mm;
+  top:10mm;
+  border:2px solid var(--approved);
+  color:var(--approved);
+  padding:6px 10px;
+  font-size:12px;
+  font-weight:700;
+  border-radius:6px;
+  z-index:5;
+}
+.stamp.rejected{
+  border-color:var(--rejected);
+  color:var(--rejected);
+}
     .muted{color:var(--muted)}
   </style>
 </head>
