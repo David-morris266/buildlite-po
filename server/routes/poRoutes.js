@@ -257,11 +257,31 @@ router.get('/po', async (req, res) => {
     }
 
     if (j) {
-      const jobCode = (p.costRef?.jobCode || '').toLowerCase();
-      const jobId   = (p.costRef?.jobId   || '').toLowerCase();
-      const label   = (p.job?.name || '').toLowerCase();
-      if (![jobCode, jobId, label].some((x) => x.includes(j))) return false;
+      // Make job search more forgiving:
+      // - job name  (e.g. "Blossom Green – Martley")
+      // - job number (e.g. "0754")
+      // - job code (from job snapshot or costRef)
+      // - job id (db id or costRef)
+      const jobName    = (p.job?.name || '').toLowerCase();
+      const jobNumber  = (p.job?.jobNumber || '').toLowerCase();
+      const jobCode    = (
+        p.job?.jobCode ||
+        p.costRef?.jobCode ||
+        ''
+      ).toLowerCase();
+      const jobId      = (
+        String(p.job?.id || '') ||
+        p.costRef?.jobId ||
+        ''
+      ).toLowerCase();
+
+      const haystack = [jobName, jobNumber, jobCode, jobId];
+
+      if (!haystack.some((v) => v && v.includes(j))) {
+        return false;
+      }
     }
+
 
     if (t) {
       const hay = [
