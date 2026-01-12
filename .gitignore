@@ -11,8 +11,23 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Puppeteer / Chrome cache (VERY IMPORTANT)
+.cache/
+**/.cache/
+server/.cache/
+
 # misc
 .DS_Store
 .env
 server/.env
 .continue/
+
+# Puppeteer / Chromium downloads (very large)
+server/.cache/
+server/.cache/**
+**/.cache/puppeteer/
+**/puppeteer/.local-chromium/
+**/.local-chromium/
+
+# (optional) if you keep any zips in repo by mistake
+*.zip

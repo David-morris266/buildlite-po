@@ -417,7 +417,7 @@ export default function POForm({ initialPo = null, onSaved = null }) {
 
         <div>
           <label>Job</label>
-          <JobSelect value={jobId} onChange={setJobId} />
+          <JobSelect value={jobId} onChange={setJobId} showLabel={false} />
           {jobSnap && (
             <div className="muted" style={{ marginTop: 4 }}>
               {projectLabel}<br />
@@ -439,7 +439,12 @@ export default function POForm({ initialPo = null, onSaved = null }) {
 
         <div>
           {/* CostCodeSelect renders its own label */}
-          <CostCodeSelect value={costCode} onChange={setCostCode} />
+          <CostCodeSelect
+  value={costCode}
+  onChange={(label, fullObj) => {
+    setCostCode(label);
+  }}
+/>
         </div>
 
         <div>

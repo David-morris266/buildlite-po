@@ -1,11 +1,5 @@
 [
   {
-    "Cost Code": "Cost Code",
-    "Sub-Heading": "Sub-Heading",
-    "Trade": "Trade",
-    "Element": "Element"
-  },
-  {
     "Cost Code": 1100,
     "Sub-Heading": "Land",
     "Trade": "Vendor",
