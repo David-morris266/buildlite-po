@@ -61,27 +61,30 @@ export default function CostCodeSelect({ value, onChange, showLabel = true }) {
       .filter((x) => x.code && x.code.toLowerCase() !== 'cost code');
   }, [codes]);
 
-  const filtered = useMemo(() => {
-    const q = (query || '').trim().toLowerCase();
-    if (!q) return normalised.slice(0, 25);
+const filtered = useMemo(() => {
+  const q = (query || "").trim().toLowerCase();
 
-    const res = normalised.filter((x) => {
-      const hay = [
-        x.code,
-        x.subHeading,
-        x.trade,
-        x.element,
-        x.label,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
+  // When no search term, show ALL cost codes
+  if (!q) return normalised;
 
-      return hay.includes(q);
-    });
+  const res = normalised.filter((x) => {
+    const hay = [
+      x.code,
+      x.element,
+      x.subHeading,
+      x.label,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
 
-    return res.slice(0, 25);
-  }, [normalised, query]);
+    return hay.includes(q);
+  });
+
+  // Only cap when searching (protects performance for very large libraries)
+  return res.slice(0, 200);
+}, [normalised, query]);
+
 
   const selectItem = (item) => {
     const fullLabel = item?.label || '';
