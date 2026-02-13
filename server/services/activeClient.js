@@ -1,9 +1,14 @@
 // server/services/activeClient.js
-const db = require("../db");
+const { pool } = require("../db");
 
+// returns active client row (or null)
 async function getActiveClient() {
-  const { rows } = await db.query(
-    "select id, code, name from clients where is_active = true limit 1"
+  const { rows } = await pool.query(
+    `select id, name, code
+     from clients
+     where is_active = true
+     order by id desc
+     limit 1`
   );
   return rows[0] || null;
 }
