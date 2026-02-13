@@ -27,6 +27,9 @@ async function init() {
     return;
   }
 
+  // Ensure UUID generator exists (needed for gen_random_uuid())
+  await pool.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`);
+
   /* ------------------------------------------------------------ *
    * CORE TABLES
    * ------------------------------------------------------------ */
@@ -47,12 +50,12 @@ async function init() {
   `);
 
   /* ------------------------------------------------------------ *
-   * PAYMENTS / CERTIFICATES
+   * PAYMENTS / CERTIFICATES (UUID-based)
    * ------------------------------------------------------------ */
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS payment_certificates (
-      id SERIAL PRIMARY KEY,
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       job_id TEXT NOT NULL,
       supplier_id TEXT NOT NULL,
       certificate_number INTEGER NOT NULL,
@@ -66,9 +69,9 @@ async function init() {
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS payment_certificate_lines (
-      id SERIAL PRIMARY KEY,
-      certificate_id INTEGER NOT NULL 
-        REFERENCES payment_certificates(id) 
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      certificate_id UUID NOT NULL
+        REFERENCES payment_certificates(id)
         ON DELETE CASCADE,
       po_number TEXT NOT NULL,
       line_index INTEGER NOT NULL,
