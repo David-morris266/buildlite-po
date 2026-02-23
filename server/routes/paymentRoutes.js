@@ -53,6 +53,31 @@ router.get("/_debug", async (_req, res) => {
   }
 });
 
+router.get("/migrate", async (_req, res) => {
+  try {
+    await query(`
+      ALTER TABLE payment_certificates
+      ADD COLUMN IF NOT EXISTS certificate_number INTEGER,
+      ADD COLUMN IF NOT EXISTS period_from DATE,
+      ADD COLUMN IF NOT EXISTS period_to DATE,
+      ADD COLUMN IF NOT EXISTS notes TEXT;
+    `);
+
+    await query(`
+      ALTER TABLE payment_certificates
+      RENAME COLUMN cert_no TO legacy_cert_no;
+    `);
+
+    await query(`
+      ALTER TABLE payment_certificates
+      RENAME COLUMN period_end TO legacy_period_end;
+    `);
+
+    res.json({ ok: true, message: "Migration complete" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 /**
  * GET /api/payments/certificates
  * Optional filters: ?jobId=3&supplierId=sup-123
