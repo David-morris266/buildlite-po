@@ -1,22 +1,3 @@
-router.get("/_debug", async (_req, res) => {
-  try {
-    const a = await query(`SELECT to_regclass('public.payment_certificates') AS certs`, []);
-    const b = await query(`SELECT to_regclass('public.payment_certificate_lines') AS lines`, []);
-    const c = await query(
-      `SELECT column_name, data_type
-       FROM information_schema.columns
-       WHERE table_name = 'payment_certificates'
-       ORDER BY ordinal_position`,
-      []
-    );
-    res.json({
-      tables: { payment_certificates: a.rows[0].certs, payment_certificate_lines: b.rows[0].lines },
-      payment_certificates_columns: c.rows,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 // server/routes/paymentRoutes.js
 const express = require("express");
 const router = express.Router();
@@ -33,10 +14,48 @@ function num(v) {
 }
 
 /**
+ * DEBUG: /api/payments/_debug
+ * Helps confirm whether payments tables exist + what columns exist.
+ */
+router.get("/_debug", async (_req, res) => {
+  try {
+    const certs = await query(
+      `SELECT to_regclass('public.payment_certificates') AS name`,
+      []
+    );
+    const lines = await query(
+      `SELECT to_regclass('public.payment_certificate_lines') AS name`,
+      []
+    );
+
+    let cols = [];
+    if (certs.rows[0]?.name) {
+      const c = await query(
+        `SELECT column_name, data_type
+         FROM information_schema.columns
+         WHERE table_name = 'payment_certificates'
+         ORDER BY ordinal_position`,
+        []
+      );
+      cols = c.rows;
+    }
+
+    res.json({
+      ok: true,
+      tables: {
+        payment_certificates: certs.rows[0]?.name || null,
+        payment_certificate_lines: lines.rows[0]?.name || null,
+      },
+      payment_certificates_columns: cols,
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
  * GET /api/payments/certificates
  * Optional filters: ?jobId=3&supplierId=sup-123
- * NOTE: certificates are not yet client-scoped in DB schema; we filter by job/supplier only.
- * (If you later add client_id to payment_certificates, we can scope these too.)
  */
 router.get("/certificates", async (req, res) => {
   try {
@@ -55,7 +74,16 @@ router.get("/certificates", async (req, res) => {
     }
 
     const sql = `
-      SELECT id, job_id, supplier_id, certificate_number, period_from, period_to, status, notes, created_at
+      SELECT
+        id,
+        job_id,
+        supplier_id,
+        certificate_number,
+        period_from,
+        period_to,
+        status,
+        notes,
+        created_at
       FROM payment_certificates
       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
       ORDER BY created_at DESC
@@ -80,7 +108,16 @@ router.get("/certificates/:id", async (req, res) => {
 
     const head = await query(
       `
-      SELECT id, job_id, supplier_id, certificate_number, period_from, period_to, status, notes, created_at
+      SELECT
+        id,
+        job_id,
+        supplier_id,
+        certificate_number,
+        period_from,
+        period_to,
+        status,
+        notes,
+        created_at
       FROM payment_certificates
       WHERE id = $1
       `,
@@ -94,9 +131,18 @@ router.get("/certificates/:id", async (req, res) => {
     const lines = await query(
       `
       SELECT
-        id, certificate_id, po_number, line_index,
-        cost_code, description, qty, rate, line_value,
-        previous_certified, this_certified, created_at
+        id,
+        certificate_id,
+        po_number,
+        line_index,
+        cost_code,
+        description,
+        qty,
+        rate,
+        line_value,
+        previous_certified,
+        this_certified,
+        created_at
       FROM payment_certificate_lines
       WHERE certificate_id = $1
       ORDER BY po_number, line_index
@@ -114,13 +160,18 @@ router.get("/certificates/:id", async (req, res) => {
 /**
  * GET /api/payments/po-lines?jobId=3&supplierId=sup-xxx
  * Pulls "certifiable" PO lines (flattened) and includes certified-to-date + remaining.
- * NOW CLIENT-SCOPED (same as poRoutes.js) using activeClient.id.
+ *
+ * IMPORTANT:
+ * - POs are client-scoped (active client)
+ * - Cert sums are currently not client-scoped unless you add client_id to payments tables later
  */
 router.get("/po-lines", async (req, res) => {
   try {
     const { jobId, supplierId } = req.query;
     if (!jobId || !supplierId) {
-      return res.status(400).json({ message: "jobId and supplierId are required" });
+      return res
+        .status(400)
+        .json({ message: "jobId and supplierId are required" });
     }
 
     const active = await getActiveClient();
@@ -143,29 +194,30 @@ router.get("/po-lines", async (req, res) => {
 
     const certifiedMap = new Map();
     for (const r of certSums.rows) {
-      certifiedMap.set(`${r.po_number}::${r.line_index}`, num(r.certified_to_date));
+      certifiedMap.set(
+        `${r.po_number}::${r.line_index}`,
+        num(r.certified_to_date)
+      );
     }
 
-    // 2) Load POs for ACTIVE CLIENT ONLY (important!)
+    // 2) Load POs for ACTIVE CLIENT ONLY
     const pos = await query(
       `SELECT po_number, payload FROM purchase_orders WHERE client_id = $1`,
       [active.id]
     );
 
-    const lines = [];
+    const out = [];
 
     for (const row of pos.rows) {
       const payload = row.payload;
       if (!payload) continue;
 
-      // Must match job + supplier
       const poJobId = payload?.job?.id;
       const poSupplierId = payload?.supplierId;
 
       if (String(poJobId) !== String(jobId)) continue;
       if (String(poSupplierId) !== String(supplierId)) continue;
 
-      // Only approved and not archived (adjust rules if needed)
       if (String(payload.status || "").toLowerCase() !== "approved") continue;
       if (payload.archived === true) continue;
 
@@ -181,10 +233,10 @@ router.get("/po-lines", async (req, res) => {
         const certifiedToDate = num(certifiedMap.get(key) || 0);
         const remaining = Math.max(0, lineValue - certifiedToDate);
 
-        // Hide fully certified lines (optional rule)
+        // Hide fully certified lines
         if (remaining <= 0) return;
 
-        lines.push({
+        out.push({
           poNumber,
           poType: payload.type,
           jobId: payload?.job?.id,
@@ -205,7 +257,7 @@ router.get("/po-lines", async (req, res) => {
       });
     }
 
-    res.json({ count: lines.length, lines });
+    res.json({ count: out.length, lines: out });
   } catch (err) {
     console.error("[payments] po-lines error:", err);
     res.status(500).json({ message: "Server error" });
@@ -227,18 +279,18 @@ router.get("/po-lines", async (req, res) => {
  *     { "poNumber": "S0001", "lineIndex": 0, "thisCertified": 500 }
  *   ]
  * }
- *
- * NOTE: Uses a REAL transaction via pool.connect()
- * and fetches POs from purchase_orders scoped to active client_id.
  */
 router.post("/certificates", async (req, res) => {
   const dbClient = await pool.connect();
 
   try {
-    const { jobId, supplierId, periodFrom, periodTo, notes, lines } = req.body || {};
+    const { jobId, supplierId, periodFrom, periodTo, notes, lines } =
+      req.body || {};
 
     if (!jobId || !supplierId) {
-      return res.status(400).json({ message: "jobId and supplierId are required" });
+      return res
+        .status(400)
+        .json({ message: "jobId and supplierId are required" });
     }
     if (!Array.isArray(lines) || lines.length === 0) {
       return res.status(400).json({ message: "lines[] is required" });
@@ -258,14 +310,17 @@ router.post("/certificates", async (req, res) => {
       `,
       [String(jobId), String(supplierId)]
     );
-    const certificateNumber = Number(nextNoRes.rows[0].next_no);
+    const certificateNumber = Number(nextNoRes.rows[0]?.next_no || 1);
 
     // Create header
     const headRes = await dbClient.query(
       `
-      INSERT INTO payment_certificates (job_id, supplier_id, certificate_number, period_from, period_to, status, notes)
-      VALUES ($1, $2, $3, $4, $5, 'DRAFT', $6)
-      RETURNING id, job_id, supplier_id, certificate_number, period_from, period_to, status, notes, created_at
+      INSERT INTO payment_certificates
+        (job_id, supplier_id, certificate_number, period_from, period_to, status, notes)
+      VALUES
+        ($1, $2, $3, $4, $5, 'DRAFT', $6)
+      RETURNING
+        id, job_id, supplier_id, certificate_number, period_from, period_to, status, notes, created_at
       `,
       [
         String(jobId),
@@ -279,7 +334,7 @@ router.post("/certificates", async (req, res) => {
 
     const certificate = headRes.rows[0];
 
-    // Build a certified-to-date map BEFORE this new cert (store previous_certified)
+    // Previous certified map
     const sumsRes = await dbClient.query(
       `
       SELECT
@@ -300,12 +355,14 @@ router.post("/certificates", async (req, res) => {
       prevMap.set(`${r.po_number}::${r.line_index}`, num(r.certified_to_date));
     }
 
-    // Fetch the POs we need for snapshotting (ACTIVE CLIENT ONLY)
+    // Fetch POs needed for snapshotting (ACTIVE CLIENT ONLY)
     const poNumbers = [...new Set(lines.map((l) => String(l.poNumber)))];
     const poRes = await dbClient.query(
-      `SELECT po_number, payload
-       FROM purchase_orders
-       WHERE client_id = $1 AND po_number = ANY($2)`,
+      `
+      SELECT po_number, payload
+      FROM purchase_orders
+      WHERE client_id = $1 AND po_number = ANY($2)
+      `,
       [active.id, poNumbers]
     );
 
@@ -316,7 +373,6 @@ router.post("/certificates", async (req, res) => {
       poByNumber.set(key, p);
     }
 
-    // Insert snapshot lines
     for (const l of lines) {
       const poNumber = String(l.poNumber);
       const lineIndex = Number(l.lineIndex);
@@ -335,7 +391,6 @@ router.post("/certificates", async (req, res) => {
       const qty = num(item.qty);
       const rate = num(item.rate);
       const lineValue = num(item.amount) || qty * rate;
-
       const prevCertified = num(prevMap.get(`${poNumber}::${lineIndex}`) || 0);
 
       await dbClient.query(
