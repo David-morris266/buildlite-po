@@ -1,3 +1,22 @@
+router.get("/_debug", async (_req, res) => {
+  try {
+    const a = await query(`SELECT to_regclass('public.payment_certificates') AS certs`, []);
+    const b = await query(`SELECT to_regclass('public.payment_certificate_lines') AS lines`, []);
+    const c = await query(
+      `SELECT column_name, data_type
+       FROM information_schema.columns
+       WHERE table_name = 'payment_certificates'
+       ORDER BY ordinal_position`,
+      []
+    );
+    res.json({
+      tables: { payment_certificates: a.rows[0].certs, payment_certificate_lines: b.rows[0].lines },
+      payment_certificates_columns: c.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 // server/routes/paymentRoutes.js
 const express = require("express");
 const router = express.Router();
