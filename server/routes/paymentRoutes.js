@@ -4,6 +4,7 @@ const router = express.Router();
 
 const { pool, query } = require("../db");
 const { getActiveClient } = require("../services/activeClient");
+const { isProduction } = require("../utils/env");
 
 /**
  * Utility: safe number
@@ -13,11 +14,49 @@ function num(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function asText(v) {
+  return v == null ? "" : String(v);
+}
+
+function isoNow() {
+  return new Date().toISOString();
+}
+
+/** Map DB row to API shape (canonical + legacy aliases). */
+function mapCertificateRow(r) {
+  const payload = r.payload || {};
+  const certNo = r.certificate_number ?? r.cert_no ?? null;
+  const periodFrom =
+    r.period_from ?? payload?.header?.periodFrom ?? null;
+  const periodTo =
+    r.period_to ?? r.period_end ?? payload?.header?.periodTo ?? null;
+
+  return {
+    id: r.id,
+    client_id: r.client_id,
+    job_id: r.job_id,
+    supplier_id: r.supplier_id,
+    certificate_number: certNo,
+    cert_no: certNo,
+    period_from: periodFrom,
+    period_to: periodTo,
+    period_end: periodTo,
+    status: r.status,
+    notes: r.notes ?? payload?.header?.notes ?? null,
+    payload,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+  };
+}
+
 /**
- * DEBUG: /api/payments/_debug
- * Helps confirm whether payments tables exist + what columns exist.
+ * DEBUG: /api/payments/_debug (disabled in production)
  */
 router.get("/_debug", async (_req, res) => {
+  if (isProduction()) {
+    return res.status(404).json({ message: "Not found" });
+  }
+
   try {
     const certs = await query(
       `SELECT to_regclass('public.payment_certificates') AS name`,
@@ -28,7 +67,7 @@ router.get("/_debug", async (_req, res) => {
       []
     );
 
-    let cols = [];
+    let certCols = [];
     if (certs.rows[0]?.name) {
       const c = await query(
         `SELECT column_name, data_type
@@ -37,7 +76,19 @@ router.get("/_debug", async (_req, res) => {
          ORDER BY ordinal_position`,
         []
       );
-      cols = c.rows;
+      certCols = c.rows;
+    }
+
+    let lineCols = [];
+    if (lines.rows[0]?.name) {
+      const l = await query(
+        `SELECT column_name, data_type
+         FROM information_schema.columns
+         WHERE table_name = 'payment_certificate_lines'
+         ORDER BY ordinal_position`,
+        []
+      );
+      lineCols = l.rows;
     }
 
     res.json({
@@ -46,61 +97,47 @@ router.get("/_debug", async (_req, res) => {
         payment_certificates: certs.rows[0]?.name || null,
         payment_certificate_lines: lines.rows[0]?.name || null,
       },
-      payment_certificates_columns: cols,
+      payment_certificates_columns: certCols,
+      payment_certificate_lines_columns: lineCols,
     });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-router.get("/migrate", async (_req, res) => {
-  try {
-    await query(`
-      ALTER TABLE payment_certificates
-      ADD COLUMN IF NOT EXISTS certificate_number INTEGER,
-      ADD COLUMN IF NOT EXISTS period_from DATE,
-      ADD COLUMN IF NOT EXISTS period_to DATE,
-      ADD COLUMN IF NOT EXISTS notes TEXT;
-    `);
+/**
+ * Production schema (Doc 20 Appendix A):
+ * certificate_number, period_from, period_to, payload (JSONB lines)
+ */
 
-    await query(`
-      ALTER TABLE payment_certificates
-      RENAME COLUMN cert_no TO legacy_cert_no;
-    `);
-
-    await query(`
-      ALTER TABLE payment_certificates
-      RENAME COLUMN period_end TO legacy_period_end;
-    `);
-
-    res.json({ ok: true, message: "Migration complete" });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 /**
  * GET /api/payments/certificates
  * Optional filters: ?jobId=3&supplierId=sup-123
+ * Always scoped to active client_id.
  */
 router.get("/certificates", async (req, res) => {
   try {
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
     const { jobId, supplierId } = req.query;
 
-    const where = [];
-    const params = [];
+    const where = ["client_id = $1"];
+    const params = [active.id];
 
     if (jobId) {
-      params.push(String(jobId));
+      params.push(asText(jobId));
       where.push(`job_id = $${params.length}`);
     }
     if (supplierId) {
-      params.push(String(supplierId));
+      params.push(asText(supplierId));
       where.push(`supplier_id = $${params.length}`);
     }
 
     const sql = `
       SELECT
         id,
+        client_id,
         job_id,
         supplier_id,
         certificate_number,
@@ -108,33 +145,41 @@ router.get("/certificates", async (req, res) => {
         period_to,
         status,
         notes,
-        created_at
+        payload,
+        created_at,
+        updated_at
       FROM payment_certificates
-      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+      WHERE ${where.join(" AND ")}
       ORDER BY created_at DESC
       LIMIT 200
     `;
 
     const { rows } = await query(sql, params);
-    res.json({ items: rows });
+    const items = rows.map(mapCertificateRow);
+
+    res.json({ items });
   } catch (err) {
     console.error("[payments] list certs error:", err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: err.message || "Server error" });
   }
 });
 
 /**
  * GET /api/payments/certificates/:id
- * Returns header + snapshot lines.
+ * Returns certificate row + payload.lines (and keeps legacy keys)
  */
 router.get("/certificates/:id", async (req, res) => {
   try {
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
     const { id } = req.params;
 
     const head = await query(
       `
       SELECT
         id,
+        client_id,
         job_id,
         supplier_id,
         certificate_number,
@@ -142,53 +187,40 @@ router.get("/certificates/:id", async (req, res) => {
         period_to,
         status,
         notes,
-        created_at
+        payload,
+        created_at,
+        updated_at
       FROM payment_certificates
-      WHERE id = $1
+      WHERE id = $1 AND client_id = $2
       `,
-      [id]
+      [id, active.id]
     );
 
     if (!head.rows.length) {
       return res.status(404).json({ message: "Certificate not found" });
     }
 
-    const lines = await query(
-      `
-      SELECT
-        id,
-        certificate_id,
-        po_number,
-        line_index,
-        cost_code,
-        description,
-        qty,
-        rate,
-        line_value,
-        previous_certified,
-        this_certified,
-        created_at
-      FROM payment_certificate_lines
-      WHERE certificate_id = $1
-      ORDER BY po_number, line_index
-      `,
-      [id]
-    );
+    const cert = head.rows[0];
+    const payload = cert.payload || {};
+    const lines = Array.isArray(payload.lines) ? payload.lines : [];
 
-    res.json({ certificate: head.rows[0], lines: lines.rows });
+    res.json({
+      certificate: mapCertificateRow(cert),
+      lines,
+    });
   } catch (err) {
     console.error("[payments] cert preview error:", err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: err.message || "Server error" });
   }
 });
 
 /**
  * GET /api/payments/po-lines?jobId=3&supplierId=sup-xxx
- * Pulls "certifiable" PO lines (flattened) and includes certified-to-date + remaining.
+ * Pulls certifiable PO lines (flattened) and includes certifiedToDate + remaining.
  *
- * IMPORTANT:
- * - POs are client-scoped (active client)
- * - Cert sums are currently not client-scoped unless you add client_id to payments tables later
+ * - POs are client-scoped (active client_id)
+ * - Certified-to-date is computed from payment_certificates.payload->lines JSONB
+ *   so we do NOT depend on payment_certificate_lines existing/being correct.
  */
 router.get("/po-lines", async (req, res) => {
   try {
@@ -202,19 +234,22 @@ router.get("/po-lines", async (req, res) => {
     const active = await getActiveClient();
     if (!active) return res.status(404).json({ error: "No active client set" });
 
-    // 1) Certified-to-date totals for this job+supplier across ALL existing certs
+    // 1) Certified-to-date totals for this client+job+supplier across ALL existing certs
+    //    Extract payload.lines[] items: { poNumber, lineIndex, thisCertified }
     const certSums = await query(
       `
       SELECT
-        l.po_number,
-        l.line_index,
-        COALESCE(SUM(l.this_certified), 0) AS certified_to_date
-      FROM payment_certificate_lines l
-      JOIN payment_certificates c ON c.id = l.certificate_id
-      WHERE c.job_id = $1 AND c.supplier_id = $2
-      GROUP BY l.po_number, l.line_index
+        (li->>'poNumber') AS po_number,
+        (li->>'lineIndex')::int AS line_index,
+        COALESCE(SUM( (li->>'thisCertified')::numeric ), 0) AS certified_to_date
+      FROM payment_certificates c
+      JOIN LATERAL jsonb_array_elements(COALESCE(c.payload->'lines', '[]'::jsonb)) AS li ON TRUE
+      WHERE c.client_id = $1
+        AND c.job_id = $2
+        AND c.supplier_id = $3
+      GROUP BY (li->>'poNumber'), (li->>'lineIndex')::int
       `,
-      [String(jobId), String(supplierId)]
+      [active.id, asText(jobId), asText(supplierId)]
     );
 
     const certifiedMap = new Map();
@@ -240,8 +275,8 @@ router.get("/po-lines", async (req, res) => {
       const poJobId = payload?.job?.id;
       const poSupplierId = payload?.supplierId;
 
-      if (String(poJobId) !== String(jobId)) continue;
-      if (String(poSupplierId) !== String(supplierId)) continue;
+      if (asText(poJobId) !== asText(jobId)) continue;
+      if (asText(poSupplierId) !== asText(supplierId)) continue;
 
       if (String(payload.status || "").toLowerCase() !== "approved") continue;
       if (payload.archived === true) continue;
@@ -258,7 +293,6 @@ router.get("/po-lines", async (req, res) => {
         const certifiedToDate = num(certifiedMap.get(key) || 0);
         const remaining = Math.max(0, lineValue - certifiedToDate);
 
-        // Hide fully certified lines
         if (remaining <= 0) return;
 
         out.push({
@@ -285,94 +319,86 @@ router.get("/po-lines", async (req, res) => {
     res.json({ count: out.length, lines: out });
   } catch (err) {
     console.error("[payments] po-lines error:", err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: err.message || "Server error" });
   }
 });
 
 /**
  * POST /api/payments/certificates
- * Creates a DRAFT certificate + snapshots selected lines.
+ * Creates a DRAFT certificate in payment_certificates (client-scoped) with payload JSONB.
  *
- * Body:
+ * Body (supports your existing shape):
  * {
  *   "jobId": 3,
  *   "supplierId": "sup-...",
  *   "periodFrom": "2026-02-01",
- *   "periodTo": "2026-02-29",
- *   "notes": "",
+ *   "periodTo": "2026-02-28",   // must be a real date
+ *   "periodEnd": "2026-02-28",  // optional alternative to periodTo
+ *   "notes": "Test certificate",
  *   "lines": [
  *     { "poNumber": "S0001", "lineIndex": 0, "thisCertified": 500 }
- *   ]
+ *   ],
+ *   "settings": { "vatRate": 0.2, "retentionRate": 0.05 },
+ *   "deductions": { "contra": 0 }
  * }
+ *
+ * DB inserts:
+ * - client_id
+ * - job_id, supplier_id
+ * - certificate_number, period_from, period_to
+ * - status, payload (jsonb)
  */
 router.post("/certificates", async (req, res) => {
   const dbClient = await pool.connect();
 
   try {
-    const { jobId, supplierId, periodFrom, periodTo, notes, lines } =
-      req.body || {};
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const body = req.body || {};
+    const jobId = body.jobId;
+    const supplierId = body.supplierId;
 
     if (!jobId || !supplierId) {
       return res
         .status(400)
         .json({ message: "jobId and supplierId are required" });
     }
-    if (!Array.isArray(lines) || lines.length === 0) {
+    if (!Array.isArray(body.lines) || body.lines.length === 0) {
       return res.status(400).json({ message: "lines[] is required" });
     }
 
-    const active = await getActiveClient();
-    if (!active) return res.status(404).json({ error: "No active client set" });
+    // Resolve period end
+    const periodFrom = body.periodFrom || null;
+    const periodTo = body.periodTo || body.periodEnd || null;
 
     await dbClient.query("BEGIN");
 
-    // Next certificate number (per job+supplier)
     const nextNoRes = await dbClient.query(
       `
       SELECT COALESCE(MAX(certificate_number), 0) + 1 AS next_no
       FROM payment_certificates
-      WHERE job_id = $1 AND supplier_id = $2
+      WHERE client_id = $1 AND job_id = $2 AND supplier_id = $3
       `,
-      [String(jobId), String(supplierId)]
+      [active.id, asText(jobId), asText(supplierId)]
     );
-    const certificateNumber = Number(nextNoRes.rows[0]?.next_no || 1);
+    const certNo = Number(nextNoRes.rows[0]?.next_no || 1);
 
-    // Create header
-    const headRes = await dbClient.query(
-      `
-      INSERT INTO payment_certificates
-        (job_id, supplier_id, certificate_number, period_from, period_to, status, notes)
-      VALUES
-        ($1, $2, $3, $4, $5, 'DRAFT', $6)
-      RETURNING
-        id, job_id, supplier_id, certificate_number, period_from, period_to, status, notes, created_at
-      `,
-      [
-        String(jobId),
-        String(supplierId),
-        certificateNumber,
-        periodFrom || null,
-        periodTo || null,
-        notes || null,
-      ]
-    );
-
-    const certificate = headRes.rows[0];
-
-    // Previous certified map
+    // Build a certified-to-date map BEFORE this new cert (for previousCertified)
     const sumsRes = await dbClient.query(
       `
       SELECT
-        l.po_number,
-        l.line_index,
-        COALESCE(SUM(l.this_certified), 0) AS certified_to_date
-      FROM payment_certificate_lines l
-      JOIN payment_certificates c ON c.id = l.certificate_id
-      WHERE c.job_id = $1 AND c.supplier_id = $2
-        AND c.id <> $3
-      GROUP BY l.po_number, l.line_index
+        (li->>'poNumber') AS po_number,
+        (li->>'lineIndex')::int AS line_index,
+        COALESCE(SUM( (li->>'thisCertified')::numeric ), 0) AS certified_to_date
+      FROM payment_certificates c
+      JOIN LATERAL jsonb_array_elements(COALESCE(c.payload->'lines', '[]'::jsonb)) AS li ON TRUE
+      WHERE c.client_id = $1
+        AND c.job_id = $2
+        AND c.supplier_id = $3
+      GROUP BY (li->>'poNumber'), (li->>'lineIndex')::int
       `,
-      [String(jobId), String(supplierId), certificate.id]
+      [active.id, asText(jobId), asText(supplierId)]
     );
 
     const prevMap = new Map();
@@ -380,8 +406,15 @@ router.post("/certificates", async (req, res) => {
       prevMap.set(`${r.po_number}::${r.line_index}`, num(r.certified_to_date));
     }
 
-    // Fetch POs needed for snapshotting (ACTIVE CLIENT ONLY)
-    const poNumbers = [...new Set(lines.map((l) => String(l.poNumber)))];
+    // Snapshot the required PO lines from purchase_orders (client scoped)
+    const requested = body.lines.map((l) => ({
+      poNumber: asText(l.poNumber),
+      lineIndex: Number(l.lineIndex),
+      thisCertified: num(l.thisCertified),
+    }));
+
+    const poNumbers = [...new Set(requested.map((l) => l.poNumber))];
+
     const poRes = await dbClient.query(
       `
       SELECT po_number, payload
@@ -394,61 +427,112 @@ router.post("/certificates", async (req, res) => {
     const poByNumber = new Map();
     for (const r of poRes.rows) {
       const p = r.payload;
-      const key = p && p.poNumber ? String(p.poNumber) : String(r.po_number);
+      const key = p && p.poNumber ? asText(p.poNumber) : asText(r.po_number);
       poByNumber.set(key, p);
     }
 
-    for (const l of lines) {
-      const poNumber = String(l.poNumber);
-      const lineIndex = Number(l.lineIndex);
-      const thisCertified = num(l.thisCertified);
-
-      const payload = poByNumber.get(poNumber);
+    const snapLines = [];
+    for (const l of requested) {
+      const payload = poByNumber.get(l.poNumber);
       if (!payload) {
-        throw new Error(`PO not found for poNumber=${poNumber} (active client scope)`);
+        throw new Error(
+          `PO not found for poNumber=${l.poNumber} (active client scope)`
+        );
       }
 
-      const item = Array.isArray(payload.items) ? payload.items[lineIndex] : null;
+      const item = Array.isArray(payload.items)
+        ? payload.items[l.lineIndex]
+        : null;
       if (!item) {
-        throw new Error(`Line not found for poNumber=${poNumber}, lineIndex=${lineIndex}`);
+        throw new Error(
+          `Line not found for poNumber=${l.poNumber}, lineIndex=${l.lineIndex}`
+        );
       }
 
       const qty = num(item.qty);
       const rate = num(item.rate);
       const lineValue = num(item.amount) || qty * rate;
-      const prevCertified = num(prevMap.get(`${poNumber}::${lineIndex}`) || 0);
 
-      await dbClient.query(
-        `
-        INSERT INTO payment_certificate_lines
-          (certificate_id, po_number, line_index, cost_code, description, qty, rate, line_value, previous_certified, this_certified)
-        VALUES
-          ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        `,
-        [
-          certificate.id,
-          poNumber,
-          lineIndex,
-          item.costCode || null,
-          item.description || null,
-          qty,
-          rate,
-          lineValue,
-          prevCertified,
-          thisCertified,
-        ]
+      const previousCertified = num(
+        prevMap.get(`${l.poNumber}::${l.lineIndex}`) || 0
       );
+
+      snapLines.push({
+        poNumber: l.poNumber,
+        lineIndex: l.lineIndex,
+        costCode: item.costCode || "",
+        description: item.description || "",
+        uom: item.uom || "",
+        qty,
+        rate,
+        lineValue,
+        previousCertified,
+        thisCertified: l.thisCertified,
+        toDate: previousCertified + l.thisCertified,
+        remaining: Math.max(0, lineValue - (previousCertified + l.thisCertified)),
+      });
     }
 
+    const payload = {
+      header: {
+        clientCode: active.code,
+        clientId: active.id,
+        jobId: asText(jobId),
+        supplierId: asText(supplierId),
+        certNo,
+        status: "Draft",
+        periodFrom,
+        periodTo,
+        notes: body.notes || "",
+      },
+      settings: {
+        vatRate: num(body.settings?.vatRate ?? 0.2),
+        retentionRate: num(body.settings?.retentionRate ?? 0.05),
+      },
+      deductions: {
+        contra: num(body.deductions?.contra ?? 0),
+      },
+      lines: snapLines,
+    };
+
+    const now = isoNow();
+
+    const insertRes = await dbClient.query(
+      `
+      INSERT INTO payment_certificates
+        (client_id, job_id, supplier_id, certificate_number, period_from, period_to, status, notes, payload, created_at, updated_at)
+      VALUES
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING
+        id, client_id, job_id, supplier_id, certificate_number, period_from, period_to, status, notes, payload, created_at, updated_at
+      `,
+      [
+        active.id,
+        asText(jobId),
+        asText(supplierId),
+        certNo,
+        periodFrom || null,
+        periodTo || null,
+        "Draft",
+        body.notes || "",
+        payload,
+        now,
+        now,
+      ]
+    );
+
     await dbClient.query("COMMIT");
-    res.status(201).json({ certificate });
+
+    const cert = insertRes.rows[0];
+
+    res.status(201).json({
+      certificate: mapCertificateRow(cert),
+    });
   } catch (err) {
     console.error("[payments] create certificate error:", err);
     try {
       await dbClient.query("ROLLBACK");
-    } catch (e) {
-      // ignore rollback errors
-    }
+    } catch (_) {}
     res.status(500).json({ message: err.message || "Server error" });
   } finally {
     dbClient.release();

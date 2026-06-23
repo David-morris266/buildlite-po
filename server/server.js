@@ -4,7 +4,8 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
-const { init } = require("./db");
+const { init, pool } = require("./db");
+const { getHealthStatus } = require("./services/health");
 
 // Routers
 const poRoutes = require("./routes/poRoutes");           // /api/po...
@@ -36,8 +37,9 @@ app.use(express.json({ limit: "2mb" }));
 /* ------------------------------------------------------------ *
  * HEALTH
  * ------------------------------------------------------------ */
-app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "Build Lite API" });
+app.get("/health", async (_req, res) => {
+  const status = await getHealthStatus(pool);
+  res.status(status.ok ? 200 : 503).json(status);
 });
 
 /* ------------------------------------------------------------ *

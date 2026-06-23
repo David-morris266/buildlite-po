@@ -2,6 +2,7 @@
 const express = require("express");
 const { pool } = require("../db"); // keep pool for consistency with your existing DB helper style
 const { getActiveClient } = require("../services/activeClient");
+const { isProduction } = require("../utils/env");
 const { mapPOToContext, renderPOToPDF } = require("../services/pdf");
 
 const router = express.Router();
@@ -135,8 +136,12 @@ function pushHistory(po, action, by = "", note = "") {
  * ROUTES — DEBUG / LOOKUPS
  * ======================================= */
 
-// Debug POs
+// Debug POs (disabled in production)
 router.get("/po/_debug", async (_req, res) => {
+  if (isProduction()) {
+    return res.status(404).json({ message: "Not found" });
+  }
+
   const active = await getActiveClient();
   if (!active) return res.status(404).json({ error: "No active client set" });
 

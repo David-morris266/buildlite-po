@@ -1,0 +1,17 @@
+# Pre-migration row counts (Doc 20 §8.6)
+# Fill in BEFORE applying 001_baseline.sql to staging/production.
+# Date:
+# Operator:
+# Environment: [staging | production]
+
+-- Paste query output below:
+
+SELECT 'clients' AS tbl, COUNT(*) FROM clients
+UNION ALL SELECT 'purchase_orders', COUNT(*) FROM purchase_orders
+UNION ALL SELECT 'suppliers', COUNT(*) FROM suppliers
+UNION ALL SELECT 'cost_codes', COUNT(*) FROM cost_codes
+UNION ALL SELECT 'jobs', COUNT(*) FROM jobs
+UNION ALL SELECT 'payment_certificates', COUNT(*) FROM payment_certificates
+UNION ALL SELECT 'payment_certificate_lines', COUNT(*) FROM payment_certificate_lines;
+
+-- Expected production baseline (Doc 20 Appendix A): purchase_orders >= 13 (test data)

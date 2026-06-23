@@ -31,3 +31,9 @@ server/.cache/**
 
 # (optional) if you keep any zips in repo by mistake
 *.zip
+
+# Phase 0 audit backups (keep local, do not commit)
+Schema Audit/
+**/01-backup/
+**/*.dump
+**/*.sql.gz

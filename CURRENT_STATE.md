@@ -2,68 +2,114 @@
 
 ## Purpose
 
-This document records the current status of the BuildLite platform.
-
-It should be updated as functionality is added.
-
-This document represents the actual system rather than the target architecture.
+This document records the actual status of the BuildLite platform after Phase 0 implementation (code ready for review; staging/production deploy pending commercial sign-off).
 
 ---
 
 ## Repository
 
-Branch:
-buildlite-V1-1
-
-Repository:
-buildlite-po
+| Item | Value |
+|------|-------|
+| Branch | `buildlite-V1-1` |
+| Repository | `buildlite-po` / `dmcc-cvr-system` |
 
 ---
 
-## Current Module Status
+## Release track (approved)
+
+Phases 0 → 1 → 2 → 3A (Track A — JSON purchase orders retained).
+
+**Phase 0:** Implemented in codebase — **not yet deployed to production** until backup + verification (P0-0) and staging tests pass.
+
+---
+
+## Module status
 
 | Module | Status | Notes |
-|----------|----------|----------|
-| User Login | Unknown | To Assess |
-| Projects | Unknown | To Assess |
-| Suppliers | Unknown | To Assess |
-| Cost Codes | Unknown | To Assess |
-| Purchase Orders | Working | Existing Module |
-| Variations | Not Built | Planned |
-| Measurement Schedules | Not Built | Planned |
-| Certificates | Not Built | Planned |
-| Contract Administration | Not Built | Planned |
-| Payment Compliance | Not Built | Planned |
-| CVR Dashboard | Not Built | Planned |
-| Reporting | Partial | To Assess |
-| Administration | Partial | To Assess |
+|--------|--------|-------|
+| Purchase Orders | Working | JSON in `purchase_orders.payload`; full UI (Form, List, Archive) |
+| Suppliers | Working | JSON payload; client-scoped |
+| Cost Codes | Working | DB table + seed from `server/data/cost_codes.json` |
+| Jobs | Working | Shared DB pool; `jobs` table via migrations |
+| Clients / Brand | Working | Active client resolution; brand profiles |
+| User Login | Mock only | `localStorage` identity — **Phase 1** |
+| Payment Certificates | Backend only | Routes aligned to production columns; no UI |
+| Variations | Not built | Planned |
+| CVR Dashboard | Not built | Planned |
+| Administration | Partial | No master-data admin UI — **Phase 2** |
 
 ---
 
-## Database
+## Database (Phase 0)
 
-To be assessed.
+| Item | Status |
+|------|--------|
+| Migration framework | `server/migrations/`, `npm run migrate` |
+| Baseline migration | `001_baseline.sql` |
+| Tenant keys migration | `002_tenant_keys.sql` (conditional — collision gate) |
+| Seed script | `npm run seed` — default client, cost codes, `client_id` backfill |
+| `db.js` init | Aligned with Doc 20 production baseline |
+| Single connection pool | `jobRoutes.js` uses `../db` |
+| Schema reference | `docs/DATABASE.md` |
 
----
-
-## API Routes
-
-To be assessed.
-
----
-
-## Front End Screens
-
-To be assessed.
+Production has 8 tables including legacy `payment_certificate_lines`. Fresh deploy does not auto-create `payment_certificate_lines`.
 
 ---
 
-## Technical Debt
+## API (Phase 0 changes)
 
-To be assessed.
+| Endpoint / area | Change |
+|-----------------|--------|
+| `GET /health` | DB ping, required tables, pending migrations |
+| `GET /api/po/_debug` | 404 when `NODE_ENV=production` |
+| `GET /api/payments/_debug` | 404 when `NODE_ENV=production` |
+| Payment certificate routes | Columns: `certificate_number`, `period_from`, `period_to` |
+
+No new business endpoints. No authentication middleware.
 
 ---
 
-## Next Action
+## Frontend (Phase 0)
 
-Perform full codebase assessment before any new development.
+| Change | Detail |
+|--------|--------|
+| `client/src/api.js` | Uses `VITE_API_URL` (fallback `http://localhost:3001`) |
+
+PO UI unchanged. Role toggle and mock login unchanged.
+
+---
+
+## Technical debt (remaining)
+
+| Item | Phase |
+|------|-------|
+| Real authentication | Phase 1 |
+| RBAC; remove role toggle | Phase 3A |
+| Master-data admin CRUD | Phase 2 |
+| Unauthenticated DELETE/approve on POs | Phase 1+ |
+| Global `po_number` PK (until `002` applied) | Phase 0 conditional |
+| `server/routes/supplierRoutes.js` orphan | Later cleanup |
+
+---
+
+## Repo hygiene (Phase 0)
+
+Removed: `Replacement filed/` (obsolete PO backup).
+
+---
+
+## Next actions (before production deploy)
+
+1. Commercial manager: backup + Doc 20 §8 verification (P0-0).
+2. Developer: apply migrations + seed on **staging**; run test plan (T8–T27).
+3. Record results in `docs/phase0/migration-run-log.md`.
+4. Production deploy after staging sign-off (T28–T31).
+5. **Phase 1** starts only after Phase 0 commercial sign-off.
+
+---
+
+## Documentation
+
+- `docs/DATABASE.md` — schema, indexes, verification SQL, rollback
+- `docs/phase0/migration-run-log.md` — deploy evidence template
+- `server/migrations/README.md` — migration ordering

@@ -1,12 +1,14 @@
-// server/db.js
+// server/db.js — single Postgres pool; init aligned with Phase 0 migrations (Doc 20)
 require("dotenv").config();
+
 const { Pool } = require("pg");
+const { isDbConfigured } = require("./utils/env");
 
 const connectionString = process.env.DATABASE_URL;
 
-if (!connectionString) {
+if (!isDbConfigured()) {
   console.warn(
-    "[DB] DATABASE_URL not set. The API will not be able to persist data on Render."
+    "[DB] DATABASE_URL not set. The API will not be able to persist data."
   );
 }
 
@@ -15,82 +17,139 @@ const pool = new Pool({
   ssl: connectionString ? { rejectUnauthorized: false } : false,
 });
 
-// Helper so routes can call query(...)
 function query(text, params) {
   return pool.query(text, params);
 }
 
-// Create tables if they don't exist
+/**
+ * Fallback init for fresh deploys when migrations have not run yet.
+ * Migrations (001_baseline.sql) are the source of truth.
+ * Does NOT create payment_certificate_lines (deprecated for new deploys).
+ */
 async function init() {
-  if (!connectionString) {
+  if (!isDbConfigured()) {
     console.warn("[DB] Skipping init because DATABASE_URL is missing.");
     return;
   }
 
-  // Ensure UUID generator exists (needed for gen_random_uuid())
   await pool.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`);
 
-  /* ------------------------------------------------------------ *
-   * CORE TABLES
-   * ------------------------------------------------------------ */
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS clients (
+      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      code        TEXT NOT NULL UNIQUE,
+      name        TEXT NOT NULL,
+      is_active   BOOLEAN NOT NULL DEFAULT false,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS client_brand_profiles (
+      client_id   UUID PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
+      logo_url    TEXT,
+      brand       JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS jobs (
+      id           SERIAL PRIMARY KEY,
+      job_code     TEXT,
+      job_number   TEXT,
+      name         TEXT,
+      site_address TEXT,
+      site_manager TEXT,
+      site_phone   TEXT,
+      notes        TEXT,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS suppliers (
-      id      TEXT PRIMARY KEY,
-      name    TEXT NOT NULL,
-      payload JSONB NOT NULL
+      id        TEXT PRIMARY KEY,
+      name      TEXT NOT NULL,
+      payload   JSONB NOT NULL,
+      client_id UUID REFERENCES clients(id)
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES clients(id);
   `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS purchase_orders (
       po_number TEXT PRIMARY KEY,
-      payload   JSONB NOT NULL
+      payload   JSONB NOT NULL,
+      client_id UUID REFERENCES clients(id)
     );
   `);
 
-  /* ------------------------------------------------------------ *
-   * PAYMENTS / CERTIFICATES (UUID-based)
-   * ------------------------------------------------------------ */
+  await pool.query(`
+    ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES clients(id);
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cost_codes (
+      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      client_id   UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      code        TEXT NOT NULL,
+      sub_heading TEXT,
+      trade       TEXT,
+      element     TEXT,
+      is_active   BOOLEAN NOT NULL DEFAULT true,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (client_id, code)
+    );
+  `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS payment_certificates (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      job_id TEXT NOT NULL,
-      supplier_id TEXT NOT NULL,
-      certificate_number INTEGER NOT NULL,
-      period_from DATE,
-      period_to DATE,
-      status TEXT NOT NULL DEFAULT 'DRAFT',
-      notes TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      client_id          UUID REFERENCES clients(id),
+      job_id             TEXT NOT NULL,
+      supplier_id        TEXT NOT NULL,
+      certificate_number INTEGER,
+      period_from        DATE,
+      period_to          DATE,
+      status             TEXT NOT NULL DEFAULT 'Draft',
+      notes              TEXT,
+      payload            JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS payment_certificate_lines (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      certificate_id UUID NOT NULL
-        REFERENCES payment_certificates(id)
-        ON DELETE CASCADE,
-      po_number TEXT NOT NULL,
-      line_index INTEGER NOT NULL,
-      cost_code TEXT,
-      description TEXT,
-      qty NUMERIC,
-      rate NUMERIC,
-      line_value NUMERIC,
-      previous_certified NUMERIC NOT NULL DEFAULT 0,
-      this_certified NUMERIC NOT NULL DEFAULT 0,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
+    CREATE INDEX IF NOT EXISTS idx_purchase_orders_client_id
+      ON purchase_orders (client_id);
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_suppliers_client_id
+      ON suppliers (client_id);
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cost_codes_client_active_code
+      ON cost_codes (client_id, is_active, code);
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_payment_certificates_client_job_supplier
+      ON payment_certificates (client_id, job_id, supplier_id);
   `);
 
-  console.log("✅ DB tables ready (core + payments)");
+  console.log("[DB] Tables ready (Phase 0 baseline)");
 }
 
 module.exports = {
   pool,
   query,
   init,
+  isDbConfigured,
 };
