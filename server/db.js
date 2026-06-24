@@ -14,7 +14,10 @@ if (!isDbConfigured()) {
 
 const pool = new Pool({
   connectionString,
-  ssl: connectionString ? { rejectUnauthorized: false } : false,
+  ssl:
+    process.env.DATABASE_SSL === "true"
+      ? { rejectUnauthorized: false }
+      : false,
 });
 
 function query(text, params) {

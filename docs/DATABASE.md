@@ -128,7 +128,14 @@ npm run seed       # default client, cost codes, backfill client_id
 npm start          # start API (calls db.init as fallback)
 ```
 
-Render: run `migrate` and `seed` before or as part of deploy. Set `NODE_ENV=production`.
+Render: run `migrate` and `seed` before or as part of deploy. Set `NODE_ENV=production` and `DATABASE_SSL=true`.
+
+Local: set `DATABASE_SSL=false` (local PostgreSQL does not use SSL by default).
+
+| Variable | Local | Render |
+|----------|-------|--------|
+| `DATABASE_URL` | `postgresql://…@localhost:5432/…` | Render internal or external URL |
+| `DATABASE_SSL` | `false` | `true` |
 
 Netlify: set `VITE_API_URL` to the API URL and redeploy frontend.
 
