@@ -3,21 +3,31 @@ import POForm from "./components/POForm";
 import POList from "./components/POList";
 import POArchive from "./components/POArchive";
 import BrandHeader from "./components/Brandheader";
+import SetupAssistant, { isSetupDismissed } from "./setup/SetupAssistant";
 import "./styles/brand.css";
 
-export default function App() {
-  const [tab, setTab] = useState("form"); // "form" | "list" | "archive"
+function shouldShowSetupAssistant() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("setup") === "1") return !isSetupDismissed();
+  return false;
+}
 
-  // Set a test identity/role (requester by default)
+export default function App() {
+  const [tab, setTab] = useState("form");
+  const [showSetup, setShowSetup] = useState(shouldShowSetupAssistant);
+
   useEffect(() => {
     localStorage.setItem("userEmail", "david@dmcommercialconsulting.co.uk");
     localStorage.setItem("userName", "David");
-    localStorage.setItem("userRole", "requester"); // requester sees "Send for approval"
+    localStorage.setItem("userRole", "requester");
   }, []);
+
+  if (showSetup) {
+    return <SetupAssistant onExit={() => setShowSetup(false)} />;
+  }
 
   return (
     <div id="app">
-      {/* Brand header at the very top */}
       <BrandHeader activeTab={tab} onTab={setTab} />
 
       <main style={{ padding: "16px", display: "grid", gap: "16px" }}>
@@ -28,20 +38,3 @@ export default function App() {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
