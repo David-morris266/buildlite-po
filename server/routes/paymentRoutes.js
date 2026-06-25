@@ -22,14 +22,19 @@ function isoNow() {
   return new Date().toISOString();
 }
 
-/** Map DB row to API shape (canonical + legacy aliases). */
+/** Map DB row to API shape (production legacy + canonical aliases). */
 function mapCertificateRow(r) {
   const payload = r.payload || {};
-  const certNo = r.certificate_number ?? r.cert_no ?? null;
+  const certNo =
+    r.legacy_cert_no ?? r.certificate_number ?? r.cert_no ?? null;
   const periodFrom =
     r.period_from ?? payload?.header?.periodFrom ?? null;
   const periodTo =
-    r.period_to ?? r.period_end ?? payload?.header?.periodTo ?? null;
+    r.period_to ??
+    r.period_end ??
+    r.legacy_period_end ??
+    payload?.header?.periodTo ??
+    null;
 
   return {
     id: r.id,
@@ -106,8 +111,9 @@ router.get("/_debug", async (_req, res) => {
 });
 
 /**
- * Production schema (Doc 20 Appendix A):
- * certificate_number, period_from, period_to, payload (JSONB lines)
+ * Production schema (BL-006):
+ * legacy_cert_no, legacy_period_end, payload (JSONB lines);
+ * certificate_number / cert_no kept as API aliases
  */
 
 /**
@@ -140,9 +146,13 @@ router.get("/certificates", async (req, res) => {
         client_id,
         job_id,
         supplier_id,
+        legacy_cert_no,
+        legacy_period_end,
         certificate_number,
+        cert_no,
         period_from,
         period_to,
+        period_end,
         status,
         notes,
         payload,
@@ -182,9 +192,13 @@ router.get("/certificates/:id", async (req, res) => {
         client_id,
         job_id,
         supplier_id,
+        legacy_cert_no,
+        legacy_period_end,
         certificate_number,
+        cert_no,
         period_from,
         period_to,
+        period_end,
         status,
         notes,
         payload,
@@ -343,9 +357,9 @@ router.get("/po-lines", async (req, res) => {
  * }
  *
  * DB inserts:
- * - client_id
- * - job_id, supplier_id
- * - certificate_number, period_from, period_to
+ * - client_id, job_id, supplier_id
+ * - legacy_cert_no (production authority), legacy_period_end
+ * - certificate_number / cert_no / period_to / period_end (aliases)
  * - status, payload (jsonb)
  */
 router.post("/certificates", async (req, res) => {
@@ -376,7 +390,14 @@ router.post("/certificates", async (req, res) => {
 
     const nextNoRes = await dbClient.query(
       `
-      SELECT COALESCE(MAX(certificate_number), 0) + 1 AS next_no
+      SELECT COALESCE(
+        GREATEST(
+          COALESCE(MAX(legacy_cert_no), 0),
+          COALESCE(MAX(certificate_number), 0),
+          COALESCE(MAX(cert_no), 0)
+        ),
+        0
+      ) + 1 AS next_no
       FROM payment_certificates
       WHERE client_id = $1 AND job_id = $2 AND supplier_id = $3
       `,
@@ -500,17 +521,22 @@ router.post("/certificates", async (req, res) => {
     const insertRes = await dbClient.query(
       `
       INSERT INTO payment_certificates
-        (client_id, job_id, supplier_id, certificate_number, period_from, period_to, status, notes, payload, created_at, updated_at)
+        (client_id, job_id, supplier_id, legacy_cert_no, legacy_period_end,
+         certificate_number, cert_no, period_from, period_to, period_end,
+         status, notes, payload, created_at, updated_at)
       VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        ($1, $2, $3, $4, $5, $4, $4, $6, $7, $7, $8, $9, $10, $11, $12)
       RETURNING
-        id, client_id, job_id, supplier_id, certificate_number, period_from, period_to, status, notes, payload, created_at, updated_at
+        id, client_id, job_id, supplier_id, legacy_cert_no, legacy_period_end,
+        certificate_number, cert_no, period_from, period_to, period_end,
+        status, notes, payload, created_at, updated_at
       `,
       [
         active.id,
         asText(jobId),
         asText(supplierId),
         certNo,
+        periodTo || null,
         periodFrom || null,
         periodTo || null,
         "Draft",

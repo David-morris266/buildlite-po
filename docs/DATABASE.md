@@ -1,36 +1,36 @@
-# BuildLite Database Reference (Phase 0)
+# BuildLite Database Reference
 
-**Last updated:** Phase 0 implementation  
-**Authority:** Doc 20 Appendix A (live production inspection, 23 Jun 2026)  
+**Last updated:** BL-006 Production Schema Reconciliation  
+**Authority:** Render production clone inspection (Jun 2026)  
 **Track:** A — JSON purchase orders retained (Phase 3A); Doc 22 relational PO model deferred
 
 ---
 
 ## Overview
 
-BuildLite uses a single Postgres database (`buildlite_po_db` on Render). Phase 0 introduces:
+BuildLite uses a single Postgres database (`buildlite_po_db` on Render). Schema is managed via:
 
-- Versioned SQL migrations in `server/migrations/`
+- Versioned SQL migrations in `server/migrations/` (`001`, `002`, `003`)
 - `schema_migrations` tracking table
 - `npm run migrate` and `npm run seed` scripts
-- `db.js` init aligned with production (fallback for fresh deploy)
+- `db.js` init aligned with production (fallback when migrations have not run)
 
-**Migrations are the source of truth.** Do not edit applied migration files.
+**Production database is the source of truth.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files.
 
 ---
 
 ## Production tables (8)
 
-| Table | Purpose | Phase 0 notes |
-|-------|---------|---------------|
+| Table | Purpose | Notes |
+|-------|---------|-------|
 | `clients` | Tenant / organisation | UUID PK; one `is_active = true` |
-| `client_brand_profiles` | Branding per client | JSONB `brand`; optional `logo_url` |
+| `client_brand_profiles` | Branding per client | Flat TEXT columns (company details, logo, accent colour) |
 | `cost_codes` | Cost code master data | Scoped by `client_id`; unique `(client_id, code)` |
-| `jobs` | Project/job register | Serial PK; `client_id` added in `002` (conditional) |
+| `jobs` | Project/job register | Serial PK; `client_id` for tenant scope |
 | `suppliers` | Supplier master (JSON payload) | PK `id` (TEXT); `client_id` for scoping |
 | `purchase_orders` | PO documents (JSON payload) | PK `po_number`; `payload` JSONB; `client_id` |
-| `payment_certificates` | Payment certs (hybrid model) | Header columns + `payload` JSONB for lines |
-| `payment_certificate_lines` | Legacy line table | **Exists in production; deprecated for new deploys** — not created by `db.js` init |
+| `payment_certificates` | Payment certs (hybrid model) | `legacy_cert_no` + `payload` JSONB for lines |
+| `payment_certificate_lines` | Legacy line table | **Exists in production; deprecated for new deploys** |
 
 ### Operational table
 
@@ -40,53 +40,132 @@ BuildLite uses a single Postgres database (`buildlite_po_db` on Render). Phase 0
 
 ---
 
-## purchase_orders (current model)
+## clients
 
-Phase 0 **does not** add Doc 22 relational header/line columns.
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID | PK, default `gen_random_uuid()` |
+| `code` | TEXT | NOT NULL, UNIQUE |
+| `name` | TEXT | NOT NULL |
+| `is_active` | BOOLEAN | NOT NULL, default `false` |
+| `created_at` | TIMESTAMPTZ | NOT NULL, default `NOW()` |
+
+Production does **not** have `updated_at`. Environments that ran `001_baseline.sql` before BL-006 may retain that extra column (harmless).
+
+---
+
+## client_brand_profiles
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `client_id` | UUID | PK, FK → `clients.id` |
+| `legal_name` | TEXT | |
+| `trading_name` | TEXT | |
+| `company_number` | TEXT | |
+| `vat_number` | TEXT | |
+| `address_line1` | TEXT | |
+| `address_line2` | TEXT | |
+| `town` | TEXT | |
+| `county` | TEXT | |
+| `postcode` | TEXT | |
+| `phone` | TEXT | |
+| `email` | TEXT | |
+| `website` | TEXT | |
+| `pdf_footer_text` | TEXT | |
+| `logo_url` | TEXT | |
+| `accent_color` | TEXT | |
+| `updated_at` | TIMESTAMPTZ | NOT NULL, default `NOW()` |
+
+Seed inserts `(client_id)` only; all other columns are nullable.
+
+---
+
+## cost_codes
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID | PK |
+| `client_id` | UUID | NOT NULL, FK → `clients.id` |
+| `code` | TEXT | NOT NULL; unique with `client_id` |
+| `sub_heading` | TEXT | |
+| `trade` | TEXT | |
+| `element` | TEXT | |
+| `is_active` | BOOLEAN | NOT NULL, default `true` |
+
+Production does **not** have `created_at` / `updated_at`.
+
+---
+
+## jobs
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | SERIAL | PK |
+| `job_code` | TEXT | |
+| `job_number` | TEXT | |
+| `name` | TEXT | |
+| `site_address` | TEXT | |
+| `site_manager` | TEXT | |
+| `site_phone` | TEXT | |
+| `notes` | TEXT | |
+| `created_at` | TIMESTAMPTZ | NOT NULL |
+| `updated_at` | TIMESTAMPTZ | NOT NULL |
+| `client_id` | UUID | FK → `clients.id`; routes filter by active client |
+
+---
+
+## purchase_orders (current model)
 
 | Column | Type | Notes |
 |--------|------|-------|
 | `po_number` | TEXT | Primary key (global; tenant composite in `002`) |
-| `payload` | JSONB | Full PO document (items, job, supplier, approval, etc.) |
+| `payload` | JSONB | Full PO document |
 | `client_id` | UUID | FK → `clients.id` |
 
 ---
 
 ## payment_certificates (hybrid model)
 
-Production uses canonical column names. Routes were aligned in Phase 0.
+Production authority for certificate numbering is **`legacy_cert_no`**, enforced by unique index `ux_paycert_client_job_supplier_no`.
 
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | UUID | PK |
-| `client_id` | UUID | Tenant scope |
-| `job_id` | TEXT | References job (serial id as text) |
-| `supplier_id` | TEXT | Supplier PK |
-| `certificate_number` | INTEGER | Per client+job+supplier sequence |
-| `period_from` | DATE | Valuation period start |
-| `period_to` | DATE | Valuation period end |
+| `client_id` | UUID | NOT NULL in production; FK → `clients.id` |
+| `job_id` | TEXT | Nullable in production |
+| `supplier_id` | TEXT | Nullable in production |
+| `legacy_cert_no` | INTEGER | NOT NULL; per client+job+supplier sequence |
+| `legacy_period_end` | DATE | Production period end |
 | `status` | TEXT | e.g. Draft |
-| `notes` | TEXT | Optional |
 | `payload` | JSONB | Lines, settings, deductions |
 | `created_at` / `updated_at` | TIMESTAMPTZ | Audit timestamps |
+| `certificate_number` | INTEGER | Alias; backfilled from `legacy_cert_no` |
+| `cert_no` | INTEGER | Legacy alias |
+| `period_from` | DATE | |
+| `period_to` | DATE | Alias |
+| `period_end` | DATE | Legacy alias |
+| `notes` | TEXT | |
 
-**Legacy columns** (`cert_no`, `period_end`) may exist in older environments. Migration `001` backfills `certificate_number` / `period_to` from them. API responses include both canonical and legacy alias fields.
-
-**Lines storage:** Primary path is `payload.lines[]` JSONB. `payment_certificate_lines` table exists in production but is not used by current routes.
+**Lines storage:** Primary path is `payload.lines[]` JSONB. `payment_certificate_lines` exists in production but is not used by current routes.
 
 ---
 
-## Indexes (Phase 0)
+## Indexes
 
 | Index | Table | Columns |
 |-------|-------|---------|
 | `idx_clients_is_active` | `clients` | `(is_active) WHERE is_active` |
 | `idx_purchase_orders_client_id` | `purchase_orders` | `(client_id)` |
 | `idx_suppliers_client_id` | `suppliers` | `(client_id)` |
+| `idx_cost_codes_client` | `cost_codes` | `(client_id)` |
 | `idx_cost_codes_client_active_code` | `cost_codes` | `(client_id, is_active, code)` |
 | `idx_payment_certificates_client_job_supplier` | `payment_certificates` | `(client_id, job_id, supplier_id)` |
+| `ix_paycert_client` | `payment_certificates` | `(client_id)` |
+| `ix_paycert_client_job` | `payment_certificates` | `(client_id, job_id)` |
+| `ix_paycert_client_supplier` | `payment_certificates` | `(client_id, supplier_id)` |
+| `ux_paycert_client_job_supplier_no` | `payment_certificates` | `(client_id, job_id, supplier_id, legacy_cert_no)` UNIQUE |
 
-### Conditional (`002_tenant_keys.sql`)
+### From `002_tenant_keys.sql`
 
 | Index | Columns |
 |-------|---------|
@@ -94,27 +173,15 @@ Production uses canonical column names. Routes were aligned in Phase 0.
 | `uq_suppliers_client_id` | `(client_id, id)` WHERE `client_id IS NOT NULL` |
 | `idx_jobs_client_id` | `(client_id)` |
 
-**Gate:** Apply `002` only when Doc 20 §8.7 and §8.8 collision checks return zero rows.
-
 ---
 
-## Schema drift register
+## Migration history
 
-| Area | Before Phase 0 | After Phase 0 |
-|------|----------------|---------------|
-| `db.js` init | Missing `clients`, `cost_codes`, `client_id`; wrong cert shape; auto-created `payment_certificate_lines` | Matches production baseline |
-| `jobRoutes.js` | Separate Pool + own `CREATE TABLE jobs` | Uses shared `db.js` pool |
-| `paymentRoutes.js` | Used `cert_no`, `period_end` | Uses `certificate_number`, `period_from`, `period_to` |
-| Migrations | None | `001_baseline`, `002_tenant_keys` |
-| Fresh deploy | Broken (missing tables/columns) | `migrate` + `seed` + `start` |
-
----
-
-## Doc 22 future gap (not Phase 0)
-
-Doc 22 specifies fully relational PO tables (`purchase_order_lines`, header columns, etc.). **Track A (approved scope) keeps JSON POs until Phase 3A stabilisation is complete.** Do not implement Doc 22 PO rebuild without explicit approval (Path 3B).
-
-Phase 1+ tables not yet created: `users`, `roles`, `user_roles`, `audit_log`, `system_settings`.
+| File | Purpose |
+|------|---------|
+| `001_baseline.sql` | Phase 0 additive baseline (frozen) |
+| `002_tenant_keys.sql` | Tenant keys + `jobs.client_id` (frozen) |
+| `003_reconcile_production.sql` | BL-006: align with Render production schema |
 
 ---
 
@@ -123,30 +190,29 @@ Phase 1+ tables not yet created: `users`, `roles`, `user_roles`, `audit_log`, `s
 From `server/`:
 
 ```bash
-npm run migrate    # apply pending SQL
-npm run seed       # default client, cost codes, backfill client_id
+npm run migrate    # apply pending SQL (001 → 002 → 003)
+npm run seed       # default client, cost codes, brand profile, client_id backfill
 npm start          # start API (calls db.init as fallback)
 ```
 
 Render: run `migrate` and `seed` before or as part of deploy. Set `NODE_ENV=production` and `DATABASE_SSL=true`.
 
-Local: set `DATABASE_SSL=false` (local PostgreSQL does not use SSL by default).
+Local: set `DATABASE_SSL=false`.
 
 | Variable | Local | Render |
 |----------|-------|--------|
 | `DATABASE_URL` | `postgresql://…@localhost:5432/…` | Render internal or external URL |
 | `DATABASE_SSL` | `false` | `true` |
 
-Netlify: set `VITE_API_URL` to the API URL and redeploy frontend.
-
 ---
 
-## Verification SQL (Doc 20 §8)
+## Verification SQL
 
-### Row counts (§8.6)
+### Row counts
 
 ```sql
 SELECT 'clients' AS tbl, COUNT(*) FROM clients
+UNION ALL SELECT 'client_brand_profiles', COUNT(*) FROM client_brand_profiles
 UNION ALL SELECT 'purchase_orders', COUNT(*) FROM purchase_orders
 UNION ALL SELECT 'suppliers', COUNT(*) FROM suppliers
 UNION ALL SELECT 'cost_codes', COUNT(*) FROM cost_codes
@@ -155,17 +221,34 @@ UNION ALL SELECT 'payment_certificates', COUNT(*) FROM payment_certificates
 UNION ALL SELECT 'payment_certificate_lines', COUNT(*) FROM payment_certificate_lines;
 ```
 
-### Collision checks (§8.7 / §8.8) — gate for `002`
+### client_id backfill check
 
 ```sql
--- 8.7 PO number collisions across clients
+SELECT COUNT(*) FILTER (WHERE client_id IS NULL) AS po_unscoped FROM purchase_orders;
+SELECT COUNT(*) FILTER (WHERE client_id IS NULL) AS sup_unscoped FROM suppliers;
+```
+
+### Schema reconciliation check
+
+```sql
+SELECT column_name FROM information_schema.columns
+WHERE table_name = 'client_brand_profiles' ORDER BY ordinal_position;
+
+SELECT column_name FROM information_schema.columns
+WHERE table_name = 'payment_certificates'
+  AND column_name IN ('legacy_cert_no', 'legacy_period_end')
+ORDER BY column_name;
+```
+
+### Collision checks (gate for `002`)
+
+```sql
 SELECT po_number, COUNT(DISTINCT client_id) AS clients
 FROM purchase_orders
 WHERE client_id IS NOT NULL
 GROUP BY po_number
 HAVING COUNT(DISTINCT client_id) > 1;
 
--- 8.8 Supplier ID collisions across clients
 SELECT id, COUNT(DISTINCT client_id) AS clients
 FROM suppliers
 WHERE client_id IS NOT NULL
@@ -173,14 +256,8 @@ GROUP BY id
 HAVING COUNT(DISTINCT client_id) > 1;
 ```
 
-### Active client (§8.9)
-
-```sql
-SELECT id, code, name, is_active FROM clients WHERE is_active = true;
-```
-
 ---
 
 ## Rollback
 
-Phase 0 has no automatic down migrations. Restore from `pg_dump` backup if migration fails or data is wrong. See `docs/phase0/migration-run-log.md`.
+No automatic down migrations. Restore from `pg_dump` backup if migration fails or data is wrong. See `docs/phase0/migration-run-log.md`.

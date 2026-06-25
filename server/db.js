@@ -1,4 +1,4 @@
-// server/db.js — single Postgres pool; init aligned with Phase 0 migrations (Doc 20)
+// server/db.js — single Postgres pool; init aligned with production (BL-006 / 003)
 require("dotenv").config();
 
 const { Pool } = require("pg");
@@ -25,8 +25,8 @@ function query(text, params) {
 }
 
 /**
- * Fallback init for fresh deploys when migrations have not run yet.
- * Migrations (001_baseline.sql) are the source of truth.
+ * Fallback init when migrations have not run yet.
+ * Shape matches Render production after 001 + 002 + 003_reconcile_production.
  * Does NOT create payment_certificate_lines (deprecated for new deploys).
  */
 async function init() {
@@ -43,20 +43,55 @@ async function init() {
       code        TEXT NOT NULL UNIQUE,
       name        TEXT NOT NULL,
       is_active   BOOLEAN NOT NULL DEFAULT false,
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS client_brand_profiles (
-      client_id   UUID PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
-      logo_url    TEXT,
-      brand       JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      client_id         UUID PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
+      legal_name        TEXT,
+      trading_name      TEXT,
+      company_number    TEXT,
+      vat_number        TEXT,
+      address_line1     TEXT,
+      address_line2     TEXT,
+      town              TEXT,
+      county            TEXT,
+      postcode          TEXT,
+      phone             TEXT,
+      email             TEXT,
+      website           TEXT,
+      pdf_footer_text   TEXT,
+      logo_url          TEXT,
+      accent_color      TEXT,
+      updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  const brandProfileColumns = [
+    "legal_name TEXT",
+    "trading_name TEXT",
+    "company_number TEXT",
+    "vat_number TEXT",
+    "address_line1 TEXT",
+    "address_line2 TEXT",
+    "town TEXT",
+    "county TEXT",
+    "postcode TEXT",
+    "phone TEXT",
+    "email TEXT",
+    "website TEXT",
+    "pdf_footer_text TEXT",
+    "logo_url TEXT",
+    "accent_color TEXT",
+    "updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+  ];
+  for (const col of brandProfileColumns) {
+    await pool.query(
+      `ALTER TABLE client_brand_profiles ADD COLUMN IF NOT EXISTS ${col};`
+    );
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS jobs (
@@ -69,8 +104,13 @@ async function init() {
       site_phone   TEXT,
       notes        TEXT,
       created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      client_id    UUID REFERENCES clients(id)
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE jobs ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES clients(id);
   `);
 
   await pool.query(`
@@ -107,8 +147,6 @@ async function init() {
       trade       TEXT,
       element     TEXT,
       is_active   BOOLEAN NOT NULL DEFAULT true,
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (client_id, code)
     );
   `);
@@ -117,18 +155,40 @@ async function init() {
     CREATE TABLE IF NOT EXISTS payment_certificates (
       id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       client_id          UUID REFERENCES clients(id),
-      job_id             TEXT NOT NULL,
-      supplier_id        TEXT NOT NULL,
+      job_id             TEXT,
+      supplier_id        TEXT,
+      legacy_cert_no     INTEGER NOT NULL DEFAULT 1,
+      legacy_period_end  DATE,
+      status             TEXT NOT NULL DEFAULT 'Draft',
+      payload            JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       certificate_number INTEGER,
       period_from        DATE,
       period_to          DATE,
-      status             TEXT NOT NULL DEFAULT 'Draft',
       notes              TEXT,
-      payload            JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      cert_no            INTEGER,
+      period_end         DATE
     );
   `);
+
+  const payCertColumns = [
+    "legacy_cert_no INTEGER NOT NULL DEFAULT 1",
+    "legacy_period_end DATE",
+    "certificate_number INTEGER",
+    "period_from DATE",
+    "period_to DATE",
+    "notes TEXT",
+    "cert_no INTEGER",
+    "period_end DATE",
+    "payload JSONB NOT NULL DEFAULT '{}'::jsonb",
+    "updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+  ];
+  for (const col of payCertColumns) {
+    await pool.query(
+      `ALTER TABLE payment_certificates ADD COLUMN IF NOT EXISTS ${col};`
+    );
+  }
 
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_purchase_orders_client_id
@@ -139,6 +199,10 @@ async function init() {
       ON suppliers (client_id);
   `);
   await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cost_codes_client
+      ON cost_codes (client_id);
+  `);
+  await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_cost_codes_client_active_code
       ON cost_codes (client_id, is_active, code);
   `);
@@ -146,8 +210,28 @@ async function init() {
     CREATE INDEX IF NOT EXISTS idx_payment_certificates_client_job_supplier
       ON payment_certificates (client_id, job_id, supplier_id);
   `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS ix_paycert_client
+      ON payment_certificates (client_id);
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS ix_paycert_client_job
+      ON payment_certificates (client_id, job_id);
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS ix_paycert_client_supplier
+      ON payment_certificates (client_id, supplier_id);
+  `);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_paycert_client_job_supplier_no
+      ON payment_certificates (client_id, job_id, supplier_id, legacy_cert_no);
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_jobs_client_id
+      ON jobs (client_id);
+  `);
 
-  console.log("[DB] Tables ready (Phase 0 baseline)");
+  console.log("[DB] Tables ready (production-aligned baseline)");
 }
 
 module.exports = {

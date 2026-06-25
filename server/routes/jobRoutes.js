@@ -1,6 +1,7 @@
 // server/routes/jobRoutes.js
 const express = require("express");
 const { query, isDbConfigured } = require("../db");
+const { getActiveClient } = require("../services/activeClient");
 
 const router = express.Router();
 
@@ -26,16 +27,20 @@ router.get("/", async (req, res) => {
       return res.status(500).json({ message: "Database not configured" });
     }
 
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
     const q = (req.query.q || "").toString().trim().toLowerCase();
-    let sql = "SELECT * FROM jobs";
-    const params = [];
+    let sql = "SELECT * FROM jobs WHERE client_id = $1";
+    const params = [active.id];
 
     if (q) {
       sql += `
-        WHERE
-          LOWER(COALESCE(job_code,   '')) LIKE $1 OR
-          LOWER(COALESCE(job_number, '')) LIKE $1 OR
-          LOWER(COALESCE(name,       '')) LIKE $1
+        AND (
+          LOWER(COALESCE(job_code,   '')) LIKE $2 OR
+          LOWER(COALESCE(job_number, '')) LIKE $2 OR
+          LOWER(COALESCE(name,       '')) LIKE $2
+        )
       `;
       params.push(`%${q}%`);
     }
@@ -55,6 +60,9 @@ router.post("/", async (req, res) => {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
     }
+
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
 
     const body = req.body || {};
     const name = (body.name || "").toString().trim();
@@ -81,11 +89,20 @@ router.post("/", async (req, res) => {
     const { rows } = await query(
       `
         INSERT INTO jobs
-        (job_code, job_number, name, site_address, site_manager, site_phone, notes)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        (job_code, job_number, name, site_address, site_manager, site_phone, notes, client_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING *;
       `,
-      [jobCode, jobNumber, name, siteAddress, siteManager, sitePhone, notes]
+      [
+        jobCode,
+        jobNumber,
+        name,
+        siteAddress,
+        siteManager,
+        sitePhone,
+        notes,
+        active.id,
+      ]
     );
 
     res.status(201).json(mapRow(rows[0]));
@@ -101,9 +118,13 @@ router.get("/:id", async (req, res) => {
       return res.status(500).json({ message: "Database not configured" });
     }
 
-    const { rows } = await query("SELECT * FROM jobs WHERE id = $1", [
-      req.params.id,
-    ]);
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const { rows } = await query(
+      "SELECT * FROM jobs WHERE id = $1 AND client_id = $2",
+      [req.params.id, active.id]
+    );
 
     if (!rows.length) {
       return res.status(404).json({ message: "Job not found" });

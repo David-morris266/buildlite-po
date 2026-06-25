@@ -33,12 +33,12 @@ async function ensureDefaultClient(client) {
     const activeId = await getActiveClientId(client);
     if (!activeId) {
       await client.query(
-        `UPDATE clients SET is_active = true, updated_at = NOW()
+        `UPDATE clients SET is_active = true
          WHERE id = (SELECT id FROM clients ORDER BY created_at ASC LIMIT 1)`
       );
       console.log("[seed] Activated first existing client.");
     }
-    const id = (await getActiveClientId(client));
+    const id = await getActiveClientId(client);
     return id;
   }
 
@@ -54,8 +54,8 @@ async function ensureDefaultClient(client) {
 
 async function ensureBrandProfile(client, clientId) {
   await client.query(
-    `INSERT INTO client_brand_profiles (client_id, brand)
-     VALUES ($1, '{}'::jsonb)
+    `INSERT INTO client_brand_profiles (client_id)
+     VALUES ($1)
      ON CONFLICT (client_id) DO NOTHING`,
     [clientId]
   );

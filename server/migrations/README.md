@@ -6,8 +6,9 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 
 | File | Purpose |
 |------|---------|
-| `001_baseline.sql` | Additive schema alignment with production (Doc 20 Appendix A) |
-| `002_tenant_keys.sql` | Tenant-scoped unique indexes + `jobs.client_id` — **run only after collision checks** |
+| `001_baseline.sql` | Phase 0 additive baseline (frozen) |
+| `002_tenant_keys.sql` | Tenant-scoped unique indexes + `jobs.client_id` — **run only after collision checks** (frozen) |
+| `003_reconcile_production.sql` | BL-006: align schema with Render production (additive only) |
 
 ## Before applying to production
 
@@ -15,6 +16,7 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 2. Run Doc 20 §8 verification SQL and save results.
 3. Apply on **staging** first.
 4. For `002_tenant_keys.sql`: confirm queries 8.7 and 8.8 return **zero rows** before applying.
+5. Apply `003_reconcile_production.sql` after `001` and `002` (or after `001` if `002` was deferred).
 
 ## Commands
 
