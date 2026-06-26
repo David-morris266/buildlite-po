@@ -3,6 +3,7 @@ import SetupLayout from "./components/SetupLayout";
 import SetupStepFooter from "./components/SetupStepFooter";
 import SetupWelcome from "./screens/SetupWelcome";
 import SetupAboutBusiness from "./screens/SetupAboutBusiness";
+import SetupCompanyIdentity from "./screens/SetupCompanyIdentity";
 import {
   loadSetupDraft,
   saveSetupDraft,
@@ -34,6 +35,7 @@ export default function SetupAssistant({ onExit }) {
   const initial = loadSetupDraft();
   const [step, setStep] = useState(initial.step);
   const [business, setBusiness] = useState(initial.business);
+  const [identity, setIdentity] = useState(initial.identity);
   const [errors, setErrors] = useState({});
   const [notice, setNotice] = useState("");
 
@@ -42,13 +44,13 @@ export default function SetupAssistant({ onExit }) {
     window.setTimeout(() => setNotice(""), 4000);
   }, []);
 
-  const persist = useCallback((nextStep, nextBusiness) => {
-    saveSetupDraft(nextStep, nextBusiness);
+  const persist = useCallback((nextStep, nextBusiness, nextIdentity) => {
+    saveSetupDraft(nextStep, nextBusiness, nextIdentity);
   }, []);
 
   const handleStartSetup = () => {
     setStep(2);
-    persist(2, business);
+    persist(2, business, identity);
   };
 
   const handleDoLater = () => {
@@ -61,7 +63,7 @@ export default function SetupAssistant({ onExit }) {
     if (step <= 1) return;
     const prev = step - 1;
     setStep(prev);
-    persist(prev, business);
+    persist(prev, business, identity);
   };
 
   const handleBusinessContinue = () => {
@@ -78,13 +80,21 @@ export default function SetupAssistant({ onExit }) {
     if (!canContinue(validation)) return;
 
     setBusiness(nextBusiness);
-    persist(2, nextBusiness);
-    showNotice("Saved locally. The next step will arrive in BL-007A.03.");
+    setStep(3);
+    persist(3, nextBusiness, identity);
+  };
+
+  const handleIdentityContinue = () => {
+    persist(3, business, identity);
+    showNotice("Saved locally. The next step will arrive in BL-007A.04.");
   };
 
   const footer =
-    step === 2 ? (
-      <SetupStepFooter onBack={handleBack} onContinue={handleBusinessContinue} />
+    step === 2 || step === 3 ? (
+      <SetupStepFooter
+        onBack={handleBack}
+        onContinue={step === 2 ? handleBusinessContinue : handleIdentityContinue}
+      />
     ) : null;
 
   return (
@@ -107,10 +117,22 @@ export default function SetupAssistant({ onExit }) {
           value={business}
           onChange={(next) => {
             setBusiness(next);
-            persist(2, next);
+            persist(2, next, identity);
           }}
           errors={errors}
           onSubmit={handleBusinessContinue}
+        />
+      )}
+
+      {step === 3 && (
+        <SetupCompanyIdentity
+          identity={identity}
+          business={business}
+          onChange={(next) => {
+            setIdentity(next);
+            persist(3, business, next);
+          }}
+          onSubmit={handleIdentityContinue}
         />
       )}
     </SetupLayout>
