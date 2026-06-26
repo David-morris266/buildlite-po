@@ -166,9 +166,215 @@
   border-top: 1px solid var(--setup-line);
   padding: 16px clamp(20px, 5vw, 48px);
   background: rgba(11, 15, 17, 0.92);
+  backdrop-filter: blur(10px);
+}
+
+.setup-footer__inner {
+  max-width: var(--setup-max);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.setup-btn--secondary {
+  padding: 14px 22px;
+  border-radius: var(--setup-radius-sm);
+  background: transparent;
+  color: var(--setup-text);
+  border: 1px solid var(--setup-line);
+}
+
+.setup-btn--secondary:hover {
+  border-color: var(--setup-muted);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Step screens (BL-007A.02+) */
+.setup-step {
+  max-width: var(--setup-max);
+  margin: 0 auto;
+}
+
+.setup-step__header {
+  margin-bottom: 20px;
+}
+
+.setup-step__eyebrow {
+  margin: 0 0 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--setup-accent);
+}
+
+.setup-step__title {
+  margin: 0 0 12px;
+  font-size: clamp(1.5rem, 4vw, 2rem);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.setup-step__lead {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--setup-muted);
+  max-width: 52ch;
+}
+
+.setup-why {
+  margin-bottom: 24px;
+  padding: 14px 16px;
+  border-radius: var(--setup-radius-sm);
+  border: 1px solid rgba(124, 255, 107, 0.15);
+  background: rgba(124, 255, 107, 0.04);
+}
+
+.setup-why__label {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--setup-accent);
+}
+
+.setup-why__text {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--setup-muted);
+}
+
+.setup-form__card {
+  background: var(--setup-bg-elevated);
+  border: 1px solid var(--setup-line);
+  border-radius: var(--setup-radius);
+  padding: clamp(20px, 4vw, 28px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.02), 0 16px 40px rgba(0, 0, 0, 0.35);
+}
+
+.setup-form__group {
+  border: none;
+  margin: 0 0 28px;
+  padding: 0;
+  min-width: 0;
+}
+
+.setup-form__group--last {
+  margin-bottom: 0;
+}
+
+.setup-form__legend {
+  padding: 0;
+  margin: 0 0 16px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--setup-muted);
+}
+
+.setup-form__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 560px) {
+  .setup-form__row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.setup-field {
+  margin-bottom: 16px;
+}
+
+.setup-field:last-child {
+  margin-bottom: 0;
+}
+
+.setup-field__label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--setup-text);
+}
+
+.setup-field__optional {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--setup-muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.setup-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border-radius: var(--setup-radius-sm);
+  border: 1px solid var(--setup-line);
+  background: var(--setup-bg-card);
+  color: var(--setup-text);
+  font-family: inherit;
+  font-size: 1rem;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.setup-input::placeholder {
+  color: rgba(150, 160, 166, 0.65);
+}
+
+.setup-input:focus {
+  outline: none;
+  border-color: rgba(124, 255, 107, 0.45);
+  box-shadow: 0 0 0 3px var(--setup-accent-glow);
+}
+
+.setup-field--error .setup-input {
+  border-color: rgba(255, 92, 119, 0.55);
+}
+
+.setup-field--soft .setup-input {
+  border-color: rgba(255, 209, 102, 0.45);
+}
+
+.setup-field__hint,
+.setup-field__soft {
+  margin: 8px 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--setup-muted);
+}
+
+.setup-field__soft {
+  color: #ffd166;
+}
+
+.setup-field__error {
+  margin: 8px 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: #ff8fa0;
+}
+
+.setup-input--lookup-ready {
+  /* Hook for future postcode / Companies House lookup UI */
 }
 
 /* Welcome screen */
+
 .setup-welcome {
   max-width: var(--setup-max);
   margin: 0 auto;
@@ -423,5 +629,14 @@
   .setup-btn--link {
     width: 100%;
     text-align: center;
+  }
+
+  .setup-footer__inner {
+    flex-direction: column-reverse;
+  }
+
+  .setup-footer__inner .setup-btn {
+    width: 100%;
+    justify-content: center;
   }
 }

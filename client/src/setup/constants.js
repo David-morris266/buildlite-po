@@ -6,7 +6,7 @@ export const SETUP_TOTAL_STEPS = 7;
 
 export const SETUP_STEPS = [
   { id: "welcome", label: "Welcome" },
-  { id: "business", label: "About your business" },
+  { id: "business", label: "Tell us about your business" },
   { id: "identity", label: "Your company identity" },
   { id: "trade", label: "How you usually trade" },
   { id: "team", label: "Your commercial team" },

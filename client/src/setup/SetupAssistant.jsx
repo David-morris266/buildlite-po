@@ -1,6 +1,15 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import SetupLayout from "./components/SetupLayout";
+import SetupStepFooter from "./components/SetupStepFooter";
 import SetupWelcome from "./screens/SetupWelcome";
+import SetupAboutBusiness from "./screens/SetupAboutBusiness";
+import {
+  loadSetupDraft,
+  saveSetupDraft,
+  validateBusiness,
+  canContinue,
+  resolveTradingName,
+} from "./setupDraft";
 import "./setup.css";
 
 const STORAGE_KEY = "buildlite_setup_dismissed";
@@ -21,17 +30,25 @@ export function dismissSetupAssistant() {
   }
 }
 
-/**
- * Setup Assistant entry — BL-007A.01 Welcome only.
- * Later screens plug into step state in BL-007A.02+.
- */
 export default function SetupAssistant({ onExit }) {
-  const [step] = useState(1);
+  const initial = loadSetupDraft();
+  const [step, setStep] = useState(initial.step);
+  const [business, setBusiness] = useState(initial.business);
+  const [errors, setErrors] = useState({});
   const [notice, setNotice] = useState("");
 
-  const handleStartSetup = () => {
-    setNotice("The next step will open here in BL-007A.02.");
+  const showNotice = useCallback((message) => {
+    setNotice(message);
     window.setTimeout(() => setNotice(""), 4000);
+  }, []);
+
+  const persist = useCallback((nextStep, nextBusiness) => {
+    saveSetupDraft(nextStep, nextBusiness);
+  }, []);
+
+  const handleStartSetup = () => {
+    setStep(2);
+    persist(2, business);
   };
 
   const handleDoLater = () => {
@@ -39,17 +56,63 @@ export default function SetupAssistant({ onExit }) {
     onExit?.();
   };
 
+  const handleBack = () => {
+    setErrors({});
+    if (step <= 1) return;
+    const prev = step - 1;
+    setStep(prev);
+    persist(prev, business);
+  };
+
+  const handleBusinessContinue = () => {
+    const nextBusiness = {
+      ...business,
+      tradingName: resolveTradingName(
+        business.companyName,
+        business.tradingName
+      ),
+    };
+    const validation = validateBusiness(nextBusiness);
+    setErrors(validation);
+
+    if (!canContinue(validation)) return;
+
+    setBusiness(nextBusiness);
+    persist(2, nextBusiness);
+    showNotice("Saved locally. The next step will arrive in BL-007A.03.");
+  };
+
+  const footer =
+    step === 2 ? (
+      <SetupStepFooter onBack={handleBack} onContinue={handleBusinessContinue} />
+    ) : null;
+
   return (
-    <SetupLayout currentStep={step} showProgress>
+    <SetupLayout currentStep={step} showProgress footer={footer}>
       {notice ? (
         <div className="setup-toast" role="status">
           {notice}
         </div>
       ) : null}
-      <SetupWelcome
-        onStartSetup={handleStartSetup}
-        onDoLater={handleDoLater}
-      />
+
+      {step === 1 && (
+        <SetupWelcome
+          onStartSetup={handleStartSetup}
+          onDoLater={handleDoLater}
+        />
+      )}
+
+      {step === 2 && (
+        <SetupAboutBusiness
+          value={business}
+          onChange={(next) => {
+            setBusiness(next);
+            persist(2, next);
+          }}
+          errors={errors}
+          onSubmit={handleBusinessContinue}
+        />
+      )}
     </SetupLayout>
   );
 }
