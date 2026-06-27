@@ -4,10 +4,12 @@ import SetupStepFooter from "./components/SetupStepFooter";
 import SetupWelcome from "./screens/SetupWelcome";
 import SetupAboutBusiness from "./screens/SetupAboutBusiness";
 import SetupCompanyIdentity from "./screens/SetupCompanyIdentity";
+import SetupCompanyDefaults from "./screens/SetupCompanyDefaults";
 import {
   loadSetupDraft,
   saveSetupDraft,
   validateBusiness,
+  validateDefaults,
   canContinue,
   resolveTradingName,
 } from "./setupDraft";
@@ -36,6 +38,7 @@ export default function SetupAssistant({ onExit }) {
   const [step, setStep] = useState(initial.step);
   const [business, setBusiness] = useState(initial.business);
   const [identity, setIdentity] = useState(initial.identity);
+  const [defaults, setDefaults] = useState(initial.defaults);
   const [errors, setErrors] = useState({});
   const [notice, setNotice] = useState("");
 
@@ -44,13 +47,16 @@ export default function SetupAssistant({ onExit }) {
     window.setTimeout(() => setNotice(""), 4000);
   }, []);
 
-  const persist = useCallback((nextStep, nextBusiness, nextIdentity) => {
-    saveSetupDraft(nextStep, nextBusiness, nextIdentity);
-  }, []);
+  const persist = useCallback(
+    (nextStep, nextBusiness, nextIdentity, nextDefaults) => {
+      saveSetupDraft(nextStep, nextBusiness, nextIdentity, nextDefaults);
+    },
+    []
+  );
 
   const handleStartSetup = () => {
     setStep(2);
-    persist(2, business, identity);
+    persist(2, business, identity, defaults);
   };
 
   const handleDoLater = () => {
@@ -63,7 +69,7 @@ export default function SetupAssistant({ onExit }) {
     if (step <= 1) return;
     const prev = step - 1;
     setStep(prev);
-    persist(prev, business, identity);
+    persist(prev, business, identity, defaults);
   };
 
   const handleBusinessContinue = () => {
@@ -81,19 +87,34 @@ export default function SetupAssistant({ onExit }) {
 
     setBusiness(nextBusiness);
     setStep(3);
-    persist(3, nextBusiness, identity);
+    persist(3, nextBusiness, identity, defaults);
   };
 
   const handleIdentityContinue = () => {
-    persist(3, business, identity);
-    showNotice("Saved locally. The next step will arrive in BL-007A.04.");
+    setStep(4);
+    persist(4, business, identity, defaults);
+  };
+
+  const handleDefaultsContinue = () => {
+    const validation = validateDefaults(defaults);
+    setErrors(validation);
+    if (Object.keys(validation).length) return;
+
+    persist(4, business, identity, defaults);
+    showNotice("Saved locally. The next step will arrive in BL-007A.05.");
   };
 
   const footer =
-    step === 2 || step === 3 ? (
+    step >= 2 && step <= 4 ? (
       <SetupStepFooter
         onBack={handleBack}
-        onContinue={step === 2 ? handleBusinessContinue : handleIdentityContinue}
+        onContinue={
+          step === 2
+            ? handleBusinessContinue
+            : step === 3
+              ? handleIdentityContinue
+              : handleDefaultsContinue
+        }
       />
     ) : null;
 
@@ -117,7 +138,7 @@ export default function SetupAssistant({ onExit }) {
           value={business}
           onChange={(next) => {
             setBusiness(next);
-            persist(2, next, identity);
+            persist(2, next, identity, defaults);
           }}
           errors={errors}
           onSubmit={handleBusinessContinue}
@@ -130,9 +151,21 @@ export default function SetupAssistant({ onExit }) {
           business={business}
           onChange={(next) => {
             setIdentity(next);
-            persist(3, business, next);
+            persist(3, business, next, defaults);
           }}
           onSubmit={handleIdentityContinue}
+        />
+      )}
+
+      {step === 4 && (
+        <SetupCompanyDefaults
+          value={defaults}
+          onChange={(next) => {
+            setDefaults(next);
+            persist(4, business, identity, next);
+          }}
+          errors={errors}
+          onSubmit={handleDefaultsContinue}
         />
       )}
     </SetupLayout>

@@ -27,6 +27,58 @@ export const EMPTY_IDENTITY = {
   logoPreviewUrl: "",
 };
 
+export const EMPTY_DEFAULTS = {
+  vatRate: 0.2,
+  retentionRate: 0.05,
+  paymentTerms: "30",
+  poNumberPrefix: "type",
+  poNumberPrefixCustom: "",
+  currency: "GBP",
+};
+
+export const VAT_RATE_OPTIONS = [
+  { value: 0.2, label: "20% — Standard rate", why: "Pre-fills tax on new purchase orders." },
+  { value: 0.05, label: "5% — Reduced rate", why: "For qualifying goods and services." },
+  { value: 0, label: "0% — Zero-rated", why: "When no VAT applies to your orders." },
+];
+
+export const RETENTION_OPTIONS = [
+  { value: 0, label: "None", why: "No retention held by default." },
+  { value: 0.025, label: "2.5%", why: "Light retention on certificates." },
+  { value: 0.05, label: "5%", why: "Common on construction contracts." },
+  { value: 0.075, label: "7.5%", why: "Mid-range retention." },
+  { value: 0.1, label: "10%", why: "Higher retention on certificates." },
+];
+
+export const PAYMENT_TERMS_OPTIONS = [
+  { value: "on_receipt", label: "Due on receipt", why: "Printed on orders to suppliers." },
+  { value: "7", label: "7 days", why: "Short payment window." },
+  { value: "14", label: "14 days", why: "Fortnightly payment cycle." },
+  { value: "30", label: "30 days", why: "Most common for trade accounts." },
+  { value: "45", label: "45 days", why: "Extended terms." },
+  { value: "60", label: "60 days", why: "Longer payment period." },
+];
+
+export const CURRENCY_OPTIONS = [
+  { value: "GBP", label: "GBP — British pound", why: "Used on POs and certificates today." },
+  { value: "EUR", label: "EUR — Euro", why: "Ready if you trade overseas later." },
+  { value: "USD", label: "USD — US dollar", why: "Ready for international suppliers." },
+];
+
+export const PO_PREFIX_OPTIONS = [
+  {
+    value: "type",
+    label: "By order type (M0001, S0001…)",
+    why: "Matches how BuildLite numbers orders today.",
+  },
+  {
+    value: "PO-",
+    label: "PO-0001",
+    why: "A single prefix for every order type.",
+  },
+  { value: "custom", label: "Custom prefix…", why: "Your own letters before the number." },
+];
+
 export function loadSetupDraft() {
   try {
     const raw = sessionStorage.getItem(DRAFT_KEY);
@@ -35,6 +87,7 @@ export function loadSetupDraft() {
         step: 1,
         business: { ...EMPTY_BUSINESS },
         identity: { ...EMPTY_IDENTITY },
+        defaults: { ...EMPTY_DEFAULTS },
       };
     }
     const parsed = JSON.parse(raw);
@@ -42,17 +95,19 @@ export function loadSetupDraft() {
       step: Number(parsed.step) || 1,
       business: { ...EMPTY_BUSINESS, ...(parsed.business || {}) },
       identity: { ...EMPTY_IDENTITY, ...(parsed.identity || {}) },
+      defaults: { ...EMPTY_DEFAULTS, ...(parsed.defaults || {}) },
     };
   } catch {
     return {
       step: 1,
       business: { ...EMPTY_BUSINESS },
       identity: { ...EMPTY_IDENTITY },
+      defaults: { ...EMPTY_DEFAULTS },
     };
   }
 }
 
-export function saveSetupDraft(step, business, identity) {
+export function saveSetupDraft(step, business, identity, defaults) {
   try {
     sessionStorage.setItem(
       DRAFT_KEY,
@@ -60,6 +115,7 @@ export function saveSetupDraft(step, business, identity) {
         step,
         business,
         identity,
+        defaults,
         updatedAt: Date.now(),
       })
     );
@@ -124,4 +180,48 @@ export function canContinue(errors) {
     delete blocking.postcode;
   }
   return Object.keys(blocking).length === 0;
+}
+
+export function formatPaymentTermsLabel(value) {
+  const match = PAYMENT_TERMS_OPTIONS.find((option) => option.value === value);
+  return match?.label || "30 days";
+}
+
+export function formatPoPrefixPreview(defaults) {
+  if (defaults.poNumberPrefix === "type") return "M0001, S0001, P0001";
+  if (defaults.poNumberPrefix === "PO-") return "PO-0001";
+  const custom = String(defaults.poNumberPrefixCustom || "").trim();
+  if (defaults.poNumberPrefix === "custom" && custom) return `${custom}0001`;
+  if (defaults.poNumberPrefix === "custom") return "Your prefix + 0001";
+  return "PO-0001";
+}
+
+export function formatDefaultsSummary(defaults) {
+  const vat = VAT_RATE_OPTIONS.find((o) => o.value === Number(defaults.vatRate));
+  const retention = RETENTION_OPTIONS.find(
+    (o) => o.value === Number(defaults.retentionRate)
+  );
+  const currency = CURRENCY_OPTIONS.find((o) => o.value === defaults.currency);
+
+  return {
+    vat: vat ? vat.label.split(" — ")[0] : "20%",
+    retention: retention?.label || "5%",
+    paymentTerms: formatPaymentTermsLabel(defaults.paymentTerms),
+    currency: currency?.value || "GBP",
+    poNumbers: formatPoPrefixPreview(defaults),
+  };
+}
+
+export function validateDefaults(defaults) {
+  const errors = {};
+  if (defaults.poNumberPrefix === "custom") {
+    const custom = String(defaults.poNumberPrefixCustom || "").trim();
+    if (!custom) {
+      errors.poNumberPrefixCustom = "Enter a short prefix, or choose another option.";
+    } else if (!/^[A-Za-z0-9-]{1,8}$/.test(custom)) {
+      errors.poNumberPrefixCustom =
+        "Use up to 8 letters, numbers or hyphens.";
+    }
+  }
+  return errors;
 }

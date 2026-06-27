@@ -377,7 +377,52 @@
   /* Hook for future postcode / Companies House lookup UI */
 }
 
-/* Company identity (BL-007A.03) */
+.setup-select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--setup-muted) 50%),
+    linear-gradient(135deg, var(--setup-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(50% - 2px),
+    calc(100% - 12px) calc(50% - 2px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  padding-right: 36px;
+}
+
+.setup-defaults .setup-form__row {
+  margin-bottom: 4px;
+}
+
+.setup-defaults__summary {
+  margin-top: 24px;
+  padding: 14px 16px;
+  border-radius: var(--setup-radius-sm);
+  border: 1px solid rgba(124, 255, 107, 0.15);
+  background: rgba(124, 255, 107, 0.04);
+}
+
+.setup-defaults__summary-label {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--setup-accent);
+}
+
+.setup-defaults__summary-text {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--setup-text);
+}
+
+.setup-defaults__summary-text strong {
+  color: var(--setup-accent);
+  font-weight: 700;
+}
+
 .setup-step--identity {
   max-width: 960px;
 }
