@@ -36,6 +36,31 @@ export const EMPTY_DEFAULTS = {
   currency: "GBP",
 };
 
+/** Starter cost codes — mirrors typical seeded housebuilding list (client-only for setup). */
+export const STARTER_COST_CODES = [
+  { code: "M001", description: "Foundations & groundworks" },
+  { code: "S001", description: "Structural frame" },
+  { code: "R001", description: "Roofing" },
+  { code: "E001", description: "Electrical" },
+  { code: "P001", description: "Plumbing & heating" },
+  { code: "F001", description: "Finishes" },
+  { code: "L001", description: "Landscaping" },
+  { code: "G001", description: "Preliminaries & general" },
+];
+
+export const EMPTY_FIRST_ORDER = {
+  starterCostCodes: STARTER_COST_CODES.map((item) => ({ ...item })),
+  customCostCodes: [],
+  pendingCostCode: "",
+  pendingCostDescription: "",
+  supplierName: "",
+  supplierEmail: "",
+  supplierPhone: "",
+  jobName: "",
+  jobCode: "",
+  jobAddress: "",
+};
+
 export const VAT_RATE_OPTIONS = [
   { value: 0.2, label: "20% — Standard rate", why: "Pre-fills tax on new purchase orders." },
   { value: 0.05, label: "5% — Reduced rate", why: "For qualifying goods and services." },
@@ -88,14 +113,20 @@ export function loadSetupDraft() {
         business: { ...EMPTY_BUSINESS },
         identity: { ...EMPTY_IDENTITY },
         defaults: { ...EMPTY_DEFAULTS },
+        firstOrder: { ...EMPTY_FIRST_ORDER },
       };
     }
     const parsed = JSON.parse(raw);
+    const firstOrder = { ...EMPTY_FIRST_ORDER, ...(parsed.firstOrder || {}) };
+    if (!parsed.firstOrder?.starterCostCodes?.length) {
+      firstOrder.starterCostCodes = STARTER_COST_CODES.map((item) => ({ ...item }));
+    }
     return {
       step: Number(parsed.step) || 1,
       business: { ...EMPTY_BUSINESS, ...(parsed.business || {}) },
       identity: { ...EMPTY_IDENTITY, ...(parsed.identity || {}) },
       defaults: { ...EMPTY_DEFAULTS, ...(parsed.defaults || {}) },
+      firstOrder,
     };
   } catch {
     return {
@@ -103,11 +134,12 @@ export function loadSetupDraft() {
       business: { ...EMPTY_BUSINESS },
       identity: { ...EMPTY_IDENTITY },
       defaults: { ...EMPTY_DEFAULTS },
+      firstOrder: { ...EMPTY_FIRST_ORDER },
     };
   }
 }
 
-export function saveSetupDraft(step, business, identity, defaults) {
+export function saveSetupDraft(step, business, identity, defaults, firstOrder) {
   try {
     sessionStorage.setItem(
       DRAFT_KEY,
@@ -116,6 +148,7 @@ export function saveSetupDraft(step, business, identity, defaults) {
         business,
         identity,
         defaults,
+        firstOrder,
         updatedAt: Date.now(),
       })
     );
@@ -224,4 +257,102 @@ export function validateDefaults(defaults) {
     }
   }
   return errors;
+}
+
+export function mergeCostCodes(starterCostCodes = [], customCostCodes = []) {
+  const merged = [];
+  const seen = new Set();
+
+  for (const item of [...starterCostCodes, ...customCostCodes]) {
+    const code = String(item?.code || "").trim();
+    if (!code || seen.has(code.toLowerCase())) continue;
+    seen.add(code.toLowerCase());
+    merged.push({
+      code,
+      description: String(item?.description || "").trim(),
+    });
+  }
+
+  return merged;
+}
+
+export function countCostCodes(firstOrder) {
+  return mergeCostCodes(
+    firstOrder?.starterCostCodes,
+    firstOrder?.customCostCodes
+  ).length;
+}
+
+export function formatFirstOrderSummary(firstOrder) {
+  const count = countCostCodes(firstOrder);
+  const supplier = String(firstOrder?.supplierName || "").trim();
+  const job = String(firstOrder?.jobName || "").trim();
+
+  return {
+    costCodes: `${count} cost code${count === 1 ? "" : "s"} ready`,
+    supplier,
+    job,
+  };
+}
+
+export function validateFirstOrder(firstOrder) {
+  const errors = {};
+  const supplierName = String(firstOrder?.supplierName || "").trim();
+  const pendingCode = String(firstOrder?.pendingCostCode || "").trim();
+  const pendingDescription = String(
+    firstOrder?.pendingCostDescription || ""
+  ).trim();
+  const email = String(firstOrder?.supplierEmail || "").trim();
+
+  if (!supplierName) {
+    errors.supplierName = "Please enter a supplier name.";
+  }
+
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errors.supplierEmail = "Check this email address looks right.";
+  }
+
+  if (pendingCode && !pendingDescription) {
+    errors.pendingCostDescription = "Add a description for this code.";
+  }
+  if (pendingDescription && !pendingCode) {
+    errors.pendingCostCode = "Enter a code, or clear the description.";
+  }
+
+  if (countCostCodes(firstOrder) < 1) {
+    errors.costCodes = "Add at least one cost code to continue.";
+  }
+
+  return errors;
+}
+
+/** Flush any valid pending cost code into customCostCodes before continuing. */
+export function finalizeFirstOrder(firstOrder) {
+  const pendingCode = String(firstOrder?.pendingCostCode || "").trim();
+  const pendingDescription = String(
+    firstOrder?.pendingCostDescription || ""
+  ).trim();
+
+  if (!pendingCode || !pendingDescription) {
+    return { ...firstOrder, pendingCostCode: "", pendingCostDescription: "" };
+  }
+
+  const exists = mergeCostCodes(
+    firstOrder.starterCostCodes,
+    firstOrder.customCostCodes
+  ).some((item) => item.code.toLowerCase() === pendingCode.toLowerCase());
+
+  if (exists) {
+    return { ...firstOrder, pendingCostCode: "", pendingCostDescription: "" };
+  }
+
+  return {
+    ...firstOrder,
+    customCostCodes: [
+      ...(firstOrder.customCostCodes || []),
+      { code: pendingCode, description: pendingDescription },
+    ],
+    pendingCostCode: "",
+    pendingCostDescription: "",
+  };
 }

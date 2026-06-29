@@ -5,11 +5,14 @@ import SetupWelcome from "./screens/SetupWelcome";
 import SetupAboutBusiness from "./screens/SetupAboutBusiness";
 import SetupCompanyIdentity from "./screens/SetupCompanyIdentity";
 import SetupCompanyDefaults from "./screens/SetupCompanyDefaults";
+import SetupFirstOrder from "./screens/SetupFirstOrder";
 import {
   loadSetupDraft,
   saveSetupDraft,
   validateBusiness,
   validateDefaults,
+  validateFirstOrder,
+  finalizeFirstOrder,
   canContinue,
   resolveTradingName,
 } from "./setupDraft";
@@ -40,6 +43,7 @@ export default function SetupAssistant({ onExit }) {
   const [business, setBusiness] = useState(initial.business);
   const [identity, setIdentity] = useState(initial.identity);
   const [defaults, setDefaults] = useState(initial.defaults);
+  const [firstOrder, setFirstOrder] = useState(initial.firstOrder);
   const [errors, setErrors] = useState({});
   const [notice, setNotice] = useState("");
 
@@ -49,15 +53,21 @@ export default function SetupAssistant({ onExit }) {
   }, []);
 
   const persist = useCallback(
-    (nextStep, nextBusiness, nextIdentity, nextDefaults) => {
-      saveSetupDraft(nextStep, nextBusiness, nextIdentity, nextDefaults);
+    (nextStep, nextBusiness, nextIdentity, nextDefaults, nextFirstOrder) => {
+      saveSetupDraft(
+        nextStep,
+        nextBusiness,
+        nextIdentity,
+        nextDefaults,
+        nextFirstOrder ?? firstOrder
+      );
     },
-    []
+    [firstOrder]
   );
 
   const handleStartSetup = () => {
     setStep(2);
-    persist(2, business, identity, defaults);
+    persist(2, business, identity, defaults, firstOrder);
   };
 
   const handleDoLater = () => {
@@ -70,7 +80,7 @@ export default function SetupAssistant({ onExit }) {
     if (step <= 1) return;
     const prev = step - 1;
     setStep(prev);
-    persist(prev, business, identity, defaults);
+    persist(prev, business, identity, defaults, firstOrder);
   };
 
   const handleBusinessContinue = () => {
@@ -88,12 +98,12 @@ export default function SetupAssistant({ onExit }) {
 
     setBusiness(nextBusiness);
     setStep(3);
-    persist(3, nextBusiness, identity, defaults);
+    persist(3, nextBusiness, identity, defaults, firstOrder);
   };
 
   const handleIdentityContinue = () => {
     setStep(4);
-    persist(4, business, identity, defaults);
+    persist(4, business, identity, defaults, firstOrder);
   };
 
   const handleDefaultsContinue = () => {
@@ -101,8 +111,20 @@ export default function SetupAssistant({ onExit }) {
     setErrors(validation);
     if (Object.keys(validation).length) return;
 
-    persist(4, business, identity, defaults);
-    showNotice("Your defaults are saved. We'll continue setup from here.");
+    setStep(5);
+    persist(5, business, identity, defaults, firstOrder);
+  };
+
+  const handleFirstOrderContinue = () => {
+    const validation = validateFirstOrder(firstOrder);
+    setErrors(validation);
+    if (Object.keys(validation).length) return;
+
+    const nextFirstOrder = finalizeFirstOrder(firstOrder);
+    setFirstOrder(nextFirstOrder);
+    setStep(6);
+    persist(6, business, identity, defaults, nextFirstOrder);
+    showNotice("Next: who approves your orders.");
   };
 
   const continueFormId =
@@ -112,10 +134,12 @@ export default function SetupAssistant({ onExit }) {
         ? SETUP_FORM_IDS.identity
         : step === 4
           ? SETUP_FORM_IDS.defaults
-          : undefined;
+          : step === 5
+            ? SETUP_FORM_IDS.firstOrder
+            : undefined;
 
   const footer =
-    step >= 2 && step <= 4 ? (
+    step >= 2 && step <= 5 ? (
       <SetupStepFooter
         onBack={handleBack}
         onContinue={
@@ -123,7 +147,9 @@ export default function SetupAssistant({ onExit }) {
             ? handleBusinessContinue
             : step === 3
               ? handleIdentityContinue
-              : handleDefaultsContinue
+              : step === 4
+                ? handleDefaultsContinue
+                : handleFirstOrderContinue
         }
         continueFormId={continueFormId}
         wide={step === 3}
@@ -150,7 +176,7 @@ export default function SetupAssistant({ onExit }) {
           value={business}
           onChange={(next) => {
             setBusiness(next);
-            persist(2, next, identity, defaults);
+            persist(2, next, identity, defaults, firstOrder);
           }}
           errors={errors}
           onSubmit={handleBusinessContinue}
@@ -163,7 +189,7 @@ export default function SetupAssistant({ onExit }) {
           business={business}
           onChange={(next) => {
             setIdentity(next);
-            persist(3, business, next, defaults);
+            persist(3, business, next, defaults, firstOrder);
           }}
           onSubmit={handleIdentityContinue}
         />
@@ -174,10 +200,22 @@ export default function SetupAssistant({ onExit }) {
           value={defaults}
           onChange={(next) => {
             setDefaults(next);
-            persist(4, business, identity, next);
+            persist(4, business, identity, next, firstOrder);
           }}
           errors={errors}
           onSubmit={handleDefaultsContinue}
+        />
+      )}
+
+      {step === 5 && (
+        <SetupFirstOrder
+          value={firstOrder}
+          onChange={(next) => {
+            setFirstOrder(next);
+            persist(5, business, identity, defaults, next);
+          }}
+          errors={errors}
+          onSubmit={handleFirstOrderContinue}
         />
       )}
     </SetupLayout>

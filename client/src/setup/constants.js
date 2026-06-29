@@ -8,6 +8,7 @@ export const SETUP_FORM_IDS = {
   business: "setup-form-business",
   identity: "setup-form-identity",
   defaults: "setup-form-defaults",
+  firstOrder: "setup-form-first-order",
 };
 
 export const SETUP_STEPS = [
@@ -32,14 +33,14 @@ export const SETUP_STEPS = [
     progressTitle: "How you usually trade",
   },
   {
-    id: "team",
-    label: "Your commercial team",
-    progressTitle: "Your commercial team",
+    id: "first-order",
+    label: "Get ready to raise a purchase order",
+    progressTitle: "Get ready to raise a purchase order",
   },
   {
-    id: "lists",
-    label: "Bring your lists",
-    progressTitle: "Bring your lists",
+    id: "approval",
+    label: "Who approves purchase orders?",
+    progressTitle: "Who approves purchase orders?",
   },
-  { id: "ready", label: "You're ready", progressTitle: "You're ready" },
+  { id: "ready", label: "You're ready", progressTitle: "Create your first purchase order" },
 ];

@@ -11,8 +11,9 @@ const SETUP_TOPICS_NOW = [
 ];
 
 const SETUP_TOPICS_NEXT = [
-  "Who approves orders on your team",
-  "Suppliers and cost codes",
+  "A supplier and cost code to get ordering",
+  "Who approves orders",
+  "Your first purchase order",
 ];
 
 export default function SetupWelcome({ onStartSetup, onDoLater }) {
@@ -58,8 +59,8 @@ export default function SetupWelcome({ onStartSetup, onDoLater }) {
         </ul>
 
         <p className="setup-welcome__help">
-          No suppliers or cost codes yet? You can add them when you raise your
-          first order — no spreadsheet required.
+          We&apos;ll add one supplier in setup — you can build out your full
+          lists later in Company Settings.
         </p>
       </div>
 
