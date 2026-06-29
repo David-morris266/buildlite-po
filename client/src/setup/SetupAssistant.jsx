@@ -7,6 +7,7 @@ import SetupCompanyIdentity from "./screens/SetupCompanyIdentity";
 import SetupCompanyDefaults from "./screens/SetupCompanyDefaults";
 import SetupFirstOrder from "./screens/SetupFirstOrder";
 import SetupApproval from "./screens/SetupApproval";
+import SetupReady from "./screens/SetupReady";
 import {
   loadSetupDraft,
   saveSetupDraft,
@@ -39,7 +40,7 @@ export function dismissSetupAssistant() {
   }
 }
 
-export default function SetupAssistant({ onExit }) {
+export default function SetupAssistant({ onExit, onLaunchPO, onExplore }) {
   const initial = loadSetupDraft();
   const [step, setStep] = useState(initial.step);
   const [business, setBusiness] = useState(initial.business);
@@ -240,6 +241,18 @@ export default function SetupAssistant({ onExit }) {
           }}
           errors={errors}
           onSubmit={handleApprovalContinue}
+        />
+      )}
+
+      {step === 7 && (
+        <SetupReady
+          business={business}
+          identity={identity}
+          defaults={defaults}
+          firstOrder={firstOrder}
+          onLaunchPO={onLaunchPO}
+          onExplore={onExplore}
+          onFinishLater={handleDoLater}
         />
       )}
     </SetupLayout>

@@ -3,7 +3,7 @@ import POForm from "./components/POForm";
 import POList from "./components/POList";
 import POArchive from "./components/POArchive";
 import BrandHeader from "./components/Brandheader";
-import SetupAssistant, { isSetupDismissed } from "./setup/SetupAssistant";
+import SetupAssistant, { dismissSetupAssistant, isSetupDismissed } from "./setup/SetupAssistant";
 import "./styles/brand.css";
 
 function shouldShowSetupAssistant() {
@@ -15,6 +15,7 @@ function shouldShowSetupAssistant() {
 export default function App() {
   const [tab, setTab] = useState("form");
   const [showSetup, setShowSetup] = useState(shouldShowSetupAssistant);
+  const [applySetupDraft, setApplySetupDraft] = useState(false);
 
   useEffect(() => {
     localStorage.setItem("userEmail", "david@dmcommercialconsulting.co.uk");
@@ -22,8 +23,29 @@ export default function App() {
     localStorage.setItem("userRole", "requester");
   }, []);
 
+  const exitSetup = () => setShowSetup(false);
+
+  const handleLaunchPO = () => {
+    dismissSetupAssistant();
+    exitSetup();
+    setApplySetupDraft(true);
+    setTab("form");
+  };
+
+  const handleExploreBuildLite = () => {
+    dismissSetupAssistant();
+    exitSetup();
+    setTab("list");
+  };
+
   if (showSetup) {
-    return <SetupAssistant onExit={() => setShowSetup(false)} />;
+    return (
+      <SetupAssistant
+        onExit={exitSetup}
+        onLaunchPO={handleLaunchPO}
+        onExplore={handleExploreBuildLite}
+      />
+    );
   }
 
   return (
@@ -31,7 +53,12 @@ export default function App() {
       <BrandHeader activeTab={tab} onTab={setTab} />
 
       <main style={{ padding: "16px", display: "grid", gap: "16px" }}>
-        {tab === "form" && <POForm />}
+        {tab === "form" && (
+          <POForm
+            applySetupDraft={applySetupDraft}
+            onSetupDraftApplied={() => setApplySetupDraft(false)}
+          />
+        )}
         {tab === "list" && <POList />}
         {tab === "archive" && <POArchive />}
       </main>

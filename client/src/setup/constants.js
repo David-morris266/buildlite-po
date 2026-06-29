@@ -43,5 +43,5 @@ export const SETUP_STEPS = [
     label: "Who approves Purchase Orders?",
     progressTitle: "Who approves Purchase Orders?",
   },
-  { id: "ready", label: "You're ready", progressTitle: "Create your first purchase order" },
+  { id: "ready", label: "You're ready", progressTitle: "You're ready to create your first Purchase Order" },
 ];

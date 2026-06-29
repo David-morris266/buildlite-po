@@ -401,3 +401,48 @@ export function validateApproval(approval) {
 
   return errors;
 }
+
+/**
+ * Map setup draft → PO form field values (BL-007A.07 launch continuity).
+ * Reads from the existing setup draft only — no duplicate storage.
+ */
+export function buildPoFormSeedFromSetup(draft) {
+  if (!draft) return null;
+
+  const { business, defaults, firstOrder } = draft;
+  const supplierName = String(firstOrder?.supplierName || "").trim();
+  const jobName = String(firstOrder?.jobName || "").trim();
+  const jobCode = String(firstOrder?.jobCode || "").trim();
+  const jobAddress = String(firstOrder?.jobAddress || "").trim();
+
+  return {
+    companyName: resolveTradingName(
+      business?.companyName,
+      business?.tradingName
+    ),
+    supplierName,
+    supplierEmail: String(firstOrder?.supplierEmail || "").trim(),
+    supplierPhone: String(firstOrder?.supplierPhone || "").trim(),
+    job: jobName
+      ? {
+          name: jobName,
+          jobCode,
+          jobAddress,
+        }
+      : null,
+    vatRate: Number(defaults?.vatRate ?? 0.2),
+    retentionRate: Number(defaults?.retentionRate ?? 0.05),
+    paymentTerms: formatPaymentTermsLabel(defaults?.paymentTerms || "30"),
+    paymentTermsDays:
+      defaults?.paymentTerms === "on_receipt"
+        ? 0
+        : Number.parseInt(String(defaults?.paymentTerms || "30"), 10) || 30,
+    currency:
+      CURRENCY_OPTIONS.find((o) => o.value === defaults?.currency)?.label ||
+      defaults?.currency ||
+      "GBP",
+    poNumberPrefix: defaults?.poNumberPrefix || "type",
+    poNumberHint: formatPoPrefixPreview(defaults || EMPTY_DEFAULTS),
+    orderType: "M",
+  };
+}

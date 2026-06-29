@@ -15,6 +15,10 @@ export default function SupplierSelect({
   onChange,
   onSelectFull,
   showLabel = true,
+  preferredName = "",
+  preferredEmail = "",
+  preferredPhone = "",
+  preferredTermsDays = null,
 }) {
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +49,15 @@ export default function SupplierSelect({
     return '';
   }, [value]);
 
+  const selectAndEmit = (sup) => {
+    if (sup) {
+      onChange?.({ id: sup.id, name: sup.name });
+      onSelectFull?.(sup);
+    } else {
+      onChange?.(null);
+    }
+  };
+
   // Load suppliers from API helper
   useEffect(() => {
     (async () => {
@@ -60,14 +73,28 @@ export default function SupplierSelect({
     })();
   }, []);
 
-  const selectAndEmit = (sup) => {
-    if (sup) {
-      onChange?.({ id: sup.id, name: sup.name });
-      onSelectFull?.(sup);
-    } else {
-      onChange?.(null);
-    }
-  };
+  // Match setup draft supplier by name when launching from Setup Assistant
+  useEffect(() => {
+    if (!preferredName || currentId || loading) return;
+    const match = suppliers.find(
+      (s) =>
+        String(s.name || "").trim().toLowerCase() ===
+        preferredName.trim().toLowerCase()
+    );
+    if (match) selectAndEmit(match);
+  }, [preferredName, suppliers, loading, currentId]);
+
+  useEffect(() => {
+    if (!preferredName) return;
+    setForm((prev) => ({
+      ...prev,
+      name: prev.name || preferredName,
+      contactEmail: prev.contactEmail || preferredEmail || prev.contactEmail,
+      contactPhone: prev.contactPhone || preferredPhone || prev.contactPhone,
+      termsDays:
+        preferredTermsDays != null ? preferredTermsDays : prev.termsDays,
+    }));
+  }, [preferredName, preferredEmail, preferredPhone, preferredTermsDays]);
 
   const handleSelect = (e) => {
     const id = e.target.value;
@@ -142,6 +169,13 @@ export default function SupplierSelect({
         ))}
         <option value="__new__">➕ Add new supplier…</option>
       </select>
+
+      {preferredName && !currentId ? (
+        <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+          From setup: <strong>{preferredName}</strong> — select a match or add
+          new supplier.
+        </p>
+      ) : null}
 
       {showModal && (
         <div

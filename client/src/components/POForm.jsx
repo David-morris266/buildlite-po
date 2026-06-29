@@ -1,5 +1,5 @@
 // client/src/POForm.jsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import CostCodeSelect from './CostCodeSelect';
 import SupplierSelect from './SupplierSelect';
 import JobSelect from './JobSelect';
@@ -9,6 +9,10 @@ import {
   updatePO,
   requestApproval,
 } from '../api';
+import {
+  buildPoFormSeedFromSetup,
+  loadSetupDraft,
+} from '../setup/setupDraft';
 import './POForm.css';
 
 const toNumber = (v) => {
@@ -31,7 +35,12 @@ const UOMS = [
  * - create mode:  <POForm />
  * - edit mode:    <POForm initialPo={po} onSaved={fn} />
  */
-export default function POForm({ initialPo = null, onSaved = null }) {
+export default function POForm({
+  initialPo = null,
+  onSaved = null,
+  applySetupDraft = false,
+  onSetupDraftApplied = null,
+}) {
   const isEdit = !!(initialPo && initialPo.poNumber);
 
   // Supplier (id + name)
@@ -53,6 +62,13 @@ export default function POForm({ initialPo = null, onSaved = null }) {
 
   const [title, setTitle] = useState('');
   const [vatRate, setVatRate] = useState(0.2);
+  const [retentionRate, setRetentionRate] = useState(0.05);
+
+  const [setupBanner, setSetupBanner] = useState(null);
+  const [supplierSeed, setSupplierSeed] = useState(null);
+  const [jobSeed, setJobSeed] = useState(null);
+  const [poNumberHint, setPoNumberHint] = useState('');
+  const [setupSeedApplied, setSetupSeedApplied] = useState(false);
 
   // Lines
   const [lines, setLines] = useState([
@@ -94,9 +110,68 @@ export default function POForm({ initialPo = null, onSaved = null }) {
   const vatAmt   = subtotal * toNumber(vatRate);
   const gross    = subtotal + vatAmt;
 
-  // ===== Load selected job snapshot =====
+  const applyUnmatchedSetupJob = useCallback((job) => {
+    if (!job?.name) return;
+    setJobSnap({
+      name: job.name,
+      jobCode: job.jobCode || '',
+      jobNumber: job.jobCode || '',
+      siteAddress: job.jobAddress || '',
+    });
+    setJobCode(job.jobCode || '');
+    setTitle(`PO · ${job.name}`);
+  }, []);
+
+  // Apply Setup Assistant draft when launching first PO (BL-007A.07)
   useEffect(() => {
-    if (!jobId) { setJobSnap(null); return; }
+    if (!applySetupDraft || isEdit || setupSeedApplied) return;
+
+    const draft = loadSetupDraft();
+    const seed = buildPoFormSeedFromSetup(draft);
+    if (!seed) {
+      setSetupSeedApplied(true);
+      onSetupDraftApplied?.();
+      return;
+    }
+
+    setVatRate(seed.vatRate);
+    setRetentionRate(seed.retentionRate);
+    setType(seed.orderType || 'M');
+    setPoNumberHint(seed.poNumberHint || '');
+
+    if (seed.supplierName) {
+      setSupplierName(seed.supplierName);
+      setSupplierSeed({
+        name: seed.supplierName,
+        email: seed.supplierEmail,
+        phone: seed.supplierPhone,
+        termsDays: seed.paymentTermsDays,
+      });
+    }
+
+    if (seed.job) {
+      setJobSeed(seed.job);
+    }
+
+    setSetupBanner({
+      companyName: seed.companyName,
+      paymentTerms: seed.paymentTerms,
+      currency: seed.currency,
+      poNumberHint: seed.poNumberHint,
+    });
+
+    setSetupSeedApplied(true);
+    onSetupDraftApplied?.();
+  }, [
+    applySetupDraft,
+    isEdit,
+    setupSeedApplied,
+    onSetupDraftApplied,
+  ]);
+
+  // ===== Load selected job snapshot when a job is picked =====
+  useEffect(() => {
+    if (!jobId) return;
     (async () => {
       try {
         const jobs = await listJobs();
@@ -256,6 +331,7 @@ export default function POForm({ initialPo = null, onSaved = null }) {
       title: title?.trim() || (jobSnap ? `PO · ${jobSnap.name}` : ''),
 
       vatRateDefault: toNumber(vatRate),
+      retentionRateDefault: toNumber(retentionRate),
 
       items: lines
         .filter(l => l.description || toNumber(l.amount) > 0)
@@ -286,6 +362,7 @@ export default function POForm({ initialPo = null, onSaved = null }) {
     setCostCode('');
     setTitle('');
     setVatRate(0.2);
+    setRetentionRate(0.05);
     setLines([{ description: '', uom: 'nr', qty: '', rate: '', amount: 0 }]);
 
     setClauseTender(false);
@@ -393,6 +470,25 @@ export default function POForm({ initialPo = null, onSaved = null }) {
           : 'New Purchase Order'}
       </h2>
 
+      {setupBanner ? (
+        <div className="po-setup-banner" role="status">
+          <span className="po-setup-banner__mark" aria-hidden="true">
+            ✓
+          </span>
+          <span>
+            From your setup
+            {setupBanner.companyName ? ` · ${setupBanner.companyName}` : ''}
+            {setupBanner.paymentTerms
+              ? ` · ${setupBanner.paymentTerms}`
+              : ''}
+            {setupBanner.currency ? ` · ${setupBanner.currency}` : ''}
+            {setupBanner.poNumberHint
+              ? ` · PO numbers like ${setupBanner.poNumberHint.split(',')[0].trim()}`
+              : ''}
+          </span>
+        </div>
+      ) : null}
+
       {/* Header inputs */}
       <div className="po-form-grid">
         <div>
@@ -403,6 +499,10 @@ export default function POForm({ initialPo = null, onSaved = null }) {
               setSupplierId(sel?.id || '');
               setSupplierName(sel?.name || '');
             }}
+            preferredName={supplierSeed?.name || ''}
+            preferredEmail={supplierSeed?.email || ''}
+            preferredPhone={supplierSeed?.phone || ''}
+            preferredTermsDays={supplierSeed?.termsDays ?? null}
           />
         </div>
 
@@ -413,11 +513,25 @@ export default function POForm({ initialPo = null, onSaved = null }) {
             <option value="S">Subcontract</option>
             <option value="P">Plant</option>
           </select>
+          {poNumberHint ? (
+            <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+              Numbering from setup: {poNumberHint}
+            </p>
+          ) : null}
         </div>
 
         <div>
           <label>Job</label>
-          <JobSelect value={jobId} onChange={setJobId} showLabel={false} />
+          <JobSelect
+            value={jobId}
+            onChange={(id) => {
+              setJobId(id);
+              if (!id) setJobSnap(null);
+            }}
+            showLabel={false}
+            preferredJob={jobSeed}
+            onPreferredUnmatched={applyUnmatchedSetupJob}
+          />
           {jobSnap && (
             <div className="muted" style={{ marginTop: 4 }}>
               {projectLabel}<br />
@@ -465,6 +579,20 @@ export default function POForm({ initialPo = null, onSaved = null }) {
             <option value={0}>0%</option>
             <option value={0.05}>5%</option>
             <option value={0.2}>20%</option>
+          </select>
+        </div>
+
+        <div>
+          <label>Retention</label>
+          <select
+            value={retentionRate}
+            onChange={(e) => setRetentionRate(parseFloat(e.target.value))}
+          >
+            <option value={0}>None</option>
+            <option value={0.025}>2.5%</option>
+            <option value={0.05}>5%</option>
+            <option value={0.075}>7.5%</option>
+            <option value={0.1}>10%</option>
           </select>
         </div>
       </div>
