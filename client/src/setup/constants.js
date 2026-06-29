@@ -9,6 +9,7 @@ export const SETUP_FORM_IDS = {
   identity: "setup-form-identity",
   defaults: "setup-form-defaults",
   firstOrder: "setup-form-first-order",
+  approval: "setup-form-approval",
 };
 
 export const SETUP_STEPS = [
@@ -39,8 +40,8 @@ export const SETUP_STEPS = [
   },
   {
     id: "approval",
-    label: "Who approves purchase orders?",
-    progressTitle: "Who approves purchase orders?",
+    label: "Who approves Purchase Orders?",
+    progressTitle: "Who approves Purchase Orders?",
   },
   { id: "ready", label: "You're ready", progressTitle: "Create your first purchase order" },
 ];

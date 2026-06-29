@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { SETUP_FORM_IDS } from "../constants";
+import SetupReadinessChecklist from "../components/SetupReadinessChecklist";
 import { countCostCodes, mergeCostCodes } from "../setupDraft";
 
 function Field({ id, label, optional, hint, error, children }) {
@@ -22,21 +23,6 @@ function Field({ id, label, optional, hint, error, children }) {
   );
 }
 
-function ChecklistItem({ done, children }) {
-  return (
-    <li
-      className={`setup-checklist__item${
-        done ? " setup-checklist__item--done" : ""
-      }`}
-    >
-      <span className="setup-checklist__mark" aria-hidden="true">
-        {done ? "✓" : "○"}
-      </span>
-      <span>{children}</span>
-    </li>
-  );
-}
-
 export default function SetupFirstOrder({
   value,
   onChange,
@@ -51,7 +37,6 @@ export default function SetupFirstOrder({
     [value.starterCostCodes, value.customCostCodes]
   );
   const costCodeCount = countCostCodes(value);
-  const supplierReady = Boolean(String(value.supplierName || "").trim());
 
   useEffect(() => {
     if (Object.keys(errors).length) setTouched(true);
@@ -266,17 +251,7 @@ export default function SetupFirstOrder({
           </div>
         </details>
 
-        <div className="setup-checklist" aria-live="polite">
-          <p className="setup-checklist__label">Your progress</p>
-          <ul className="setup-checklist__list">
-            <ChecklistItem done>Company ready</ChecklistItem>
-            <ChecklistItem done>Branding ready</ChecklistItem>
-            <ChecklistItem done>Company defaults</ChecklistItem>
-            <ChecklistItem done={costCodeCount > 0}>Cost codes ready</ChecklistItem>
-            <ChecklistItem done={supplierReady}>Supplier</ChecklistItem>
-            <ChecklistItem done={false}>Approval</ChecklistItem>
-          </ul>
-        </div>
+        <SetupReadinessChecklist firstOrder={value} />
       </form>
     </div>
   );

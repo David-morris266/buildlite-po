@@ -61,6 +61,12 @@ export const EMPTY_FIRST_ORDER = {
   jobAddress: "",
 };
 
+export const EMPTY_APPROVAL = {
+  mode: "self",
+  approverName: "",
+  approverEmail: "",
+};
+
 export const VAT_RATE_OPTIONS = [
   { value: 0.2, label: "20% — Standard rate", why: "Pre-fills tax on new purchase orders." },
   { value: 0.05, label: "5% — Reduced rate", why: "For qualifying goods and services." },
@@ -114,6 +120,7 @@ export function loadSetupDraft() {
         identity: { ...EMPTY_IDENTITY },
         defaults: { ...EMPTY_DEFAULTS },
         firstOrder: { ...EMPTY_FIRST_ORDER },
+        approval: { ...EMPTY_APPROVAL },
       };
     }
     const parsed = JSON.parse(raw);
@@ -127,6 +134,7 @@ export function loadSetupDraft() {
       identity: { ...EMPTY_IDENTITY, ...(parsed.identity || {}) },
       defaults: { ...EMPTY_DEFAULTS, ...(parsed.defaults || {}) },
       firstOrder,
+      approval: { ...EMPTY_APPROVAL, ...(parsed.approval || {}) },
     };
   } catch {
     return {
@@ -135,11 +143,19 @@ export function loadSetupDraft() {
       identity: { ...EMPTY_IDENTITY },
       defaults: { ...EMPTY_DEFAULTS },
       firstOrder: { ...EMPTY_FIRST_ORDER },
+      approval: { ...EMPTY_APPROVAL },
     };
   }
 }
 
-export function saveSetupDraft(step, business, identity, defaults, firstOrder) {
+export function saveSetupDraft(
+  step,
+  business,
+  identity,
+  defaults,
+  firstOrder,
+  approval
+) {
   try {
     sessionStorage.setItem(
       DRAFT_KEY,
@@ -149,6 +165,7 @@ export function saveSetupDraft(step, business, identity, defaults, firstOrder) {
         identity,
         defaults,
         firstOrder,
+        approval,
         updatedAt: Date.now(),
       })
     );
@@ -355,4 +372,32 @@ export function finalizeFirstOrder(firstOrder) {
     pendingCostCode: "",
     pendingCostDescription: "",
   };
+}
+
+export function isApprovalReady(approval) {
+  if (approval?.mode === "other") {
+    const name = String(approval.approverName || "").trim();
+    const email = String(approval.approverEmail || "").trim();
+    if (!name) return false;
+    return Boolean(email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+  }
+  return approval?.mode !== "other";
+}
+
+export function validateApproval(approval) {
+  const errors = {};
+
+  if (approval?.mode === "other") {
+    if (!String(approval.approverName || "").trim()) {
+      errors.approverName = "Please enter the approver's name.";
+    }
+    const email = String(approval.approverEmail || "").trim();
+    if (!email) {
+      errors.approverEmail = "Please enter the approver's email address.";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors.approverEmail = "Check this email address looks right.";
+    }
+  }
+
+  return errors;
 }
