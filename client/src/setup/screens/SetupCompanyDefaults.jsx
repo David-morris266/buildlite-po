@@ -1,21 +1,13 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import {
-  VAT_RATE_OPTIONS,
-  RETENTION_OPTIONS,
-  PAYMENT_TERMS_OPTIONS,
-  CURRENCY_OPTIONS,
-  PO_PREFIX_OPTIONS,
-  formatDefaultsSummary,
-} from "../setupDraft";
-
-function ChoiceField({ id, label, why, error, children }) {
+import { SETUP_FORM_IDS } from "../constants";
+import { formatDefaultsSummary } from "../setupDraft";
+function ChoiceField({ id, label, error, children }) {
   return (
     <div className={`setup-field${error ? " setup-field--error" : ""}`}>
       <label className="setup-field__label" htmlFor={id}>
         {label}
       </label>
       {children}
-      {why ? <p className="setup-field__hint">{why}</p> : null}
       {error ? (
         <p className="setup-field__error" role="alert">
           {error}
@@ -23,13 +15,6 @@ function ChoiceField({ id, label, why, error, children }) {
       ) : null}
     </div>
   );
-}
-
-function optionWhy(options, value, numeric = false) {
-  const match = options.find((option) =>
-    numeric ? Number(option.value) === Number(value) : option.value === value
-  );
-  return match?.why || "";
 }
 
 export default function SetupCompanyDefaults({
@@ -65,104 +50,78 @@ export default function SetupCompanyDefaults({
   return (
     <div className="setup-step setup-animate-in">
       <header className="setup-step__header">
-        <p className="setup-step__eyebrow">How you usually trade</p>
-        <h1 className="setup-step__title">Set your usual defaults</h1>
+        <p className="setup-step__eyebrow">Company defaults</p>
+        <h1 className="setup-step__title">How you usually trade</h1>
         <p className="setup-step__lead">
-          A few choices now means less typing every time you raise a purchase
-          order or certificate.
+          We&apos;ve selected sensible defaults — adjust anything that
+          doesn&apos;t match how your company works. You can change these on
+          individual orders later.
         </p>
       </header>
 
-      <div className="setup-why">
-        <p className="setup-why__label">Why we ask</p>
-        <p className="setup-why__text">
-          Most companies use the same VAT rate, retention and payment terms on
-          every order. We&apos;ll pre-fill these for you — and you can override
-          them on any individual PO or certificate.
-        </p>
-      </div>
-
       <form
+        id={SETUP_FORM_IDS.defaults}
         className="setup-form setup-form__card setup-defaults"
         onSubmit={handleSubmit}
         noValidate
       >
         <div className="setup-form__row">
-          <ChoiceField
-            id={`${formId}-vatRate`}
-            label="Default VAT rate"
-            why={optionWhy(VAT_RATE_OPTIONS, value.vatRate, true)}
-          >
+          <ChoiceField id={`${formId}-vatRate`} label="Default VAT rate">
             <select
               id={`${formId}-vatRate`}
               className="setup-input setup-select"
               value={value.vatRate}
               onChange={set("vatRate")}
             >
-              {VAT_RATE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
+              <option value={0.2}>20% — Standard rate</option>
+              <option value={0.05}>5% — Reduced rate</option>
+              <option value={0}>0% — Zero-rated</option>
             </select>
           </ChoiceField>
 
-          <ChoiceField
-            id={`${formId}-retentionRate`}
-            label="Default retention"
-            why={optionWhy(RETENTION_OPTIONS, value.retentionRate, true)}
-          >
+          <ChoiceField id={`${formId}-retentionRate`} label="Default retention">
             <select
               id={`${formId}-retentionRate`}
               className="setup-input setup-select"
               value={value.retentionRate}
               onChange={set("retentionRate")}
             >
-              {RETENTION_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
+              <option value={0}>None</option>
+              <option value={0.025}>2.5%</option>
+              <option value={0.05}>5%</option>
+              <option value={0.075}>7.5%</option>
+              <option value={0.1}>10%</option>
             </select>
           </ChoiceField>
         </div>
 
         <div className="setup-form__row">
-          <ChoiceField
-            id={`${formId}-paymentTerms`}
-            label="Default payment terms"
-            why={optionWhy(PAYMENT_TERMS_OPTIONS, value.paymentTerms)}
-          >
+          <ChoiceField id={`${formId}-paymentTerms`} label="Default payment terms">
             <select
               id={`${formId}-paymentTerms`}
               className="setup-input setup-select"
               value={value.paymentTerms}
               onChange={set("paymentTerms")}
             >
-              {PAYMENT_TERMS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
+              <option value="on_receipt">Due on receipt</option>
+              <option value="7">7 days</option>
+              <option value="14">14 days</option>
+              <option value="30">30 days</option>
+              <option value="45">45 days</option>
+              <option value="60">60 days</option>
             </select>
           </ChoiceField>
 
-          <ChoiceField
-            id={`${formId}-currency`}
-            label="Default currency"
-            why={optionWhy(CURRENCY_OPTIONS, value.currency)}
-          >
+          <ChoiceField id={`${formId}-currency`} label="Default currency">
             <select
               id={`${formId}-currency`}
               className="setup-input setup-select"
               value={value.currency}
               onChange={set("currency")}
             >
-              {CURRENCY_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
+              <option value="GBP">GBP — British pound</option>
+              <option value="EUR">EUR — Euro</option>
+              <option value="USD">USD — US dollar</option>
             </select>
           </ChoiceField>
         </div>
@@ -170,7 +129,6 @@ export default function SetupCompanyDefaults({
         <ChoiceField
           id={`${formId}-poNumberPrefix`}
           label="Purchase order numbering"
-          why={optionWhy(PO_PREFIX_OPTIONS, value.poNumberPrefix)}
         >
           <select
             id={`${formId}-poNumberPrefix`}
@@ -178,11 +136,9 @@ export default function SetupCompanyDefaults({
             value={value.poNumberPrefix}
             onChange={set("poNumberPrefix")}
           >
-            {PO_PREFIX_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
+            <option value="type">By order type (M0001, S0001…)</option>
+            <option value="PO-">PO-0001</option>
+            <option value="custom">Custom prefix…</option>
           </select>
         </ChoiceField>
 
@@ -190,7 +146,6 @@ export default function SetupCompanyDefaults({
           <ChoiceField
             id={`${formId}-poNumberPrefixCustom`}
             label="Your prefix"
-            why="Letters or numbers only — we'll add the sequence, e.g. LR-0001."
             error={showError("poNumberPrefixCustom")}
           >
             <input

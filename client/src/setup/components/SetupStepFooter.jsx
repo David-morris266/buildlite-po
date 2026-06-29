@@ -6,9 +6,11 @@ export default function SetupStepFooter({
   onContinue,
   continueLabel = "Continue",
   backLabel = "Back",
+  continueFormId,
+  wide = false,
 }) {
   return (
-    <div className="setup-footer">
+    <div className={`setup-footer${wide ? " setup-footer--wide" : ""}`}>
       <div className="setup-footer__inner">
         <button
           type="button"
@@ -18,9 +20,10 @@ export default function SetupStepFooter({
           {backLabel}
         </button>
         <button
-          type="button"
+          type={continueFormId ? "submit" : "button"}
+          form={continueFormId || undefined}
           className="setup-btn setup-btn--primary"
-          onClick={onContinue}
+          onClick={continueFormId ? undefined : onContinue}
         >
           {continueLabel}
         </button>

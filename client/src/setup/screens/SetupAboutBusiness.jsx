@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from "react";
+import { SETUP_FORM_IDS } from "../constants";
 
 function Field({
   id,
@@ -78,25 +79,16 @@ export default function SetupAboutBusiness({
   return (
     <div className="setup-step setup-animate-in">
       <header className="setup-step__header">
-        <p className="setup-step__eyebrow">Tell us about your business</p>
+        <p className="setup-step__eyebrow">Your company</p>
         <h1 className="setup-step__title">Tell us about your business</h1>
         <p className="setup-step__lead">
-          Tell us who you are on paper — the details that appear on purchase
-          orders and payment certificates.
+          These details appear on your purchase orders and payment certificates.
+          You can update them any time in Company Settings.
         </p>
       </header>
 
-      <div className="setup-why">
-        <p className="setup-why__label">Why we ask</p>
-        <p className="setup-why__text">
-          Your company name and address are printed on every purchase order.
-          Your VAT number is used when calculating tax on orders and
-          certificates. You can update all of this later in Company Settings.
-        </p>
-      </div>
-
       <form
-        id={formId}
+        id={SETUP_FORM_IDS.business}
         className="setup-form setup-form__card"
         onSubmit={handleSubmit}
         noValidate
@@ -194,7 +186,6 @@ export default function SetupAboutBusiness({
               label="Postcode"
               error={postcodeHard}
               softError={postcodeSoft}
-              hint="Postcode lookup will be available in a future update."
             >
               <input
                 id={`${formId}-postcode`}
@@ -236,7 +227,7 @@ export default function SetupAboutBusiness({
               id={`${formId}-companyNumber`}
               label="Company registration number"
               optional
-              hint="Company lookup will be available in a future update."
+              hint="As registered with Companies House, if applicable."
             >
               <input
                 id={`${formId}-companyNumber`}

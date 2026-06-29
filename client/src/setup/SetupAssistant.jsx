@@ -13,6 +13,7 @@ import {
   canContinue,
   resolveTradingName,
 } from "./setupDraft";
+import { SETUP_FORM_IDS } from "./constants";
 import "./setup.css";
 
 const STORAGE_KEY = "buildlite_setup_dismissed";
@@ -101,8 +102,17 @@ export default function SetupAssistant({ onExit }) {
     if (Object.keys(validation).length) return;
 
     persist(4, business, identity, defaults);
-    showNotice("Saved locally. The next step will arrive in BL-007A.05.");
+    showNotice("Your defaults are saved. We'll continue setup from here.");
   };
+
+  const continueFormId =
+    step === 2
+      ? SETUP_FORM_IDS.business
+      : step === 3
+        ? SETUP_FORM_IDS.identity
+        : step === 4
+          ? SETUP_FORM_IDS.defaults
+          : undefined;
 
   const footer =
     step >= 2 && step <= 4 ? (
@@ -115,13 +125,15 @@ export default function SetupAssistant({ onExit }) {
               ? handleIdentityContinue
               : handleDefaultsContinue
         }
+        continueFormId={continueFormId}
+        wide={step === 3}
       />
     ) : null;
 
   return (
     <SetupLayout currentStep={step} showProgress footer={footer}>
       {notice ? (
-        <div className="setup-toast" role="status">
+        <div className="setup-toast" role="status" aria-live="polite">
           {notice}
         </div>
       ) : null}

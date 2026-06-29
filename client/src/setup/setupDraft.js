@@ -60,16 +60,16 @@ export const PAYMENT_TERMS_OPTIONS = [
 ];
 
 export const CURRENCY_OPTIONS = [
-  { value: "GBP", label: "GBP — British pound", why: "Used on POs and certificates today." },
-  { value: "EUR", label: "EUR — Euro", why: "Ready if you trade overseas later." },
-  { value: "USD", label: "USD — US dollar", why: "Ready for international suppliers." },
+  { value: "GBP", label: "GBP — British pound", why: "Used on purchase orders and certificates." },
+  { value: "EUR", label: "EUR — Euro", why: "For suppliers billed in euros." },
+  { value: "USD", label: "USD — US dollar", why: "For suppliers billed in dollars." },
 ];
 
 export const PO_PREFIX_OPTIONS = [
   {
     value: "type",
     label: "By order type (M0001, S0001…)",
-    why: "Matches how BuildLite numbers orders today.",
+    why: "Uses your order type as the prefix.",
   },
   {
     value: "PO-",

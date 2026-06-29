@@ -15,7 +15,7 @@ export default function SetupLayout({
 
       <header className="setup-assistant__header">
         <div className="setup-assistant__brand">
-          <img src="/brand.svg" alt="" className="setup-assistant__logo" />
+          <img src="/brand.svg" alt="BuildLite" className="setup-assistant__logo" />
           <div>
             <div className="setup-assistant__product">Build Lite</div>
             <div className="setup-assistant__tagline">Lean Commercial Control</div>

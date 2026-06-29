@@ -1,4 +1,5 @@
 import { useCallback, useId, useRef, useState } from "react";
+import { SETUP_FORM_IDS } from "../constants";
 import {
   ACCENT_PRESETS,
   DEFAULT_ACCENT,
@@ -102,8 +103,8 @@ function PoHeaderPreview({ identity, contact }) {
       </div>
 
       <p className="setup-po-preview__reassurance">
-        Your logo and accent colour will appear on Purchase Orders, Payment
-        Certificates and reports.
+        Your logo and accent colour will appear on purchase orders and payment
+        certificates.
       </p>
     </div>
   );
@@ -133,7 +134,7 @@ export default function SetupCompanyIdentity({
       }
 
       if (file.size > 2 * 1024 * 1024) {
-        setFileHint("For now, choose an image under 2 MB.");
+        setFileHint("Please choose an image under 2 MB.");
         return;
       }
 
@@ -193,30 +194,24 @@ export default function SetupCompanyIdentity({
   return (
     <div className="setup-step setup-step--identity setup-animate-in">
       <header className="setup-step__header">
-        <p className="setup-step__eyebrow">Your company identity</p>
+        <p className="setup-step__eyebrow">Your brand</p>
         <h1 className="setup-step__title">Make BuildLite yours</h1>
         <p className="setup-step__lead">
-          Add your logo and choose an accent colour so every purchase order,
-          certificate and report feels unmistakably yours.
+          Choose a logo and accent colour — the preview shows how your documents
+          will look to suppliers.
         </p>
       </header>
 
-      <div className="setup-why">
-        <p className="setup-why__label">Why we ask</p>
-        <p className="setup-why__text">
-          These details appear on your Purchase Orders, Payment Certificates
-          and reports. You can change them any time in Company Settings.
-        </p>
-      </div>
-
-      <form className="setup-identity" onSubmit={handleSubmit} noValidate>
+      <form
+        id={SETUP_FORM_IDS.identity}
+        className="setup-identity"
+        onSubmit={handleSubmit}
+        noValidate
+      >
         <div className="setup-identity__layout">
           <div className="setup-identity__controls">
             <section className="setup-identity__card setup-identity__card--logo">
               <h2 className="setup-identity__section-title">Company logo</h2>
-              <p className="setup-identity__section-lead">
-                Optional — PNG or JPG works best.
-              </p>
 
               <div
                 className={`setup-dropzone${
@@ -281,17 +276,13 @@ export default function SetupCompanyIdentity({
                 </p>
               ) : (
                 <p className="setup-identity__hint">
-                  Stored locally for now — upload to BuildLite will arrive in a
-                  later update.
+                  Optional. PNG or JPG works best.
                 </p>
               )}
             </section>
 
             <section className="setup-identity__card">
               <h2 className="setup-identity__section-title">Accent colour</h2>
-              <p className="setup-identity__section-lead">
-                Used for headings, buttons and highlights across your documents.
-              </p>
 
               <div
                 className="setup-accent-swatches"
