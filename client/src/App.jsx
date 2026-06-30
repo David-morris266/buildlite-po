@@ -4,6 +4,7 @@ import POList from "./components/POList";
 import POArchive from "./components/POArchive";
 import BrandHeader from "./components/Brandheader";
 import SetupAssistant, { dismissSetupAssistant, isSetupDismissed } from "./setup/SetupAssistant";
+import { buildPoFormSeedFromSetup, loadSetupDraft } from "./setup/setupDraft";
 import "./styles/brand.css";
 
 function shouldShowSetupAssistant() {
@@ -15,7 +16,7 @@ function shouldShowSetupAssistant() {
 export default function App() {
   const [tab, setTab] = useState("form");
   const [showSetup, setShowSetup] = useState(shouldShowSetupAssistant);
-  const [applySetupDraft, setApplySetupDraft] = useState(false);
+  const [setupLaunchSeed, setSetupLaunchSeed] = useState(null);
 
   useEffect(() => {
     localStorage.setItem("userEmail", "david@dmcommercialconsulting.co.uk");
@@ -28,8 +29,15 @@ export default function App() {
   const handleLaunchPO = () => {
     dismissSetupAssistant();
     exitSetup();
-    setApplySetupDraft(true);
+    setSetupLaunchSeed(buildPoFormSeedFromSetup(loadSetupDraft()));
     setTab("form");
+  };
+
+  const handleTab = (nextTab) => {
+    if (tab === "form" && nextTab !== "form") {
+      setSetupLaunchSeed(null);
+    }
+    setTab(nextTab);
   };
 
   const handleExploreBuildLite = () => {
@@ -50,13 +58,13 @@ export default function App() {
 
   return (
     <div id="app">
-      <BrandHeader activeTab={tab} onTab={setTab} />
+      <BrandHeader activeTab={tab} onTab={handleTab} />
 
       <main style={{ padding: "16px", display: "grid", gap: "16px" }}>
         {tab === "form" && (
           <POForm
-            applySetupDraft={applySetupDraft}
-            onSetupDraftApplied={() => setApplySetupDraft(false)}
+            setupLaunchSeed={setupLaunchSeed}
+            onClearSetupLaunchSeed={() => setSetupLaunchSeed(null)}
           />
         )}
         {tab === "list" && <POList />}

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { listPOs, getPO, approvePO } from '../api'
+import { buildApproveBody, canApprovePo } from '../setup/setupDraft'
 
 // ------- helpers -------
 const toNumber = (v) => {
@@ -50,6 +51,12 @@ export default function POArchive() {
   const [sortDir, setSortDir] = useState('desc')    // 'asc' | 'desc'
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
+
+  const rawRole =
+    (localStorage.getItem('role') ||
+      localStorage.getItem('userRole') ||
+      'requester') + ''
+  const isApprover = rawRole.toLowerCase() === 'approver'
 
   const fromDate = useMemo(() => fromStr ? new Date(fromStr + 'T00:00:00') : null, [fromStr])
   const toDate   = useMemo(() => toStr ? new Date(toStr + 'T23:59:59') : null, [toStr])
@@ -115,9 +122,7 @@ export default function POArchive() {
 
   async function updateApproval(newStatus) {
     if (!selected) return
-    const po = await approvePO(selected.poNumber || selected.number, {
-      status: newStatus, approver: 'david@dmcc', note: ''
-    })
+    const po = await approvePO(selected.poNumber || selected.number, buildApproveBody(newStatus))
     setSelected(po)
     refresh()
   }
@@ -328,8 +333,12 @@ export default function POArchive() {
               </div>
 
               <div style={{ display:'flex', gap: 8 }}>
-                <button onClick={()=>updateApproval('Approved')}>Approve</button>
-                <button onClick={()=>updateApproval('Rejected')}>Reject</button>
+                {canApprovePo(selected, isApprover) ? (
+                  <>
+                    <button onClick={()=>updateApproval('Approved')}>Approve</button>
+                    <button onClick={()=>updateApproval('Rejected')}>Reject</button>
+                  </>
+                ) : null}
               </div>
             </div>
           </div>

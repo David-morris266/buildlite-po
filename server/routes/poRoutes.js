@@ -2,6 +2,10 @@
 const express = require("express");
 const { pool } = require("../db"); // keep pool for consistency with your existing DB helper style
 const { getActiveClient } = require("../services/activeClient");
+const {
+  getBrandProfileForClient,
+  mapBrandToPdfContext,
+} = require("../services/brandProfile");
 const { isProduction } = require("../utils/env");
 const { mapPOToContext, renderPOToPDF } = require("../services/pdf");
 
@@ -313,7 +317,9 @@ router.get("/po/:poNumber/pdf", async (req, res) => {
       return res.status(404).type("text/plain").send(`PO ${poNumber} not found`);
     }
 
-    const ctx = mapPOToContext(po);
+    const brandRow = await getBrandProfileForClient(active.id);
+    const brandCtx = mapBrandToPdfContext(brandRow, active);
+    const ctx = mapPOToContext(po, brandCtx);
     const pdfBuffer = await renderPOToPDF(ctx);
 
     res.set({
@@ -400,6 +406,8 @@ router.post("/po", async (req, res) => {
     : [];
 
   const vatRateDefault = Number(body.vatRateDefault == null ? 0.2 : body.vatRateDefault) || 0;
+  const retentionRateDefault =
+    Number(body.retentionRateDefault == null ? 0.05 : body.retentionRateDefault) || 0;
   const totals = computeTotals(items, vatRateDefault);
   const clauses = body.clauses || {};
 
@@ -425,6 +433,7 @@ router.post("/po", async (req, res) => {
     items,
     subtotal: totals.net,
     vatRateDefault: totals.vatRate,
+    retentionRateDefault,
     totals,
 
     approval: { status: approvalStatus, history: [] },
@@ -517,6 +526,15 @@ router.put("/po/:poNumber", async (req, res) => {
         : body.vatRateDefault
     ) || 0;
 
+  const retentionRateDefault =
+    Number(
+      body.retentionRateDefault == null
+        ? po.retentionRateDefault == null
+          ? 0.05
+          : po.retentionRateDefault
+        : body.retentionRateDefault
+    ) || 0;
+
   const totals = computeTotals(items, vatRateDefault);
 
   po.supplierId = supplierId;
@@ -536,6 +554,7 @@ router.put("/po/:poNumber", async (req, res) => {
   po.items = items;
   po.subtotal = totals.net;
   po.vatRateDefault = totals.vatRate;
+  po.retentionRateDefault = retentionRateDefault;
   po.totals = totals;
 
   po.requiredBy = body.requiredBy ?? po.requiredBy ?? "";
@@ -569,8 +588,14 @@ router.post("/po/:poNumber/request-approval", async (req, res) => {
   }
 
   po.status = "Issued";
-  po.approval = { ...(po.approval || {}), status: "Pending" };
-  pushHistory(po, "SENT", req.body?.by || "", req.body?.note || "");
+  po.approval = {
+    ...(po.approval || {}),
+    status: "Pending",
+    approverMode: req.body?.approverMode || po.approval?.approverMode || "",
+    approverName: req.body?.approverName || po.approval?.approverName || "",
+    approverEmail: req.body?.approverEmail || po.approval?.approverEmail || "",
+  };
+  pushHistory(po, "SENT", req.body?.by || req.body?.approverName || "", req.body?.note || "");
   po.updatedAt = new Date().toISOString();
 
   await dbSavePO(active.id, po);
@@ -597,6 +622,7 @@ router.post("/po/:poNumber/approve", async (req, res) => {
     ...(po.approval || {}),
     status: po.status,
     approver,
+    approverEmail: req.body?.approverEmail || po.approval?.approverEmail || "",
     note,
     decidedAt: now,
   };

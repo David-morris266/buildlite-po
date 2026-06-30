@@ -12,28 +12,6 @@ const TEMPLATE_PATH = path.join(__dirname, '..', 'templates', 'po.hbs');
 const DATA_DIR  = path.join(__dirname, '..', 'data');
 const JOBS_PATH = path.join(DATA_DIR, 'jobs.json');
 
-// Try a few common paths/casings for the logo and embed as data URI
-const LOGO_CANDIDATES = [
-  path.join(__dirname, '..', 'brand', 'cotswold-oak-logo.png'),
-  path.join(__dirname, '..', 'Brand', 'cotswold-oak-logo.png'),
-  path.join(__dirname, '..', 'Brand', 'Cotswold-oak-logo.png'),
-  path.join(__dirname, '..', 'Brand', 'Cotswold-Oak-Logo.png'),
-];
-
-function getLogoDataURL() {
-  for (const p of LOGO_CANDIDATES) {
-    try {
-      if (fs.existsSync(p)) {
-        const b64 = fs.readFileSync(p).toString('base64');
-        return `data:image/png;base64,${b64}`;
-      }
-    } catch {
-      // ignore, try next candidate
-    }
-  }
-  return null;
-}
-
 function readJSONSafe(file, fallback) {
   try {
     if (!fs.existsSync(file)) return fallback;
@@ -44,10 +22,29 @@ function readJSONSafe(file, fallback) {
   }
 }
 
+function defaultBrandContext() {
+  return {
+    company: 'BuildLite',
+    address: '',
+    companyNo: '',
+    vatNo: '',
+    phone: '',
+    email: '',
+    website: '',
+    color: '#1e233a',
+    logo: null,
+    showWordmark: true,
+    shortName: 'BuildLite',
+    strapline: '',
+  };
+}
+
 /**
  * Map stored PO shape -> template context the po.hbs expects
+ * @param {object} po
+ * @param {object|null} brandOverride - tenant brand from client_brand_profiles
  */
-function mapPOToContext(po) {
+function mapPOToContext(po, brandOverride = null) {
   /* ----- Money totals ----- */
   const vatRate =
     Number(po.vatRateDefault ?? po.totals?.vatRate ?? 0.2) || 0;
@@ -117,22 +114,9 @@ function mapPOToContext(po) {
   const isPending =
     statusLower === 'pending' || statusLower === 'issued';
 
-  /* ----- Brand (static for now) ----- */
-  const brand = {
-    company: 'Cotswold Oak Ltd',
-    address:
-      'Unit 4, Weston Industrial Estate, Honeybourne, Evesham, Worcestershire, WR11 7QB',
-    companyNo: '05041616',
-    vatNo: '851257724',
-    phone: '01633 898086',
-    email: 'applications@cotswoldoakltd.co.uk',
-    website: 'www.cotswoldoak.co.uk',
-    color: '#1e233a',
-    logo: getLogoDataURL(),
-    showWordmark: false,
-    shortName: 'Cotswold Oak',
-    strapline: 'SUPERIOR HOMES BUILT WITH STYLE',
-  };
+  /* ----- Brand (tenant profile or neutral default) ----- */
+  const brand = brandOverride || defaultBrandContext();
+  const companyLabel = brand.shortName || brand.company || 'Your company';
 
   /* ----- Job / project (prefer snapshot; else enrich from jobs.json) ----- */
   let job = po.job || null;
@@ -211,7 +195,7 @@ function mapPOToContext(po) {
     '';
 
   if (tenderEnabled) {
-    let line = 'Refer to Cotswold Oak tender enquiry';
+    let line = `Refer to ${companyLabel} tender enquiry`;
     if (tenderDate) line += ` dated ${tenderDate}`;
     line += '.';
     clauseLines.push(line);
@@ -228,8 +212,7 @@ function mapPOToContext(po) {
     '';
 
   if (termsEnabled) {
-    let line =
-      'Refer to Cotswold Oak sub-contract terms and conditions';
+    let line = `Refer to ${companyLabel} sub-contract terms and conditions`;
     if (termsVersion) line += ` version ${termsVersion}`;
     line += '.';
     clauseLines.push(line);

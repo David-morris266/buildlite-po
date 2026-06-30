@@ -446,3 +446,83 @@ export function buildPoFormSeedFromSetup(draft) {
     orderType: "M",
   };
 }
+
+/** Company display name from setup draft (for PO clause copy). */
+export function getCompanyDisplayNameFromDraft(draft = null) {
+  const d = draft || loadSetupDraft();
+  return (
+    resolveTradingName(d.business?.companyName, d.business?.tradingName) ||
+    ""
+  );
+}
+
+/** Approver routing from Setup Assistant step 6. */
+export function getSetupApprovalRouting(draft = null) {
+  const d = draft || loadSetupDraft();
+  const approval = d.approval || EMPTY_APPROVAL;
+  const userEmail = localStorage.getItem("userEmail") || "";
+  const userName = localStorage.getItem("userName") || "";
+
+  if (approval.mode === "other") {
+    return {
+      mode: "other",
+      approverName: String(approval.approverName || "").trim(),
+      approverEmail: String(approval.approverEmail || "").trim(),
+    };
+  }
+
+  return {
+    mode: "self",
+    approverName: userName || "Approver",
+    approverEmail: userEmail,
+  };
+}
+
+/** Body for POST /api/po/:number/request-approval */
+export function buildRequestApprovalBody(note = "") {
+  const routing = getSetupApprovalRouting();
+  const userEmail = localStorage.getItem("userEmail") || "";
+  return {
+    by: userEmail,
+    note,
+    approverMode: routing.mode,
+    approverName: routing.approverName,
+    approverEmail: routing.approverEmail,
+  };
+}
+
+/** Body for POST /api/po/:number/approve */
+export function buildApproveBody(status, note = "") {
+  const routing = getSetupApprovalRouting();
+  return {
+    status,
+    approver: routing.approverName || routing.approverEmail || "",
+    approverEmail: routing.approverEmail,
+    note,
+  };
+}
+
+/** Whether a requester can send this PO for approval (List / drawer). */
+export function canSendPoForApproval(po, isApprover) {
+  if (isApprover || !po) return false;
+  const approvalStatusLower = String(po.approval?.status || "").toLowerCase();
+  const poStatusLower = String(po.status || "").toLowerCase();
+  if (approvalStatusLower === "pending" || approvalStatusLower === "approved") {
+    return false;
+  }
+  if (poStatusLower === "approved") return false;
+  return (
+    approvalStatusLower === "draft" ||
+    approvalStatusLower === "rejected" ||
+    !approvalStatusLower ||
+    poStatusLower === "draft" ||
+    poStatusLower === "rejected"
+  );
+}
+
+/** Whether an approver can act on this PO (List / Archive). */
+export function canApprovePo(po, isApprover) {
+  if (!isApprover || !po) return false;
+  const approvalStatusLower = String(po.approval?.status || "").toLowerCase();
+  return !approvalStatusLower || approvalStatusLower === "pending";
+}

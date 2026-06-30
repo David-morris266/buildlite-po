@@ -8,6 +8,12 @@ import {
   requestApproval,
   poPdfUrl,
 } from '../api';
+import {
+  buildApproveBody,
+  buildRequestApprovalBody,
+  canApprovePo,
+  canSendPoForApproval,
+} from '../setup/setupDraft';
 import POForm from './POForm';
 import './POList.css';
 
@@ -60,9 +66,6 @@ export default function POList() {
   // Allow toggle only for authorised emails
   const allowedEmails = [
     'david@dmcommercialconsulting.co.uk',
-    // Add others below if needed, e.g.:
-    // 'russell@cotswoldoak.co.uk',
-    // 'karl@levisonrose.co.uk',
   ];
   const canToggleRole = allowedEmails.some(
     (e) => e.toLowerCase() === userEmail.toLowerCase()
@@ -146,11 +149,7 @@ export default function POList() {
     if (!number) return;
     try {
       setUpdatingApproval(true);
-      await approvePO(number, {
-        status: newStatus,
-        approver: 'manager',
-        note: '',
-      });
+      await approvePO(number, buildApproveBody(newStatus));
       await fetchData();
       if (selected?.poNumber === number) {
         const fresh = await getPO(number);
@@ -168,7 +167,7 @@ export default function POList() {
   async function onSendForApproval(number) {
     if (!number) return;
     try {
-      await requestApproval(number);
+      await requestApproval(number, buildRequestApprovalBody());
       await fetchData();
       if (selected?.poNumber === number) {
         const fresh = await getPO(number);
@@ -375,14 +374,8 @@ export default function POList() {
                     approvalStatus || po.status || 'Pending';
                   const rowCanEdit = canEditStatus(po.status);
 
-                  const approvalStatusLower = (approvalStatus || '').toLowerCase();
-                  const canApproveRow =
-                    isApprover &&
-                    (!approvalStatusLower || approvalStatusLower === 'pending');
-                  const canSendRow =
-                    !isApprover &&
-                    (!approvalStatusLower ||
-                      approvalStatusLower === 'rejected');
+                  const canApproveRow = canApprovePo(po, isApprover);
+                  const canSendRow = canSendPoForApproval(po, isApprover);
 
                   return (
                     <tr
@@ -789,10 +782,7 @@ export default function POList() {
                     <button onClick={() => setEditMode(true)}>Edit</button>
                   )}
 
-                  {isApprover &&
-                    (!selected.approval?.status ||
-                      (selected.approval?.status + '')
-                        .toLowerCase() === 'pending') && (
+                  {canApprovePo(selected, isApprover) && (
                       <>
                         <button
                           disabled={updatingApproval}
@@ -819,10 +809,7 @@ export default function POList() {
                       </>
                     )}
 
-                  {!isApprover &&
-                    (!selected.approval?.status ||
-                      (selected.approval?.status + '')
-                        .toLowerCase() === 'rejected') && (
+                  {canSendPoForApproval(selected, isApprover) && (
                       <button
                         onClick={() =>
                           onSendForApproval(selected.poNumber)

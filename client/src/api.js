@@ -144,3 +144,9 @@ export async function requestApproval(number, body) {
 export function poPdfUrl(number) {
   return buildUrl(`/api/po/${encodeURIComponent(number)}/pdf`);
 }
+
+/* ---------- Brand ---------- */
+export async function getActiveBrand() {
+  const res = await fetch(buildUrl("/api/brand/active"));
+  return handleJson(res);
+}

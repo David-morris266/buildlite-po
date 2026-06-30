@@ -8,10 +8,10 @@ import {
   savePO,
   updatePO,
   requestApproval,
+  getActiveBrand,
 } from '../api';
 import {
-  buildPoFormSeedFromSetup,
-  loadSetupDraft,
+  buildRequestApprovalBody,
 } from '../setup/setupDraft';
 import './POForm.css';
 
@@ -38,8 +38,8 @@ const UOMS = [
 export default function POForm({
   initialPo = null,
   onSaved = null,
-  applySetupDraft = false,
-  onSetupDraftApplied = null,
+  setupLaunchSeed = null,
+  onClearSetupLaunchSeed = null,
 }) {
   const isEdit = !!(initialPo && initialPo.poNumber);
 
@@ -69,6 +69,7 @@ export default function POForm({
   const [jobSeed, setJobSeed] = useState(null);
   const [poNumberHint, setPoNumberHint] = useState('');
   const [setupSeedApplied, setSetupSeedApplied] = useState(false);
+  const [companyLabel, setCompanyLabel] = useState('Your company');
 
   // Lines
   const [lines, setLines] = useState([
@@ -122,17 +123,25 @@ export default function POForm({
     setTitle(`PO · ${job.name}`);
   }, []);
 
-  // Apply Setup Assistant draft when launching first PO (BL-007A.07)
+  // Tenant brand for clause copy (normal PO); setup name only via launch seed
   useEffect(() => {
-    if (!applySetupDraft || isEdit || setupSeedApplied) return;
+    if (setupLaunchSeed) return;
+    (async () => {
+      try {
+        const { brand } = await getActiveBrand();
+        const name = brand?.trading_name || brand?.legal_name;
+        if (name) setCompanyLabel(name);
+      } catch {
+        /* keep default */
+      }
+    })();
+  }, [setupLaunchSeed]);
 
-    const draft = loadSetupDraft();
-    const seed = buildPoFormSeedFromSetup(draft);
-    if (!seed) {
-      setSetupSeedApplied(true);
-      onSetupDraftApplied?.();
-      return;
-    }
+  // Apply setup launch seed from App (BL-008 — survives Strict Mode remount)
+  useEffect(() => {
+    if (!setupLaunchSeed || isEdit || setupSeedApplied) return;
+
+    const seed = setupLaunchSeed;
 
     setVatRate(seed.vatRate);
     setRetentionRate(seed.retentionRate);
@@ -160,14 +169,12 @@ export default function POForm({
       poNumberHint: seed.poNumberHint,
     });
 
+    if (seed.companyName) {
+      setCompanyLabel(seed.companyName);
+    }
+
     setSetupSeedApplied(true);
-    onSetupDraftApplied?.();
-  }, [
-    applySetupDraft,
-    isEdit,
-    setupSeedApplied,
-    onSetupDraftApplied,
-  ]);
+  }, [setupLaunchSeed, isEdit, setupSeedApplied]);
 
   // ===== Load selected job snapshot when a job is picked =====
   useEffect(() => {
@@ -235,6 +242,12 @@ export default function POForm({
         ? initialPo.vatRateDefault
         : (initialPo.totals?.vatRate ?? 0.2);
     setVatRate(vr);
+
+    const rr =
+      initialPo.retentionRateDefault != null
+        ? initialPo.retentionRateDefault
+        : 0.05;
+    setRetentionRate(rr);
 
     // Lines
     const mappedLines = Array.isArray(initialPo.items)
@@ -365,11 +378,19 @@ export default function POForm({
     setRetentionRate(0.05);
     setLines([{ description: '', uom: 'nr', qty: '', rate: '', amount: 0 }]);
 
+    setSetupBanner(null);
+    setSupplierSeed(null);
+    setJobSeed(null);
+    setPoNumberHint('');
+    setSetupSeedApplied(false);
+
     setClauseTender(false);
     setClauseTenderDate('');
     setClauseTerms(false);
     setClauseTermsVersion('');
     setClauseRAMS(false);
+
+    onClearSetupLaunchSeed?.();
   }
 
   // ===== Save Draft =====
@@ -442,10 +463,7 @@ export default function POForm({
       if (!poNumber) throw new Error('PO number missing after save');
 
       // 2) Request approval
-      const poAfter = await requestApproval(poNumber, {
-        by: 'david@dmcc',
-        note: '',
-      });
+      const poAfter = await requestApproval(poNumber, buildRequestApprovalBody());
 
       alert(`PO ${poAfter.poNumber || ''} sent for approval`);
 
@@ -609,7 +627,7 @@ export default function POForm({
                 checked={clauseTender}
                 onChange={e => setClauseTender(e.target.checked)}
               />
-              <span>Refer to Cotswold Oak tender enquiry dated</span>
+              <span>Refer to {companyLabel} tender enquiry dated</span>
               <input
                 type="text"
                 placeholder="e.g. 10/06/2025"
@@ -628,7 +646,7 @@ export default function POForm({
                 checked={clauseTerms}
                 onChange={e => setClauseTerms(e.target.checked)}
               />
-              <span>Refer to Cotswold Oak sub-contract terms and conditions version</span>
+              <span>Refer to {companyLabel} sub-contract terms and conditions version</span>
               <input
                 type="text"
                 placeholder="e.g. v1.0"
