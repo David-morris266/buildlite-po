@@ -14,6 +14,7 @@ import {
   canSendPoForApproval,
 } from '../setup/setupDraft';
 import { getPoRowActionLabel } from './poDrawerHelpers';
+import { getPoDevelopmentListLabel } from '../developments/developmentPoHelpers';
 import POForm from './POForm';
 import POPageHeader from './POPageHeader';
 import POLoading from './POLoading';
@@ -41,6 +42,7 @@ export default function POList({
   focusPoNumber = null,
   onFocusHandled = null,
   onCreateFirstPO = null,
+  onCreateDevelopment = null,
   onOpenPackage = null,
 }) {
   const [rows, setRows] = useState([]);
@@ -265,10 +267,10 @@ export default function POList({
         />
         <input
           className="input"
-          placeholder="Job (code or id)"
+          placeholder="Development (name or number)"
           value={job}
           onChange={(e) => setJob(e.target.value)}
-          aria-label="Filter by job"
+          aria-label="Filter by development"
         />
         <select
           className="select"
@@ -336,7 +338,7 @@ export default function POList({
                   <th>Date</th>
                   <th>PO No</th>
                   <th>Type</th>
-                  <th>Job</th>
+                  <th>Development</th>
                   <th>Supplier</th>
                   <th>Title / Description</th>
                   <th style={{ textAlign: 'right' }}>Total</th>
@@ -355,15 +357,7 @@ export default function POList({
                     '';
                   const title = po.title || po.description || '-';
 
-                  const jobSnap = po.job || {};
-                  const jobTag =
-                    jobSnap.jobNumber ||
-                    jobSnap.jobCode ||
-                    po.costRef?.jobCode ||
-                    '';
-                  const jobLabel = [jobSnap.name, jobTag]
-                    .filter(Boolean)
-                    .join(' · ');
+                  const developmentLabel = getPoDevelopmentListLabel(po);
                   const amount =
                     po.subtotal ?? po.totals?.net ?? po.amount ?? 0;
                   const approvalStatus = po.approval?.status;
@@ -384,7 +378,7 @@ export default function POList({
                         {(po.type || '').toUpperCase()}
                       </td>
                       <td>
-                        {jobLabel || '—'}
+                        {developmentLabel || '—'}
                       </td>
                       <td>{supplierName}</td>
                       <td
@@ -482,6 +476,7 @@ export default function POList({
             <div className="po-drawer-edit__body">
               <POForm
                 initialPo={selected}
+                onCreateDevelopment={onCreateDevelopment}
                 onSaved={async (updatedPo) => {
                   setSelected(updatedPo);
                   setEditMode(false);

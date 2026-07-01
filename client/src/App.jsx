@@ -114,6 +114,7 @@ export default function App() {
               onViewPurchaseOrders={handleViewPurchaseOrders}
               onReviewAndApprove={handleReviewAndApprove}
               onCreateAnotherPO={handleCreateAnotherPO}
+              onCreateDevelopment={() => setTab("developments")}
             />
           </div>
         )}
@@ -123,6 +124,7 @@ export default function App() {
               focusPoNumber={listFocusPo}
               onFocusHandled={() => setListFocusPo(null)}
               onCreateFirstPO={handleCreateFirstPO}
+              onCreateDevelopment={() => setTab("developments")}
               onOpenPackage={handleOpenPackage}
             />
           </div>

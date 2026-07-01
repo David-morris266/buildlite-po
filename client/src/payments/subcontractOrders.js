@@ -3,6 +3,11 @@
  */
 
 import { hasOrderMatrix, loadOrderMatrix } from './orderMatrixStore';
+import {
+  getPoDevelopmentId,
+  getPoDevelopmentListLabel,
+  resolvePoDevelopment,
+} from '../developments/developmentPoHelpers';
 
 export function getSubcontractOrderKey(jobId, supplierId) {
   return `${String(jobId)}::${String(supplierId)}`;
@@ -31,6 +36,21 @@ export function getPoJobId(po) {
   return po?.job?.id ?? po?.costRef?.jobId ?? null;
 }
 
+export function getPoOrderScopeId(po) {
+  return getPoDevelopmentId(po) || getPoJobId(po);
+}
+
+export function getPoDevelopmentFields(po) {
+  const resolved = resolvePoDevelopment(po);
+  const ref = resolved.ref || {};
+
+  return {
+    developmentId: ref.id || getPoDevelopmentId(po) || '',
+    developmentNumber: ref.developmentNumber || resolved.number || '',
+    developmentName: ref.developmentName || resolved.label || '',
+  };
+}
+
 export function getPoCommittedNet(po) {
   const n = Number(po?.subtotal ?? po?.totals?.net ?? po?.amount ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -47,9 +67,7 @@ export function getLineNet(item) {
 }
 
 export function getProjectLabel(po) {
-  const job = po?.job || {};
-  const tag = job.jobNumber || job.jobCode || po?.costRef?.jobCode || '';
-  return [job.name, tag].filter(Boolean).join(' · ') || '—';
+  return getPoDevelopmentListLabel(po);
 }
 
 export function getSupplierLabel(po) {
@@ -62,10 +80,10 @@ export function getSupplierLabel(po) {
 }
 
 export function getSubcontractOrderKeyFromPo(po) {
-  const jobId = getPoJobId(po);
+  const scopeId = getPoOrderScopeId(po);
   const supplierId = po?.supplierId;
-  if (!jobId || !supplierId) return null;
-  return getSubcontractOrderKey(jobId, supplierId);
+  if (!scopeId || !supplierId) return null;
+  return getSubcontractOrderKey(scopeId, supplierId);
 }
 
 export function buildSubcontractOrdersFromPos(pos) {
@@ -75,17 +93,19 @@ export function buildSubcontractOrdersFromPos(pos) {
   for (const po of items) {
     if (!isApprovedSubcontractPo(po)) continue;
 
-    const jobId = getPoJobId(po);
+    const scopeId = getPoOrderScopeId(po);
     const supplierId = po.supplierId;
-    if (!jobId || !supplierId) continue;
+    if (!scopeId || !supplierId) continue;
 
-    const orderKey = getSubcontractOrderKey(jobId, supplierId);
+    const orderKey = getSubcontractOrderKey(scopeId, supplierId);
+    const developmentFields = getPoDevelopmentFields(po);
     const existing = groups.get(orderKey) || {
       orderKey,
-      jobId: String(jobId),
+      jobId: String(scopeId),
       supplierId: String(supplierId),
       projectLabel: getProjectLabel(po),
       supplierLabel: getSupplierLabel(po),
+      ...developmentFields,
       committedValue: 0,
       certifiedToDate: 0,
       certificateCount: 0,

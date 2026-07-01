@@ -1,4 +1,7 @@
 import { loadSetupDraft, formatPaymentTermsLabel } from '../setup/setupDraft';
+import {
+  getPoDevelopmentListLabel,
+} from '../developments/developmentPoHelpers';
 
 const ORDER_TYPE_LABELS = {
   M: 'Materials',
@@ -82,13 +85,7 @@ export function getDrawerHeaderMeta(po) {
     po?.supplier ||
     '—';
 
-  const jobSnap = po?.job || {};
-  const project =
-    jobSnap.name ||
-    jobSnap.jobNumber ||
-    jobSnap.jobCode ||
-    po?.costRef?.jobCode ||
-    '—';
+  const project = getPoDevelopmentListLabel(po);
 
   const date = formatPoDate(po?.createdAt || po?.date);
 
@@ -102,10 +99,7 @@ export function getPoSubtitle(po) {
     po?.supplier ||
     'Supplier not set';
 
-  const jobSnap = po?.job || {};
-  const jobTag =
-    jobSnap.jobNumber || jobSnap.jobCode || po?.costRef?.jobCode || '';
-  const project = [jobSnap.name, jobTag].filter(Boolean).join(' · ') || 'No project';
+  const project = getPoDevelopmentListLabel(po) || 'No development';
 
   const date = formatPoDate(po?.createdAt || po?.date);
 

@@ -21,7 +21,25 @@ function writeAll(data) {
 
 export function ensurePackageRecord(orderKey, order = {}) {
   const all = readAll();
-  if (all[orderKey]) return all[orderKey];
+  if (all[orderKey]) {
+    const record = all[orderKey];
+    let changed = false;
+
+    for (const field of ['developmentId', 'developmentNumber', 'developmentName']) {
+      if (!record[field] && order[field]) {
+        record[field] = order[field];
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      record.updatedAt = new Date().toISOString();
+      all[orderKey] = record;
+      writeAll(all);
+    }
+
+    return record;
+  }
 
   const now = new Date().toISOString();
   all[orderKey] = {
@@ -30,6 +48,9 @@ export function ensurePackageRecord(orderKey, order = {}) {
     supplierId: order.supplierId,
     projectLabel: order.projectLabel,
     supplierLabel: order.supplierLabel,
+    developmentId: order.developmentId || '',
+    developmentNumber: order.developmentNumber || '',
+    developmentName: order.developmentName || '',
     createdAt: now,
     updatedAt: now,
     activity: [],

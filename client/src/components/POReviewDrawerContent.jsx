@@ -3,6 +3,8 @@ import {
   canSendPoForApproval,
   getPoApproverDisplayName,
 } from '../setup/setupDraft';
+import { resolvePoDevelopment } from '../developments/developmentPoHelpers';
+import { formatPlotsSummary } from '../developments/developmentHelpers';
 import {
   formatMoney,
   formatPoDate,
@@ -182,12 +184,11 @@ export default function POReviewDrawerContent({
     po.supplier ||
     '—';
 
-  const jobSnap = po.job || {};
-  const jobTag =
-    jobSnap.jobNumber || jobSnap.jobCode || po.costRef?.jobCode || '';
-  const projectName =
-    [jobSnap.name, jobTag].filter(Boolean).join(' · ') || '—';
-  const siteAddress = jobSnap.siteAddress || '';
+  const development = resolvePoDevelopment(po);
+  const plotsLabel =
+    development.plotCount != null
+      ? formatPlotsSummary(development.plotCount)
+      : '—';
 
   return (
     <>
@@ -255,14 +256,15 @@ export default function POReviewDrawerContent({
           ) : null}
         </DrawerSection>
 
-        <DrawerSection title="Project">
-          <DetailRow label="Project" value={projectName} />
-          {siteAddress ? (
-            <DetailRow label="Site" value={siteAddress} />
-          ) : null}
-          {jobSnap.siteManager ? (
-            <DetailRow label="Site manager" value={jobSnap.siteManager} />
-          ) : null}
+        <DrawerSection title="Development">
+          <DetailRow label="Development" value={development.label} />
+          <DetailRow label="Development Number" value={development.number} />
+          <DetailRow
+            label="Status"
+            value={development.statusMeta?.label || '—'}
+          />
+          <DetailRow label="Client" value={development.client} />
+          <DetailRow label="Plots" value={plotsLabel} />
         </DrawerSection>
 
         <DrawerSection title="Approval">

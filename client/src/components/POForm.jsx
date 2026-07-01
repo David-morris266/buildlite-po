@@ -1,10 +1,20 @@
 // client/src/components/POForm.jsx
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import CostCodeSelect from './CostCodeSelect';
 import SupplierSelect from './SupplierSelect';
-import JobSelect from './JobSelect';
+import DevelopmentSelect, {
+  DevelopmentSelectEmptyState,
+} from './DevelopmentSelect';
+import DevelopmentSummaryCard from './DevelopmentSummaryCard';
 import {
-  listJobs,
+  listDevelopments,
+} from '../developments/developmentStore';
+import {
+  buildPoDevelopmentPayload,
+  mapJobToDevelopment,
+  resolvePoDevelopment,
+} from '../developments/developmentPoHelpers';
+import {
   savePO,
   updatePO,
   requestApproval,
@@ -46,6 +56,7 @@ export default function POForm({
   onViewPurchaseOrders = null,
   onReviewAndApprove = null,
   onCreateAnotherPO = null,
+  onCreateDevelopment = null,
 }) {
   const isEdit = !!(initialPo && initialPo.poNumber);
 
@@ -56,12 +67,14 @@ export default function POForm({
   // Order type (M / S / P)
   const [type, setType] = useState('M');
 
-  // Job selection
-  const [jobId, setJobId] = useState('');
-  const [jobSnap, setJobSnap] = useState(null);
+  // Development selection (BL-009A.03)
+  const [developmentId, setDevelopmentId] = useState('');
 
-  // Legacy / manual job code
-  const [jobCode, setJobCode] = useState('');
+  const developments = listDevelopments();
+  const hasDevelopments = developments.length > 0;
+  const selectedDevelopment =
+    developments.find((item) => item.id === developmentId) || null;
+  const formDisabled = !hasDevelopments;
 
   // Single cost code string
   const [costCode, setCostCode] = useState('');
@@ -157,10 +170,20 @@ export default function POForm({
       if (seed.supplierName) setSupplierName(seed.supplierName);
     }
 
-    if (seed.jobId) {
-      setJobId(seed.jobId);
-      if (seed.job?.jobCode) setJobCode(seed.job.jobCode);
-      if (seed.job?.name) setTitle(`PO · ${seed.job.name}`);
+    if (seed.jobId || seed.job?.name) {
+      const mapped = seed.job
+        ? mapJobToDevelopment({
+            name: seed.job.name,
+            jobNumber: seed.job.jobCode,
+            jobCode: seed.job.jobCode,
+          })
+        : null;
+      if (mapped) {
+        setDevelopmentId(mapped.id);
+        setTitle(`PO · ${mapped.developmentName}`);
+      } else if (seed.job?.name) {
+        setTitle(`PO · ${seed.job.name}`);
+      }
     }
 
     setSetupBanner({
@@ -176,25 +199,6 @@ export default function POForm({
 
     setSetupSeedApplied(true);
   }, [setupLaunchSeed, isEdit, setupSeedApplied]);
-
-  // ===== Load selected job snapshot when a job is picked =====
-  useEffect(() => {
-    if (!jobId) return;
-    (async () => {
-      try {
-        const jobs = await listJobs();
-        const found = (jobs || []).find(j => String(j.id) === String(jobId)) || null;
-        setJobSnap(found || null);
-        if (found && (found.jobNumber || found.jobCode)) {
-          setJobCode(found.jobNumber || found.jobCode || '');
-        } else {
-          setJobCode('');
-        }
-      } catch {
-        setJobSnap(null);
-      }
-    })();
-  }, [jobId]);
 
   // ===== If editing, initialise state from initialPo =====
   useEffect(() => {
@@ -215,20 +219,14 @@ export default function POForm({
     // Type
     setType(initialPo.type || 'M');
 
-    // Job
-    if (initialPo.job && initialPo.job.id) {
-      setJobId(initialPo.job.id);
-      setJobSnap(initialPo.job);
-      setJobCode(
-        initialPo.costRef?.jobCode ||
-        initialPo.job.jobNumber ||
-        initialPo.job.jobCode ||
-        ''
-      );
+    // Development
+    const resolved = resolvePoDevelopment(initialPo);
+    if (resolved.ref?.id) {
+      setDevelopmentId(resolved.ref.id);
+    } else if (resolved.live?.id) {
+      setDevelopmentId(resolved.live.id);
     } else {
-      setJobId('');
-      setJobSnap(initialPo.job || null);
-      setJobCode(initialPo.costRef?.jobCode || '');
+      setDevelopmentId('');
     }
 
     // Cost code
@@ -275,11 +273,12 @@ export default function POForm({
     setClauseRAMS(!!c.ramsRequired);
   }, [initialPo]);
 
-  const projectLabel = useMemo(() => {
-    if (!jobSnap) return '';
-    const tag = jobSnap.jobNumber || jobSnap.jobCode || '';
-    return [jobSnap.name, tag].filter(Boolean).join(' · ');
-  }, [jobSnap]);
+  useEffect(() => {
+    if (!developmentId || title.trim()) return;
+    if (selectedDevelopment?.developmentName) {
+      setTitle(`PO · ${selectedDevelopment.developmentName}`);
+    }
+  }, [developmentId, selectedDevelopment, title]);
 
   function scrollToTop() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -300,6 +299,9 @@ export default function POForm({
 
     if (!supplierId) {
       errors.supplier = 'Supplier is required.';
+    }
+    if (!developmentId) {
+      errors.development = 'Development is required.';
     }
     if (!costCodeString || !costCodeString.trim()) {
       errors.costCode = 'Cost code is required.';
@@ -370,26 +372,21 @@ export default function POForm({
       supplierId,
       supplierName,
 
+      ...buildPoDevelopmentPayload(selectedDevelopment),
+
       costRef: {
-        jobId: jobSnap?.id || '',
-        jobCode: jobSnap?.jobCode || jobSnap?.jobNumber || jobCode || '',
+        developmentId: selectedDevelopment?.id || '',
         costCode: costCodeString,
-        element: ''
+        element: '',
       },
 
-      job: jobSnap ? {
-        id: jobSnap.id,
-        jobCode: jobSnap.jobCode || '',
-        jobNumber: jobSnap.jobNumber || '',
-        name: jobSnap.name || '',
-        siteAddress: jobSnap.siteAddress || '',
-        siteManager: jobSnap.siteManager || '',
-        sitePhone: jobSnap.sitePhone || '',
-        client: jobSnap.client || '',
-        notes: jobSnap.notes || ''
-      } : null,
+      job: null,
 
-      title: title?.trim() || (jobSnap ? `PO · ${jobSnap.name}` : ''),
+      title:
+        title?.trim() ||
+        (selectedDevelopment
+          ? `PO · ${selectedDevelopment.developmentName}`
+          : ''),
 
       vatRateDefault: toNumber(vatRate),
       retentionRateDefault: toNumber(retentionRate),
@@ -430,9 +427,7 @@ export default function POForm({
     setSupplierId('');
     setSupplierName('');
     setType('M');
-    setJobId('');
-    setJobSnap(null);
-    setJobCode('');
+    setDevelopmentId('');
     setCostCode('');
     setTitle('');
     setVatRate(0.2);
@@ -618,7 +613,11 @@ export default function POForm({
           </div>
         ) : null}
 
-        <div className="po-form-sections">
+        {!hasDevelopments ? (
+          <DevelopmentSelectEmptyState onCreateDevelopment={onCreateDevelopment} />
+        ) : null}
+
+        <fieldset className="po-form-sections" disabled={formDisabled}>
           {/* 1. Supplier */}
           <section className="po-form-section" aria-labelledby="po-section-supplier">
             <h2 id="po-section-supplier" className="po-form-section__title">
@@ -641,45 +640,47 @@ export default function POForm({
             </div>
           </section>
 
-          {/* 2. Project / Job */}
-          <section className="po-form-section" aria-labelledby="po-section-project">
-            <h2 id="po-section-project" className="po-form-section__title">
-              Project / Job
+          {/* 2. Development */}
+          <section className="po-form-section" aria-labelledby="po-section-development">
+            <h2 id="po-section-development" className="po-form-section__title">
+              Development
             </h2>
             <p className="po-form-section__lead">
-              Link this order to the development or site it relates to.
+              Link this order to the development it belongs to. Commercial context
+              is inherited from the Plot Master.
             </p>
-            <div className="po-form-grid">
-              <div>
-                <label>Job</label>
-                <JobSelect
-                  value={jobId}
-                  onChange={(id) => {
-                    setJobId(id);
-                    if (!id) setJobSnap(null);
-                  }}
-                  showLabel={false}
-                />
-                {jobSnap && (
-                  <div className="muted" style={{ marginTop: 4 }}>
-                    {projectLabel}
-                    <br />
-                    {jobSnap.siteAddress || ''}
-                    {jobSnap.siteManager ? ` · ${jobSnap.siteManager}` : ''}
-                    {jobSnap.sitePhone ? ` · ${jobSnap.sitePhone}` : ''}
-                  </div>
-                )}
-              </div>
 
-              <div>
-                <label>Job Code (optional)</label>
-                <input
-                  placeholder="e.g. EX-01"
-                  value={jobCode}
-                  onChange={(e) => setJobCode(e.target.value)}
-                />
-              </div>
-            </div>
+            {!hasDevelopments ? (
+              <p className="dev-po-empty__hint">
+                Create a Development to unlock the rest of this form.
+              </p>
+            ) : (
+              <>
+                <div className={formErrors.development ? 'po-field--error' : ''}>
+                  <DevelopmentSelect
+                    value={developmentId}
+                    disabled={formDisabled}
+                    onChange={(id) => {
+                      setDevelopmentId(id || '');
+                      if (formErrors.development) {
+                        setFormErrors((prev) => {
+                          const next = { ...prev };
+                          delete next.development;
+                          return next;
+                        });
+                      }
+                    }}
+                  />
+                  {formErrors.development ? (
+                    <p className="po-field__inline-error">{formErrors.development}</p>
+                  ) : null}
+                </div>
+
+                {selectedDevelopment ? (
+                  <DevelopmentSummaryCard development={selectedDevelopment} />
+                ) : null}
+              </>
+            )}
           </section>
 
           {/* 3. Order Details */}
@@ -965,7 +966,7 @@ export default function POForm({
               </div>
             </section>
           )}
-        </div>
+        </fieldset>
       </div>
 
       {/* 7. Actions */}
@@ -1035,7 +1036,7 @@ export default function POForm({
                 onClick={handleSaveDraft}
                 className="primary"
                 style={{ width: '100%' }}
-                disabled={savingDraft || savingAndSending}
+                disabled={formDisabled || savingDraft || savingAndSending}
               >
                 {savingDraft
                   ? 'Saving…'
@@ -1048,7 +1049,7 @@ export default function POForm({
                 onClick={handleSaveAndSend}
                 className="secondary"
                 style={{ width: '100%' }}
-                disabled={savingDraft || savingAndSending}
+                disabled={formDisabled || savingDraft || savingAndSending}
               >
                 {savingAndSending
                   ? 'Sending…'
