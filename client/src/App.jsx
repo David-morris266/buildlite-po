@@ -17,11 +17,15 @@ export default function App() {
   const [tab, setTab] = useState("form");
   const [showSetup, setShowSetup] = useState(shouldShowSetupAssistant);
   const [setupLaunchSeed, setSetupLaunchSeed] = useState(null);
+  const [listFocusPo, setListFocusPo] = useState(null);
 
   useEffect(() => {
-    localStorage.setItem("userEmail", "david@dmcommercialconsulting.co.uk");
-    localStorage.setItem("userName", "David");
-    localStorage.setItem("userRole", "requester");
+    if (!localStorage.getItem("userEmail")) {
+      localStorage.setItem("userEmail", "accounts@example.co.uk");
+    }
+    if (!localStorage.getItem("userName")) {
+      localStorage.setItem("userName", "Commercial Manager");
+    }
   }, []);
 
   const exitSetup = () => setShowSetup(false);
@@ -38,6 +42,22 @@ export default function App() {
       setSetupLaunchSeed(null);
     }
     setTab(nextTab);
+  };
+
+  const handleViewPurchaseOrders = (poNumber) => {
+    setListFocusPo(poNumber || null);
+    setSetupLaunchSeed(null);
+    setTab("list");
+  };
+
+  const handleReviewAndApprove = (poNumber) => {
+    setListFocusPo(poNumber || null);
+    setSetupLaunchSeed(null);
+    setTab("list");
+  };
+
+  const handleCreateAnotherPO = () => {
+    setSetupLaunchSeed(null);
   };
 
   const handleExploreBuildLite = () => {
@@ -65,9 +85,17 @@ export default function App() {
           <POForm
             setupLaunchSeed={setupLaunchSeed}
             onClearSetupLaunchSeed={() => setSetupLaunchSeed(null)}
+            onViewPurchaseOrders={handleViewPurchaseOrders}
+            onReviewAndApprove={handleReviewAndApprove}
+            onCreateAnotherPO={handleCreateAnotherPO}
           />
         )}
-        {tab === "list" && <POList />}
+        {tab === "list" && (
+          <POList
+            focusPoNumber={listFocusPo}
+            onFocusHandled={() => setListFocusPo(null)}
+          />
+        )}
         {tab === "archive" && <POArchive />}
       </main>
     </div>

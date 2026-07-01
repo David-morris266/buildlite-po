@@ -8,6 +8,7 @@ export default function SetupStepFooter({
   backLabel = "Back",
   continueFormId,
   wide = false,
+  continueDisabled = false,
 }) {
   return (
     <div className={`setup-footer${wide ? " setup-footer--wide" : ""}`}>
@@ -16,6 +17,7 @@ export default function SetupStepFooter({
           type="button"
           className="setup-btn setup-btn--secondary"
           onClick={onBack}
+          disabled={continueDisabled}
         >
           {backLabel}
         </button>
@@ -24,6 +26,7 @@ export default function SetupStepFooter({
           form={continueFormId || undefined}
           className="setup-btn setup-btn--primary"
           onClick={continueFormId ? undefined : onContinue}
+          disabled={continueDisabled}
         >
           {continueLabel}
         </button>

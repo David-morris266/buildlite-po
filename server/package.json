@@ -8,6 +8,7 @@
     "dev": "nodemon server.js",
     "migrate": "node scripts/migrate.js",
     "seed": "node scripts/seed.js",
+    "reset-dev-data": "node scripts/reset-dev-data.js",
     "postinstall": "npx puppeteer browsers install chrome"
   },
   "dependencies": {

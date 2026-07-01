@@ -36,6 +36,27 @@ export async function createSupplier(body = {}) {
   return handleJson(res);
 }
 
+/** Create supplier or return existing record when name already exists (409). */
+export async function createOrGetSupplier(body = {}) {
+  const url = buildUrl('/api/po/suppliers');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (res.status === 409) {
+    const suppliers = await listSuppliers('');
+    const name = String(body.name || '').trim().toLowerCase();
+    const existing = (suppliers || []).find(
+      (s) => String(s.name || '').trim().toLowerCase() === name
+    );
+    if (existing) return existing;
+  }
+
+  return handleJson(res);
+}
+
 /* ---------- Jobs ---------- */
 export async function listJobs(q = '') {
   const url = q
@@ -59,6 +80,30 @@ export async function createJob(body = {}) {
     body: JSON.stringify(body),
   });
   return handleJson(res);
+}
+
+/** Create job or return existing record matched by name or code. */
+export async function createOrGetJob(body = {}) {
+  const name = String(body.name || '').trim().toLowerCase();
+  const code = String(body.jobCode || body.jobNumber || '')
+    .trim()
+    .toLowerCase();
+
+  if (name || code) {
+    const jobs = await listJobs('');
+    const existing = (jobs || []).find((job) => {
+      const jobName = String(job.name || '').trim().toLowerCase();
+      const jobCode = String(job.jobCode || job.jobNumber || '')
+        .trim()
+        .toLowerCase();
+      if (name && jobName === name) return true;
+      if (code && jobCode === code) return true;
+      return false;
+    });
+    if (existing) return existing;
+  }
+
+  return createJob(body);
 }
 
 /* ---------- Cost Codes ---------- */

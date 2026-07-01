@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { listPOs, getPO, approvePO } from '../api'
-import { buildApproveBody, canApprovePo } from '../setup/setupDraft'
+import {
+  buildApproveBody,
+  canReviewAndApprovePo,
+  getPoApproverDisplayName,
+} from '../setup/setupDraft'
+import './POList.css'
 
 // ------- helpers -------
 const toNumber = (v) => {
@@ -52,12 +57,6 @@ export default function POArchive() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
 
-  const rawRole =
-    (localStorage.getItem('role') ||
-      localStorage.getItem('userRole') ||
-      'requester') + ''
-  const isApprover = rawRole.toLowerCase() === 'approver'
-
   const fromDate = useMemo(() => fromStr ? new Date(fromStr + 'T00:00:00') : null, [fromStr])
   const toDate   = useMemo(() => toStr ? new Date(toStr + 'T23:59:59') : null, [toStr])
 
@@ -104,6 +103,8 @@ export default function POArchive() {
   const currentPage = Math.min(Math.max(page, 1), pages)
   const start = (currentPage - 1) * pageSize
   const pageRows = sortedItems.slice(start, start + pageSize)
+
+  const hasActiveFilters = Boolean(job || q || type || supplier || fromStr || toStr)
 
   function toggleSort(nextKey) {
     if (sortKey === nextKey) {
@@ -157,7 +158,7 @@ export default function POArchive() {
 
         {/* Job & q */}
         <input
-          placeholder="Job code (e.g. CO-CP-001)"
+          placeholder="Job code (e.g. EX-01)"
           value={job}
           onChange={e=>setJob(e.target.value)}
           style={{ gridColumn: 'span 3 / span 3' }}
@@ -220,7 +221,15 @@ export default function POArchive() {
           </thead>
           <tbody>
             {loading && <tr><td colSpan={11} style={{ padding: 12 }}>Loading…</td></tr>}
-            {!loading && pageRows.length === 0 && <tr><td colSpan={11} style={{ padding: 12 }}>No results</td></tr>}
+            {!loading && pageRows.length === 0 && (
+              <tr>
+                <td colSpan={11} style={{ padding: 12, textAlign: 'center', color: '#6b7280' }}>
+                  {hasActiveFilters
+                    ? 'No Purchase Orders match your search.'
+                    : 'No archived Purchase Orders yet.'}
+                </td>
+              </tr>
+            )}
             {pageRows.map((p, i) => {
               const net   = toNumber(p.subtotal ?? p.totals?.net ?? p.amount ?? 0)
               const vatRt = toNumber(p.totals?.vatRate ?? p.vatRateDefault ?? 0.2)
@@ -306,6 +315,36 @@ export default function POArchive() {
                 <div><b>Gross:</b> £{fmt(gross)}</div>
               </div>
 
+              {canReviewAndApprovePo(selected) ? (
+                <div className="po-review-approve-panel" role="region" aria-labelledby="archive-review-approve-heading">
+                  <p className="po-review-approve-panel__eyebrow">Awaiting your approval</p>
+                  <h4 id="archive-review-approve-heading" className="po-review-approve-panel__title">
+                    Review this Purchase Order
+                  </h4>
+                  <p className="po-review-approve-panel__detail">
+                    Assigned to{' '}
+                    <strong>{getPoApproverDisplayName(selected)}</strong>.
+                    Approve or reject when you are ready.
+                  </p>
+                  <div className="po-review-approve-panel__actions">
+                    <button
+                      type="button"
+                      className="po-list-btn-primary"
+                      onClick={() => updateApproval('Approved')}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      className="po-list-btn-secondary"
+                      onClick={() => updateApproval('Rejected')}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
               <h3 style={{ fontWeight: 600, marginBottom: 6 }}>Items</h3>
               <div style={{ border:'1px solid #e5e7eb', borderRadius: 6, overflow:'hidden', marginBottom: 12 }}>
                 <table style={{ width:'100%', fontSize: 14 }}>
@@ -330,15 +369,6 @@ export default function POArchive() {
                     ))}
                   </tbody>
                 </table>
-              </div>
-
-              <div style={{ display:'flex', gap: 8 }}>
-                {canApprovePo(selected, isApprover) ? (
-                  <>
-                    <button onClick={()=>updateApproval('Approved')}>Approve</button>
-                    <button onClick={()=>updateApproval('Rejected')}>Reject</button>
-                  </>
-                ) : null}
               </div>
             </div>
           </div>

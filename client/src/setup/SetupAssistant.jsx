@@ -8,6 +8,7 @@ import SetupCompanyDefaults from "./screens/SetupCompanyDefaults";
 import SetupFirstOrder from "./screens/SetupFirstOrder";
 import SetupApproval from "./screens/SetupApproval";
 import SetupReady from "./screens/SetupReady";
+import { provisionFirstOrderRecords } from "./provisionFirstOrder";
 import {
   loadSetupDraft,
   saveSetupDraft,
@@ -49,6 +50,7 @@ export default function SetupAssistant({ onExit, onLaunchPO, onExplore }) {
   const [firstOrder, setFirstOrder] = useState(initial.firstOrder);
   const [approval, setApproval] = useState(initial.approval);
   const [errors, setErrors] = useState({});
+  const [provisioning, setProvisioning] = useState(false);
 
   const persist = useCallback(
     (
@@ -121,15 +123,29 @@ export default function SetupAssistant({ onExit, onLaunchPO, onExplore }) {
     persist(5, business, identity, defaults, firstOrder, approval);
   };
 
-  const handleFirstOrderContinue = () => {
+  const handleFirstOrderContinue = async () => {
     const validation = validateFirstOrder(firstOrder);
     setErrors(validation);
     if (Object.keys(validation).length) return;
 
     const nextFirstOrder = finalizeFirstOrder(firstOrder);
-    setFirstOrder(nextFirstOrder);
-    setStep(6);
-    persist(6, business, identity, defaults, nextFirstOrder, approval);
+    setProvisioning(true);
+    try {
+      const provisioned = await provisionFirstOrderRecords(
+        nextFirstOrder,
+        defaults
+      );
+      setFirstOrder(provisioned);
+      setStep(6);
+      persist(6, business, identity, defaults, provisioned, approval);
+    } catch (err) {
+      setErrors({
+        supplierName:
+          err.message || "Could not save your supplier. Please try again.",
+      });
+    } finally {
+      setProvisioning(false);
+    }
   };
 
   const handleApprovalContinue = () => {
@@ -171,6 +187,8 @@ export default function SetupAssistant({ onExit, onLaunchPO, onExplore }) {
         }
         continueFormId={continueFormId}
         wide={step === 3 || step === 6}
+        continueDisabled={step === 5 && provisioning}
+        continueLabel={step === 5 && provisioning ? "Saving…" : "Continue"}
       />
     ) : null;
 

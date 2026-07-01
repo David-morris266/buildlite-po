@@ -13,8 +13,6 @@ export default function JobSelect({
   value,
   onChange,
   showLabel = true,
-  preferredJob = null,
-  onPreferredUnmatched,
 }) {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,41 +48,6 @@ export default function JobSelect({
     () => (value ? String(value) : ''),
     [value]
   );
-
-  useEffect(() => {
-    if (!preferredJob?.name || currentId || loading) return;
-
-    const code = String(preferredJob.jobCode || "").trim().toLowerCase();
-    const name = String(preferredJob.name || "").trim().toLowerCase();
-
-    const match = jobs.find((job) => {
-      const jobName = String(job.name || "").trim().toLowerCase();
-      const jobCode = String(job.jobCode || job.jobNumber || "")
-        .trim()
-        .toLowerCase();
-      if (name && jobName === name) return true;
-      if (code && jobCode === code) return true;
-      return false;
-    });
-
-    if (match) {
-      onChange?.(match.id);
-      return;
-    }
-
-    onPreferredUnmatched?.(preferredJob);
-  }, [preferredJob, jobs, loading, currentId, onChange, onPreferredUnmatched]);
-
-  useEffect(() => {
-    if (!preferredJob?.name) return;
-    setForm((prev) => ({
-      ...prev,
-      name: prev.name || preferredJob.name || "",
-      jobCode: prev.jobCode || preferredJob.jobCode || "",
-      jobNumber: prev.jobNumber || preferredJob.jobCode || "",
-      siteAddress: prev.siteAddress || preferredJob.jobAddress || "",
-    }));
-  }, [preferredJob]);
 
   const handleSelect = (e) => {
     const id = e.target.value;
@@ -156,13 +119,8 @@ export default function JobSelect({
         })}
         <option value="__new__">➕ Add new job…</option>
       </select>
-
-      {preferredJob?.name && !currentId ? (
-        <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-          From setup: <strong>{preferredJob.name}</strong>
-          {preferredJob.jobCode ? ` (${preferredJob.jobCode})` : ""} — select a
-          match or add new job.
-        </p>
+      {!loading && jobs.length === 0 ? (
+        <p className="po-field__hint">No developments yet.</p>
       ) : null}
 
       {showModal && (

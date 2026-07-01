@@ -108,7 +108,7 @@ export default function SetupAboutBusiness({
               autoComplete="organization"
               value={value.companyName}
               onChange={set("companyName")}
-              placeholder="e.g. Levison Rose Homes Ltd"
+              placeholder="e.g. BuildLite Homes Ltd"
             />
           </Field>
 
@@ -145,7 +145,7 @@ export default function SetupAboutBusiness({
               autoComplete="address-line1"
               value={value.addressLine1}
               onChange={set("addressLine1")}
-              placeholder="Street or building name"
+              placeholder="Example Road"
             />
           </Field>
 
@@ -161,7 +161,7 @@ export default function SetupAboutBusiness({
               autoComplete="address-line2"
               value={value.addressLine2}
               onChange={set("addressLine2")}
-              placeholder="Suite, unit, etc."
+              placeholder="Construction Park"
             />
           </Field>
 
@@ -178,6 +178,7 @@ export default function SetupAboutBusiness({
                 autoComplete="address-level2"
                 value={value.town}
                 onChange={set("town")}
+                placeholder="Example Town"
               />
             </Field>
 
@@ -195,7 +196,7 @@ export default function SetupAboutBusiness({
                 inputMode="text"
                 value={value.postcode}
                 onChange={set("postcode")}
-                placeholder="e.g. WR11 7QB"
+                placeholder="e.g. AB1 2CD"
                 data-lookup="postcode"
               />
             </Field>
@@ -219,7 +220,7 @@ export default function SetupAboutBusiness({
                 autoComplete="off"
                 value={value.vatNumber}
                 onChange={set("vatNumber")}
-                placeholder="e.g. GB 123 4567 89"
+                placeholder="e.g. GB123456789"
               />
             </Field>
 

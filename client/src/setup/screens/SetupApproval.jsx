@@ -140,7 +140,7 @@ export default function SetupApproval({
                       type="text"
                       value={value.approverName}
                       onChange={set("approverName")}
-                      placeholder="e.g. Sarah Mitchell"
+                      placeholder="e.g. Approver Name"
                       autoComplete="name"
                       autoFocus
                     />
@@ -157,7 +157,7 @@ export default function SetupApproval({
                       type="email"
                       value={value.approverEmail}
                       onChange={set("approverEmail")}
-                      placeholder="e.g. sarah@company.co.uk"
+                      placeholder="e.g. accounts@example.co.uk"
                       autoComplete="email"
                     />
                   </Field>

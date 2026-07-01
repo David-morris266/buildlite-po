@@ -11,8 +11,9 @@ import {
 import {
   buildApproveBody,
   buildRequestApprovalBody,
-  canApprovePo,
+  canReviewAndApprovePo,
   canSendPoForApproval,
+  getPoApproverDisplayName,
 } from '../setup/setupDraft';
 import POForm from './POForm';
 import './POList.css';
@@ -33,7 +34,10 @@ const openPdf = (poNumber) => {
   window.open(poPdfUrl(poNumber), '_blank', 'noopener');
 };
 
-export default function POList() {
+export default function POList({
+  focusPoNumber = null,
+  onFocusHandled = null,
+}) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -50,34 +54,7 @@ export default function POList() {
   const [selected, setSelected] = useState(null);
   const [updatingApproval, setUpdatingApproval] = useState(false);
   const [editMode, setEditMode] = useState(false);
-
-  // --- ROLE HANDLING -------------------------------------------------
-  const rawRole =
-    (localStorage.getItem('role') ||
-      localStorage.getItem('userRole') ||
-      'requester') + '';
-  const normalisedRole = rawRole.toLowerCase();
-  const isApprover = normalisedRole === 'approver';
-  const userRoleLabel = isApprover ? 'Approver' : 'Requester';
-
-  // Logged-in user email
-  const userEmail = localStorage.getItem('userEmail') || '';
-
-  // Allow toggle only for authorised emails
-  const allowedEmails = [
-    'david@dmcommercialconsulting.co.uk',
-  ];
-  const canToggleRole = allowedEmails.some(
-    (e) => e.toLowerCase() === userEmail.toLowerCase()
-  );
-
-  const handleToggleRole = () => {
-    const next = isApprover ? 'requester' : 'approver';
-    localStorage.setItem('role', next);
-    localStorage.setItem('userRole', next);
-    window.location.reload();
-  };
-  // -------------------------------------------------------------------
+  const [listFeedback, setListFeedback] = useState(null);
 
   async function fetchData() {
     try {
@@ -105,6 +82,29 @@ export default function POList() {
   }, []); // initial
 
   useEffect(() => {
+    if (!focusPoNumber) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const po = await getPO(focusPoNumber);
+        if (cancelled) return;
+        setSelected(po);
+        setEditMode(false);
+        setDrawerOpen(true);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (!cancelled) onFocusHandled?.();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [focusPoNumber, onFocusHandled]);
+
+  useEffect(() => {
     const t = setTimeout(fetchData, 250);
     return () => clearTimeout(t);
   }, [q, job, type, supplier, showArchived]);
@@ -116,6 +116,10 @@ export default function POList() {
     }, 0);
     return { count: rows.length, sum };
   }, [rows]);
+
+  const hasActiveFilters = Boolean(
+    q || job || type || supplier || showArchived
+  );
 
   async function onDelete(number) {
     if (!number) return;
@@ -149,16 +153,26 @@ export default function POList() {
     if (!number) return;
     try {
       setUpdatingApproval(true);
+      setListFeedback(null);
       await approvePO(number, buildApproveBody(newStatus));
       await fetchData();
       if (selected?.poNumber === number) {
         const fresh = await getPO(number);
         setSelected(fresh);
       }
-      alert(`PO ${number} ${newStatus.toLowerCase()}`);
+      setListFeedback({
+        type: newStatus === 'Approved' ? 'success' : 'warning',
+        message:
+          newStatus === 'Approved'
+            ? `Purchase Order ${number} approved. Ready to generate your PDF.`
+            : `Purchase Order ${number} rejected.`,
+      });
     } catch (e) {
       console.error(e);
-      alert(e.message || 'Error updating approval');
+      setListFeedback({
+        type: 'error',
+        message: e.message || 'Could not update approval. Please try again.',
+      });
     } finally {
       setUpdatingApproval(false);
     }
@@ -167,16 +181,23 @@ export default function POList() {
   async function onSendForApproval(number) {
     if (!number) return;
     try {
+      setListFeedback(null);
       await requestApproval(number, buildRequestApprovalBody());
       await fetchData();
       if (selected?.poNumber === number) {
         const fresh = await getPO(number);
         setSelected(fresh);
       }
-      alert(`PO ${number} sent for approval`);
+      setListFeedback({
+        type: 'success',
+        message: `Purchase Order ${number} sent for approval.`,
+      });
     } catch (e) {
       console.error(e);
-      alert(e.message || 'Error sending for approval');
+      setListFeedback({
+        type: 'error',
+        message: e.message || 'Could not send for approval. Please try again.',
+      });
     }
   }
 
@@ -211,7 +232,6 @@ export default function POList() {
     <div
       style={{ maxWidth: 1600, margin: '1rem auto', padding: '0 24px 24px' }}
     >
-      {/* HEADER WITH ROLE + TOGGLE */}
       <div
         style={{
           display: 'flex',
@@ -221,53 +241,24 @@ export default function POList() {
         }}
       >
         <h2 style={{ marginBottom: 0 }}>Purchase Orders</h2>
-
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {/* Role badge */}
-          <span
-            style={{
-              fontSize: 12,
-              padding: '2px 10px',
-              borderRadius: 999,
-              border: '1px solid #4b5563',
-              background: isApprover ? '#14532d' : '#111827',
-              color: '#e5e7eb',
-              textTransform: 'uppercase',
-              letterSpacing: 0.5,
-            }}
-            title={
-              isApprover
-                ? 'Approver mode: you can approve or reject POs that are pending.'
-                : 'Requester mode: you can create POs and send them for approval.'
-            }
-          >
-            {isApprover ? 'APPROVER MODE' : 'REQUESTER MODE'}
-          </span>
-
-          {/* Toggle button (only for authorised emails) */}
-          {canToggleRole && (
-            <button
-              onClick={handleToggleRole}
-              title={
-                isApprover
-                  ? 'Switch back to Requester mode (no approve/reject buttons).'
-                  : 'Switch to Approver mode so you can approve/reject POs.'
-              }
-              style={{
-                fontSize: 12,
-                padding: '4px 10px',
-                borderRadius: 999,
-                border: '1px solid #4b5563',
-                background: '#111827',
-                color: '#e5e7eb',
-                cursor: 'pointer',
-              }}
-            >
-              Switch to {isApprover ? 'Requester' : 'Approver'}
-            </button>
-          )}
-        </div>
       </div>
+
+      {listFeedback ? (
+        <div
+          className={`po-list-feedback po-list-feedback--${listFeedback.type}`}
+          role="status"
+        >
+          {listFeedback.message}
+          <button
+            type="button"
+            className="po-list-feedback__dismiss"
+            onClick={() => setListFeedback(null)}
+            aria-label="Dismiss message"
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
 
       {/* Filters */}
       <div
@@ -374,8 +365,8 @@ export default function POList() {
                     approvalStatus || po.status || 'Pending';
                   const rowCanEdit = canEditStatus(po.status);
 
-                  const canApproveRow = canApprovePo(po, isApprover);
-                  const canSendRow = canSendPoForApproval(po, isApprover);
+                  const canSendRow = canSendPoForApproval(po);
+                  const showReview = canReviewAndApprovePo(po);
 
                   return (
                     <tr
@@ -416,43 +407,46 @@ export default function POList() {
                           display: 'flex',
                           gap: 8,
                           flexWrap: 'wrap',
+                          alignItems: 'center',
                         }}
                       >
-                        <button onClick={() => openPdf(number)}>🖨️ PDF</button>
-                        <button onClick={() => onView(number)}>View</button>
+                        {showReview ? (
+                          <button
+                            type="button"
+                            className="po-list-btn-primary"
+                            onClick={() => onView(number)}
+                          >
+                            Review
+                          </button>
+                        ) : null}
+
+                        <button type="button" onClick={() => openPdf(number)}>
+                          🖨️ PDF
+                        </button>
+
+                        {!showReview ? (
+                          <button type="button" onClick={() => onView(number)}>
+                            View
+                          </button>
+                        ) : null}
 
                         {rowCanEdit && (
-                          <button onClick={() => onEdit(number)}>Edit</button>
-                        )}
-
-                        {canApproveRow && (
-                          <>
-                            <button
-                              disabled={updatingApproval}
-                              onClick={() =>
-                                onQuickApprove(number, 'Approved')
-                              }
-                            >
-                              Approve
-                            </button>
-                            <button
-                              disabled={updatingApproval}
-                              onClick={() =>
-                                onQuickApprove(number, 'Rejected')
-                              }
-                            >
-                              Reject
-                            </button>
-                          </>
+                          <button type="button" onClick={() => onEdit(number)}>
+                            Edit
+                          </button>
                         )}
 
                         {canSendRow && (
-                          <button onClick={() => onSendForApproval(number)}>
+                          <button
+                            type="button"
+                            onClick={() => onSendForApproval(number)}
+                          >
                             Send for approval
                           </button>
                         )}
 
                         <button
+                          type="button"
                           className="delete-btn"
                           onClick={() => onDelete(number)}
                         >
@@ -465,14 +459,16 @@ export default function POList() {
                 {rows.length === 0 && (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       style={{
                         padding: 14,
                         textAlign: 'center',
-                        color: '#6b7280',
+                        color: '#96a0a6',
                       }}
                     >
-                      No POs match your filters.
+                      {hasActiveFilters
+                        ? 'No Purchase Orders match your filters.'
+                        : "You're ready to create your first Purchase Order."}
                     </td>
                   </tr>
                 )}
@@ -538,6 +534,15 @@ export default function POList() {
 
             {!selected && <p>Loading…</p>}
 
+            {selected && listFeedback ? (
+              <div
+                className={`po-list-feedback po-list-feedback--${listFeedback.type}`}
+                role="status"
+              >
+                {listFeedback.message}
+              </div>
+            ) : null}
+
             {selected && editMode && (
               <div
                 style={{
@@ -591,6 +596,48 @@ export default function POList() {
                   <strong>Status:</strong> {selected.status} ·{' '}
                   <strong>Approval:</strong> {selected.approval?.status}
                 </div>
+
+                {canReviewAndApprovePo(selected) ? (
+                  <div className="po-review-approve-panel" role="region" aria-labelledby="po-review-approve-heading">
+                    <p className="po-review-approve-panel__eyebrow">Awaiting your approval</p>
+                    <h4 id="po-review-approve-heading" className="po-review-approve-panel__title">
+                      Review this Purchase Order
+                    </h4>
+                    <p className="po-review-approve-panel__detail">
+                      Assigned to{' '}
+                      <strong>{getPoApproverDisplayName(selected)}</strong>.
+                      Approve or reject when you are ready.
+                    </p>
+                    <div className="po-review-approve-panel__actions">
+                      <button
+                        type="button"
+                        className="po-list-btn-primary"
+                        disabled={updatingApproval}
+                        onClick={async () => {
+                          await onQuickApprove(
+                            selected.poNumber,
+                            'Approved'
+                          );
+                        }}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        className="po-list-btn-secondary"
+                        disabled={updatingApproval}
+                        onClick={async () => {
+                          await onQuickApprove(
+                            selected.poNumber,
+                            'Rejected'
+                          );
+                        }}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
                 <div>
                   <strong>Net:</strong> £
                   {asMoney(
@@ -774,43 +821,19 @@ export default function POList() {
                     flexWrap: 'wrap',
                   }}
                 >
-                  <button onClick={() => openPdf(selected.poNumber)}>
+                  <button type="button" onClick={() => openPdf(selected.poNumber)}>
                     🖨️ PDF
                   </button>
 
                   {canEditStatus(selected.status) && (
-                    <button onClick={() => setEditMode(true)}>Edit</button>
+                    <button type="button" onClick={() => setEditMode(true)}>
+                      Edit
+                    </button>
                   )}
 
-                  {canApprovePo(selected, isApprover) && (
-                      <>
-                        <button
-                          disabled={updatingApproval}
-                          onClick={async () => {
-                            await onQuickApprove(
-                              selected.poNumber,
-                              'Approved'
-                            );
-                          }}
-                        >
-                          Approve
-                        </button>
-                        <button
-                          disabled={updatingApproval}
-                          onClick={async () => {
-                            await onQuickApprove(
-                              selected.poNumber,
-                              'Rejected'
-                            );
-                          }}
-                        >
-                          Reject
-                        </button>
-                      </>
-                    )}
-
-                  {canSendPoForApproval(selected, isApprover) && (
+                  {canSendPoForApproval(selected) && (
                       <button
+                        type="button"
                         onClick={() =>
                           onSendForApproval(selected.poNumber)
                         }
@@ -820,6 +843,7 @@ export default function POList() {
                     )}
 
                   <button
+                    type="button"
                     className="delete-btn"
                     onClick={() => onDelete(selected.poNumber)}
                   >

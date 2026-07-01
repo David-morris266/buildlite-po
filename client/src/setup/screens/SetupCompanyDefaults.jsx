@@ -154,7 +154,7 @@ export default function SetupCompanyDefaults({
               type="text"
               value={value.poNumberPrefixCustom}
               onChange={set("poNumberPrefixCustom")}
-              placeholder="e.g. LR-"
+              placeholder="e.g. BL-"
               maxLength={8}
               autoComplete="off"
             />

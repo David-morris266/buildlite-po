@@ -66,10 +66,10 @@ function PoHeaderPreview({ identity, contact }) {
         <div className="setup-po-preview__body">
           <div className="setup-po-preview__facts">
             <p className="setup-po-preview__fact">
-              <b>Supplier:</b> Example Groundworks Ltd
+              <b>Supplier:</b> ABC Brickwork Ltd
             </p>
             <p className="setup-po-preview__fact">
-              <b>Project:</b> Brookfield Phase 2
+              <b>Project:</b> Example Development
             </p>
           </div>
 

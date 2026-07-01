@@ -1,5 +1,5 @@
-// client/src/POForm.jsx
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+// client/src/components/POForm.jsx
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import CostCodeSelect from './CostCodeSelect';
 import SupplierSelect from './SupplierSelect';
 import JobSelect from './JobSelect';
@@ -12,7 +12,9 @@ import {
 } from '../api';
 import {
   buildRequestApprovalBody,
+  getSetupApprovalRouting,
 } from '../setup/setupDraft';
+import POSaveJourneyPanel from './POSaveJourneyPanel';
 import './POForm.css';
 
 const toNumber = (v) => {
@@ -40,6 +42,9 @@ export default function POForm({
   onSaved = null,
   setupLaunchSeed = null,
   onClearSetupLaunchSeed = null,
+  onViewPurchaseOrders = null,
+  onReviewAndApprove = null,
+  onCreateAnotherPO = null,
 }) {
   const isEdit = !!(initialPo && initialPo.poNumber);
 
@@ -65,8 +70,6 @@ export default function POForm({
   const [retentionRate, setRetentionRate] = useState(0.05);
 
   const [setupBanner, setSetupBanner] = useState(null);
-  const [supplierSeed, setSupplierSeed] = useState(null);
-  const [jobSeed, setJobSeed] = useState(null);
   const [poNumberHint, setPoNumberHint] = useState('');
   const [setupSeedApplied, setSetupSeedApplied] = useState(false);
   const [companyLabel, setCompanyLabel] = useState('Your company');
@@ -86,6 +89,18 @@ export default function POForm({
 
   const [savingDraft, setSavingDraft] = useState(false);
   const [savingAndSending, setSavingAndSending] = useState(false);
+  const [sendingFromDraftPanel, setSendingFromDraftPanel] = useState(false);
+  const [activePoNumber, setActivePoNumber] = useState(
+    initialPo?.poNumber || null
+  );
+  const [journeyPanel, setJourneyPanel] = useState(null);
+  const [formNotice, setFormNotice] = useState(null);
+  const [formErrors, setFormErrors] = useState({});
+  const [saveError, setSaveError] = useState('');
+  const actionsRef = useRef(null);
+
+  const persistedPoNumber = initialPo?.poNumber || activePoNumber;
+  const isPersisted = !!persistedPoNumber;
 
   const addLine = () => {
     setLines(prev => [...prev, { description: '', uom: 'nr', qty: '', rate: '', amount: 0 }]);
@@ -110,18 +125,6 @@ export default function POForm({
   const subtotal = lines.reduce((s, r) => s + toNumber(r.amount), 0);
   const vatAmt   = subtotal * toNumber(vatRate);
   const gross    = subtotal + vatAmt;
-
-  const applyUnmatchedSetupJob = useCallback((job) => {
-    if (!job?.name) return;
-    setJobSnap({
-      name: job.name,
-      jobCode: job.jobCode || '',
-      jobNumber: job.jobCode || '',
-      siteAddress: job.jobAddress || '',
-    });
-    setJobCode(job.jobCode || '');
-    setTitle(`PO · ${job.name}`);
-  }, []);
 
   // Tenant brand for clause copy (normal PO); setup name only via launch seed
   useEffect(() => {
@@ -148,18 +151,15 @@ export default function POForm({
     setType(seed.orderType || 'M');
     setPoNumberHint(seed.poNumberHint || '');
 
-    if (seed.supplierName) {
-      setSupplierName(seed.supplierName);
-      setSupplierSeed({
-        name: seed.supplierName,
-        email: seed.supplierEmail,
-        phone: seed.supplierPhone,
-        termsDays: seed.paymentTermsDays,
-      });
+    if (seed.supplierId) {
+      setSupplierId(seed.supplierId);
+      if (seed.supplierName) setSupplierName(seed.supplierName);
     }
 
-    if (seed.job) {
-      setJobSeed(seed.job);
+    if (seed.jobId) {
+      setJobId(seed.jobId);
+      if (seed.job?.jobCode) setJobCode(seed.job.jobCode);
+      if (seed.job?.name) setTitle(`PO · ${seed.job.name}`);
     }
 
     setSetupBanner({
@@ -280,6 +280,14 @@ export default function POForm({
     return [jobSnap.name, tag].filter(Boolean).join(' · ');
   }, [jobSnap]);
 
+  function scrollToTop() {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function scrollToActions() {
+    actionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
   // ===== Common validation =====
   function validate() {
     const costCodeString =
@@ -287,24 +295,63 @@ export default function POForm({
         ? costCode
         : (costCode && costCode.code) || '';
 
+    const errors = {};
+
     if (!supplierId) {
-      alert('Supplier is required');
-      return { ok: false };
+      errors.supplier = 'Supplier is required.';
     }
     if (!costCodeString || !costCodeString.trim()) {
-      alert('Cost code is required');
-      return { ok: false };
+      errors.costCode = 'Cost code is required.';
     }
-    if (lines.length === 0 || lines.every(l => !l.description && !toNumber(l.amount))) {
-      alert('Add at least one order line');
-      return { ok: false };
+    if (
+      lines.length === 0 ||
+      lines.every((l) => !l.description && !toNumber(l.amount))
+    ) {
+      errors.lines = 'Add at least one order line.';
     }
-    if (!['M','S','P'].includes(type)) {
-      alert('Order Type must be M, S or P');
+    if (!['M', 'S', 'P'].includes(type)) {
+      errors.type = 'Order type must be Materials, Subcontract, or Plant.';
+    }
+
+    if (Object.keys(errors).length) {
+      setFormErrors(errors);
+      setSaveError('');
+      scrollToTop();
       return { ok: false };
     }
 
+    setFormErrors({});
     return { ok: true, costCodeString };
+  }
+
+  function showSentSuccess(poNumber) {
+    const routing = getSetupApprovalRouting();
+
+    if (routing.mode === 'self') {
+      setJourneyPanel(null);
+      setFormNotice({
+        type: 'pending-review',
+        poNumber,
+        message: `Purchase Order ${poNumber} sent for approval.`,
+        hint:
+          'Review and approve from Purchase Orders whenever you are ready — this step stays available until you approve.',
+      });
+      scrollToActions();
+      return;
+    }
+
+    setFormNotice(null);
+    setJourneyPanel({
+      variant: 'sent-for-approval',
+      poNumber,
+      approverName: routing.approverName || routing.approverEmail || 'Approver',
+      approvalMode: 'other',
+    });
+    scrollToActions();
+  }
+
+  function sessionActor() {
+    return localStorage.getItem('userEmail') || 'accounts@example.co.uk';
   }
 
   // ===== Build payload (shared by create + update) =====
@@ -358,10 +405,23 @@ export default function POForm({
         })),
 
       amount: subtotal,
-      createdBy: 'david@dmcc',
+      createdBy: sessionActor(),
 
       clauses,
     };
+  }
+
+  async function persistDraft(body) {
+    if (isPersisted && persistedPoNumber) {
+      return updatePO(persistedPoNumber, {
+        ...body,
+        updatedBy: sessionActor(),
+      });
+    }
+    return savePO({
+      ...body,
+      status: 'Draft',
+    });
   }
 
   // ===== Reset form back to clean state =====
@@ -379,8 +439,6 @@ export default function POForm({
     setLines([{ description: '', uom: 'nr', qty: '', rate: '', amount: 0 }]);
 
     setSetupBanner(null);
-    setSupplierSeed(null);
-    setJobSeed(null);
     setPoNumberHint('');
     setSetupSeedApplied(false);
 
@@ -391,6 +449,16 @@ export default function POForm({
     setClauseRAMS(false);
 
     onClearSetupLaunchSeed?.();
+    setActivePoNumber(null);
+    setJourneyPanel(null);
+    setFormNotice(null);
+    setFormErrors({});
+    setSaveError('');
+  }
+
+  function handleCreateAnother() {
+    resetForm();
+    onCreateAnotherPO?.();
   }
 
   // ===== Save Draft =====
@@ -402,35 +470,37 @@ export default function POForm({
 
     try {
       setSavingDraft(true);
+      setSaveError('');
 
-      let po;
-      if (isEdit && initialPo?.poNumber) {
-        // Update existing Draft/Rejected
-        po = await updatePO(initialPo.poNumber, {
-          ...body,
-          updatedBy: 'david@dmcc',
-        });
-      } else {
-        // New Draft
-        po = await savePO({
-          ...body,
-          status: 'Draft',
-        });
+      const po = await persistDraft(body);
+      const poNumber = po.poNumber || persistedPoNumber;
+
+      if (poNumber) {
+        setActivePoNumber(poNumber);
       }
 
-      alert(`PO ${po.poNumber || ''} saved as Draft`);
-
-      if (!isEdit) {
-        resetForm();
-      }
+      setJourneyPanel({
+        variant: 'draft-saved',
+        poNumber: poNumber || '',
+      });
+      scrollToActions();
 
       if (onSaved) onSaved(po);
     } catch (e) {
       console.error(e);
-      alert(e.message || 'Save failed');
+      setSaveError(e.message || 'Could not save your Purchase Order. Please try again.');
+      scrollToTop();
     } finally {
       setSavingDraft(false);
     }
+  }
+
+  async function sendForApproval(poNumber) {
+    const poAfter = await requestApproval(
+      poNumber,
+      buildRequestApprovalBody()
+    );
+    return poAfter.poNumber || poNumber;
   }
 
   // ===== Save & Send for Approval =====
@@ -442,371 +512,551 @@ export default function POForm({
 
     try {
       setSavingAndSending(true);
+      setSaveError('');
 
-      let poNumber = initialPo?.poNumber || null;
-
-      // 1) Create or update PO as Draft
-      if (isEdit && initialPo?.poNumber) {
-        const po = await updatePO(initialPo.poNumber, {
-          ...body,
-          updatedBy: 'david@dmcc',
-        });
-        poNumber = po.poNumber;
-      } else {
-        const po = await savePO({
-          ...body,
-          status: 'Draft',
-        });
-        poNumber = po.poNumber;
-      }
+      const po = await persistDraft(body);
+      const poNumber = po.poNumber || persistedPoNumber;
 
       if (!poNumber) throw new Error('PO number missing after save');
 
-      // 2) Request approval
-      const poAfter = await requestApproval(poNumber, buildRequestApprovalBody());
+      setActivePoNumber(poNumber);
 
-      alert(`PO ${poAfter.poNumber || ''} sent for approval`);
+      await sendForApproval(poNumber);
+      showSentSuccess(poNumber);
 
-      if (!isEdit) {
-        resetForm();
-      }
-
-      if (onSaved) onSaved(poAfter);
+      if (onSaved) onSaved(po);
     } catch (e) {
       console.error(e);
-      alert(e.message || 'Save & Send failed');
+      setSaveError(
+        e.message || 'Could not send your Purchase Order for approval. Please try again.'
+      );
+      scrollToTop();
     } finally {
       setSavingAndSending(false);
     }
   }
 
-  return (
-    <div className="po-form-container">
-      <h2>
-        {isEdit
-          ? `Edit Purchase Order${initialPo?.poNumber ? ` – ${initialPo.poNumber}` : ''}`
-          : 'New Purchase Order'}
-      </h2>
+  async function handleSendFromDraftPanel() {
+    if (!persistedPoNumber) return;
 
-      {setupBanner ? (
-        <div className="po-setup-banner" role="status">
-          <span className="po-setup-banner__mark" aria-hidden="true">
-            ✓
-          </span>
-          <span>
-            From your setup
-            {setupBanner.companyName ? ` · ${setupBanner.companyName}` : ''}
-            {setupBanner.paymentTerms
-              ? ` · ${setupBanner.paymentTerms}`
-              : ''}
-            {setupBanner.currency ? ` · ${setupBanner.currency}` : ''}
-            {setupBanner.poNumberHint
-              ? ` · PO numbers like ${setupBanner.poNumberHint.split(',')[0].trim()}`
-              : ''}
-          </span>
+    try {
+      setSendingFromDraftPanel(true);
+      setSaveError('');
+      await sendForApproval(persistedPoNumber);
+      showSentSuccess(persistedPoNumber);
+    } catch (e) {
+      console.error(e);
+      setSaveError(
+        e.message || 'Could not send your Purchase Order for approval. Please try again.'
+      );
+      scrollToTop();
+    } finally {
+      setSendingFromDraftPanel(false);
+    }
+  }
+
+  const errorMessages = Object.values(formErrors);
+
+  const pageTitle = isPersisted
+    ? `Edit Purchase Order${persistedPoNumber ? ` – ${persistedPoNumber}` : ''}`
+    : 'Create a new Purchase Order';
+
+  const pageLead = isPersisted
+    ? 'Update your order details and save your changes when you are ready.'
+    : "Select who you're ordering from, add your order lines and either save a draft or send it for approval.";
+
+  return (
+    <div
+      className={`po-form-container${journeyPanel ? ' po-form-container--journey' : ''}`}
+    >
+      <header className="po-form-page-header">
+        <p className="po-form-page-header__eyebrow">Purchase orders</p>
+        <h1 className="po-form-page-header__title">{pageTitle}</h1>
+        <p className="po-form-page-header__lead">{pageLead}</p>
+      </header>
+
+      {saveError ? (
+        <div className="po-form-error-banner" role="alert">
+          {saveError}
         </div>
       ) : null}
 
-      {/* Header inputs */}
-      <div className="po-form-grid">
-        <div>
-          {/* SupplierSelect already renders its own label */}
-          <SupplierSelect
-            value={supplierId}
-            onChange={(sel) => {
-              setSupplierId(sel?.id || '');
-              setSupplierName(sel?.name || '');
-            }}
-            preferredName={supplierSeed?.name || ''}
-            preferredEmail={supplierSeed?.email || ''}
-            preferredPhone={supplierSeed?.phone || ''}
-            preferredTermsDays={supplierSeed?.termsDays ?? null}
-          />
+      {errorMessages.length > 0 ? (
+        <div className="po-form-error-banner" role="alert">
+          <p style={{ margin: '0 0 6px', fontWeight: 700 }}>
+            Please check the following:
+          </p>
+          <ul>
+            {errorMessages.map((msg) => (
+              <li key={msg}>{msg}</li>
+            ))}
+          </ul>
         </div>
+      ) : null}
 
-        <div>
-          <label>Order Type</label>
-          <select value={type} onChange={(e) => setType(e.target.value)}>
-            <option value="M">Materials</option>
-            <option value="S">Subcontract</option>
-            <option value="P">Plant</option>
-          </select>
-          {poNumberHint ? (
-            <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-              Numbering from setup: {poNumberHint}
+      {/* Form body — stays visible while confirmation replaces actions below */}
+      <div className="po-form-body">
+        {setupBanner ? (
+          <div className="po-setup-banner" role="status">
+            <span className="po-setup-banner__mark" aria-hidden="true">
+              ✓
+            </span>
+            <span>
+              From your setup
+              {setupBanner.companyName ? ` · ${setupBanner.companyName}` : ''}
+              {setupBanner.paymentTerms
+                ? ` · ${setupBanner.paymentTerms}`
+                : ''}
+              {setupBanner.currency ? ` · ${setupBanner.currency}` : ''}
+              {setupBanner.poNumberHint
+                ? ` · PO numbers like ${setupBanner.poNumberHint.split(',')[0].trim()}`
+                : ''}
+            </span>
+          </div>
+        ) : null}
+
+        <div className="po-form-sections">
+          {/* 1. Supplier */}
+          <section className="po-form-section" aria-labelledby="po-section-supplier">
+            <h2 id="po-section-supplier" className="po-form-section__title">
+              Supplier
+            </h2>
+            <p className="po-form-section__lead">
+              Choose who you are placing this order with.
             </p>
-          ) : null}
-        </div>
-
-        <div>
-          <label>Job</label>
-          <JobSelect
-            value={jobId}
-            onChange={(id) => {
-              setJobId(id);
-              if (!id) setJobSnap(null);
-            }}
-            showLabel={false}
-            preferredJob={jobSeed}
-            onPreferredUnmatched={applyUnmatchedSetupJob}
-          />
-          {jobSnap && (
-            <div className="muted" style={{ marginTop: 4 }}>
-              {projectLabel}<br />
-              {jobSnap.siteAddress || ''}
-              {jobSnap.siteManager ? ` · ${jobSnap.siteManager}` : ''}
-              {jobSnap.sitePhone ? ` · ${jobSnap.sitePhone}` : ''}
+            <div className={formErrors.supplier ? 'po-field--error' : ''}>
+              <SupplierSelect
+                value={supplierId}
+                onChange={(sel) => {
+                  setSupplierId(sel?.id || '');
+                  setSupplierName(sel?.name || '');
+                }}
+              />
+              {formErrors.supplier ? (
+                <p className="po-field__inline-error">{formErrors.supplier}</p>
+              ) : null}
             </div>
+          </section>
+
+          {/* 2. Project / Job */}
+          <section className="po-form-section" aria-labelledby="po-section-project">
+            <h2 id="po-section-project" className="po-form-section__title">
+              Project / Job
+            </h2>
+            <p className="po-form-section__lead">
+              Link this order to the development or site it relates to.
+            </p>
+            <div className="po-form-grid">
+              <div>
+                <label>Job</label>
+                <JobSelect
+                  value={jobId}
+                  onChange={(id) => {
+                    setJobId(id);
+                    if (!id) setJobSnap(null);
+                  }}
+                  showLabel={false}
+                />
+                {jobSnap && (
+                  <div className="muted" style={{ marginTop: 4 }}>
+                    {projectLabel}
+                    <br />
+                    {jobSnap.siteAddress || ''}
+                    {jobSnap.siteManager ? ` · ${jobSnap.siteManager}` : ''}
+                    {jobSnap.sitePhone ? ` · ${jobSnap.sitePhone}` : ''}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label>Job Code (optional)</label>
+                <input
+                  placeholder="e.g. EX-01"
+                  value={jobCode}
+                  onChange={(e) => setJobCode(e.target.value)}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* 3. Order Details */}
+          <section className="po-form-section" aria-labelledby="po-section-order">
+            <h2 id="po-section-order" className="po-form-section__title">
+              Order details
+            </h2>
+            <p className="po-form-section__lead">
+              Set the order type, description and cost code for this purchase.
+            </p>
+            <div className="po-form-grid po-form-grid--3">
+              <div className={formErrors.type ? 'po-field--error' : ''}>
+                <label>Order Type</label>
+                <select value={type} onChange={(e) => setType(e.target.value)}>
+                  <option value="M">Materials</option>
+                  <option value="S">Subcontract</option>
+                  <option value="P">Plant</option>
+                </select>
+                {poNumberHint ? (
+                  <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                    Numbering from setup: {poNumberHint}
+                  </p>
+                ) : null}
+                {formErrors.type ? (
+                  <p className="po-field__inline-error">{formErrors.type}</p>
+                ) : null}
+              </div>
+
+              <div>
+                <label>Title / Description</label>
+                <input
+                  placeholder="Short PO description"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+              </div>
+
+              <div className={formErrors.costCode ? 'po-field--error' : ''}>
+                <CostCodeSelect
+                  value={costCode}
+                  onChange={(label) => {
+                    setCostCode(label);
+                    if (formErrors.costCode) {
+                      setFormErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.costCode;
+                        return next;
+                      });
+                    }
+                  }}
+                />
+                {formErrors.costCode ? (
+                  <p className="po-field__inline-error">{formErrors.costCode}</p>
+                ) : null}
+              </div>
+            </div>
+          </section>
+
+          {/* 4. Line Items */}
+          <section
+            className="po-form-section po-form-section--lines"
+            aria-labelledby="po-section-lines"
+          >
+            <h2 id="po-section-lines" className="po-form-section__title">
+              Line items
+            </h2>
+            <p className="po-form-section__lead">
+              Add each item you are ordering, with quantity and rate.
+            </p>
+
+            <div className="po-form-toolbar">
+              <button type="button" className="quiet" onClick={addLine}>
+                + Add Line
+              </button>
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                Tip: use Tab to move across, Enter to add more lines.
+              </div>
+            </div>
+
+            <div className={`po-lines-card${formErrors.lines ? ' po-field--error' : ''}`}>
+              {formErrors.lines ? (
+                <p className="po-field__inline-error" style={{ padding: '8px 12px 0' }}>
+                  {formErrors.lines}
+                </p>
+              ) : null}
+              <table className="po-lines-table">
+                <thead>
+                  <tr>
+                    <th className="po-col-desc">Description</th>
+                    <th className="po-col-uom">UoM</th>
+                    <th className="po-col-qty">Qty</th>
+                    <th className="po-col-rate">Rate</th>
+                    <th className="po-col-amt">Amount</th>
+                    <th className="po-col-actions"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lines.map((r, idx) => (
+                    <tr key={idx}>
+                      <td>
+                        <input
+                          value={r.description}
+                          onChange={(e) => updateLine(idx, 'description', e.target.value)}
+                          placeholder="e.g. C30 concrete"
+                        />
+                      </td>
+                      <td>
+                        <select
+                          value={r.uom}
+                          onChange={(e) => updateLine(idx, 'uom', e.target.value)}
+                        >
+                          {UOMS.map(u => (
+                            <option key={u} value={u}>{u}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <input
+                          value={r.qty}
+                          onChange={(e) => updateLine(idx, 'qty', e.target.value)}
+                          inputMode="decimal"
+                          placeholder="0"
+                          style={{ textAlign: 'right' }}
+                        />
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <input
+                          value={r.rate}
+                          onChange={(e) => updateLine(idx, 'rate', e.target.value)}
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          style={{ textAlign: 'right' }}
+                        />
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        £{toNumber(r.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          onClick={() => removeLine(idx)}
+                          className="quiet"
+                          title="Remove line"
+                          style={{ width: 36 }}
+                        >
+                          🗑️
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 240px',
+                gap: 8,
+                marginTop: 12,
+              }}
+            >
+              <div />
+              <div className="po-totals">
+                <div className="po-total-row">
+                  <span>Net</span>
+                  <b>
+                    £{subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </b>
+                </div>
+                <div className="po-total-row">
+                  <span>VAT ({(vatRate * 100).toFixed(0)}%)</span>
+                  <b>
+                    £{vatAmt.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </b>
+                </div>
+                <div className="po-total-row po-total-divider">
+                  <span>Gross</span>
+                  <b>
+                    £{gross.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </b>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* 5. Commercial Terms */}
+          <section className="po-form-section" aria-labelledby="po-section-commercial">
+            <h2 id="po-section-commercial" className="po-form-section__title">
+              Commercial terms
+            </h2>
+            <p className="po-form-section__lead">
+              VAT and retention applied to this order.
+            </p>
+            <div className="po-form-grid">
+              <div>
+                <label>VAT Rate</label>
+                <select
+                  value={vatRate}
+                  onChange={(e) => setVatRate(parseFloat(e.target.value))}
+                >
+                  <option value={0}>0%</option>
+                  <option value={0.05}>5%</option>
+                  <option value={0.2}>20%</option>
+                </select>
+              </div>
+
+              <div>
+                <label>Retention</label>
+                <select
+                  value={retentionRate}
+                  onChange={(e) => setRetentionRate(parseFloat(e.target.value))}
+                >
+                  <option value={0}>None</option>
+                  <option value={0.025}>2.5%</option>
+                  <option value={0.05}>5%</option>
+                  <option value={0.075}>7.5%</option>
+                  <option value={0.1}>10%</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          {/* 6. Clauses — Subcontract / Plant only */}
+          {(type === 'S' || type === 'P') && (
+            <section
+              className="po-form-section po-form-section--clauses"
+              aria-labelledby="po-section-clauses"
+            >
+              <h2 id="po-section-clauses" className="po-form-section__title">
+                Clauses
+              </h2>
+              <p className="po-form-section__lead">
+                Optional contract references to include on the order.
+              </p>
+
+              <div className="clause-row">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={clauseTender}
+                    onChange={e => setClauseTender(e.target.checked)}
+                  />
+                  <span>Refer to {companyLabel} tender enquiry dated</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. 10/06/2025"
+                    value={clauseTenderDate}
+                    onChange={e => setClauseTenderDate(e.target.value)}
+                    disabled={!clauseTender}
+                    style={{ maxWidth: 140 }}
+                  />
+                </label>
+              </div>
+
+              <div className="clause-row">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={clauseTerms}
+                    onChange={e => setClauseTerms(e.target.checked)}
+                  />
+                  <span>Refer to {companyLabel} sub-contract terms and conditions version</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. v1.0"
+                    value={clauseTermsVersion}
+                    onChange={e => setClauseTermsVersion(e.target.value)}
+                    disabled={!clauseTerms}
+                    style={{ maxWidth: 100 }}
+                  />
+                </label>
+              </div>
+
+              <div className="clause-row">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={clauseRAMS}
+                    onChange={e => setClauseRAMS(e.target.checked)}
+                  />
+                  <span>RAMS must be supplied and vetted prior to start on site.</span>
+                </label>
+              </div>
+            </section>
           )}
         </div>
-
-        <div>
-          <label>Job Code (optional)</label>
-          <input
-            placeholder="e.g. CO-CP-001"
-            value={jobCode}
-            onChange={(e) => setJobCode(e.target.value)}
-          />
-        </div>
-
-        <div>
-          {/* CostCodeSelect renders its own label */}
-          <CostCodeSelect
-  value={costCode}
-  onChange={(label, fullObj) => {
-    setCostCode(label);
-  }}
-/>
-        </div>
-
-        <div>
-          <label>Title / Description</label>
-          <input
-            placeholder="Short PO description"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
-
-        <div>
-          <label>VAT Rate</label>
-          <select
-            value={vatRate}
-            onChange={(e) => setVatRate(parseFloat(e.target.value))}
-          >
-            <option value={0}>0%</option>
-            <option value={0.05}>5%</option>
-            <option value={0.2}>20%</option>
-          </select>
-        </div>
-
-        <div>
-          <label>Retention</label>
-          <select
-            value={retentionRate}
-            onChange={(e) => setRetentionRate(parseFloat(e.target.value))}
-          >
-            <option value={0}>None</option>
-            <option value={0.025}>2.5%</option>
-            <option value={0.05}>5%</option>
-            <option value={0.075}>7.5%</option>
-            <option value={0.1}>10%</option>
-          </select>
-        </div>
       </div>
 
-      {/* Clauses section – only for Subcontract / Plant */}
-      {(type === 'S' || type === 'P') && (
-        <div className="po-lines-card" style={{ marginTop: 12 }}>
-          <h3 style={{ marginTop: 0 }}>Contract Clauses / References</h3>
-
-          <div className="clause-row">
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={clauseTender}
-                onChange={e => setClauseTender(e.target.checked)}
-              />
-              <span>Refer to {companyLabel} tender enquiry dated</span>
-              <input
-                type="text"
-                placeholder="e.g. 10/06/2025"
-                value={clauseTenderDate}
-                onChange={e => setClauseTenderDate(e.target.value)}
-                disabled={!clauseTender}
-                style={{ maxWidth: 140 }}
-              />
-            </label>
-          </div>
-
-          <div className="clause-row" style={{ marginTop: 6 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={clauseTerms}
-                onChange={e => setClauseTerms(e.target.checked)}
-              />
-              <span>Refer to {companyLabel} sub-contract terms and conditions version</span>
-              <input
-                type="text"
-                placeholder="e.g. v1.0"
-                value={clauseTermsVersion}
-                onChange={e => setClauseTermsVersion(e.target.value)}
-                disabled={!clauseTerms}
-                style={{ maxWidth: 100 }}
-              />
-            </label>
-          </div>
-
-          <div className="clause-row" style={{ marginTop: 6 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={clauseRAMS}
-                onChange={e => setClauseRAMS(e.target.checked)}
-              />
-              <span>RAMS must be supplied and vetted prior to start on site.</span>
-            </label>
-          </div>
-        </div>
-      )}
-
-      {/* Lines toolbar */}
-      <div className="po-form-toolbar">
-        <button type="button" className="quiet" onClick={addLine}>
-          + Add Line
-        </button>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-          Tip: use Tab to move across, Enter to add more lines.
-        </div>
-      </div>
-
-      {/* Lines table */}
-      <div className="po-lines-card">
-        <table className="po-lines-table">
-          <thead>
-            <tr>
-              <th className="po-col-desc">Description</th>
-              <th className="po-col-uom">UoM</th>
-              <th className="po-col-qty">Qty</th>
-              <th className="po-col-rate">Rate</th>
-              <th className="po-col-amt">Amount</th>
-              <th className="po-col-actions"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {lines.map((r, idx) => (
-              <tr key={idx}>
-                <td>
-                  <input
-                    value={r.description}
-                    onChange={(e) => updateLine(idx, 'description', e.target.value)}
-                    placeholder="e.g. C30 concrete"
-                  />
-                </td>
-                <td>
-                  <select
-                    value={r.uom}
-                    onChange={(e) => updateLine(idx, 'uom', e.target.value)}
-                  >
-                    {UOMS.map(u => (
-                      <option key={u} value={u}>{u}</option>
-                    ))}
-                  </select>
-                </td>
-                <td style={{ textAlign: 'right' }}>
-                  <input
-                    value={r.qty}
-                    onChange={(e) => updateLine(idx, 'qty', e.target.value)}
-                    inputMode="decimal"
-                    placeholder="0"
-                    style={{ textAlign: 'right' }}
-                  />
-                </td>
-                <td style={{ textAlign: 'right' }}>
-                  <input
-                    value={r.rate}
-                    onChange={(e) => updateLine(idx, 'rate', e.target.value)}
-                    inputMode="decimal"
-                    placeholder="0.00"
-                    style={{ textAlign: 'right' }}
-                  />
-                </td>
-                <td style={{ textAlign: 'right' }}>
-                  £{toNumber(r.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </td>
-                <td style={{ textAlign: 'center' }}>
-                  <button
-                    onClick={() => removeLine(idx)}
-                    className="quiet"
-                    title="Remove line"
-                    style={{ width: 36 }}
-                  >
-                    🗑️
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Totals */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 240px',
-          gap: 8,
-          marginTop: 12,
-        }}
+      {/* 7. Actions */}
+      <section
+        className="po-form-section po-form-section--actions"
+        aria-labelledby="po-section-actions"
       >
-        <div />
-        <div className="po-totals">
-          <div className="po-total-row">
-            <span>Net</span>
-            <b>
-              £{subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </b>
-          </div>
-          <div className="po-total-row">
-            <span>VAT ({(vatRate * 100).toFixed(0)}%)</span>
-            <b>
-              £{vatAmt.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </b>
-          </div>
-          <div className="po-total-row po-total-divider">
-            <span>Gross</span>
-            <b>
-              £{gross.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </b>
-          </div>
+        <h2 id="po-section-actions" className="po-form-section__title">
+          Actions
+        </h2>
+        <div ref={actionsRef} className="po-form-actions">
+          {formNotice ? (
+            <div
+              className="po-form-notice po-form-notice--success"
+              role="status"
+              aria-live="polite"
+            >
+              <button
+                type="button"
+                className="po-form-notice__close"
+                onClick={() => setFormNotice(null)}
+                aria-label="Dismiss notice"
+              >
+                ×
+              </button>
+              <p className="po-form-notice__title">{formNotice.message}</p>
+              <p className="po-form-notice__hint">{formNotice.hint}</p>
+              <div className="po-form-notice__actions">
+                <button
+                  type="button"
+                  className="po-journey-panel__btn po-journey-panel__btn--primary"
+                  onClick={() => {
+                    onViewPurchaseOrders?.(
+                      formNotice.poNumber || persistedPoNumber
+                    );
+                  }}
+                >
+                  Review in Purchase Orders
+                </button>
+              </div>
+            </div>
+          ) : journeyPanel ? (
+            <POSaveJourneyPanel
+              variant={journeyPanel.variant}
+              poNumber={journeyPanel.poNumber}
+              approverName={journeyPanel.approverName}
+              approvalMode={journeyPanel.approvalMode}
+              sendingFromDraft={sendingFromDraftPanel}
+              onContinueEditing={() => setJourneyPanel(null)}
+              onSendForApproval={handleSendFromDraftPanel}
+              onViewPurchaseOrders={() => {
+                onViewPurchaseOrders?.(
+                  journeyPanel.poNumber || persistedPoNumber
+                );
+              }}
+              onReviewAndApprove={() => {
+                onReviewAndApprove?.(
+                  journeyPanel.poNumber || persistedPoNumber
+                );
+              }}
+              onCreateAnother={handleCreateAnother}
+              onDismiss={() => setJourneyPanel(null)}
+            />
+          ) : (
+            <>
+              <button
+                onClick={handleSaveDraft}
+                className="primary"
+                style={{ width: '100%' }}
+                disabled={savingDraft || savingAndSending}
+              >
+                {savingDraft
+                  ? 'Saving…'
+                  : isPersisted
+                    ? 'Save Draft Changes'
+                    : 'Save Draft'}
+              </button>
+
+              <button
+                onClick={handleSaveAndSend}
+                className="secondary"
+                style={{ width: '100%' }}
+                disabled={savingDraft || savingAndSending}
+              >
+                {savingAndSending
+                  ? 'Sending…'
+                  : isPersisted
+                    ? 'Save Changes & Send for Approval'
+                    : 'Save & Send for Approval'}
+              </button>
+            </>
+          )}
         </div>
-      </div>
-
-      {/* Save buttons */}
-      <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
-        <button
-          onClick={handleSaveDraft}
-          className="primary"
-          style={{ width: '100%' }}
-          disabled={savingDraft || savingAndSending}
-        >
-          {savingDraft
-            ? (isEdit ? 'Saving Draft…' : 'Saving Draft…')
-            : (isEdit ? 'Save Draft Changes' : 'Save Draft')}
-        </button>
-
-        <button
-          onClick={handleSaveAndSend}
-          className="secondary"
-          style={{ width: '100%' }}
-          disabled={savingDraft || savingAndSending}
-        >
-          {savingAndSending
-            ? (isEdit ? 'Updating & Sending…' : 'Saving & Sending…')
-            : (isEdit ? 'Save Changes & Send for Approval' : 'Save & Send for Approval')}
-        </button>
-      </div>
+      </section>
     </div>
   );
 }

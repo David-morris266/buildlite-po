@@ -9,8 +9,8 @@ const path = require("path");
 const { pool } = require("../db");
 
 const DEFAULT_CLIENT = {
-  code: "DEFAULT",
-  name: "Default Client",
+  code: "BUILDLITE",
+  name: "BuildLite Homes",
 };
 
 const COST_CODES_PATH = path.join(__dirname, "..", "data", "cost_codes.json");

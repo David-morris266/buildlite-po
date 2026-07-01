@@ -49,6 +49,127 @@
 }
 .delete-btn:hover { background: #ff6668; }
 
+.po-list-btn-primary {
+  background: linear-gradient(180deg, #7cff6b, #29d659);
+  color: #071007;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.po-list-btn-primary:hover {
+  filter: brightness(1.06);
+}
+
+.po-list-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.po-list-btn-secondary {
+  background: transparent;
+  color: #e5e7eb;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.po-list-btn-secondary:hover {
+  border-color: rgba(124, 255, 107, 0.35);
+}
+
+.po-review-approve-panel {
+  margin: 12px 0;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(124, 255, 107, 0.28);
+  background:
+    radial-gradient(ellipse 100% 80% at 0% 0%, rgba(124, 255, 107, 0.08), transparent),
+    rgba(124, 255, 107, 0.04);
+}
+
+.po-review-approve-panel__eyebrow {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #96a0a6;
+}
+
+.po-review-approve-panel__title {
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #e5e7eb;
+}
+
+.po-review-approve-panel__detail {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #96a0a6;
+}
+
+.po-review-approve-panel__detail strong {
+  color: #7cff6b;
+}
+
+.po-review-approve-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.po-list-feedback {
+  position: relative;
+  margin-bottom: 12px;
+  padding: 12px 36px 12px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.po-list-feedback--success {
+  border: 1px solid rgba(124, 255, 107, 0.28);
+  background: rgba(124, 255, 107, 0.08);
+  color: #d8e1e7;
+}
+
+.po-list-feedback--warning {
+  border: 1px solid rgba(255, 209, 102, 0.35);
+  background: rgba(255, 209, 102, 0.08);
+  color: #d8e1e7;
+}
+
+.po-list-feedback--error {
+  border: 1px solid rgba(255, 92, 119, 0.35);
+  background: rgba(255, 92, 119, 0.08);
+  color: #ffb4c0;
+}
+
+.po-list-feedback__dismiss {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid #374151;
+  background: transparent;
+  color: #96a0a6;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
 
 
 

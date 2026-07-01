@@ -48,10 +48,10 @@ export default function SetupFirstOrder({
     onChange({ ...value, [field]: event.target.value });
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     setTouched(true);
-    onSubmit?.();
+    await onSubmit?.();
   };
 
   const handleAddCostCode = () => {
@@ -108,7 +108,7 @@ export default function SetupFirstOrder({
               type="text"
               value={value.supplierName}
               onChange={set("supplierName")}
-              placeholder="e.g. Example Groundworks Ltd"
+              placeholder="e.g. ABC Brickwork Ltd"
               autoComplete="organization"
               autoFocus
             />
@@ -127,7 +127,7 @@ export default function SetupFirstOrder({
                 type="email"
                 value={value.supplierEmail}
                 onChange={set("supplierEmail")}
-                placeholder="orders@supplier.co.uk"
+                placeholder="accounts@example.co.uk"
                 autoComplete="email"
               />
             </Field>
@@ -218,7 +218,7 @@ export default function SetupFirstOrder({
                 type="text"
                 value={value.jobName}
                 onChange={set("jobName")}
-                placeholder="e.g. Brookfield Phase 2"
+                placeholder="e.g. Example Development"
                 autoComplete="off"
               />
             </Field>
@@ -231,7 +231,7 @@ export default function SetupFirstOrder({
                   type="text"
                   value={value.jobCode}
                   onChange={set("jobCode")}
-                  placeholder="e.g. BF-02"
+                  placeholder="e.g. EX-01"
                   autoComplete="off"
                 />
               </Field>
@@ -243,7 +243,7 @@ export default function SetupFirstOrder({
                   type="text"
                   value={value.jobAddress}
                   onChange={set("jobAddress")}
-                  placeholder="Optional"
+                  placeholder="Example Road, Construction Park, AB1 2CD"
                   autoComplete="street-address"
                 />
               </Field>

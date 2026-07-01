@@ -56,9 +56,11 @@ export const EMPTY_FIRST_ORDER = {
   supplierName: "",
   supplierEmail: "",
   supplierPhone: "",
+  supplierId: "",
   jobName: "",
   jobCode: "",
   jobAddress: "",
+  jobId: "",
 };
 
 export const EMPTY_APPROVAL = {
@@ -423,13 +425,16 @@ export function buildPoFormSeedFromSetup(draft) {
     supplierName,
     supplierEmail: String(firstOrder?.supplierEmail || "").trim(),
     supplierPhone: String(firstOrder?.supplierPhone || "").trim(),
+    supplierId: String(firstOrder?.supplierId || "").trim(),
     job: jobName
       ? {
+          id: String(firstOrder?.jobId || "").trim(),
           name: jobName,
           jobCode,
           jobAddress,
         }
       : null,
+    jobId: String(firstOrder?.jobId || "").trim(),
     vatRate: Number(defaults?.vatRate ?? 0.2),
     retentionRate: Number(defaults?.retentionRate ?? 0.05),
     paymentTerms: formatPaymentTermsLabel(defaults?.paymentTerms || "30"),
@@ -503,14 +508,14 @@ export function buildApproveBody(status, note = "") {
 }
 
 /** Whether a requester can send this PO for approval (List / drawer). */
-export function canSendPoForApproval(po, isApprover) {
-  if (isApprover || !po) return false;
+export function canSendPoForApproval(po) {
+  if (!po) return false;
+  if (isPoAwaitingApproval(po)) return false;
   const approvalStatusLower = String(po.approval?.status || "").toLowerCase();
   const poStatusLower = String(po.status || "").toLowerCase();
-  if (approvalStatusLower === "pending" || approvalStatusLower === "approved") {
+  if (approvalStatusLower === "approved" || poStatusLower === "approved") {
     return false;
   }
-  if (poStatusLower === "approved") return false;
   return (
     approvalStatusLower === "draft" ||
     approvalStatusLower === "rejected" ||
@@ -520,9 +525,57 @@ export function canSendPoForApproval(po, isApprover) {
   );
 }
 
-/** Whether an approver can act on this PO (List / Archive). */
-export function canApprovePo(po, isApprover) {
-  if (!isApprover || !po) return false;
+function normalizeEmail(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
+/** Resolve approver email from PO payload or setup routing. */
+export function getPoApproverEmail(po) {
+  const fromPo = String(po?.approval?.approverEmail || "").trim();
+  if (fromPo) return fromPo;
+  return getSetupApprovalRouting().approverEmail || "";
+}
+
+export function getPoApproverDisplayName(po) {
+  const fromPo = String(po?.approval?.approverName || "").trim();
+  if (fromPo) return fromPo;
+  const routing = getSetupApprovalRouting();
+  return routing.approverName || routing.approverEmail || "Approver";
+}
+
+/** PO is waiting for an approval decision. */
+export function isPoAwaitingApproval(po) {
+  if (!po) return false;
   const approvalStatusLower = String(po.approval?.status || "").toLowerCase();
-  return !approvalStatusLower || approvalStatusLower === "pending";
+  if (approvalStatusLower === "approved" || approvalStatusLower === "rejected") {
+    return false;
+  }
+  if (approvalStatusLower === "pending") return true;
+  const poStatusLower = String(po.status || "").toLowerCase();
+  return poStatusLower === "issued";
+}
+
+/** Current session user matches the configured approver for this PO. */
+export function isCurrentUserConfiguredApprover(po = null) {
+  const userEmail = normalizeEmail(localStorage.getItem("userEmail") || "");
+  if (!userEmail) return false;
+
+  const approverEmail = normalizeEmail(getPoApproverEmail(po));
+  if (approverEmail) {
+    return approverEmail === userEmail;
+  }
+
+  const routing = getSetupApprovalRouting();
+  return normalizeEmail(routing.approverEmail) === userEmail;
+}
+
+/** Show Review entry points in List / detail for the configured approver. */
+export function canReviewAndApprovePo(po) {
+  if (!po || !isPoAwaitingApproval(po)) return false;
+  return isCurrentUserConfiguredApprover(po);
+}
+
+/** Whether the configured approver can act on this PO. */
+export function canApprovePo(po) {
+  return canReviewAndApprovePo(po);
 }
