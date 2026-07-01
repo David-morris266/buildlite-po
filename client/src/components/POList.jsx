@@ -41,6 +41,7 @@ export default function POList({
   focusPoNumber = null,
   onFocusHandled = null,
   onCreateFirstPO = null,
+  onOpenPackage = null,
 }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -508,6 +509,7 @@ export default function POList({
               await onQuickApprove(selected.poNumber, 'Rejected');
             }}
             canEdit={canEditStatus(selected.status)}
+            onOpenPackage={onOpenPackage}
           />
         ) : null}
       </PODrawerShell>

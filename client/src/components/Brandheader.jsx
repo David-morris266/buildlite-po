@@ -23,6 +23,12 @@ export default function BrandHeader({ activeTab, onTab }) {
           Purchase Orders
         </button>
         <button
+          className={`tab ${activeTab === "certificates" ? "active" : ""}`}
+          onClick={() => onTab("certificates")}
+        >
+          Payment Certificates
+        </button>
+        <button
           className={`tab ${activeTab === "archive" ? "active" : ""}`}
           onClick={() => onTab("archive")}
         >

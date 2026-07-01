@@ -11,6 +11,7 @@ import {
   getDrawerHeaderMeta,
   getPoDisplayStatus,
 } from './poDrawerHelpers';
+import OrderMatrixDrawerSection from './OrderMatrixDrawerSection';
 
 function DrawerSection({ title, children, className = '' }) {
   return (
@@ -164,6 +165,7 @@ export default function POReviewDrawerContent({
   onApprove,
   onReject,
   canEdit = false,
+  onOpenPackage,
 }) {
   if (!po) return null;
 
@@ -279,6 +281,11 @@ export default function POReviewDrawerContent({
         <DrawerSection title="Items">
           <ItemsTable items={po.items} />
         </DrawerSection>
+
+        <OrderMatrixDrawerSection
+          po={po}
+          onOpenPackage={onOpenPackage}
+        />
       </div>
 
       <footer className="po-drawer-footer">

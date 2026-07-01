@@ -46,7 +46,7 @@ const fmtUKDateTime = (v) => {
   })
 }
 
-export default function POArchive() {
+export default function POArchive({ onOpenPackage = null }) {
   const [type, setType] = useState('')         // '', 'M', 'S', 'P'
   const [supplier, setSupplier] = useState('') // quick supplier filter (name or id)
   const [job, setJob] = useState('')
@@ -318,6 +318,7 @@ export default function POArchive() {
             }
             onApprove={() => updateApproval('Approved')}
             onReject={() => updateApproval('Rejected')}
+            onOpenPackage={onOpenPackage}
           />
         ) : null}
       </PODrawerShell>

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import POForm from "./components/POForm";
 import POList from "./components/POList";
 import POArchive from "./components/POArchive";
+import PaymentCertificates from "./components/PaymentCertificates";
 import BrandHeader from "./components/Brandheader";
 import SetupAssistant, { dismissSetupAssistant, isSetupDismissed } from "./setup/SetupAssistant";
 import { buildPoFormSeedFromSetup, loadSetupDraft } from "./setup/setupDraft";
@@ -19,6 +20,10 @@ export default function App() {
   const [showSetup, setShowSetup] = useState(shouldShowSetupAssistant);
   const [setupLaunchSeed, setSetupLaunchSeed] = useState(null);
   const [listFocusPo, setListFocusPo] = useState(null);
+  const [packageNav, setPackageNav] = useState({
+    orderKey: null,
+    tab: 'overview',
+  });
 
   useEffect(() => {
     if (!localStorage.getItem("userEmail")) {
@@ -72,6 +77,14 @@ export default function App() {
     setTab("list");
   };
 
+  const handleOpenPackage = (orderKey, tab = "overview") => {
+    setPackageNav({
+      orderKey: orderKey || null,
+      tab: tab || "overview",
+    });
+    setTab("certificates");
+  };
+
   if (showSetup) {
     return (
       <SetupAssistant
@@ -104,12 +117,24 @@ export default function App() {
               focusPoNumber={listFocusPo}
               onFocusHandled={() => setListFocusPo(null)}
               onCreateFirstPO={handleCreateFirstPO}
+              onOpenPackage={handleOpenPackage}
             />
           </div>
         )}
         {tab === "archive" && (
           <div key="archive" className="po-page po-page-animate-in">
-            <POArchive />
+            <POArchive onOpenPackage={handleOpenPackage} />
+          </div>
+        )}
+        {tab === "certificates" && (
+          <div key="certificates" className="po-page po-page-animate-in">
+            <PaymentCertificates
+              initialOrderKey={packageNav.orderKey}
+              initialTab={packageNav.tab}
+              onInitialOrderHandled={() =>
+                setPackageNav({ orderKey: null, tab: 'overview' })
+              }
+            />
           </div>
         )}
       </main>

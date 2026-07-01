@@ -154,6 +154,12 @@
   color: #ffb4c0;
 }
 
+.po-list-feedback--info {
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  background: rgba(96, 165, 250, 0.08);
+  color: #9fd0ff;
+}
+
 .po-list-feedback__dismiss {
   position: absolute;
   top: 8px;
