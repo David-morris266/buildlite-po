@@ -1,11 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { listPOs, getPO, approvePO } from '../api'
+import { listPOs, getPO, approvePO, poPdfUrl } from '../api'
 import {
   buildApproveBody,
-  canReviewAndApprovePo,
-  getPoApproverDisplayName,
 } from '../setup/setupDraft'
+import POPageHeader from './POPageHeader'
+import POLoading from './POLoading'
+import PODrawerShell from './PODrawerShell'
+import POReviewDrawerContent from './POReviewDrawerContent'
 import './POList.css'
+
+const openPdf = (poNumber) => {
+  if (!poNumber) return
+  window.open(poPdfUrl(poNumber), '_blank', 'noopener')
+}
 
 // ------- helpers -------
 const toNumber = (v) => {
@@ -128,27 +135,34 @@ export default function POArchive() {
     refresh()
   }
 
-  return (
-    <div style={{ padding: 16, maxWidth: 1200, margin: '0 auto' }}>
-      <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 12 }}>PO Archive / Search</h1>
+  function closeDrawer() {
+    setDrawerOpen(false)
+    setSelected(null)
+  }
 
-      {/* Filters row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: 8, marginBottom: 12 }}>
+  return (
+    <div className="po-archive-page">
+      <POPageHeader
+        eyebrow="Archive"
+        title="Archive"
+        lead="View completed and archived Purchase Orders."
+      />
+
+      <div className="po-module-card">
+        <p className="po-filters__hint">
+          Search Purchase Orders by supplier, project or PO number.
+        </p>
+
+        <div className="po-archive-filters">
         {/* Type pills */}
-        <div style={{ gridColumn: 'span 3 / span 3', display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: '#555' }}>Type:</span>
+        <div style={{ gridColumn: 'span 12 / span 12' }} className="po-type-pills">
+          <span className="po-type-pills__label">Type:</span>
           {['', 'M', 'S', 'P'].map(t => (
             <button
               key={t || 'ALL'}
+              type="button"
+              className={`po-type-pill${type === t ? ' po-type-pill--active' : ''}`}
               onClick={() => setType(t)}
-              style={{
-                padding: '6px 10px',
-                borderRadius: 6,
-                border: '1px solid #d1d5db',
-                background: type === t ? '#111827' : '#fff',
-                color: type === t ? '#fff' : '#111827',
-                cursor: 'pointer'
-              }}
               title={t ? ({M:'Materials',S:'Subcontract',P:'Plant'}[t]) : 'All'}
             >
               {t || 'All'}
@@ -156,77 +170,86 @@ export default function POArchive() {
           ))}
         </div>
 
-        {/* Job & q */}
         <input
+          className="input"
           placeholder="Job code (e.g. EX-01)"
           value={job}
           onChange={e=>setJob(e.target.value)}
-          style={{ gridColumn: 'span 3 / span 3' }}
+          style={{ gridColumn: 'span 4 / span 4' }}
+          aria-label="Filter by job code"
         />
         <input
+          className="input"
           placeholder="Search term (number, title, item…)"
           value={q}
           onChange={e=>setQ(e.target.value)}
-          style={{ gridColumn: 'span 3 / span 3' }}
+          style={{ gridColumn: 'span 4 / span 4' }}
+          aria-label="Search archive"
         />
 
-        {/* Supplier */}
         <input
+          className="input"
           placeholder="Supplier (name or id)"
           value={supplier}
           onChange={e=>setSupplier(e.target.value)}
-          style={{ gridColumn: 'span 3 / span 3' }}
+          style={{ gridColumn: 'span 4 / span 4' }}
+          aria-label="Filter by supplier"
         />
 
-        {/* Dates */}
-        <div style={{ gridColumn: 'span 3 / span 3', display:'flex', alignItems:'center', gap:6 }}>
-          <label style={{ fontSize:12, color:'#555' }}>From</label>
-          <input type="date" value={fromStr} onChange={e=>setFromStr(e.target.value)} />
+        <div style={{ gridColumn: 'span 3 / span 3', display:'flex', alignItems:'center', gap:8 }}>
+          <label style={{ fontSize:12, color:'var(--muted)' }}>From</label>
+          <input type="date" className="input" value={fromStr} onChange={e=>setFromStr(e.target.value)} aria-label="From date" />
         </div>
-        <div style={{ gridColumn: 'span 3 / span 3', display:'flex', alignItems:'center', gap:6 }}>
-          <label style={{ fontSize:12, color:'#555' }}>To</label>
-          <input type="date" value={toStr} onChange={e=>setToStr(e.target.value)} />
+        <div style={{ gridColumn: 'span 3 / span 3', display:'flex', alignItems:'center', gap:8 }}>
+          <label style={{ fontSize:12, color:'var(--muted)' }}>To</label>
+          <input type="date" className="input" value={toStr} onChange={e=>setToStr(e.target.value)} aria-label="To date" />
         </div>
 
-        {/* Actions */}
-        <div style={{ gridColumn: 'span 3 / span 3', display:'flex', gap:8 }}>
+        <div style={{ gridColumn: 'span 6 / span 6', display:'flex', gap:8 }}>
           <button type="button" onClick={refresh}>Search</button>
-          <button type="button" onClick={() => window.alert('Use Export in previous version (kept in your code) or add it back here if needed.')}>
-            Export CSV
-          </button>
+        </div>
         </div>
       </div>
 
-      {/* Table */}
-      <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 6 }}>
-        <table style={{ width: '100%', fontSize: 14 }}>
-          <thead style={{ background: '#f9fafb' }}>
+      {loading ? (
+        <POLoading message="Searching archive…" />
+      ) : null}
+
+      {!loading && pageRows.length === 0 && !hasActiveFilters ? (
+        <div className="po-empty-state">
+          <p className="po-empty-state__message">
+            No archived Purchase Orders yet.
+          </p>
+        </div>
+      ) : null}
+
+      {!loading && (pageRows.length > 0 || hasActiveFilters) ? (
+      <div className="po-table-wrap">
+        <table className="po-data-table">
+          <thead>
             <tr>
-              <th style={{ textAlign:'left', padding:8, cursor:'pointer' }} onClick={() => toggleSort('number')}>
+              <th style={{ cursor:'pointer' }} onClick={() => toggleSort('number')}>
                 Number {sortKey==='number' ? (sortDir==='asc' ? '▲' : '▼') : ''}
               </th>
-              <th style={{ textAlign:'left', padding:8 }}>Title</th>
-              <th style={{ textAlign:'left', padding:8 }}>Job</th>
-              <th style={{ textAlign:'left', padding:8 }}>Cost Code</th>
-              <th style={{ textAlign:'left', padding:8 }}>Supplier</th>
-              <th style={{ textAlign:'right', padding:8 }}>Net</th>
-              <th style={{ textAlign:'right', padding:8 }}>VAT</th>
-              <th style={{ textAlign:'right', padding:8 }}>Gross</th>
-              <th style={{ textAlign:'left', padding:8 }}>Status</th>
-              <th style={{ textAlign:'left', padding:8 }}>Approval</th>
-              <th style={{ textAlign:'left', padding:8, cursor:'pointer' }} onClick={() => toggleSort('updated')}>
+              <th>Title</th>
+              <th>Job</th>
+              <th>Cost Code</th>
+              <th>Supplier</th>
+              <th style={{ textAlign:'right' }}>Net</th>
+              <th style={{ textAlign:'right' }}>VAT</th>
+              <th style={{ textAlign:'right' }}>Gross</th>
+              <th>Status</th>
+              <th>Approval</th>
+              <th style={{ cursor:'pointer' }} onClick={() => toggleSort('updated')}>
                 Updated {sortKey==='updated' ? (sortDir==='asc' ? '▲' : '▼') : ''}
               </th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={11} style={{ padding: 12 }}>Loading…</td></tr>}
-            {!loading && pageRows.length === 0 && (
+            {pageRows.length === 0 && hasActiveFilters && (
               <tr>
-                <td colSpan={11} style={{ padding: 12, textAlign: 'center', color: '#6b7280' }}>
-                  {hasActiveFilters
-                    ? 'No Purchase Orders match your search.'
-                    : 'No archived Purchase Orders yet.'}
+                <td colSpan={11} className="po-data-table__empty">
+                  No Purchase Orders match your search.
                 </td>
               </tr>
             )}
@@ -238,142 +261,66 @@ export default function POArchive() {
               return (
                 <tr
                   key={p.poNumber || p.number || i}
-                  style={{ borderTop: '1px solid #e5e7eb', cursor:'pointer' }}
+                  style={{ cursor:'pointer' }}
                   onClick={()=>openPO(p)}
                 >
-                  <td style={{ padding:8 }}>{p.poNumber || p.number}</td>
-                  <td style={{ padding:8 }}>{p.title || p.description || '-'}</td>
-                  <td style={{ padding:8 }}>{p.costRef?.jobCode || '-'}</td>
-                  <td style={{ padding:8 }}>{p.costRef?.costCode || '-'}</td>
-                  <td style={{ padding:8 }}>
+                  <td>{p.poNumber || p.number}</td>
+                  <td>{p.title || p.description || '-'}</td>
+                  <td>{p.costRef?.jobCode || '-'}</td>
+                  <td>{p.costRef?.costCode || '-'}</td>
+                  <td>
                     {p.supplierSnapshot?.name || p.supplier || p.supplierId || '-'}
                   </td>
-                  <td style={{ padding:8, textAlign:'right' }}>£{fmt(net)}</td>
-                  <td style={{ padding:8, textAlign:'right' }}>£{fmt(vat)}</td>
-                  <td style={{ padding:8, textAlign:'right' }}>£{fmt(gross)}</td>
-                  <td style={{ padding:8 }}>{p.status || '-'}</td>
-                  <td style={{ padding:8 }}>{p.approval?.status || '-'}</td>
-                  <td style={{ padding:8 }}>{fmtUKDateTime(p.updatedAt || p.createdAt)}</td>
+                  <td style={{ textAlign:'right' }}>£{fmt(net)}</td>
+                  <td style={{ textAlign:'right' }}>£{fmt(vat)}</td>
+                  <td style={{ textAlign:'right' }}>£{fmt(gross)}</td>
+                  <td>{p.status || '-'}</td>
+                  <td>{p.approval?.status || '-'}</td>
+                  <td>{fmtUKDateTime(p.updatedAt || p.createdAt)}</td>
                 </tr>
               )
             })}
           </tbody>
         </table>
       </div>
+      ) : null}
 
       {/* Pagination */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop: 10 }}>
-        <div style={{ fontSize: 13, color:'#555' }}>
+      {!loading && total > 0 ? (
+      <div className="po-pagination">
+        <div>
           Showing {total === 0 ? 0 : start + 1}–{Math.min(start + pageSize, total)} of {total}
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <label style={{ fontSize: 13, color:'#555' }}>Rows per page</label>
-          <select value={pageSize} onChange={e => { setPageSize(parseInt(e.target.value, 10)); setPage(1) }}>
+        <div className="po-pagination__controls">
+          <label>Rows per page</label>
+          <select className="select" value={pageSize} onChange={e => { setPageSize(parseInt(e.target.value, 10)); setPage(1) }}>
             {[10,25,50,100].map(n => <option key={n} value={n}>{n}</option>)}
           </select>
-          <button disabled={currentPage<=1} onClick={()=>setPage(p => Math.max(1, p-1))}>Prev</button>
+          <button type="button" disabled={currentPage<=1} onClick={()=>setPage(p => Math.max(1, p-1))}>Prev</button>
           <div style={{ minWidth: 60, textAlign:'center' }}>{currentPage}/{pages}</div>
-          <button disabled={currentPage>=pages} onClick={()=>setPage(p => Math.min(pages, p+1))}>Next</button>
+          <button type="button" disabled={currentPage>=pages} onClick={()=>setPage(p => Math.min(pages, p+1))}>Next</button>
         </div>
       </div>
+      ) : null}
 
       {/* Drawer */}
-      {drawerOpen && selected && (() => {
-        const net   = toNumber(selected.subtotal ?? selected.totals?.net ?? selected.amount ?? 0)
-        const vatRt = toNumber(selected.totals?.vatRate ?? selected.vatRateDefault ?? 0.2)
-        const vat   = net * vatRt
-        const gross = net + vat
-        return (
-          <div onClick={()=>setDrawerOpen(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.3)', display:'flex', justifyContent:'flex-end' }}>
-            <div
-  onClick={e=>e.stopPropagation()}
-  style={{
-    width: 560,
-    height: '100%',
-    background: 'var(--panel)',
-    color: 'var(--text)',
-    padding: 16,
-    overflowY: 'auto',
-    borderLeft: '1px solid var(--border)'
-  }}
->
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 12 }}>
-                <h2 style={{ fontSize: 18, fontWeight: 600 }}>
-                  {(selected.poNumber || selected.number)} – {selected.title || selected.description}
-                </h2>
-                <button onClick={()=>setDrawerOpen(false)}>Close</button>
-              </div>
-
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 8, fontSize: 14, marginBottom: 12 }}>
-                <div><b>Job:</b> {selected.costRef?.jobCode || '-'}</div>
-                <div><b>Cost code:</b> {selected.costRef?.costCode || '-'}</div>
-                <div><b>Supplier:</b> {selected.supplierSnapshot?.name || selected.supplier || selected.supplierId || '-'}</div>
-                <div><b>Status:</b> {selected.status || '-'}</div>
-                <div><b>Approval:</b> {selected.approval?.status || '-'}</div>
-                <div><b>Net:</b> £{fmt(net)}</div>
-                <div><b>VAT ({(vatRt*100).toFixed(0)}%):</b> £{fmt(vat)}</div>
-                <div><b>Gross:</b> £{fmt(gross)}</div>
-              </div>
-
-              {canReviewAndApprovePo(selected) ? (
-                <div className="po-review-approve-panel" role="region" aria-labelledby="archive-review-approve-heading">
-                  <p className="po-review-approve-panel__eyebrow">Awaiting your approval</p>
-                  <h4 id="archive-review-approve-heading" className="po-review-approve-panel__title">
-                    Review this Purchase Order
-                  </h4>
-                  <p className="po-review-approve-panel__detail">
-                    Assigned to{' '}
-                    <strong>{getPoApproverDisplayName(selected)}</strong>.
-                    Approve or reject when you are ready.
-                  </p>
-                  <div className="po-review-approve-panel__actions">
-                    <button
-                      type="button"
-                      className="po-list-btn-primary"
-                      onClick={() => updateApproval('Approved')}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      className="po-list-btn-secondary"
-                      onClick={() => updateApproval('Rejected')}
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
-              <h3 style={{ fontWeight: 600, marginBottom: 6 }}>Items</h3>
-              <div style={{ border:'1px solid #e5e7eb', borderRadius: 6, overflow:'hidden', marginBottom: 12 }}>
-                <table style={{ width:'100%', fontSize: 14 }}>
-                  <thead style={{ background:'#f9fafb' }}>
-                    <tr>
-                      <th style={{ textAlign:'left', padding:8 }}>Description</th>
-                      <th style={{ textAlign:'left', padding:8 }}>UoM</th>
-                      <th style={{ textAlign:'right', padding:8 }}>Qty</th>
-                      <th style={{ textAlign:'right', padding:8 }}>Rate</th>
-                      <th style={{ textAlign:'right', padding:8 }}>Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(selected.items ?? []).map((i, idx) => (
-                      <tr key={idx} style={{ borderTop:'1px solid #e5e7eb' }}>
-                        <td style={{ padding:8 }}>{i.description}</td>
-                        <td style={{ padding:8 }}>{i.uom}</td>
-                        <td style={{ padding:8, textAlign:'right' }}>{toNumber(i.qty)}</td>
-                        <td style={{ padding:8, textAlign:'right' }}>£{fmt(i.rate)}</td>
-                        <td style={{ padding:8, textAlign:'right' }}>£{fmt(i.amount ?? (toNumber(i.qty) * toNumber(i.rate)))}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
+      <PODrawerShell
+        open={drawerOpen && !!selected}
+        onClose={closeDrawer}
+        ariaLabel="Purchase Order details"
+      >
+        {selected ? (
+          <POReviewDrawerContent
+            po={selected}
+            onClose={closeDrawer}
+            onDownloadPdf={() =>
+              openPdf(selected.poNumber || selected.number)
+            }
+            onApprove={() => updateApproval('Approved')}
+            onReject={() => updateApproval('Rejected')}
+          />
+        ) : null}
+      </PODrawerShell>
     </div>
   )
 }

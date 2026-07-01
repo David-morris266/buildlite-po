@@ -15,6 +15,7 @@ import {
   getSetupApprovalRouting,
 } from '../setup/setupDraft';
 import POSaveJourneyPanel from './POSaveJourneyPanel';
+import POPageHeader from './POPageHeader';
 import './POForm.css';
 
 const toNumber = (v) => {
@@ -561,19 +562,21 @@ export default function POForm({
     ? `Edit Purchase Order${persistedPoNumber ? ` – ${persistedPoNumber}` : ''}`
     : 'Create a new Purchase Order';
 
+  const pageEyebrow = isPersisted ? 'Purchase orders' : 'New purchase order';
+
   const pageLead = isPersisted
     ? 'Update your order details and save your changes when you are ready.'
-    : "Select who you're ordering from, add your order lines and either save a draft or send it for approval.";
+    : 'Create a Purchase Order, save a draft or send it for approval.';
 
   return (
     <div
       className={`po-form-container${journeyPanel ? ' po-form-container--journey' : ''}`}
     >
-      <header className="po-form-page-header">
-        <p className="po-form-page-header__eyebrow">Purchase orders</p>
-        <h1 className="po-form-page-header__title">{pageTitle}</h1>
-        <p className="po-form-page-header__lead">{pageLead}</p>
-      </header>
+      <POPageHeader
+        eyebrow={pageEyebrow}
+        title={pageTitle}
+        lead={pageLead}
+      />
 
       {saveError ? (
         <div className="po-form-error-banner" role="alert">

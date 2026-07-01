@@ -7,40 +7,8 @@
   --po-bg-card: var(--panel, #14191d);
   --po-radius: var(--radius, 14px);
 
-  max-width: 960px;
-  margin: 0 auto;
+  width: 100%;
   color: var(--text, #d8e1e7);
-}
-
-/* Page header (Setup-style) */
-.po-form-page-header {
-  margin-bottom: 24px;
-}
-
-.po-form-page-header__eyebrow {
-  margin: 0 0 8px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--po-accent);
-}
-
-.po-form-page-header__title {
-  margin: 0 0 12px;
-  font-size: clamp(1.5rem, 4vw, 2rem);
-  font-weight: 800;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  color: var(--text, #d8e1e7);
-}
-
-.po-form-page-header__lead {
-  margin: 0;
-  font-size: 1rem;
-  line-height: 1.6;
-  color: var(--po-muted);
-  max-width: 52ch;
 }
 
 /* Section stack */

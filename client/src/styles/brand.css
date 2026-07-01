@@ -95,7 +95,14 @@ a { color: var(--accent); }
 /* Nav */
 .nav { display:flex; gap:8px; }
 .nav .tab {
-  padding:8px 12px; border-radius:10px; border:1px solid var(--line); background:#0f1417; color:var(--muted);
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #0f1417;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 .nav .tab.active { color:#071007; background: linear-gradient(180deg, var(--accent), #29d659); border-color: transparent; }
 

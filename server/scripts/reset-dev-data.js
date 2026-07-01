@@ -13,13 +13,13 @@ const { pool } = require("../db");
 const DATA_DIR = path.join(__dirname, "..", "data");
 
 const NEUTRAL_BRAND = {
-  legal_name: "BuildLite Homes",
-  trading_name: "BuildLite Homes",
+  legal_name: "BuildLite Construction Ltd",
+  trading_name: "BuildLite Construction Ltd",
   company_number: "12345678",
   vat_number: "GB123456789",
-  address_line1: "Example Road",
-  address_line2: "Construction Park",
-  town: "Example Town",
+  address_line1: "Demo Site",
+  address_line2: "Business Park",
+  town: "Demo Town",
   postcode: "AB1 2CD",
   phone: "01234 567890",
   email: "accounts@example.co.uk",

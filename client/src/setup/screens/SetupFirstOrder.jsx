@@ -108,7 +108,7 @@ export default function SetupFirstOrder({
               type="text"
               value={value.supplierName}
               onChange={set("supplierName")}
-              placeholder="e.g. ABC Brickwork Ltd"
+              placeholder="e.g. BuildLite Groundworks"
               autoComplete="organization"
               autoFocus
             />
@@ -218,7 +218,7 @@ export default function SetupFirstOrder({
                 type="text"
                 value={value.jobName}
                 onChange={set("jobName")}
-                placeholder="e.g. Example Development"
+                placeholder="e.g. Project Alpha"
                 autoComplete="off"
               />
             </Field>
@@ -243,7 +243,7 @@ export default function SetupFirstOrder({
                   type="text"
                   value={value.jobAddress}
                   onChange={set("jobAddress")}
-                  placeholder="Example Road, Construction Park, AB1 2CD"
+                  placeholder="Demo Site, AB1 2CD"
                   autoComplete="street-address"
                 />
               </Field>

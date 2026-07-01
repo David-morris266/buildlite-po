@@ -11,11 +11,14 @@ import {
 import {
   buildApproveBody,
   buildRequestApprovalBody,
-  canReviewAndApprovePo,
   canSendPoForApproval,
-  getPoApproverDisplayName,
 } from '../setup/setupDraft';
+import { getPoRowActionLabel } from './poDrawerHelpers';
 import POForm from './POForm';
+import POPageHeader from './POPageHeader';
+import POLoading from './POLoading';
+import PODrawerShell, { PODrawerLoading } from './PODrawerShell';
+import POReviewDrawerContent from './POReviewDrawerContent';
 import './POList.css';
 
 const asMoney = (v) => {
@@ -37,6 +40,7 @@ const openPdf = (poNumber) => {
 export default function POList({
   focusPoNumber = null,
   onFocusHandled = null,
+  onCreateFirstPO = null,
 }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -202,22 +206,13 @@ export default function POList({
   }
 
   const badge = (status) => {
-    let bg = '#1f2937';
     const s = status || 'Pending';
-    if (s === 'Approved') bg = '#064e3b';
-    else if (s === 'Rejected') bg = '#4c0519';
-    else if (s === 'Draft') bg = '#111827';
+    let modifier = 'pending';
+    if (s === 'Approved') modifier = 'approved';
+    else if (s === 'Rejected') modifier = 'rejected';
+    else if (s === 'Draft') modifier = 'draft';
     return (
-      <span
-        style={{
-          padding: '2px 8px',
-          borderRadius: 999,
-          border: '1px solid #374151',
-          background: bg,
-          color: '#e5e7eb',
-          fontSize: 12,
-        }}
-      >
+      <span className={`po-status-badge po-status-badge--${modifier}`}>
         {s}
       </span>
     );
@@ -228,20 +223,19 @@ export default function POList({
     return s === 'draft' || s === 'rejected';
   };
 
+  function closeDrawer() {
+    setDrawerOpen(false);
+    setSelected(null);
+    setEditMode(false);
+  }
+
   return (
-    <div
-      style={{ maxWidth: 1600, margin: '1rem auto', padding: '0 24px 24px' }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'baseline',
-          marginBottom: 8,
-        }}
-      >
-        <h2 style={{ marginBottom: 0 }}>Purchase Orders</h2>
-      </div>
+    <div className="po-list-page">
+      <POPageHeader
+        eyebrow="Purchase orders"
+        title="Purchase Orders"
+        lead="Review, edit and track your Purchase Orders."
+      />
 
       {listFeedback ? (
         <div
@@ -260,44 +254,39 @@ export default function POList({
         </div>
       ) : null}
 
-      {/* Filters */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '2fr 1fr 120px 1fr auto',
-          gap: 8,
-          marginBottom: 12,
-          alignItems: 'center',
-        }}
-      >
+      <div className="po-module-card po-filters">
         <input
+          className="input"
           placeholder="Search (PO no / text / cost code)"
           value={q}
           onChange={(e) => setQ(e.target.value)}
+          aria-label="Search Purchase Orders"
         />
         <input
+          className="input"
           placeholder="Job (code or id)"
           value={job}
           onChange={(e) => setJob(e.target.value)}
+          aria-label="Filter by job"
         />
-        <select value={type} onChange={(e) => setType(e.target.value)}>
+        <select
+          className="select"
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+          aria-label="Filter by order type"
+        >
           <option value="">Type</option>
           <option value="M">M (Materials)</option>
           <option value="S">S (Sub-contract)</option>
         </select>
         <input
+          className="input"
           placeholder="Supplier"
           value={supplier}
           onChange={(e) => setSupplier(e.target.value)}
+          aria-label="Filter by supplier"
         />
-        <label
-          style={{
-            display: 'flex',
-            gap: 8,
-            alignItems: 'center',
-            whiteSpace: 'nowrap',
-          }}
-        >
+        <label className="po-filters__checkbox">
           <input
             type="checkbox"
             checked={showArchived}
@@ -307,35 +296,51 @@ export default function POList({
         </label>
       </div>
 
-      {loading && <p>Loading…</p>}
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+      {loading ? (
+        <POLoading message="Loading Purchase Orders…" />
+      ) : null}
 
-      {!loading && !error && (
+      {error ? (
+        <div className="po-error-banner" role="alert">
+          {error}
+        </div>
+      ) : null}
+
+      {!loading && !error && rows.length === 0 && !hasActiveFilters ? (
+        <div className="po-empty-state">
+          <p className="po-empty-state__message">
+            You haven&apos;t created any Purchase Orders yet.
+          </p>
+          <button
+            type="button"
+            className="po-btn-primary"
+            onClick={() => onCreateFirstPO?.()}
+          >
+            Create your first Purchase Order
+          </button>
+        </div>
+      ) : null}
+
+      {!loading && !error && (rows.length > 0 || hasActiveFilters) ? (
         <>
-          <div style={{ marginBottom: 8, fontSize: 14 }}>
+          <p className="po-summary">
             Showing <strong>{totals.count}</strong> POs · Total value £
             {asMoney(totals.sum)}
-          </div>
+          </p>
 
-          <div
-            style={{
-              overflowX: 'auto',
-              border: '1px solid #e5e7eb',
-              borderRadius: 8,
-            }}
-          >
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div className="po-table-wrap">
+            <table className="po-data-table">
               <thead>
-                <tr style={{ textAlign: 'left', background: '#11161d' }}>
-                  <th style={{ padding: 10 }}>Date</th>
-                  <th style={{ padding: 10 }}>PO No</th>
-                  <th style={{ padding: 10 }}>Type</th>
-                  <th style={{ padding: 10 }}>Job</th>
-                  <th style={{ padding: 10 }}>Supplier</th>
-                  <th style={{ padding: 10 }}>Title / Description</th>
-                  <th style={{ padding: 10, textAlign: 'right' }}>Total</th>
-                  <th style={{ padding: 10 }}>Approval</th>
-                  <th style={{ padding: 10 }}>Actions</th>
+                <tr>
+                  <th>Date</th>
+                  <th>PO No</th>
+                  <th>Type</th>
+                  <th>Job</th>
+                  <th>Supplier</th>
+                  <th>Title / Description</th>
+                  <th style={{ textAlign: 'right' }}>Total</th>
+                  <th>Approval</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -366,27 +371,23 @@ export default function POList({
                   const rowCanEdit = canEditStatus(po.status);
 
                   const canSendRow = canSendPoForApproval(po);
-                  const showReview = canReviewAndApprovePo(po);
+                  const rowActionLabel = getPoRowActionLabel(po);
 
                   return (
-                    <tr
-                      key={number}
-                      style={{ borderTop: '1px solid #1f2732' }}
-                    >
-                      <td style={{ padding: 10, whiteSpace: 'nowrap' }}>
+                    <tr key={number}>
+                      <td style={{ whiteSpace: 'nowrap' }}>
                         {date}
                       </td>
-                      <td style={{ padding: 10 }}>{number}</td>
-                      <td style={{ padding: 10 }}>
+                      <td>{number}</td>
+                      <td>
                         {(po.type || '').toUpperCase()}
                       </td>
-                      <td style={{ padding: 10 }}>
+                      <td>
                         {jobLabel || '—'}
                       </td>
-                      <td style={{ padding: 10 }}>{supplierName}</td>
+                      <td>{supplierName}</td>
                       <td
                         style={{
-                          padding: 10,
                           maxWidth: 520,
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
@@ -395,40 +396,25 @@ export default function POList({
                       >
                         {title}
                       </td>
-                      <td style={{ padding: 10, textAlign: 'right' }}>
+                      <td style={{ textAlign: 'right' }}>
                         £{asMoney(amount)}
                       </td>
 
-                      <td style={{ padding: 10 }}>{badge(statusForBadge)}</td>
+                      <td>{badge(statusForBadge)}</td>
 
-                      <td
-                        style={{
-                          padding: 10,
-                          display: 'flex',
-                          gap: 8,
-                          flexWrap: 'wrap',
-                          alignItems: 'center',
-                        }}
-                      >
-                        {showReview ? (
-                          <button
-                            type="button"
-                            className="po-list-btn-primary"
-                            onClick={() => onView(number)}
-                          >
-                            Review
-                          </button>
-                        ) : null}
+                      <td>
+                        <div className="po-data-table__actions">
+                        <button
+                          type="button"
+                          className="po-list-btn-primary"
+                          onClick={() => onView(number)}
+                        >
+                          {rowActionLabel}
+                        </button>
 
                         <button type="button" onClick={() => openPdf(number)}>
                           🖨️ PDF
                         </button>
-
-                        {!showReview ? (
-                          <button type="button" onClick={() => onView(number)}>
-                            View
-                          </button>
-                        ) : null}
 
                         {rowCanEdit && (
                           <button type="button" onClick={() => onEdit(number)}>
@@ -452,23 +438,15 @@ export default function POList({
                         >
                           Delete
                         </button>
+                        </div>
                       </td>
                     </tr>
                   );
                 })}
-                {rows.length === 0 && (
+                {rows.length === 0 && hasActiveFilters && (
                   <tr>
-                    <td
-                      colSpan={9}
-                      style={{
-                        padding: 14,
-                        textAlign: 'center',
-                        color: '#96a0a6',
-                      }}
-                    >
-                      {hasActiveFilters
-                        ? 'No Purchase Orders match your filters.'
-                        : "You're ready to create your first Purchase Order."}
+                    <td colSpan={9} className="po-data-table__empty">
+                      No Purchase Orders match your filters.
                     </td>
                   </tr>
                 )}
@@ -476,385 +454,63 @@ export default function POList({
             </table>
           </div>
         </>
-      )}
+      ) : null}
 
       {/* Drawer */}
-      {drawerOpen && (
-        <>
-          <div
-            onClick={() => {
-              setDrawerOpen(false);
-              setSelected(null);
-              setEditMode(false);
-            }}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(0,0,0,0.35)',
-            }}
-          />
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              right: 0,
-              height: '100vh',
-              width: editMode ? '880px' : '480px',
-              background: '#0d1117',
-              color: '#e5e7eb',
-              boxShadow: '-2px 0 10px rgba(0,0,0,0.15)',
-              padding: '16px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-              borderLeft: '1px solid #1f2732',
-              overflow: 'hidden',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
-              <h3 style={{ margin: 0 }}>
-                {editMode ? 'Edit Purchase Order' : 'PO Details'}
-              </h3>
+      <PODrawerShell
+        open={drawerOpen}
+        onClose={closeDrawer}
+        wide={editMode}
+        ariaLabel={
+          editMode ? 'Edit Purchase Order' : 'Purchase Order details'
+        }
+      >
+        {!selected && drawerOpen ? <PODrawerLoading /> : null}
+
+        {selected && editMode ? (
+          <div className="po-drawer-edit">
+            <div className="po-drawer-edit__header">
               <button
-                onClick={() => {
-                  setDrawerOpen(false);
-                  setSelected(null);
-                  setEditMode(false);
-                }}
+                type="button"
+                className="po-drawer-close"
+                onClick={closeDrawer}
               >
                 Close
               </button>
             </div>
-
-            {!selected && <p>Loading…</p>}
-
-            {selected && listFeedback ? (
-              <div
-                className={`po-list-feedback po-list-feedback--${listFeedback.type}`}
-                role="status"
-              >
-                {listFeedback.message}
-              </div>
-            ) : null}
-
-            {selected && editMode && (
-              <div
-                style={{
-                  flex: 1,
-                  overflow: 'auto',
-                  paddingRight: 4,
+            <div className="po-drawer-edit__body">
+              <POForm
+                initialPo={selected}
+                onSaved={async (updatedPo) => {
+                  setSelected(updatedPo);
+                  setEditMode(false);
+                  await fetchData();
                 }}
-              >
-                <POForm
-                  initialPo={selected}
-                  onSaved={async (updatedPo) => {
-                    setSelected(updatedPo);
-                    setEditMode(false);
-                    await fetchData();
-                  }}
-                />
-              </div>
-            )}
-
-            {selected && !editMode && (
-              <div
-                style={{
-                  display: 'grid',
-                  gap: 8,
-                  overflow: 'auto',
-                  paddingRight: 4,
-                }}
-              >
-                <div>
-                  <strong>PO No:</strong> {selected.poNumber}
-                </div>
-                <div>
-                  <strong>Date:</strong>{' '}
-                  {(selected.createdAt || selected.date || '').slice(0, 10)}
-                </div>
-                <div>
-                  <strong>Type:</strong>{' '}
-                  {(selected.type || '').toUpperCase()}
-                </div>
-                <div>
-                  <strong>Supplier:</strong>{' '}
-                  {selected.supplierSnapshot?.name ||
-                    selected.supplierName ||
-                    selected.supplier}
-                </div>
-                <div>
-                  <strong>Title:</strong>{' '}
-                  {selected.title || selected.description || '-'}
-                </div>
-                <div>
-                  <strong>Status:</strong> {selected.status} ·{' '}
-                  <strong>Approval:</strong> {selected.approval?.status}
-                </div>
-
-                {canReviewAndApprovePo(selected) ? (
-                  <div className="po-review-approve-panel" role="region" aria-labelledby="po-review-approve-heading">
-                    <p className="po-review-approve-panel__eyebrow">Awaiting your approval</p>
-                    <h4 id="po-review-approve-heading" className="po-review-approve-panel__title">
-                      Review this Purchase Order
-                    </h4>
-                    <p className="po-review-approve-panel__detail">
-                      Assigned to{' '}
-                      <strong>{getPoApproverDisplayName(selected)}</strong>.
-                      Approve or reject when you are ready.
-                    </p>
-                    <div className="po-review-approve-panel__actions">
-                      <button
-                        type="button"
-                        className="po-list-btn-primary"
-                        disabled={updatingApproval}
-                        onClick={async () => {
-                          await onQuickApprove(
-                            selected.poNumber,
-                            'Approved'
-                          );
-                        }}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        type="button"
-                        className="po-list-btn-secondary"
-                        disabled={updatingApproval}
-                        onClick={async () => {
-                          await onQuickApprove(
-                            selected.poNumber,
-                            'Rejected'
-                          );
-                        }}
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-                <div>
-                  <strong>Net:</strong> £
-                  {asMoney(
-                    selected.subtotal ?? selected.totals?.net ?? 0
-                  )}
-                </div>
-                {selected.totals?.vat != null && (
-                  <div>
-                    <strong>VAT:</strong> £
-                    {asMoney(selected.totals.vat)}
-                  </div>
-                )}
-                {selected.totals?.gross != null && (
-                  <div>
-                    <strong>Gross:</strong> £
-                    {asMoney(selected.totals.gross)}
-                  </div>
-                )}
-
-                {Array.isArray(selected.approval?.history) &&
-                  selected.approval.history.length > 0 && (
-                    <div style={{ marginTop: 8 }}>
-                      <div
-                        style={{
-                          fontWeight: 600,
-                          marginBottom: 6,
-                        }}
-                      >
-                        Approval Timeline
-                      </div>
-                      <div
-                        style={{
-                          border: '1px solid #1f2732',
-                          borderRadius: 8,
-                          maxHeight: '22vh',
-                          overflow: 'auto',
-                        }}
-                      >
-                        <table
-                          style={{
-                            width: '100%',
-                            borderCollapse: 'collapse',
-                          }}
-                        >
-                          <thead>
-                            <tr
-                              style={{
-                                textAlign: 'left',
-                                background: '#11161d',
-                              }}
-                            >
-                              <th style={{ padding: 8, width: 120 }}>When</th>
-                              <th style={{ padding: 8, width: 120 }}>Action</th>
-                              <th style={{ padding: 8, width: 180 }}>By</th>
-                              <th style={{ padding: 8 }}>Note</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {[...selected.approval.history]
-                              .reverse()
-                              .map((h, i) => (
-                                <tr
-                                  key={i}
-                                  style={{
-                                    borderTop: '1px solid #1f2732',
-                                  }}
-                                >
-                                  <td style={{ padding: 8 }}>
-                                    {(h.at || '')
-                                      .slice(0, 19)
-                                      .replace('T', ' ')}
-                                  </td>
-                                  <td style={{ padding: 8 }}>{h.action}</td>
-                                  <td style={{ padding: 8 }}>
-                                    {h.by || '-'}
-                                  </td>
-                                  <td style={{ padding: 8 }}>
-                                    {h.note || ''}
-                                  </td>
-                                </tr>
-                              ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                {Array.isArray(selected.items) &&
-                  selected.items.length > 0 && (
-                    <div style={{ marginTop: 8 }}>
-                      <div
-                        style={{
-                          fontWeight: 600,
-                          marginBottom: 6,
-                        }}
-                      >
-                        Items
-                      </div>
-                      <div
-                        style={{
-                          border: '1px solid #1f2732',
-                          borderRadius: 8,
-                          maxHeight: '30vh',
-                          overflow: 'auto',
-                        }}
-                      >
-                        <table
-                          style={{
-                            width: '100%',
-                            borderCollapse: 'collapse',
-                          }}
-                        >
-                          <thead>
-                            <tr
-                              style={{
-                                textAlign: 'left',
-                                background: '#11161d',
-                              }}
-                            >
-                              <th style={{ padding: 8 }}>Description</th>
-                              <th style={{ padding: 8 }}>Qty</th>
-                              <th style={{ padding: 8 }}>Rate</th>
-                              <th
-                                style={{
-                                  padding: 8,
-                                  textAlign: 'right',
-                                }}
-                              >
-                                Line Total
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {selected.items.map((it, i) => (
-                              <tr
-                                key={i}
-                                style={{
-                                  borderTop: '1px solid #1f2732',
-                                }}
-                              >
-                                <td style={{ padding: 8 }}>
-                                  {it.description}
-                                </td>
-                                <td style={{ padding: 8 }}>
-                                  {it.qty ?? it.quantity ?? ''}
-                                </td>
-                                <td style={{ padding: 8 }}>
-                                  £
-                                  {asMoney(
-                                    it.rate ?? it.unitRate ?? 0
-                                  )}
-                                </td>
-                                <td
-                                  style={{
-                                    padding: 8,
-                                    textAlign: 'right',
-                                  }}
-                                >
-                                  £
-                                  {asMoney(
-                                    it.total ??
-                                      (Number(it.qty || it.quantity || 0) *
-                                        Number(
-                                          it.rate || it.unitRate || 0
-                                        ))
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: 8,
-                    marginTop: 8,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <button type="button" onClick={() => openPdf(selected.poNumber)}>
-                    🖨️ PDF
-                  </button>
-
-                  {canEditStatus(selected.status) && (
-                    <button type="button" onClick={() => setEditMode(true)}>
-                      Edit
-                    </button>
-                  )}
-
-                  {canSendPoForApproval(selected) && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onSendForApproval(selected.poNumber)
-                        }
-                      >
-                        Send for approval
-                      </button>
-                    )}
-
-                  <button
-                    type="button"
-                    className="delete-btn"
-                    onClick={() => onDelete(selected.poNumber)}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            )}
+              />
+            </div>
           </div>
-        </>
-      )}
+        ) : null}
+
+        {selected && !editMode ? (
+          <POReviewDrawerContent
+            po={selected}
+            feedback={listFeedback}
+            updatingApproval={updatingApproval}
+            onClose={closeDrawer}
+            onDownloadPdf={() => openPdf(selected.poNumber)}
+            onEdit={() => setEditMode(true)}
+            onDelete={() => onDelete(selected.poNumber)}
+            onSendForApproval={() => onSendForApproval(selected.poNumber)}
+            onApprove={async () => {
+              await onQuickApprove(selected.poNumber, 'Approved');
+            }}
+            onReject={async () => {
+              await onQuickApprove(selected.poNumber, 'Rejected');
+            }}
+            canEdit={canEditStatus(selected.status)}
+          />
+        ) : null}
+      </PODrawerShell>
     </div>
   );
 }

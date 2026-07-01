@@ -6,6 +6,7 @@ import BrandHeader from "./components/Brandheader";
 import SetupAssistant, { dismissSetupAssistant, isSetupDismissed } from "./setup/SetupAssistant";
 import { buildPoFormSeedFromSetup, loadSetupDraft } from "./setup/setupDraft";
 import "./styles/brand.css";
+import "./styles/po-module.css";
 
 function shouldShowSetupAssistant() {
   const params = new URLSearchParams(window.location.search);
@@ -60,6 +61,11 @@ export default function App() {
     setSetupLaunchSeed(null);
   };
 
+  const handleCreateFirstPO = () => {
+    setSetupLaunchSeed(null);
+    setTab("form");
+  };
+
   const handleExploreBuildLite = () => {
     dismissSetupAssistant();
     exitSetup();
@@ -80,23 +86,32 @@ export default function App() {
     <div id="app">
       <BrandHeader activeTab={tab} onTab={handleTab} />
 
-      <main style={{ padding: "16px", display: "grid", gap: "16px" }}>
+      <main className="po-app-main">
         {tab === "form" && (
-          <POForm
-            setupLaunchSeed={setupLaunchSeed}
-            onClearSetupLaunchSeed={() => setSetupLaunchSeed(null)}
-            onViewPurchaseOrders={handleViewPurchaseOrders}
-            onReviewAndApprove={handleReviewAndApprove}
-            onCreateAnotherPO={handleCreateAnotherPO}
-          />
+          <div key="form" className="po-page po-page-animate-in">
+            <POForm
+              setupLaunchSeed={setupLaunchSeed}
+              onClearSetupLaunchSeed={() => setSetupLaunchSeed(null)}
+              onViewPurchaseOrders={handleViewPurchaseOrders}
+              onReviewAndApprove={handleReviewAndApprove}
+              onCreateAnotherPO={handleCreateAnotherPO}
+            />
+          </div>
         )}
         {tab === "list" && (
-          <POList
-            focusPoNumber={listFocusPo}
-            onFocusHandled={() => setListFocusPo(null)}
-          />
+          <div key="list" className="po-page po-page-animate-in">
+            <POList
+              focusPoNumber={listFocusPo}
+              onFocusHandled={() => setListFocusPo(null)}
+              onCreateFirstPO={handleCreateFirstPO}
+            />
+          </div>
         )}
-        {tab === "archive" && <POArchive />}
+        {tab === "archive" && (
+          <div key="archive" className="po-page po-page-animate-in">
+            <POArchive />
+          </div>
+        )}
       </main>
     </div>
   );

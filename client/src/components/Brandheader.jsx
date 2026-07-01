@@ -14,19 +14,19 @@ export default function BrandHeader({ activeTab, onTab }) {
           className={`tab ${activeTab === "form" ? "active" : ""}`}
           onClick={() => onTab("form")}
         >
-          Form
+          New Purchase Order
         </button>
         <button
           className={`tab ${activeTab === "list" ? "active" : ""}`}
           onClick={() => onTab("list")}
         >
-          List
+          Purchase Orders
         </button>
         <button
           className={`tab ${activeTab === "archive" ? "active" : ""}`}
           onClick={() => onTab("archive")}
         >
-          Archive/Search
+          Archive
         </button>
       </nav>
     </header>

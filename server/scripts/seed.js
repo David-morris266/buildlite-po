@@ -10,7 +10,7 @@ const { pool } = require("../db");
 
 const DEFAULT_CLIENT = {
   code: "BUILDLITE",
-  name: "BuildLite Homes",
+  name: "BuildLite Construction Ltd",
 };
 
 const COST_CODES_PATH = path.join(__dirname, "..", "data", "cost_codes.json");
