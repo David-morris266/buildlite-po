@@ -11,6 +11,12 @@ export default function BrandHeader({ activeTab, onTab }) {
 
       <nav className="nav">
         <button
+          className={`tab ${activeTab === "developments" ? "active" : ""}`}
+          onClick={() => onTab("developments")}
+        >
+          Developments
+        </button>
+        <button
           className={`tab ${activeTab === "form" ? "active" : ""}`}
           onClick={() => onTab("form")}
         >

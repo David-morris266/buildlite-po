@@ -3,6 +3,7 @@ import POForm from "./components/POForm";
 import POList from "./components/POList";
 import POArchive from "./components/POArchive";
 import PaymentCertificates from "./components/PaymentCertificates";
+import Developments from "./components/Developments";
 import BrandHeader from "./components/Brandheader";
 import SetupAssistant, { dismissSetupAssistant, isSetupDismissed } from "./setup/SetupAssistant";
 import { buildPoFormSeedFromSetup, loadSetupDraft } from "./setup/setupDraft";
@@ -100,6 +101,11 @@ export default function App() {
       <BrandHeader activeTab={tab} onTab={handleTab} />
 
       <main className="po-app-main">
+        {tab === "developments" && (
+          <div key="developments" className="po-page po-page-animate-in">
+            <Developments />
+          </div>
+        )}
         {tab === "form" && (
           <div key="form" className="po-page po-page-animate-in">
             <POForm
