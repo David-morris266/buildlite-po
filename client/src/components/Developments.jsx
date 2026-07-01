@@ -57,6 +57,7 @@ export default function Developments({
       <DevelopmentWorkspace
         development={activeDevelopment}
         onBackToList={returnToList}
+        onPlotsChanged={() => setRefreshToken((value) => value + 1)}
       />
     );
   }

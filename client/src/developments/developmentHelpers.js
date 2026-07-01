@@ -1,5 +1,6 @@
 import { formatPoDate } from '../components/poDrawerHelpers';
 import { getDevelopmentStatusMeta } from './developmentStore';
+import { getPlotCount } from './plotMaster';
 
 export function formatDevelopmentListRow(development) {
   const status = getDevelopmentStatusMeta(development.status);
@@ -7,7 +8,7 @@ export function formatDevelopmentListRow(development) {
     ...development,
     statusMeta: status,
     lastUpdatedLabel: formatPoDate(development.updatedAt),
-    plotsLabel: development.plotCount > 0 ? development.plotCount : '—',
+    plotsLabel: getPlotCount(development) > 0 ? getPlotCount(development) : '—',
     packagesLabel: development.packageCount > 0 ? development.packageCount : '—',
   };
 }
@@ -22,13 +23,16 @@ export function buildDevelopmentWorkspaceModel(development) {
 
   const status = getDevelopmentStatusMeta(development.status);
 
+  const plotCount = getPlotCount(development);
+
   return {
     ...development,
     statusMeta: status,
+    plotCount,
     summaryCards: [
       {
         label: 'Plots',
-        value: formatPlotsSummary(development.plotCount),
+        value: formatPlotsSummary(plotCount),
         modifier: 'default',
       },
       {

@@ -2137,6 +2137,156 @@
   color: var(--accent);
 }
 
+.dev-workspace__tabs {
+  margin-bottom: 16px;
+}
+
+.dev-workspace__tab-panel {
+  margin-bottom: 16px;
+}
+
+.dev-plot-master__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.dev-plot-master__lead {
+  margin: 6px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.dev-plot-master__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dev-plot-master__empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.dev-plot-master__table th,
+.dev-plot-master__table td {
+  white-space: nowrap;
+}
+
+.dev-plot-master__actions-col {
+  width: 120px;
+  text-align: right;
+}
+
+.dev-plot-master__row-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.dev-plot-master__link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.dev-plot-master__link--danger {
+  color: #f87171;
+}
+
+.dev-plot-drawer__errors {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.dev-plot-delete-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.dev-plot-delete {
+  width: min(420px, 100%);
+}
+
+.dev-plot-delete__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.dev-plot-delete__confirm {
+  padding: 10px 16px;
+  border: 1px solid #7f1d1d;
+  border-radius: var(--radius-sm);
+  background: rgba(127, 29, 29, 0.35);
+  color: #fecaca;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dev-plot-delete__confirm:hover {
+  background: rgba(127, 29, 29, 0.55);
+}
+
+.dev-plot-import__blocked {
+  margin: 12px 0 0;
+  color: #f87171;
+  font-weight: 600;
+}
+
+.dev-plot-import__errors-count {
+  color: #f87171;
+}
+
+.dev-plot-import__row-errors {
+  margin-top: 16px;
+}
+
+.dev-plot-import__row-errors-title {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dev-plot-import__row-errors-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dev-plot-import__row-errors-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.dev-plot-import__row-errors-list li strong {
+  min-width: 72px;
+}
+
 @media (max-width: 960px) {
   .dev-form__grid {
     grid-template-columns: 1fr;

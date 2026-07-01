@@ -1,7 +1,20 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import POPageHeader from './POPageHeader';
 import { formatPoDate } from './poDrawerHelpers';
 import { buildDevelopmentWorkspaceModel } from '../developments/developmentHelpers';
+import DevelopmentOverview, {
+  DevelopmentCommercialTab,
+  DevelopmentPackagesTab,
+  SummaryDashboard,
+} from './DevelopmentOverview';
+import PlotMaster from './PlotMaster';
+
+const TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'plot-master', label: 'Plot Master' },
+  { id: 'packages', label: 'Packages' },
+  { id: 'commercial', label: 'Commercial' },
+];
 
 function StatusBadge({ status }) {
   return (
@@ -11,32 +24,29 @@ function StatusBadge({ status }) {
   );
 }
 
-function SummaryDashboard({ cards }) {
-  return (
-    <section
-      className="dev-workspace__cards"
-      aria-label="Development workspace summary"
-    >
-      {cards.map((card) => (
-        <div
-          key={card.label}
-          className={`dev-workspace__card dev-workspace__card--${card.modifier}`}
-        >
-          <span className="dev-workspace__card-label">{card.label}</span>
-          <strong className="dev-workspace__card-value">{card.value}</strong>
-        </div>
-      ))}
-    </section>
-  );
-}
+export default function DevelopmentWorkspace({
+  development,
+  onBackToList,
+  onPlotsChanged,
+}) {
+  const [activeTab, setActiveTab] = useState('overview');
+  const [plotRefresh, setPlotRefresh] = useState(0);
 
-export default function DevelopmentWorkspace({ development, onBackToList }) {
   const model = useMemo(
     () => buildDevelopmentWorkspaceModel(development),
-    [development]
+    [development, plotRefresh]
   );
 
+  useEffect(() => {
+    setActiveTab('overview');
+  }, [development?.id]);
+
   if (!model) return null;
+
+  function handlePlotsChanged() {
+    setPlotRefresh((value) => value + 1);
+    onPlotsChanged?.();
+  }
 
   return (
     <div className="dev-workspace">
@@ -65,39 +75,38 @@ export default function DevelopmentWorkspace({ development, onBackToList }) {
 
       <SummaryDashboard cards={model.summaryCards} />
 
-      <div className="dev-workspace__grid">
-        <section className="po-module-card dev-workspace__section">
-          <h2 className="po-matrix-section__title">Plot Master</h2>
-          <p className="dev-workspace__section-lead">
-            No plot schedule has been imported.
-          </p>
-          <button type="button" className="po-btn-primary" disabled>
-            Import Plot Schedule
+      <nav className="po-package-tabs dev-workspace__tabs" aria-label="Development sections">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            className={`po-package-tabs__tab${
+              activeTab === tab.id ? ' po-package-tabs__tab--active' : ''
+            }`}
+            onClick={() => setActiveTab(tab.id)}
+            aria-current={activeTab === tab.id ? 'page' : undefined}
+          >
+            {tab.label}
           </button>
-        </section>
+        ))}
+      </nav>
 
-        <section className="po-module-card dev-workspace__section">
-          <h2 className="po-matrix-section__title">Packages</h2>
-          <p className="dev-workspace__section-lead">
-            No subcontract packages yet.
-          </p>
-          <p className="dev-workspace__section-support">
-            Future Purchase Orders will appear here automatically.
-          </p>
-        </section>
+      <div className="dev-workspace__tab-panel">
+        {activeTab === 'overview' ? <DevelopmentOverview model={model} /> : null}
+
+        {activeTab === 'plot-master' ? (
+          <PlotMaster
+            developmentId={model.id}
+            developmentName={model.developmentName}
+            refreshToken={plotRefresh}
+            onPlotsChanged={handlePlotsChanged}
+          />
+        ) : null}
+
+        {activeTab === 'packages' ? <DevelopmentPackagesTab /> : null}
+
+        {activeTab === 'commercial' ? <DevelopmentCommercialTab model={model} /> : null}
       </div>
-
-      <section className="po-module-card dev-workspace__commercial">
-        <h2 className="po-matrix-section__title">Commercial summary</h2>
-        <div className="dev-workspace__commercial-grid">
-          {model.commercialCards.map((card) => (
-            <div key={card.label} className="dev-workspace__commercial-card">
-              <span className="dev-workspace__card-label">{card.label}</span>
-              <strong className="dev-workspace__card-value">{card.value}</strong>
-            </div>
-          ))}
-        </div>
-      </section>
 
       <div className="dev-workspace__footer">
         <button

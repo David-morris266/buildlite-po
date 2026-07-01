@@ -57,6 +57,10 @@ export function createDevelopment(payload) {
     packageCount: 0,
     purchaseOrderCount: 0,
     certificateCount: 0,
+    plotMaster: {
+      plots: [],
+      updatedAt: now,
+    },
     createdAt: now,
     updatedAt: now,
   };
