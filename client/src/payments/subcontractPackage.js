@@ -8,6 +8,7 @@ import {
   getPackageRecord,
 } from './subcontractPackageStore';
 import { getSubcontractOrderStatus } from './subcontractOrders';
+import { getCertificateCount } from './paymentCertificateStore';
 
 export function buildPackageViewModel(order) {
   if (!order) return null;
@@ -20,6 +21,7 @@ export function buildPackageViewModel(order) {
   const committedValue = Number(order.committedValue) || 0;
   const approvedVariations = 0;
   const adjustedContract = committedValue + approvedVariations;
+  const certificateCount = getCertificateCount(order.orderKey);
   const certifiedToDate = Number(order.certifiedToDate) || 0;
   const remaining = Math.max(0, adjustedContract - certifiedToDate);
   const overallProgress =
@@ -40,6 +42,7 @@ export function buildPackageViewModel(order) {
     certifiedToDate,
     remaining,
     overallProgress,
+    certificateCount,
     status,
     matrixExists,
     matrixRowCount: matrix?.rows?.length ?? 0,

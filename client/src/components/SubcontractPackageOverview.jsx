@@ -218,7 +218,10 @@ export function SubcontractPackageDashboard({ pkg }) {
     },
     {
       label: 'Certified to date',
-      value: '£0.00',
+      value:
+        pkg.certifiedToDate > 0
+          ? `£${formatMoney(pkg.certifiedToDate)}`
+          : '£0.00',
       modifier: 'muted',
     },
     {

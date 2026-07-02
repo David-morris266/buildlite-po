@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import POPageHeader from './POPageHeader';
 import OrderMatrixPlaceholderPreview from './OrderMatrixPlaceholderPreview';
+import PaymentCertificateWorkspace from './PaymentCertificateWorkspace';
 import SubcontractPackageOverview, {
   SubcontractPackageDashboard,
   SubcontractPackageSummary,
@@ -24,6 +25,7 @@ export default function SubcontractPackageWorkspace({
   const [activeTab, setActiveTab] = useState(initialTab);
 
   const [matrixRefresh, setMatrixRefresh] = useState(0);
+  const [certRefresh, setCertRefresh] = useState(0);
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -31,8 +33,9 @@ export default function SubcontractPackageWorkspace({
 
   const pkg = useMemo(() => {
     void matrixRefresh;
+    void certRefresh;
     return buildPackageViewModel(order);
-  }, [order, matrixRefresh]);
+  }, [order, matrixRefresh, certRefresh]);
 
   return (
     <div className="po-package-workspace">
@@ -80,14 +83,11 @@ export default function SubcontractPackageWorkspace({
         ) : null}
 
         {activeTab === 'certificates' ? (
-          <SubcontractPackageTabPlaceholder
-            title="Certificates"
-            lead="Monthly Payment Certificates will appear here once your plot × stage valuation matrix has been imported."
-            points={[
-              'Certified values update inside your existing matrix layout.',
-              'See certified value build up plot by plot and stage by stage.',
-              'Download issued certificates when approvals are in place.',
-            ]}
+          <PaymentCertificateWorkspace
+            order={order}
+            pkg={pkg}
+            refreshToken={certRefresh}
+            onCertificatesChanged={() => setCertRefresh((value) => value + 1)}
           />
         ) : null}
 

@@ -2366,6 +2366,210 @@
   pointer-events: none;
 }
 
+.po-cert-workspace__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: -8px 0 16px;
+}
+
+.po-cert-workspace__cards {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.po-cert-workspace__card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.po-cert-workspace__card--accent .po-cert-workspace__card-value {
+  color: var(--accent);
+}
+
+.po-cert-workspace__card-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.po-cert-workspace__card-value {
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.po-cert-workspace__list-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.po-cert-workspace__list-lead {
+  margin: 6px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.po-cert-workspace__empty {
+  margin-bottom: 16px;
+}
+
+.po-cert-workspace__actions-col {
+  width: 160px;
+  text-align: right;
+}
+
+.po-cert-workspace__row-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.po-cert-workspace__link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.po-cert-workspace__link--danger {
+  color: #f87171;
+}
+
+.po-cert-detail__back {
+  margin-bottom: 12px;
+  padding: 6px 2px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.po-cert-detail__back:hover {
+  color: var(--accent);
+}
+
+.po-cert-detail__header {
+  margin-bottom: 16px;
+}
+
+.po-cert-detail__hero {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.po-cert-detail__eyebrow {
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.po-cert-detail__title {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.po-cert-detail__meta,
+.po-cert-detail__commercial-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+  margin: 0;
+}
+
+.po-cert-detail__meta dt,
+.po-cert-detail__commercial-grid dt {
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.po-cert-detail__meta dd,
+.po-cert-detail__commercial-grid dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.po-cert-detail__commercial,
+.po-cert-detail__matrix {
+  margin-bottom: 16px;
+}
+
+.po-cert-detail__matrix-lead {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.po-cert-delete-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.po-cert-delete {
+  width: min(420px, 100%);
+}
+
+.po-cert-delete__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.po-cert-delete__confirm {
+  padding: 10px 16px;
+  border: 1px solid #7f1d1d;
+  border-radius: var(--radius-sm);
+  background: rgba(127, 29, 29, 0.35);
+  color: #fecaca;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.po-status-badge--locked {
+  color: #cbd5e1;
+  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(148, 163, 184, 0.12);
+}
+
 @media (max-width: 960px) {
   .dev-form__grid {
     grid-template-columns: 1fr;
@@ -2381,6 +2585,15 @@
   }
 
   .dev-po-summary__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .po-cert-workspace__cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .po-cert-detail__meta,
+  .po-cert-detail__commercial-grid {
     grid-template-columns: 1fr;
   }
 }

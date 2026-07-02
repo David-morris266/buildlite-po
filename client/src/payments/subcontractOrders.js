@@ -3,6 +3,7 @@
  */
 
 import { hasOrderMatrix, loadOrderMatrix } from './orderMatrixStore';
+import { getCertificateCount } from './paymentCertificateStore';
 import {
   getPoDevelopmentId,
   getPoDevelopmentListLabel,
@@ -125,6 +126,7 @@ export function buildSubcontractOrdersFromPos(pos) {
     .map((order) => ({
       ...order,
       remaining: Math.max(0, order.committedValue - order.certifiedToDate),
+      certificateCount: getCertificateCount(order.orderKey),
       status: getSubcontractOrderStatus(order),
       hasMatrix: hasOrderMatrix(order.orderKey),
       matrixRowCount: loadOrderMatrix(order.orderKey)?.rows?.length ?? 0,
