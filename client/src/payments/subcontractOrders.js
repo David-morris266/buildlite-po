@@ -1,27 +1,37 @@
 /**
  * BL-011B.01 — Subcontract Order derivation from approved POs (Doc 29 / Doc 30).
+ * BL-009A.03A — Development-scoped package keys and approval integration.
  */
 
-import { hasOrderMatrix, loadOrderMatrix } from './orderMatrixStore';
-import { getCertificateCount } from './paymentCertificateStore';
+import { enrichPoWithDevelopmentRef, enrichPosWithDevelopmentRefs } from '../developments/poDevelopmentRefStore';
 import {
   getPoDevelopmentId,
   getPoDevelopmentListLabel,
+  mapJobToDevelopment,
   resolvePoDevelopment,
 } from '../developments/developmentPoHelpers';
+import { hasOrderMatrix, loadOrderMatrix } from './orderMatrixStore';
+import {
+  buildSubcontractOrderKey,
+  parseSubcontractOrderKey,
+  runPackageKeyMigration,
+} from './packageKeyMigration';
+import { ensurePackageRecord } from './subcontractPackageStore';
+import { getCertificateCount } from './paymentCertificateStore';
 
-export function getSubcontractOrderKey(jobId, supplierId) {
-  return `${String(jobId)}::${String(supplierId)}`;
+let migrationDone = false;
+
+function ensureMigration() {
+  if (migrationDone) return;
+  migrationDone = true;
+  runPackageKeyMigration();
 }
 
-export function parseSubcontractOrderKey(orderKey) {
-  const idx = String(orderKey).indexOf('::');
-  if (idx < 0) return { jobId: '', supplierId: '' };
-  return {
-    jobId: orderKey.slice(0, idx),
-    supplierId: orderKey.slice(idx + 2),
-  };
+export function getSubcontractOrderKey(developmentId, supplierId, costCode) {
+  return buildSubcontractOrderKey(developmentId, supplierId, costCode);
 }
+
+export { parseSubcontractOrderKey };
 
 export function isApprovedSubcontractPo(po) {
   if (!po || po.archived === true) return false;
@@ -33,16 +43,23 @@ export function isApprovedSubcontractPo(po) {
   return approval === 'approved' || status === 'approved';
 }
 
-export function getPoJobId(po) {
-  return po?.job?.id ?? po?.costRef?.jobId ?? null;
+export function getPoCostCode(po) {
+  const code = po?.costRef?.costCode || po?.items?.[0]?.costCode;
+  const value = String(code || 'general').trim();
+  return value || 'general';
 }
 
 export function getPoOrderScopeId(po) {
-  return getPoDevelopmentId(po) || getPoJobId(po);
+  const enriched = enrichPoWithDevelopmentRef(po);
+  const developmentId = getPoDevelopmentId(enriched);
+  if (developmentId) return developmentId;
+
+  const mapped = mapJobToDevelopment(enriched?.job);
+  return mapped?.id || null;
 }
 
 export function getPoDevelopmentFields(po) {
-  const resolved = resolvePoDevelopment(po);
+  const resolved = resolvePoDevelopment(enrichPoWithDevelopmentRef(po));
   const ref = resolved.ref || {};
 
   return {
@@ -68,7 +85,7 @@ export function getLineNet(item) {
 }
 
 export function getProjectLabel(po) {
-  return getPoDevelopmentListLabel(po);
+  return getPoDevelopmentListLabel(enrichPoWithDevelopmentRef(po));
 }
 
 export function getSupplierLabel(po) {
@@ -81,29 +98,79 @@ export function getSupplierLabel(po) {
 }
 
 export function getSubcontractOrderKeyFromPo(po) {
-  const scopeId = getPoOrderScopeId(po);
-  const supplierId = po?.supplierId;
-  if (!scopeId || !supplierId) return null;
-  return getSubcontractOrderKey(scopeId, supplierId);
+  const enriched = enrichPoWithDevelopmentRef(po);
+  const developmentId = getPoOrderScopeId(enriched);
+  const supplierId = enriched?.supplierId;
+  if (!developmentId || !supplierId) return null;
+  return getSubcontractOrderKey(
+    developmentId,
+    supplierId,
+    getPoCostCode(enriched)
+  );
+}
+
+export function buildSubcontractOrderRecordFromPo(po) {
+  const enriched = enrichPoWithDevelopmentRef(po);
+  const developmentId = getPoOrderScopeId(enriched);
+  const supplierId = enriched?.supplierId;
+  if (!developmentId || !supplierId) return null;
+
+  const orderKey = getSubcontractOrderKey(
+    developmentId,
+    supplierId,
+    getPoCostCode(enriched)
+  );
+  const developmentFields = getPoDevelopmentFields(enriched);
+
+  return {
+    orderKey,
+    scopeId: String(developmentId),
+    jobId: String(developmentId),
+    supplierId: String(supplierId),
+    costCode: getPoCostCode(enriched),
+    projectLabel: getProjectLabel(enriched),
+    supplierLabel: getSupplierLabel(enriched),
+    ...developmentFields,
+    committedValue: getPoCommittedNet(enriched),
+    certifiedToDate: 0,
+    certificateCount: 0,
+    poNumbers: enriched.poNumber ? [enriched.poNumber] : [],
+    pos: [enriched],
+  };
+}
+
+export function syncPackageFromApprovedPo(po) {
+  if (!isApprovedSubcontractPo(po)) return null;
+  const order = buildSubcontractOrderRecordFromPo(po);
+  if (!order) return null;
+  return ensurePackageRecord(order.orderKey, order);
 }
 
 export function buildSubcontractOrdersFromPos(pos) {
-  const items = Array.isArray(pos) ? pos : pos?.items || [];
+  ensureMigration();
+
+  const items = enrichPosWithDevelopmentRefs(Array.isArray(pos) ? pos : pos?.items || []);
   const groups = new Map();
 
   for (const po of items) {
     if (!isApprovedSubcontractPo(po)) continue;
 
-    const scopeId = getPoOrderScopeId(po);
+    const developmentId = getPoOrderScopeId(po);
     const supplierId = po.supplierId;
-    if (!scopeId || !supplierId) continue;
+    if (!developmentId || !supplierId) continue;
 
-    const orderKey = getSubcontractOrderKey(scopeId, supplierId);
+    const orderKey = getSubcontractOrderKey(
+      developmentId,
+      supplierId,
+      getPoCostCode(po)
+    );
     const developmentFields = getPoDevelopmentFields(po);
     const existing = groups.get(orderKey) || {
       orderKey,
-      jobId: String(scopeId),
+      scopeId: String(developmentId),
+      jobId: String(developmentId),
       supplierId: String(supplierId),
+      costCode: getPoCostCode(po),
       projectLabel: getProjectLabel(po),
       supplierLabel: getSupplierLabel(po),
       ...developmentFields,
@@ -122,20 +189,24 @@ export function buildSubcontractOrdersFromPos(pos) {
     groups.set(orderKey, existing);
   }
 
-  return Array.from(groups.values())
-    .map((order) => ({
-      ...order,
-      remaining: Math.max(0, order.committedValue - order.certifiedToDate),
-      certificateCount: getCertificateCount(order.orderKey),
-      status: getSubcontractOrderStatus(order),
-      hasMatrix: hasOrderMatrix(order.orderKey),
-      matrixRowCount: loadOrderMatrix(order.orderKey)?.rows?.length ?? 0,
-    }))
-    .sort((a, b) =>
-      a.projectLabel.localeCompare(b.projectLabel, undefined, {
-        sensitivity: 'base',
-      })
-    );
+  const orders = Array.from(groups.values()).map((order) => ({
+    ...order,
+    remaining: Math.max(0, order.committedValue - order.certifiedToDate),
+    certificateCount: getCertificateCount(order.orderKey),
+    status: getSubcontractOrderStatus(order),
+    hasMatrix: hasOrderMatrix(order.orderKey),
+    matrixRowCount: loadOrderMatrix(order.orderKey)?.rows?.length ?? 0,
+  }));
+
+  for (const order of orders) {
+    ensurePackageRecord(order.orderKey, order);
+  }
+
+  return orders.sort((a, b) =>
+    a.projectLabel.localeCompare(b.projectLabel, undefined, {
+      sensitivity: 'base',
+    })
+  );
 }
 
 export function getSubcontractOrderStatus(order) {
@@ -178,8 +249,10 @@ export function createMatrixDraft(order) {
 
   return {
     orderKey: order.orderKey,
-    jobId: order.jobId,
+    scopeId: order.scopeId || order.jobId,
+    jobId: order.scopeId || order.jobId,
     supplierId: order.supplierId,
+    costCode: order.costCode,
     projectLabel: order.projectLabel,
     supplierLabel: order.supplierLabel,
     committedValue: order.committedValue,

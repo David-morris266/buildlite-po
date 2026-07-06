@@ -1,5 +1,6 @@
 /**
  * BL-011C.01 — Subcontract Package metadata (localStorage until server model exists).
+ * BL-009A.03A — Development-scoped package records.
  */
 
 const STORAGE_KEY = 'buildlite_subcontract_packages_v1';
@@ -19,21 +20,48 @@ function writeAll(data) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
+function mergePoNumbers(existing = [], incoming = []) {
+  const next = [...existing];
+  for (const poNumber of incoming) {
+    if (poNumber && !next.includes(poNumber)) {
+      next.push(poNumber);
+    }
+  }
+  return next;
+}
+
 export function ensurePackageRecord(orderKey, order = {}) {
   const all = readAll();
+  const now = new Date().toISOString();
+
   if (all[orderKey]) {
     const record = all[orderKey];
     let changed = false;
 
-    for (const field of ['developmentId', 'developmentNumber', 'developmentName']) {
+    for (const field of [
+      'scopeId',
+      'costCode',
+      'developmentId',
+      'developmentNumber',
+      'developmentName',
+      'projectLabel',
+      'supplierLabel',
+      'supplierId',
+    ]) {
       if (!record[field] && order[field]) {
         record[field] = order[field];
         changed = true;
       }
     }
 
+    const mergedPoNumbers = mergePoNumbers(record.poNumbers, order.poNumbers);
+    if (mergedPoNumbers.length !== (record.poNumbers || []).length) {
+      record.poNumbers = mergedPoNumbers;
+      changed = true;
+    }
+
     if (changed) {
-      record.updatedAt = new Date().toISOString();
+      record.updatedAt = now;
       all[orderKey] = record;
       writeAll(all);
     }
@@ -41,11 +69,13 @@ export function ensurePackageRecord(orderKey, order = {}) {
     return record;
   }
 
-  const now = new Date().toISOString();
   all[orderKey] = {
     orderKey,
-    jobId: order.jobId,
+    scopeId: order.scopeId || order.jobId || '',
+    jobId: order.scopeId || order.jobId || '',
     supplierId: order.supplierId,
+    costCode: order.costCode || '',
+    poNumbers: order.poNumbers || [],
     projectLabel: order.projectLabel,
     supplierLabel: order.supplierLabel,
     developmentId: order.developmentId || '',

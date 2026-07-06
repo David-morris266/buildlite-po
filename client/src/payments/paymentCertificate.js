@@ -7,6 +7,14 @@ import {
   getCertificateCount,
   getCertificateStatusMeta,
 } from './paymentCertificateStore';
+import {
+  formatMoneyLabel,
+  summarizeCertificateProgress,
+} from './paymentCertificateProgress';
+import {
+  getCertificateListAction,
+  getCreateCertificateState,
+} from './paymentCertificateApproval';
 
 export function getPackageDisplayName(order) {
   if (!order) return 'Subcontract Package';
@@ -92,17 +100,33 @@ export function buildCertificateDetailModel(certificate, order, pkg) {
   };
 }
 
-export function formatCertificateListRow(certificate) {
+export function formatCertificateListRow(certificate, orderKey) {
   const status = getCertificateStatusMeta(certificate.status);
+
+  let grossLabel = formatMoneyPlaceholder(certificate.grossValue, true);
+  let netLabel = formatMoneyPlaceholder(certificate.netValue, true);
+
+  if (
+    orderKey &&
+    certificate.progress &&
+    Object.keys(certificate.progress).length > 0
+  ) {
+    const summary = summarizeCertificateProgress(orderKey, certificate.id);
+    if (summary?.totals) {
+      grossLabel = formatMoneyLabel(summary.totals.grossThisCertificate);
+      netLabel = formatMoneyLabel(summary.totals.netPayment);
+    }
+  }
 
   return {
     ...certificate,
     statusMeta: status,
     dateLabel: formatPoDate(certificate.certificateDate),
-    grossLabel: formatMoneyPlaceholder(certificate.grossValue, true),
-    netLabel: formatMoneyPlaceholder(certificate.netValue, true),
+    grossLabel,
+    netLabel,
     approvedByLabel: certificate.approvedBy || '—',
     canDelete: certificate.status === 'draft',
+    listAction: getCertificateListAction(certificate),
   };
 }
 
@@ -114,9 +138,6 @@ function formatMoneyPlaceholder(value, allowZero = false) {
   return `£${formatMoney(n)}`;
 }
 
-export function getCreateCertificateLabel(certificateCount) {
-  if (certificateCount === 0) {
-    return 'Create Certificate No. 1';
-  }
-  return 'Create Certificate';
+export function getCreateCertificateLabel(orderKey, certificateCount) {
+  return getCreateCertificateState(orderKey, certificateCount).label;
 }

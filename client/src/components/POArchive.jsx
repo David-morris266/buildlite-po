@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { listPOs, getPO, approvePO, poPdfUrl } from '../api'
+import { syncPackageFromApprovedPo } from '../payments/subcontractOrders'
 import {
   buildApproveBody,
 } from '../setup/setupDraft'
@@ -132,6 +133,9 @@ export default function POArchive({ onOpenPackage = null }) {
     if (!selected) return
     const po = await approvePO(selected.poNumber || selected.number, buildApproveBody(newStatus))
     setSelected(po)
+    if (newStatus === 'Approved') {
+      syncPackageFromApprovedPo(po)
+    }
     refresh()
   }
 

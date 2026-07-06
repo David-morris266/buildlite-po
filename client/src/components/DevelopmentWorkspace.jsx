@@ -8,12 +8,16 @@ import DevelopmentOverview, {
   SummaryDashboard,
 } from './DevelopmentOverview';
 import PlotMaster from './PlotMaster';
+import PurchaseLedger from './PurchaseLedger';
+import CVRWorkspace from './CVRWorkspace';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'plot-master', label: 'Plot Master' },
   { id: 'packages', label: 'Packages' },
   { id: 'commercial', label: 'Commercial' },
+  { id: 'ledger', label: 'Ledger' },
+  { id: 'cvr', label: 'CVR' },
 ];
 
 function StatusBadge({ status }) {
@@ -28,13 +32,17 @@ export default function DevelopmentWorkspace({
   development,
   onBackToList,
   onPlotsChanged,
+  onLedgerChanged,
+  onCvrChanged,
 }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [plotRefresh, setPlotRefresh] = useState(0);
+  const [ledgerRefresh, setLedgerRefresh] = useState(0);
+  const [cvrRefresh, setCvrRefresh] = useState(0);
 
   const model = useMemo(
     () => buildDevelopmentWorkspaceModel(development),
-    [development, plotRefresh]
+    [development, plotRefresh, ledgerRefresh, cvrRefresh]
   );
 
   useEffect(() => {
@@ -46,6 +54,17 @@ export default function DevelopmentWorkspace({
   function handlePlotsChanged() {
     setPlotRefresh((value) => value + 1);
     onPlotsChanged?.();
+  }
+
+  function handleLedgerChanged() {
+    setLedgerRefresh((value) => value + 1);
+    setCvrRefresh((value) => value + 1);
+    onLedgerChanged?.();
+  }
+
+  function handleCvrChanged() {
+    setCvrRefresh((value) => value + 1);
+    onCvrChanged?.();
   }
 
   return (
@@ -106,6 +125,22 @@ export default function DevelopmentWorkspace({
         {activeTab === 'packages' ? <DevelopmentPackagesTab /> : null}
 
         {activeTab === 'commercial' ? <DevelopmentCommercialTab model={model} /> : null}
+
+        {activeTab === 'ledger' ? (
+          <PurchaseLedger
+            development={development}
+            refreshToken={ledgerRefresh}
+            onLedgerChanged={handleLedgerChanged}
+          />
+        ) : null}
+
+        {activeTab === 'cvr' ? (
+          <CVRWorkspace
+            development={development}
+            refreshToken={cvrRefresh}
+            onCvrChanged={handleCvrChanged}
+          />
+        ) : null}
       </div>
 
       <div className="dev-workspace__footer">

@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import POPageHeader from './POPageHeader';
+import PaymentCertificateDetail from './PaymentCertificateDetail';
 import {
-  buildCertificateDetailModel,
   buildCertificateWorkspaceModel,
   formatCertificateListRow,
-  getCreateCertificateLabel,
 } from '../payments/paymentCertificate';
+import { getCreateCertificateState } from '../payments/paymentCertificateApproval';
 import {
   createCertificate,
   deleteCertificate,
@@ -74,74 +74,6 @@ function CertificateDeleteDialog({ certificate, onCancel, onConfirm }) {
   );
 }
 
-function PaymentCertificateDetail({ certificate, order, pkg, onBack }) {
-  const model = useMemo(
-    () => buildCertificateDetailModel(certificate, order, pkg),
-    [certificate, order, pkg]
-  );
-
-  if (!model) return null;
-
-  return (
-    <div className="po-cert-detail">
-      <button type="button" className="po-cert-detail__back" onClick={onBack}>
-        Back to certificates
-      </button>
-
-      <header className="po-module-card po-cert-detail__header">
-        <div className="po-cert-detail__hero">
-          <div>
-            <p className="po-cert-detail__eyebrow">Payment Certificate</p>
-            <h2 className="po-cert-detail__title">
-              Certificate No. {model.certificateNumber}
-            </h2>
-          </div>
-          <StatusBadge status={model.status} />
-        </div>
-
-        <dl className="po-cert-detail__meta">
-          <div>
-            <dt>Date</dt>
-            <dd>{model.certificateDate}</dd>
-          </div>
-          <div>
-            <dt>Package</dt>
-            <dd>{model.packageName}</dd>
-          </div>
-          <div>
-            <dt>Supplier</dt>
-            <dd>{model.supplierLabel}</dd>
-          </div>
-          <div>
-            <dt>Development</dt>
-            <dd>{model.developmentName}</dd>
-          </div>
-        </dl>
-      </header>
-
-      <section className="po-module-card po-cert-detail__commercial">
-        <h3 className="po-matrix-section__title">Commercial Summary</h3>
-        <dl className="po-cert-detail__commercial-grid">
-          {model.commercialSummary.map((item) => (
-            <div key={item.label}>
-              <dt>{item.label}</dt>
-              <dd>{item.value}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
-
-      <section className="po-module-card po-cert-detail__matrix">
-        <h3 className="po-matrix-section__title">Valuation Matrix</h3>
-        <p className="po-cert-detail__matrix-lead">
-          Progress entry and automatic payment calculations will be introduced in
-          the next stage of the Payment Certificate Engine.
-        </p>
-      </section>
-    </div>
-  );
-}
-
 export default function PaymentCertificateWorkspace({
   order,
   pkg,
@@ -158,17 +90,20 @@ export default function PaymentCertificateWorkspace({
 
   const certificates = useMemo(() => {
     void refreshToken;
-    return listCertificates(order.orderKey).map(formatCertificateListRow);
+    return listCertificates(order.orderKey).map((certificate) =>
+      formatCertificateListRow(certificate, order.orderKey)
+    );
   }, [order.orderKey, refreshToken]);
 
-  const selectedCertificate = useMemo(() => {
-    if (!selectedCertificateId) return null;
-    return certificates.find((item) => item.id === selectedCertificateId) || null;
-  }, [certificates, selectedCertificateId]);
+  const createState = useMemo(
+    () => getCreateCertificateState(order.orderKey, certificates.length),
+    [order.orderKey, certificates.length, refreshToken]
+  );
 
   if (!workspace) return null;
 
   function handleCreateCertificate() {
+    if (!createState.ok) return;
     const result = createCertificate(order.orderKey, order);
     if (!result.ok || !result.certificate) return;
     setSelectedCertificateId(result.certificate.id);
@@ -185,14 +120,16 @@ export default function PaymentCertificateWorkspace({
     onCertificatesChanged?.();
   }
 
-  if (selectedCertificate) {
+  if (selectedCertificateId) {
     return (
       <>
         <PaymentCertificateDetail
-          certificate={selectedCertificate}
+          certificateId={selectedCertificateId}
           order={order}
           pkg={pkg}
           onBack={() => setSelectedCertificateId(null)}
+          onProgressChanged={onCertificatesChanged}
+          onDeleteRequest={setDeleteTarget}
         />
         <CertificateDeleteDialog
           certificate={deleteTarget}
@@ -228,13 +165,19 @@ export default function PaymentCertificateWorkspace({
           </p>
         </div>
         {certificates.length ? (
-          <button
-            type="button"
-            className="po-btn-primary"
-            onClick={handleCreateCertificate}
-          >
-            {getCreateCertificateLabel(certificates.length)}
-          </button>
+          <div className="po-cert-workspace__create-wrap">
+            <button
+              type="button"
+              className="po-btn-primary"
+              onClick={handleCreateCertificate}
+              disabled={!createState.ok}
+            >
+              {createState.label}
+            </button>
+            {!createState.ok ? (
+              <p className="po-cert-workspace__create-hint">{createState.reason}</p>
+            ) : null}
+          </div>
         ) : null}
       </header>
 
@@ -286,7 +229,7 @@ export default function PaymentCertificateWorkspace({
                       className="po-cert-workspace__link"
                       onClick={() => setSelectedCertificateId(certificate.id)}
                     >
-                      Open
+                      {certificate.listAction.label}
                     </button>
                     {certificate.canDelete ? (
                       <button

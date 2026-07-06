@@ -14,6 +14,7 @@ import {
   mapJobToDevelopment,
   resolvePoDevelopment,
 } from '../developments/developmentPoHelpers';
+import { savePoDevelopmentRef } from '../developments/poDevelopmentRefStore';
 import {
   savePO,
   updatePO,
@@ -357,6 +358,15 @@ export default function POForm({
     return localStorage.getItem('userEmail') || 'accounts@example.co.uk';
   }
 
+  function persistDevelopmentRef(poNumber, development = selectedDevelopment) {
+    if (!poNumber || !development?.id) return;
+    savePoDevelopmentRef(poNumber, {
+      developmentId: development.id,
+      developmentNumber: development.jobNumber || '',
+      developmentName: development.developmentName || '',
+    });
+  }
+
   // ===== Build payload (shared by create + update) =====
   function buildPayload(costCodeString) {
     const clauses = {
@@ -473,6 +483,7 @@ export default function POForm({
 
       if (poNumber) {
         setActivePoNumber(poNumber);
+        persistDevelopmentRef(poNumber);
       }
 
       setJourneyPanel({
@@ -516,6 +527,7 @@ export default function POForm({
       if (!poNumber) throw new Error('PO number missing after save');
 
       setActivePoNumber(poNumber);
+      persistDevelopmentRef(poNumber);
 
       await sendForApproval(poNumber);
       showSentSuccess(poNumber);

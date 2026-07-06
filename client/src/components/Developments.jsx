@@ -58,6 +58,8 @@ export default function Developments({
         development={activeDevelopment}
         onBackToList={returnToList}
         onPlotsChanged={() => setRefreshToken((value) => value + 1)}
+        onLedgerChanged={() => setRefreshToken((value) => value + 1)}
+        onCvrChanged={() => setRefreshToken((value) => value + 1)}
       />
     );
   }

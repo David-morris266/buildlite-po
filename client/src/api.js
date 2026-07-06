@@ -1,4 +1,4 @@
-// client/src/api.js
+import { enrichPoWithDevelopmentRef, enrichPosWithDevelopmentRefs } from './developments/poDevelopmentRefStore';
 
 // API base URL from VITE_API_URL (Netlify/staging) with localhost fallback for dev.
 const API_BASE = (
@@ -123,13 +123,19 @@ export async function listPOs(params = {}) {
   const query = new URLSearchParams(params).toString();
   const url = buildUrl(`/api/po${query ? `?${query}` : ''}`);
   const res = await fetch(url);
-  return handleJson(res);
+  const data = await handleJson(res);
+  if (Array.isArray(data)) return enrichPosWithDevelopmentRefs(data);
+  if (data?.items) {
+    return { ...data, items: enrichPosWithDevelopmentRefs(data.items) };
+  }
+  return data;
 }
 
 export async function getPO(number) {
   const url = buildUrl(`/api/po/${encodeURIComponent(number)}`);
   const res = await fetch(url);
-  return handleJson(res);
+  const po = await handleJson(res);
+  return enrichPoWithDevelopmentRef(po);
 }
 
 export async function deletePO(number) {

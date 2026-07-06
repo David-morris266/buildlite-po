@@ -420,10 +420,17 @@ router.post("/po", async (req, res) => {
 
     costRef: {
       jobId: body.costRef?.jobId || "",
+      developmentId: body.costRef?.developmentId || "",
       jobCode: body.costRef?.jobCode || "",
       costCode: body.costRef?.costCode || "",
       element: body.costRef?.element || "",
     },
+
+    developmentId: body.developmentId || "",
+    developmentNumber: body.developmentNumber || "",
+    developmentName: body.developmentName || "",
+    developmentStatus: body.developmentStatus || "",
+    development: body.development || null,
 
     job: body.job || null,
 
@@ -542,10 +549,17 @@ router.put("/po/:poNumber", async (req, res) => {
 
   po.costRef = {
     jobId: body.costRef?.jobId ?? po.costRef?.jobId ?? "",
+    developmentId: body.costRef?.developmentId ?? po.costRef?.developmentId ?? "",
     jobCode: body.costRef?.jobCode ?? po.costRef?.jobCode ?? "",
     costCode: body.costRef?.costCode ?? po.costRef?.costCode ?? "",
     element: body.costRef?.element ?? po.costRef?.element ?? "",
   };
+
+  po.developmentId = body.developmentId ?? po.developmentId ?? "";
+  po.developmentNumber = body.developmentNumber ?? po.developmentNumber ?? "";
+  po.developmentName = body.developmentName ?? po.developmentName ?? "";
+  po.developmentStatus = body.developmentStatus ?? po.developmentStatus ?? "";
+  po.development = body.development ?? po.development ?? null;
 
   po.job = body.job ?? po.job ?? null;
   po.title = body.title ?? po.title ?? "";

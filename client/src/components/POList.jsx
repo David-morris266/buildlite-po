@@ -15,6 +15,7 @@ import {
 } from '../setup/setupDraft';
 import { getPoRowActionLabel } from './poDrawerHelpers';
 import { getPoDevelopmentListLabel } from '../developments/developmentPoHelpers';
+import { syncPackageFromApprovedPo } from '../payments/subcontractOrders';
 import POForm from './POForm';
 import POPageHeader from './POPageHeader';
 import POLoading from './POLoading';
@@ -166,6 +167,11 @@ export default function POList({
       if (selected?.poNumber === number) {
         const fresh = await getPO(number);
         setSelected(fresh);
+        if (newStatus === 'Approved') {
+          syncPackageFromApprovedPo(fresh);
+        }
+      } else if (newStatus === 'Approved') {
+        syncPackageFromApprovedPo(await getPO(number));
       }
       setListFeedback({
         type: newStatus === 'Approved' ? 'success' : 'warning',

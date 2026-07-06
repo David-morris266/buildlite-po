@@ -34,13 +34,14 @@ export function getPoDevelopmentRef(po) {
     return po.development;
   }
 
-  if (po.developmentId) {
-    const live = getDevelopment(po.developmentId);
+  const developmentId = po.developmentId || po.costRef?.developmentId;
+  if (developmentId) {
+    const live = getDevelopment(developmentId);
     if (live) {
       return buildDevelopmentSnapshot(live);
     }
     return {
-      id: po.developmentId,
+      id: developmentId,
       developmentNumber: po.developmentNumber || '',
       developmentName: po.developmentName || UNKNOWN_DEVELOPMENT_LABEL,
       status: po.developmentStatus || '',

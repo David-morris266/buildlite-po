@@ -1,6 +1,7 @@
-import { formatPoDate } from '../components/poDrawerHelpers';
+import { formatMoney, formatPoDate } from '../components/poDrawerHelpers';
 import { getDevelopmentStatusMeta } from './developmentStore';
 import { getPlotCount } from './plotMaster';
+import { getTotalActualCost, getTransactionCount } from '../ledger/ledgerTransactionStore';
 
 export function formatDevelopmentListRow(development) {
   const status = getDevelopmentStatusMeta(development.status);
@@ -24,11 +25,15 @@ export function buildDevelopmentWorkspaceModel(development) {
   const status = getDevelopmentStatusMeta(development.status);
 
   const plotCount = getPlotCount(development);
+  const ledgerTransactionCount = getTransactionCount(development.id);
+  const actualCost = getTotalActualCost(development.id);
 
   return {
     ...development,
     statusMeta: status,
     plotCount,
+    ledgerTransactionCount,
+    actualCost,
     summaryCards: [
       {
         label: 'Plots',
@@ -66,7 +71,7 @@ export function buildDevelopmentWorkspaceModel(development) {
     commercialCards: [
       { label: 'Committed value', value: '—' },
       { label: 'Certified to date', value: '—' },
-      { label: 'Remaining', value: '—' },
+      { label: 'Actual cost', value: actualCost > 0 ? `£${formatMoney(actualCost)}` : '—' },
       { label: 'Overall progress', value: '—' },
     ],
   };
