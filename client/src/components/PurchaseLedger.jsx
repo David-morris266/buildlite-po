@@ -131,7 +131,7 @@ export default function PurchaseLedger({
         <div>
           <h2 className="po-matrix-section__title">Imported Transactions</h2>
           <p className="dev-ledger__list-lead">
-            Actual costs allocated to commercial cost centres for this development.
+            Actual costs allocated to company cost codes for this development.
           </p>
         </div>
         {transactions.length ? (
@@ -169,7 +169,7 @@ export default function PurchaseLedger({
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search supplier, cost centre, invoice, description…"
+              placeholder="Search supplier, cost code, invoice, description…"
               aria-label="Search ledger transactions"
             />
             <select
@@ -211,7 +211,7 @@ export default function PurchaseLedger({
                   </th>
                   <th>
                     <SortableHeader
-                      label="Cost Centre"
+                      label="Cost Code"
                       sortKey="costCode"
                       activeSortKey={sortKey}
                       sortDir={sortDir}

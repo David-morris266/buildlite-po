@@ -68,12 +68,12 @@ export function buildCvrWorkspaceModel(development, options = {}) {
         modifier: 'muted',
       },
       {
-        label: 'Actual Cost',
+        label: 'Actual',
         value: formatCvrMoney(summary.actualCost),
         modifier: 'accent',
       },
       {
-        label: 'Forecast Final Cost',
+        label: 'Forecast',
         value: formatCvrMoney(summary.forecastFinalCost),
         modifier: 'default',
       },

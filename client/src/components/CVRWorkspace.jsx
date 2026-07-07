@@ -69,16 +69,16 @@ function AddCostCentreDialog({ open, onCancel, onSave }) {
   function handleSave() {
     const result = onSave?.(values);
     if (result?.ok === false) {
-      setErrors(result.errors || ['Could not add cost centre.']);
+      setErrors(result.errors || ['Could not add cost code.']);
     }
   }
 
   return (
     <div className="dev-cvr-add-backdrop" role="presentation">
       <div className="dev-cvr-add modal" role="dialog" aria-modal="true">
-        <h3>Add Cost Centre</h3>
+        <h3>Add Cost Code</h3>
         <p className="dev-cvr-add__lead">
-          Enter manual budgets and forecast for a commercial cost centre.
+          Enter manual budgets and forecast for a company cost code.
         </p>
         <BudgetEditor
           showName
@@ -91,7 +91,7 @@ function AddCostCentreDialog({ open, onCancel, onSave }) {
             Cancel
           </button>
           <button type="button" className="po-btn-primary" onClick={handleSave}>
-            Add Cost Centre
+            Add Cost Code
           </button>
         </div>
       </div>
@@ -215,14 +215,14 @@ export default function CVRWorkspace({
 
       <header className="dev-cvr__header">
         <div>
-          <h2 className="po-matrix-section__title">CVR by Cost Centre</h2>
+          <h2 className="po-matrix-section__title">CVR by Cost Code</h2>
           <p className="dev-cvr__lead">
             Budgets and forecasts are manual. Commitments and actual costs are
             calculated automatically from BuildLite commercial data.
           </p>
         </div>
         <button type="button" className="po-btn-primary" onClick={() => setAddOpen(true)}>
-          Add Cost Centre
+          Add Cost Code
         </button>
       </header>
 

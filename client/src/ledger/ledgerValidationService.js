@@ -3,18 +3,29 @@
  */
 
 import { parseMoneyCell } from '../payments/excelImport';
+import { normaliseCostCodeKey } from '../cvr/cvrCalculations';
 import { isBlankRow } from './csvImport';
-import { buildMappedRow } from './ledgerImportFields';
+import { buildMappedRow, getMissingRequiredFields } from './ledgerImportFields';
+import {
+  buildImportCostCentreDescription,
+  collectKnownCostCentreKeys,
+} from './ledgerCostCentreImport';
 import { getExistingInvoiceKeys } from './ledgerTransactionStore';
 
-export const EXCEPTION_TYPES = {
-  MISSING_DEVELOPMENT: 'Missing Development',
-  UNKNOWN_DEVELOPMENT: 'Unknown Development',
+export const WARNING_TYPES = {
+  DEVELOPMENT_MISMATCH: 'Development identifier mismatch',
+  NEW_COST_CODE: 'New Cost Code will be created',
+};
+
+export const ERROR_TYPES = {
   MISSING_SUPPLIER: 'Missing Supplier',
   MISSING_AMOUNT: 'Missing Amount',
+  INVALID_AMOUNT: 'Invalid Amount',
+  MISSING_DATE: 'Missing Transaction Date',
+  INVALID_DATE: 'Invalid Transaction Date',
+  DUPLICATE_TRANSACTION: 'Duplicate Transaction',
+  MISSING_COST_CODE: 'Missing Cost Code',
   UNKNOWN_COST_CODE: 'Unknown Cost Code',
-  UNKNOWN_COST_CENTRE: 'Unknown Cost Centre',
-  DUPLICATE_INVOICE: 'Duplicate Invoice',
 };
 
 function normaliseText(value) {
@@ -47,7 +58,7 @@ function parseLedgerDate(value) {
 
 function developmentMatches(identifier, context) {
   const value = normaliseText(identifier);
-  if (!value) return false;
+  if (!value) return true;
 
   const candidates = [
     context.developmentId,
@@ -62,25 +73,48 @@ function developmentMatches(identifier, context) {
   );
 }
 
+export function buildDevelopmentMismatchWarning(csvIdentifier, context) {
+  const csvLabel = String(csvIdentifier || '').trim() || '—';
+  const devNumber = context.developmentNumber || '—';
+  const devName = context.developmentName || 'this development';
+
+  return `CSV contract ${csvLabel} does not match Development ${devNumber}. Transactions will be imported into ${devName}.`;
+}
+
 function normaliseCostCode(value) {
   return String(value || '').trim();
 }
 
-function extractCostCodeKey(value) {
-  const raw = normaliseCostCode(value);
-  if (!raw) return '';
-  const codePart = raw.split('—')[0].split(' - ')[0].trim();
-  return codePart.toLowerCase();
+function buildTransactionKey({ supplier, invoiceNumber, transactionDate, netAmount, description }) {
+  const invoice = normaliseText(invoiceNumber);
+  if (invoice) {
+    return `${normaliseText(supplier)}::inv::${invoice}`;
+  }
+
+  return [
+    normaliseText(supplier),
+    transactionDate || '',
+    String(netAmount ?? ''),
+    normaliseText(description),
+  ].join('::');
 }
 
 export function validateLedgerImport(rows, headerRowIndex, fieldByColumn, context = {}) {
   const dataRows = rows.slice(headerRowIndex + 1);
   const existingInvoices = getExistingInvoiceKeys(context.developmentId);
-  const batchInvoiceKeys = new Set();
+  const batchTransactionKeys = new Set();
+  const knownCostCentreKeys = collectKnownCostCentreKeys(
+    context.developmentId,
+    context.knownCostCodes || []
+  );
+  const createUnknownCostCentres = Boolean(context.createUnknownCostCentres);
+  const developmentScoped = context.developmentScoped !== false;
 
   const validRows = [];
-  const exceptions = [];
-  const warnings = [];
+  const errors = [];
+  const rowWarnings = [];
+  const globalWarnings = [];
+  const pendingNewCostCentres = new Map();
 
   let totalValue = 0;
   let rowCount = 0;
@@ -92,63 +126,101 @@ export function validateLedgerImport(rows, headerRowIndex, fieldByColumn, contex
     rowCount += 1;
     const rowNumber = headerRowIndex + index + 2;
     const mapped = buildMappedRow(sheetRow, fieldByColumn);
-    const issues = [];
+    const hardIssues = [];
+    const softIssues = [];
 
-    const developmentId = String(mapped.developmentIdentifier || '').trim();
+    const csvDevelopmentId = String(mapped.developmentIdentifier || '').trim();
     const supplier = String(mapped.supplier || '').trim();
     const costCode = normaliseCostCode(mapped.costCode);
-    const costCodeKey = extractCostCodeKey(costCode);
+    const costCodeKey = normaliseCostCodeKey(costCode);
     const invoiceNumber = String(mapped.invoiceNumber || '').trim();
-    const description = String(mapped.description || '').trim();
-    const netAmount = parseMoneyCell(mapped.transactionAmount);
+    const description = buildImportCostCentreDescription(mapped);
+    const rawAmount = mapped.transactionAmount;
+    const netAmount = parseMoneyCell(rawAmount);
     const vatAmount = parseMoneyCell(mapped.vat);
     const transactionDate = parseLedgerDate(mapped.transactionDate);
 
-    if (!developmentId) {
-      issues.push(EXCEPTION_TYPES.MISSING_DEVELOPMENT);
-    } else if (!developmentMatches(developmentId, context)) {
-      issues.push(EXCEPTION_TYPES.UNKNOWN_DEVELOPMENT);
-    }
-
-    if (!supplier) issues.push(EXCEPTION_TYPES.MISSING_SUPPLIER);
-    if (netAmount == null || netAmount === 0) issues.push(EXCEPTION_TYPES.MISSING_AMOUNT);
-
-    if (!costCode) {
-      issues.push(EXCEPTION_TYPES.UNKNOWN_COST_CENTRE);
-    } else if (
-      context.knownCostCodes?.length &&
-      !context.knownCostCodes.includes(costCodeKey)
-    ) {
-      issues.push(EXCEPTION_TYPES.UNKNOWN_COST_CODE);
-    }
-
-    const invoiceKey = `${normaliseText(supplier)}::${normaliseText(invoiceNumber)}`;
-    if (invoiceNumber) {
-      if (existingInvoices.has(invoiceKey) || batchInvoiceKeys.has(invoiceKey)) {
-        issues.push(EXCEPTION_TYPES.DUPLICATE_INVOICE);
-      } else {
-        batchInvoiceKeys.add(invoiceKey);
+    if (developmentScoped && csvDevelopmentId && !developmentMatches(csvDevelopmentId, context)) {
+      softIssues.push(WARNING_TYPES.DEVELOPMENT_MISMATCH);
+      const warningMessage = buildDevelopmentMismatchWarning(csvDevelopmentId, context);
+      if (!globalWarnings.includes(warningMessage)) {
+        globalWarnings.push(warningMessage);
       }
     }
 
-    const exceptionEntry = {
+    if (!supplier) hardIssues.push(ERROR_TYPES.MISSING_SUPPLIER);
+
+    if (!costCode || !costCodeKey) {
+      hardIssues.push(ERROR_TYPES.MISSING_COST_CODE);
+    } else if (!knownCostCentreKeys.has(costCodeKey)) {
+      softIssues.push(WARNING_TYPES.NEW_COST_CODE);
+      if (!pendingNewCostCentres.has(costCodeKey)) {
+        pendingNewCostCentres.set(costCodeKey, {
+          costCodeKey,
+          costCode,
+          description,
+        });
+      }
+    }
+
+    if (!String(mapped.transactionDate || '').trim()) {
+      hardIssues.push(ERROR_TYPES.MISSING_DATE);
+    } else if (!transactionDate) {
+      hardIssues.push(ERROR_TYPES.INVALID_DATE);
+    }
+
+    if (rawAmount == null || String(rawAmount).trim() === '') {
+      hardIssues.push(ERROR_TYPES.MISSING_AMOUNT);
+    } else if (netAmount == null) {
+      hardIssues.push(ERROR_TYPES.INVALID_AMOUNT);
+    }
+
+    if (hardIssues.length === 0 && netAmount != null) {
+      const transactionKey = buildTransactionKey({
+        supplier,
+        invoiceNumber,
+        transactionDate,
+        netAmount,
+        description: mapped.description,
+      });
+
+      const legacyInvoiceKey = invoiceNumber
+        ? `${normaliseText(supplier)}::${normaliseText(invoiceNumber)}`
+        : null;
+
+      if (
+        batchTransactionKeys.has(transactionKey) ||
+        (legacyInvoiceKey && existingInvoices.has(legacyInvoiceKey))
+      ) {
+        hardIssues.push(ERROR_TYPES.DUPLICATE_TRANSACTION);
+      } else {
+        batchTransactionKeys.add(transactionKey);
+      }
+    }
+
+    const entry = {
       rowNumber,
-      developmentIdentifier: developmentId,
+      developmentIdentifier: csvDevelopmentId,
       supplier,
       costCode,
-      description,
+      description: mapped.description,
       invoiceNumber,
       transactionAmount: mapped.transactionAmount,
-      issues,
+      issues: hardIssues,
+      warnings: softIssues,
     };
 
-    if (issues.length) {
-      exceptions.push(exceptionEntry);
+    if (hardIssues.length) {
+      errors.push(entry);
       continue;
     }
 
+    if (softIssues.length) {
+      rowWarnings.push(entry);
+    }
+
     const grossAmount =
-      vatAmount != null ? netAmount + vatAmount : mapped.grossAmount || null;
+      vatAmount != null && netAmount != null ? netAmount + vatAmount : null;
 
     validRows.push({
       rowNumber,
@@ -156,7 +228,8 @@ export function validateLedgerImport(rows, headerRowIndex, fieldByColumn, contex
       supplier,
       supplierCode: String(mapped.supplierCode || '').trim(),
       costCode,
-      description,
+      costCodeKey,
+      description: mapped.description || description,
       transactionDate,
       invoiceNumber,
       netAmount,
@@ -165,43 +238,42 @@ export function validateLedgerImport(rows, headerRowIndex, fieldByColumn, contex
       source: String(mapped.transactionSource || '').trim(),
       documentType: String(mapped.documentType || '').trim(),
       reference: String(mapped.reference || '').trim(),
+      warnings: softIssues,
     });
 
     totalValue += netAmount;
   }
 
   const importedCount = validRows.length;
-  const errorCount = exceptions.length;
+  const errorCount = errors.length;
+  const warningCount = rowWarnings.length + globalWarnings.length;
+  const pendingList = [...pendingNewCostCentres.values()];
 
   if (!rowCount) {
-    warnings.push('No data rows were found below the header row.');
+    globalWarnings.push('No data rows were found below the header row.');
   }
 
   return {
     rowCount,
     importedCount,
-    warningCount: warnings.length,
+    warningCount,
     errorCount,
+    newCostCentresPending: pendingList.length,
     totalValue: Math.round((totalValue + Number.EPSILON) * 100) / 100,
     validRows,
-    exceptions,
-    warnings,
+    errors,
+    exceptions: errors,
+    rowWarnings,
+    warnings: globalWarnings,
+    pendingNewCostCentres: pendingList,
     canImport: importedCount > 0,
     mappingComplete: true,
+    createUnknownCostCentres,
   };
 }
 
-export function validateMappingComplete(fieldByColumn) {
-  const required = [
-    'developmentIdentifier',
-    'costCode',
-    'supplier',
-    'transactionDate',
-    'transactionAmount',
-    'description',
-    'invoiceNumber',
-  ];
-  const missing = required.filter((field) => !fieldByColumn.includes(field));
+export function validateMappingComplete(fieldByColumn, headers) {
+  const missing = getMissingRequiredFields(fieldByColumn, headers);
   return {
     ok: missing.length === 0,
     missing,

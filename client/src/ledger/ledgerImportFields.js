@@ -8,14 +8,14 @@ import { isBlankRow } from './csvImport';
 export const LEDGER_IMPORT_FIELDS = {
   developmentIdentifier: {
     label: 'Development Identifier',
-    required: true,
+    required: false,
   },
   costCode: { label: 'Cost Code', required: true },
   supplier: { label: 'Supplier', required: true },
   transactionDate: { label: 'Transaction Date', required: true },
   transactionAmount: { label: 'Transaction Amount', required: true },
   description: { label: 'Description', required: true },
-  invoiceNumber: { label: 'Invoice Number', required: true },
+  invoiceNumber: { label: 'Invoice Number', required: false },
   vat: { label: 'VAT', required: false },
   reference: { label: 'Reference', required: false },
   documentType: { label: 'Document Type', required: false },
@@ -228,8 +228,26 @@ export function getLedgerDetectedColumnsSummary(fieldByColumn, headers) {
     .filter(Boolean);
 }
 
-export function getMissingRequiredFields(fieldByColumn) {
-  return LEDGER_REQUIRED_FIELDS.filter((field) => !fieldByColumn.includes(field));
+export function alignFieldByColumnToHeaders(headers, fieldByColumn = []) {
+  return (headers || []).map((_, index) => fieldByColumn[index] || 'ignore');
+}
+
+export function getMissingRequiredFields(fieldByColumn, headers) {
+  const aligned = headers?.length
+    ? alignFieldByColumnToHeaders(headers, fieldByColumn)
+    : [...(fieldByColumn || [])];
+
+  return LEDGER_REQUIRED_FIELDS.filter((field) => !aligned.includes(field));
+}
+
+export function formatMissingRequiredFieldsMessage(missing) {
+  if (!missing?.length) return '';
+
+  const labels = missing.map(
+    (field) => LEDGER_IMPORT_FIELDS[field]?.label || field
+  );
+
+  return `Map the following required columns before continuing: ${labels.join(', ')}.`;
 }
 
 export function buildLedgerImportPreview(rows, headerRowIndex, fieldByColumn, limit = 5) {
@@ -268,5 +286,6 @@ export function buildMappedRow(row, fieldByColumn) {
     documentType: String(get('documentType') || '').trim(),
     transactionSource: String(get('transactionSource') || '').trim(),
     supplierCode: String(get('supplierCode') || '').trim(),
+    activity: String(get('activity') || '').trim(),
   };
 }

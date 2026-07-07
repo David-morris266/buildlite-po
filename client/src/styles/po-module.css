@@ -3295,8 +3295,34 @@
   margin-top: 16px;
 }
 
+.dev-ledger-import__exceptions--warnings {
+  border-color: rgba(251, 191, 36, 0.25);
+}
+
+.dev-ledger-import__warnings-title {
+  margin: 0 0 8px;
+  font-weight: 700;
+  color: #fde68a;
+}
+
+.dev-ledger-import__create-cost-centres {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+}
+
+.dev-ledger-import__create-cost-centres input {
+  margin-top: 3px;
+}
+
 .dev-ledger-import__summary {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .dev-ledger-import__blocked {

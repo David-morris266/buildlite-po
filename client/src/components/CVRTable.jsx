@@ -27,6 +27,25 @@ function VarianceCell({ label, state }) {
   );
 }
 
+function formatCostCodeCell(row) {
+  const key = String(row.costCodeKey || '').trim();
+  if (key) return key.toUpperCase();
+  return row.costCodeLabel || '—';
+}
+
+function formatDescriptionCell(row) {
+  const description = String(row.description || '').trim();
+  if (description) return description;
+
+  const label = String(row.costCodeLabel || '').trim();
+  const separator = label.indexOf(' — ');
+  if (separator >= 0) {
+    return label.slice(separator + 3).trim() || '—';
+  }
+
+  return '—';
+}
+
 export default function CVRTable({
   rows,
   totals,
@@ -39,12 +58,13 @@ export default function CVRTable({
         <table className="po-data-table dev-cvr__table">
           <thead>
             <tr>
-              <th>Cost Centre</th>
+              <th>Cost Code</th>
+              <th>Description</th>
               <th style={{ textAlign: 'right' }}>Original Budget</th>
               <th style={{ textAlign: 'right' }}>Current Budget</th>
               <th style={{ textAlign: 'right' }}>Committed</th>
-              <th style={{ textAlign: 'right' }}>Actual Cost</th>
-              <th style={{ textAlign: 'right' }}>Forecast Final Cost</th>
+              <th style={{ textAlign: 'right' }}>Actual</th>
+              <th style={{ textAlign: 'right' }}>Forecast</th>
               <th style={{ textAlign: 'right' }}>Cost To Complete</th>
               <th style={{ textAlign: 'right' }}>Variance</th>
             </tr>
@@ -59,9 +79,10 @@ export default function CVRTable({
                       className="dev-cvr__row-link"
                       onClick={() => onRowSelect?.(row)}
                     >
-                      {row.costCodeLabel}
+                      {formatCostCodeCell(row)}
                     </button>
                   </td>
+                  <td>{formatDescriptionCell(row)}</td>
                   <td style={{ textAlign: 'right' }}>
                     <EditableMoneyCell
                       key={`${row.id}-original-${row.originalBudget}`}
@@ -105,8 +126,8 @@ export default function CVRTable({
               ))
             ) : (
               <tr>
-                <td colSpan={8} className="po-data-table__empty">
-                  No cost centres yet. Add a cost centre or import ledger / approve
+                <td colSpan={9} className="po-data-table__empty">
+                  No cost codes yet. Add a cost code or import ledger / approve
                   purchase orders to populate the CVR.
                 </td>
               </tr>
@@ -115,7 +136,7 @@ export default function CVRTable({
           {rows.length ? (
             <tfoot>
               <tr className="dev-cvr__totals-row">
-                <td>
+                <td colSpan={2}>
                   <strong>Totals</strong>
                 </td>
                 <td style={{ textAlign: 'right' }}>

@@ -138,13 +138,15 @@ export function addCostCentre(developmentId, payload, periodKey = CVR_CURRENT_PE
 
   const label = String(payload.costCodeLabel || '').trim();
   if (!label) {
-    return { ok: false, errors: ['Cost centre name is required.'] };
+    return { ok: false, errors: ['Cost code is required.'] };
   }
 
   const costCentre = {
     id: newId(),
     costCodeKey: String(payload.costCodeKey || label).trim().toLowerCase(),
     costCodeLabel: label,
+    description: String(payload.description || '').trim(),
+    commercialFamily: String(payload.commercialFamily || 'Direct Cost').trim(),
     originalBudget: parseBudgetValue(payload.originalBudget),
     currentBudget:
       parseBudgetValue(payload.currentBudget) ??
@@ -179,7 +181,7 @@ export function updateCostCentre(
   if (!period) return { ok: false, errors: ['CVR period not found.'] };
 
   const index = period.costCentres.findIndex((item) => item.id === costCentreId);
-  if (index < 0) return { ok: false, errors: ['Cost centre not found.'] };
+  if (index < 0) return { ok: false, errors: ['Cost code not found.'] };
 
   const current = period.costCentres[index];
   const now = new Date().toISOString();
@@ -245,7 +247,7 @@ export function deleteCostCentre(
 
 export function upsertAutoCostCentre(
   developmentId,
-  { costCodeKey, costCodeLabel },
+  { costCodeKey, costCodeLabel, description = '', commercialFamily = 'Direct Cost' },
   periodKey = CVR_CURRENT_PERIOD
 ) {
   const period = getPeriodData(developmentId, periodKey);
@@ -259,6 +261,8 @@ export function upsertAutoCostCentre(
     {
       costCodeKey,
       costCodeLabel,
+      description,
+      commercialFamily,
       originalBudget: null,
       currentBudget: null,
       forecastFinalCost: null,

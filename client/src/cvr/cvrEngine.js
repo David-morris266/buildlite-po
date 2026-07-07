@@ -113,6 +113,7 @@ export function buildCvrRows(developmentId, options = {}) {
       id: manual?.id || `auto-${key}`,
       costCodeKey: key,
       costCodeLabel: label,
+      description: manual?.description || '',
       originalBudget: manual?.originalBudget ?? null,
       currentBudget: manual?.currentBudget ?? null,
       committed: commitments.totals.get(key) ?? null,

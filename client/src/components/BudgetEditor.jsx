@@ -3,7 +3,7 @@ export default function BudgetEditor({
   errors = [],
   onChange,
   showName = false,
-  nameLabel = 'Cost Centre',
+  nameLabel = 'Cost Code',
 }) {
   return (
     <div className="dev-cvr-budget-editor">

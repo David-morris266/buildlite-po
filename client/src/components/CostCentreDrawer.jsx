@@ -20,7 +20,7 @@ export default function CostCentreDrawer({
   onClose,
   onSaveNotes,
 }) {
-  const title = row?.costCodeLabel || 'Cost Centre';
+  const title = row?.costCodeLabel || 'Cost Code';
 
   const packageTotal = useMemo(
     () =>
@@ -41,11 +41,11 @@ export default function CostCentreDrawer({
       open={open}
       onClose={onClose}
       wide
-      ariaLabel={`Cost centre details for ${title}`}
+      ariaLabel={`Cost code details for ${title}`}
     >
       <header className="po-drawer-header">
         <div className="po-drawer-header__bar">
-          <p className="po-drawer-header__eyebrow">Cost Centre</p>
+          <p className="po-drawer-header__eyebrow">Cost Code</p>
           <button type="button" className="po-drawer-header__close" onClick={onClose}>
             Close
           </button>
@@ -62,11 +62,11 @@ export default function CostCentreDrawer({
             <dd>{formatCvrMoney(row.committed)}</dd>
           </div>
           <div>
-            <dt>Actual Cost</dt>
+            <dt>Actual</dt>
             <dd>{formatCvrMoney(row.actualCost)}</dd>
           </div>
           <div>
-            <dt>Forecast Final Cost</dt>
+            <dt>Forecast</dt>
             <dd>{formatCvrMoney(row.forecastFinalCost)}</dd>
           </div>
           <div>
@@ -112,7 +112,7 @@ export default function CostCentreDrawer({
               </table>
             </div>
           ) : (
-            <p className="dev-cvr-drawer__empty">No subcontract packages for this cost centre.</p>
+            <p className="dev-cvr-drawer__empty">No subcontract packages for this cost code.</p>
           )}
         </DrawerSection>
 
@@ -153,7 +153,7 @@ export default function CostCentreDrawer({
               </table>
             </div>
           ) : (
-            <p className="dev-cvr-drawer__empty">No ledger transactions for this cost centre.</p>
+            <p className="dev-cvr-drawer__empty">No ledger transactions for this cost code.</p>
           )}
         </DrawerSection>
 
@@ -171,7 +171,7 @@ export default function CostCentreDrawer({
             onChange={(event) =>
               onSaveNotes?.({ forecastNotes: event.target.value })
             }
-            placeholder="Explain forecast assumptions for this cost centre."
+            placeholder="Explain forecast assumptions for this cost code."
           />
         </DrawerSection>
 

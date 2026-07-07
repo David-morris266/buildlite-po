@@ -4,9 +4,11 @@ import { listCostCodes } from '../api';
 import { isAcceptedCsvFile, extractHeaders } from '../ledger/csvImport';
 import {
   LEDGER_IMPORT_FIELDS,
+  alignFieldByColumnToHeaders,
   applyProfileMappingToHeaders,
   autoDetectLedgerColumnMapping,
   buildLedgerImportPreview,
+  formatMissingRequiredFieldsMessage,
   getLedgerDetectedColumnsSummary,
   getMissingRequiredFields,
   ledgerMappingToFieldByColumn,
@@ -75,6 +77,7 @@ export default function PurchaseLedgerImportWizard({
   const [selectedProfileId, setSelectedProfileId] = useState('');
   const [profileName, setProfileName] = useState('');
   const [importComplete, setImportComplete] = useState(null);
+  const [createUnknownCostCentres, setCreateUnknownCostCentres] = useState(false);
 
   const profiles = useMemo(
     () => listImportProfiles(development.id),
@@ -108,8 +111,10 @@ export default function PurchaseLedgerImportWizard({
       developmentNumber: development.jobNumber,
       developmentName: development.developmentName,
       knownCostCodes,
+      createUnknownCostCentres,
+      developmentScoped: true,
     }),
-    [development, knownCostCodes]
+    [development, knownCostCodes, createUnknownCostCentres]
   );
 
   const parsedState = useMemo(
@@ -191,11 +196,15 @@ export default function PurchaseLedgerImportWizard({
   }
 
   function handleMappingContinue() {
-    const missing = getMissingRequiredFields(fieldByColumn);
+    const alignedMapping = alignFieldByColumnToHeaders(headers, fieldByColumn);
+    const missing = getMissingRequiredFields(alignedMapping, headers);
+
     if (missing.length) {
-      setError('Map all required columns before continuing.');
+      setError(formatMissingRequiredFieldsMessage(missing));
       return;
     }
+
+    setFieldByColumn(alignedMapping);
     goNext();
   }
 
@@ -204,7 +213,7 @@ export default function PurchaseLedgerImportWizard({
     if (!profile) return;
 
     if (profile.fieldByColumn?.length) {
-      setFieldByColumn(profile.fieldByColumn);
+      setFieldByColumn(alignFieldByColumnToHeaders(headers, profile.fieldByColumn));
     } else if (profile.headerMapping) {
       setFieldByColumn(applyProfileMappingToHeaders(headers, profile.headerMapping));
     }
@@ -223,7 +232,7 @@ export default function PurchaseLedgerImportWizard({
     const result = saveImportProfile(development.id, {
       name,
       headerRowIndex,
-      fieldByColumn,
+      fieldByColumn: alignFieldByColumnToHeaders(headers, fieldByColumn),
     });
 
     if (!result.ok) {
@@ -245,6 +254,7 @@ export default function PurchaseLedgerImportWizard({
     const importResult = executeLedgerImport(development.id, result, {
       fileName,
       importProfile: profileName || profiles.find((p) => p.id === selectedProfileId)?.name || 'Custom',
+      createUnknownCostCentres,
     });
 
     if (!importResult.ok) {
@@ -253,12 +263,16 @@ export default function PurchaseLedgerImportWizard({
     }
 
     setImportComplete(importResult);
-    onImportComplete?.(importResult);
+  }
+
+  function handleViewLedger() {
+    onImportComplete?.(importComplete);
+    onCancel();
   }
 
   function updateColumnField(columnIndex, field) {
     setFieldByColumn((prev) => {
-      const next = [...prev];
+      const next = alignFieldByColumnToHeaders(headers, prev);
       next[columnIndex] = field;
       for (let i = 0; i < next.length; i += 1) {
         if (i !== columnIndex && field !== 'ignore' && next[i] === field) {
@@ -289,8 +303,16 @@ export default function PurchaseLedgerImportWizard({
               <dd>{importComplete.importedCount}</dd>
             </div>
             <div>
-              <dt>Rows rejected</dt>
+              <dt>Warnings</dt>
+              <dd>{importComplete.warningCount ?? 0}</dd>
+            </div>
+            <div>
+              <dt>Errors</dt>
               <dd>{importComplete.rejectedCount}</dd>
+            </div>
+            <div>
+              <dt>New Cost Codes</dt>
+              <dd>{importComplete.newCostCentresCreated ?? 0}</dd>
             </div>
             <div>
               <dt>Total value</dt>
@@ -298,7 +320,7 @@ export default function PurchaseLedgerImportWizard({
             </div>
           </dl>
           <div className="po-import-step__actions">
-            <button type="button" className="po-btn-primary" onClick={onCancel}>
+            <button type="button" className="po-btn-primary" onClick={handleViewLedger}>
               View Ledger
             </button>
           </div>
@@ -481,7 +503,8 @@ export default function PurchaseLedgerImportWizard({
           <h2 className="po-matrix-section__title">Map your columns</h2>
           <p className="po-import-step__lead">
             Tell us which CSV columns match each commercial field. Map by meaning,
-            not by accounting system.
+            not by accounting system. Development Identifier is optional — transactions
+            import into {development.developmentName}.
           </p>
 
           <div className="dev-ledger-import__profile-bar">
@@ -568,7 +591,7 @@ export default function PurchaseLedgerImportWizard({
                 <dd>{validationResult.rowCount}</dd>
               </div>
               <div>
-                <dt>Imported</dt>
+                <dt>Rows imported</dt>
                 <dd>{validationResult.importedCount}</dd>
               </div>
               <div>
@@ -588,14 +611,30 @@ export default function PurchaseLedgerImportWizard({
                 </dd>
               </div>
               <div>
+                <dt>New Cost Codes</dt>
+                <dd>{validationResult.newCostCentresPending}</dd>
+              </div>
+              <div>
                 <dt>Total value</dt>
                 <dd>{formatLedgerMoney(validationResult.totalValue)}</dd>
               </div>
             </dl>
 
+            {validationResult.newCostCentresPending > 0 ? (
+              <label className="dev-ledger-import__create-cost-centres">
+                <input
+                  type="checkbox"
+                  checked={createUnknownCostCentres}
+                  onChange={(event) => setCreateUnknownCostCentres(event.target.checked)}
+                />
+                <span>Create new Cost Codes from unknown Cost Codes</span>
+              </label>
+            ) : null}
+
             {!validationResult.mappingComplete ? (
               <p className="dev-ledger-import__blocked" role="status">
-                Import blocked — required column mappings are missing.
+                {formatMissingRequiredFieldsMessage(validationResult.missingMappings) ||
+                  'Import blocked — required column mappings are missing.'}
               </p>
             ) : validationResult.canImport ? (
               <p className="po-import-step__ok">
@@ -609,17 +648,55 @@ export default function PurchaseLedgerImportWizard({
             )}
 
             {validationResult.warnings?.length ? (
-              <ul className="po-import-warnings">
-                {validationResult.warnings.map((message) => (
-                  <li key={message}>{message}</li>
-                ))}
-              </ul>
+              <div className="dev-ledger-import__warnings">
+                <p className="dev-ledger-import__warnings-title">Warnings</p>
+                <ul className="po-import-warnings">
+                  {validationResult.warnings.map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+              </div>
             ) : null}
           </section>
 
-          {validationResult.exceptions?.length ? (
+          {validationResult.rowWarnings?.length ? (
+            <section className="po-module-card po-import-step dev-ledger-import__exceptions dev-ledger-import__exceptions--warnings">
+              <h2 className="po-matrix-section__title">Row warnings</h2>
+              <p className="po-import-step__lead">
+                These rows will still be imported. Review warnings before continuing.
+              </p>
+              <div className="po-table-wrap">
+                <table className="po-data-table dev-ledger-import__exceptions-table">
+                  <thead>
+                    <tr>
+                      <th>Row</th>
+                      <th>Supplier</th>
+                      <th>Cost Code</th>
+                      <th>Invoice</th>
+                      <th>Amount</th>
+                      <th>Warnings</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {validationResult.rowWarnings.map((entry) => (
+                      <tr key={`warn-${entry.rowNumber}`}>
+                        <td>{entry.rowNumber}</td>
+                        <td>{entry.supplier || '—'}</td>
+                        <td>{entry.costCode || '—'}</td>
+                        <td>{entry.invoiceNumber || '—'}</td>
+                        <td>{entry.transactionAmount || '—'}</td>
+                        <td>{entry.warnings?.join(' · ') || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {validationResult.errors?.length ? (
             <section className="po-module-card po-import-step dev-ledger-import__exceptions">
-              <h2 className="po-matrix-section__title">Exceptions</h2>
+              <h2 className="po-matrix-section__title">Errors</h2>
               <p className="po-import-step__lead">
                 These rows will not be imported. Fix them in your accounting export and
                 re-import, or continue with the valid rows.
@@ -630,21 +707,21 @@ export default function PurchaseLedgerImportWizard({
                     <tr>
                       <th>Row</th>
                       <th>Supplier</th>
-                      <th>Cost Centre</th>
+                      <th>Cost Code</th>
                       <th>Invoice</th>
                       <th>Amount</th>
-                      <th>Issues</th>
+                      <th>Errors</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {validationResult.exceptions.map((entry) => (
-                      <tr key={entry.rowNumber}>
+                    {validationResult.errors.map((entry) => (
+                      <tr key={`err-${entry.rowNumber}`}>
                         <td>{entry.rowNumber}</td>
                         <td>{entry.supplier || '—'}</td>
                         <td>{entry.costCode || '—'}</td>
                         <td>{entry.invoiceNumber || '—'}</td>
                         <td>{entry.transactionAmount || '—'}</td>
-                        <td>{entry.issues.join(' · ')}</td>
+                        <td>{entry.issues?.join(' · ') || '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -691,12 +768,26 @@ export default function PurchaseLedgerImportWizard({
                 <dd>{development.developmentName}</dd>
               </div>
               <div>
-                <dt>Development No.</dt>
-                <dd>{development.jobNumber || '—'}</dd>
+                <dt>Rows imported</dt>
+                <dd>{validationResult.importedCount}</dd>
               </div>
               <div>
-                <dt>File</dt>
-                <dd>{fileName || '—'}</dd>
+                <dt>Warnings</dt>
+                <dd>{validationResult.warningCount}</dd>
+              </div>
+              <div>
+                <dt>Errors</dt>
+                <dd>{validationResult.errorCount}</dd>
+              </div>
+              <div>
+                <dt>New Cost Codes</dt>
+                <dd>
+                  {createUnknownCostCentres ? validationResult.newCostCentresPending : 0}
+                </dd>
+              </div>
+              <div>
+                <dt>Total value</dt>
+                <dd>{formatLedgerMoney(validationResult.totalValue)}</dd>
               </div>
             </dl>
           </section>

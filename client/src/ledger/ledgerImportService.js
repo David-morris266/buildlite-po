@@ -8,6 +8,13 @@ import {
   detectLedgerHeaderRowIndex,
   ledgerMappingToFieldByColumn,
 } from './ledgerImportFields';
+import {
+  alignFieldByColumnToHeaders,
+  getMissingRequiredFields,
+} from './ledgerImportFields';
+import {
+  createCostCentresFromImport,
+} from './ledgerCostCentreImport';
 import { validateLedgerImport, validateMappingComplete } from './ledgerValidationService';
 import {
   appendImportHistory,
@@ -46,10 +53,22 @@ export async function parseLedgerCsvFile(file) {
 }
 
 export function buildLedgerValidationResult(parsed, context) {
-  const mappingCheck = validateMappingComplete(parsed.fieldByColumn);
+  const alignedFieldByColumn = alignFieldByColumnToHeaders(
+    parsed.headers,
+    parsed.fieldByColumn
+  );
+  const mappingCheck = validateMappingComplete(
+    alignedFieldByColumn,
+    parsed.headers
+  );
   if (!mappingCheck.ok) {
     return {
-      ...validateLedgerImport(parsed.rows, parsed.headerRowIndex, parsed.fieldByColumn, context),
+      ...validateLedgerImport(
+        parsed.rows,
+        parsed.headerRowIndex,
+        alignedFieldByColumn,
+        context
+      ),
       mappingComplete: false,
       missingMappings: mappingCheck.missing,
       canImport: false,
@@ -59,14 +78,28 @@ export function buildLedgerValidationResult(parsed, context) {
   return validateLedgerImport(
     parsed.rows,
     parsed.headerRowIndex,
-    parsed.fieldByColumn,
-    context
+    alignedFieldByColumn,
+    {
+      ...context,
+      developmentScoped: true,
+    }
   );
 }
 
 export function executeLedgerImport(developmentId, validationResult, metadata = {}) {
   if (!validationResult?.canImport || !validationResult.validRows?.length) {
     return { ok: false, errors: ['No valid rows to import.'] };
+  }
+
+  let newCostCentresCreated = 0;
+  if (
+    metadata.createUnknownCostCentres &&
+    validationResult.pendingNewCostCentres?.length
+  ) {
+    newCostCentresCreated = createCostCentresFromImport(
+      developmentId,
+      validationResult.pendingNewCostCentres
+    ).length;
   }
 
   const importBatch = newBatchId();
@@ -98,6 +131,8 @@ export function executeLedgerImport(developmentId, validationResult, metadata = 
     importedBy: actor,
     rowsImported: validationResult.importedCount,
     rowsRejected: validationResult.errorCount,
+    rowsWarnings: validationResult.warningCount,
+    newCostCentresCreated,
     totalValue: validationResult.totalValue,
     fileName: metadata.fileName || '',
     importProfile: metadata.importProfile || 'Custom',
@@ -109,6 +144,8 @@ export function executeLedgerImport(developmentId, validationResult, metadata = 
     importBatch,
     importedCount: validationResult.importedCount,
     rejectedCount: validationResult.errorCount,
+    warningCount: validationResult.warningCount,
+    newCostCentresCreated,
     totalValue: validationResult.totalValue,
   };
 }
