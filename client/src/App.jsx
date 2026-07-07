@@ -4,6 +4,7 @@ import POList from "./components/POList";
 import POArchive from "./components/POArchive";
 import PaymentCertificates from "./components/PaymentCertificates";
 import Developments from "./components/Developments";
+import DeveloperTools from "./components/DeveloperTools";
 import BrandHeader from "./components/Brandheader";
 import SetupAssistant, { dismissSetupAssistant, isSetupDismissed } from "./setup/SetupAssistant";
 import { buildPoFormSeedFromSetup, loadSetupDraft } from "./setup/setupDraft";
@@ -98,9 +99,18 @@ export default function App() {
 
   return (
     <div id="app">
-      <BrandHeader activeTab={tab} onTab={handleTab} />
+      <BrandHeader
+        activeTab={tab}
+        onTab={handleTab}
+        onOpenDeveloperTools={() => setTab("developerTools")}
+      />
 
       <main className="po-app-main">
+        {tab === "developerTools" && (
+          <div key="developerTools" className="po-page po-page-animate-in">
+            <DeveloperTools onBack={() => setTab("developments")} />
+          </div>
+        )}
         {tab === "developments" && (
           <div key="developments" className="po-page po-page-animate-in">
             <Developments />

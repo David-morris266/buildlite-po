@@ -6,6 +6,7 @@ const express = require("express");
 const cors = require("cors");
 const { init, pool } = require("./db");
 const { getHealthStatus } = require("./services/health");
+const { isProduction } = require("./utils/env");
 
 // Routers
 const poRoutes = require("./routes/poRoutes");           // /api/po...
@@ -61,6 +62,11 @@ app.use("/api/clients", clientRoutes);
 // -> /api/brand/active (GET)
 app.use("/api/brand", brandRoutes);
 app.use("/api/payments", paymentRoutes);
+
+if (!isProduction()) {
+  const developerRoutes = require("./routes/developerRoutes");
+  app.use("/api/developer", developerRoutes);
+}
 
 /* ------------------------------------------------------------ *
  * 404 (must be AFTER all routes)

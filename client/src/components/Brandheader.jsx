@@ -1,4 +1,4 @@
-export default function BrandHeader({ activeTab, onTab }) {
+export default function BrandHeader({ activeTab, onTab, onOpenDeveloperTools }) {
   return (
     <header className="brandbar">
       <div className="brand-left">
@@ -6,6 +6,14 @@ export default function BrandHeader({ activeTab, onTab }) {
         <div>
           <div className="brand-name">Build Lite</div>
           <div className="brand-tag">Lean Commercial Control</div>
+          <button
+            type="button"
+            className="brand-dev-tools"
+            onClick={() => onOpenDeveloperTools?.()}
+            title="Development-only utilities"
+          >
+            Developer Tools
+          </button>
         </div>
       </div>
 
