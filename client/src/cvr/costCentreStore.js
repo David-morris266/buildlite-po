@@ -2,8 +2,16 @@
  * BL-012B — CVR persistence (localStorage, period-ready structure).
  */
 
+import { normaliseCostCodeKey, findMatchingCostCodeKey } from './cvrCalculations';
+import { validateCommercialAdjustment } from './cvrForecastEngine';
+import {
+  CVR_PERIOD_DEFAULT_STATUS,
+  isCvrPeriodEditable,
+} from './cvrPeriodStatus';
+
 const STORAGE_KEY = 'buildlite_cvr_v1';
 export const CVR_CURRENT_PERIOD = 'current';
+export const CVR_DEFAULT_PERIOD_KEY = 'P01';
 
 function readAll() {
   try {
@@ -20,47 +28,131 @@ function writeAll(data) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
-function newId() {
-  return `cc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+function newId(prefix = 'cc') {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function emptyPeriod() {
+function sessionActor() {
+  return (
+    localStorage.getItem('userName') ||
+    localStorage.getItem('userEmail') ||
+    'Commercial Manager'
+  );
+}
+
+function normaliseCostCentreRecord(centre) {
+  if (!centre) return centre;
+
   return {
+    ...centre,
+    commercialAdjustment:
+      centre.commercialAdjustment != null
+        ? parseBudgetValue(centre.commercialAdjustment) ?? 0
+        : 0,
+    commercialReason: String(centre.commercialReason || ''),
+    adjustmentHistory: Array.isArray(centre.adjustmentHistory)
+      ? centre.adjustmentHistory
+      : [],
+  };
+}
+
+function emptyPeriod(periodKey = CVR_DEFAULT_PERIOD_KEY) {
+  const now = new Date().toISOString();
+  const actor = sessionActor();
+
+  return {
+    periodKey,
+    status: CVR_PERIOD_DEFAULT_STATUS,
+    createdAt: now,
+    createdBy: actor,
+    submittedAt: null,
+    submittedBy: null,
+    approvedAt: null,
+    approvedBy: null,
+    auditHistory: [
+      {
+        id: newId('audit'),
+        action: 'created',
+        actor,
+        at: now,
+        comment: 'Initial CVR period created',
+      },
+    ],
     costCentres: [],
     developmentNotes: '',
-    updatedAt: null,
+    updatedAt: now,
   };
+}
+
+function normalisePeriodRecord(period, periodKey) {
+  const base = period || emptyPeriod(periodKey);
+  const now = base.updatedAt || new Date().toISOString();
+
+  return {
+    ...emptyPeriod(periodKey),
+    ...base,
+    periodKey,
+    status: base.status || CVR_PERIOD_DEFAULT_STATUS,
+    auditHistory: Array.isArray(base.auditHistory) ? base.auditHistory : [],
+    costCentres: Array.isArray(base.costCentres) ? base.costCentres : [],
+    developmentNotes: String(base.developmentNotes || ''),
+    updatedAt: now,
+  };
+}
+
+function migrateLegacyPeriods(record) {
+  const next = { ...record };
+  const periods = { ...(next.periods || {}) };
+
+  if (periods[CVR_CURRENT_PERIOD]) {
+    const legacy = normalisePeriodRecord(periods[CVR_CURRENT_PERIOD], CVR_DEFAULT_PERIOD_KEY);
+    if (!periods[CVR_DEFAULT_PERIOD_KEY]) {
+      periods[CVR_DEFAULT_PERIOD_KEY] = legacy;
+    }
+    delete periods[CVR_CURRENT_PERIOD];
+    if (next.activePeriodKey === CVR_CURRENT_PERIOD) {
+      next.activePeriodKey = CVR_DEFAULT_PERIOD_KEY;
+    }
+  }
+
+  for (const [periodKey, period] of Object.entries(periods)) {
+    periods[periodKey] = normalisePeriodRecord(period, periodKey);
+  }
+
+  if (!Object.keys(periods).length) {
+    periods[CVR_DEFAULT_PERIOD_KEY] = emptyPeriod(CVR_DEFAULT_PERIOD_KEY);
+    next.activePeriodKey = CVR_DEFAULT_PERIOD_KEY;
+  }
+
+  next.periods = periods;
+  return next;
 }
 
 function normaliseDevelopmentRecord(record) {
   if (!record) {
-    return {
-      activePeriodKey: CVR_CURRENT_PERIOD,
-      periods: { [CVR_CURRENT_PERIOD]: emptyPeriod() },
+    return migrateLegacyPeriods({
+      activePeriodKey: CVR_DEFAULT_PERIOD_KEY,
+      periods: { [CVR_DEFAULT_PERIOD_KEY]: emptyPeriod(CVR_DEFAULT_PERIOD_KEY) },
       updatedAt: null,
-    };
+    });
   }
 
-  const periods =
-    record.periods && typeof record.periods === 'object'
-      ? { ...record.periods }
-      : { [CVR_CURRENT_PERIOD]: emptyPeriod() };
-
-  if (!periods[CVR_CURRENT_PERIOD]) {
-    periods[CVR_CURRENT_PERIOD] = emptyPeriod();
-  }
-
-  periods[CVR_CURRENT_PERIOD].costCentres = Array.isArray(
-    periods[CVR_CURRENT_PERIOD].costCentres
-  )
-    ? periods[CVR_CURRENT_PERIOD].costCentres
-    : [];
-
-  return {
-    activePeriodKey: record.activePeriodKey || CVR_CURRENT_PERIOD,
-    periods,
+  return migrateLegacyPeriods({
+    activePeriodKey: record.activePeriodKey || CVR_DEFAULT_PERIOD_KEY,
+    periods:
+      record.periods && typeof record.periods === 'object'
+        ? { ...record.periods }
+        : { [CVR_DEFAULT_PERIOD_KEY]: emptyPeriod(CVR_DEFAULT_PERIOD_KEY) },
     updatedAt: record.updatedAt || null,
-  };
+  });
+}
+
+function assertPeriodEditable(developmentId, periodKey) {
+  const period = getPeriodData(developmentId, periodKey);
+  if (!isCvrPeriodEditable({ ...period, periodKey })) {
+    return { ok: false, errors: ['This CVR period is read-only.'] };
+  }
+  return { ok: true };
 }
 
 export function ensureCvrRecord(developmentId) {
@@ -77,21 +169,21 @@ export function getCvrRecord(developmentId) {
 }
 
 export function getActivePeriodKey(developmentId) {
-  return getCvrRecord(developmentId).activePeriodKey || CVR_CURRENT_PERIOD;
+  return getCvrRecord(developmentId).activePeriodKey || CVR_DEFAULT_PERIOD_KEY;
 }
 
-export function getPeriodData(developmentId, periodKey = CVR_CURRENT_PERIOD) {
+export function getPeriodData(developmentId, periodKey = CVR_DEFAULT_PERIOD_KEY) {
   const record = ensureCvrRecord(developmentId);
-  return record.periods[periodKey] || emptyPeriod();
+  return record.periods[periodKey] || emptyPeriod(periodKey);
 }
 
-export function listCostCentres(developmentId, periodKey = CVR_CURRENT_PERIOD) {
-  return [...getPeriodData(developmentId, periodKey).costCentres].filter(
-    (item) => item.active !== false
-  );
+export function listCostCentres(developmentId, periodKey = CVR_DEFAULT_PERIOD_KEY) {
+  return [...getPeriodData(developmentId, periodKey).costCentres]
+    .filter((item) => item.active !== false)
+    .map(normaliseCostCentreRecord);
 }
 
-export function getCostCentre(developmentId, costCentreId, periodKey = CVR_CURRENT_PERIOD) {
+export function getCostCentre(developmentId, costCentreId, periodKey = CVR_DEFAULT_PERIOD_KEY) {
   return (
     getPeriodData(developmentId, periodKey).costCentres.find(
       (item) => item.id === costCentreId
@@ -99,15 +191,46 @@ export function getCostCentre(developmentId, costCentreId, periodKey = CVR_CURRE
   );
 }
 
-export function getDevelopmentNotes(developmentId, periodKey = CVR_CURRENT_PERIOD) {
+export function getCostCentreByKey(
+  developmentId,
+  costCodeKey,
+  periodKey = CVR_DEFAULT_PERIOD_KEY
+) {
+  const key = normaliseCostCodeKey(costCodeKey);
+  if (!key) return null;
+
+  const centres = getPeriodData(developmentId, periodKey).costCentres.filter(
+    (item) => item.active !== false
+  );
+
+  const direct = centres.find(
+    (item) => normaliseCostCodeKey(item.costCodeKey) === key
+  );
+  if (direct) return direct;
+
+  const knownKeys = new Set(
+    centres.map((item) => normaliseCostCodeKey(item.costCodeKey)).filter(Boolean)
+  );
+  const matched = findMatchingCostCodeKey(key, knownKeys);
+  if (!matched) return null;
+
+  return (
+    centres.find((item) => normaliseCostCodeKey(item.costCodeKey) === matched) ||
+    null
+  );
+}
+
+export function getDevelopmentNotes(developmentId, periodKey = CVR_DEFAULT_PERIOD_KEY) {
   return getPeriodData(developmentId, periodKey).developmentNotes || '';
 }
 
 export function updateDevelopmentNotes(
   developmentId,
   notes,
-  periodKey = CVR_CURRENT_PERIOD
+  periodKey = CVR_DEFAULT_PERIOD_KEY
 ) {
+  const editable = assertPeriodEditable(developmentId, periodKey);
+  if (!editable.ok) return editable;
   const all = readAll();
   const record = ensureCvrRecord(developmentId);
   const now = new Date().toISOString();
@@ -130,7 +253,9 @@ function parseBudgetValue(value) {
   return Number.isFinite(n) ? Math.round((n + Number.EPSILON) * 100) / 100 : null;
 }
 
-export function addCostCentre(developmentId, payload, periodKey = CVR_CURRENT_PERIOD) {
+export function addCostCentre(developmentId, payload, periodKey = CVR_DEFAULT_PERIOD_KEY) {
+  const editable = assertPeriodEditable(developmentId, periodKey);
+  if (!editable.ok) return editable;
   const all = readAll();
   const record = ensureCvrRecord(developmentId);
   const period = record.periods[periodKey] || emptyPeriod();
@@ -141,9 +266,9 @@ export function addCostCentre(developmentId, payload, periodKey = CVR_CURRENT_PE
     return { ok: false, errors: ['Cost code is required.'] };
   }
 
-  const costCentre = {
+  const costCentre = normaliseCostCentreRecord({
     id: newId(),
-    costCodeKey: String(payload.costCodeKey || label).trim().toLowerCase(),
+    costCodeKey: normaliseCostCodeKey(payload.costCodeKey || label),
     costCodeLabel: label,
     description: String(payload.description || '').trim(),
     commercialFamily: String(payload.commercialFamily || 'Direct Cost').trim(),
@@ -151,13 +276,14 @@ export function addCostCentre(developmentId, payload, periodKey = CVR_CURRENT_PE
     currentBudget:
       parseBudgetValue(payload.currentBudget) ??
       parseBudgetValue(payload.originalBudget),
-    forecastFinalCost: parseBudgetValue(payload.forecastFinalCost),
+    commercialAdjustment: parseBudgetValue(payload.commercialAdjustment) ?? 0,
+    commercialReason: String(payload.commercialReason || '').trim(),
+    adjustmentHistory: [],
     commercialNotes: '',
-    forecastNotes: '',
     active: true,
     createdAt: now,
     updatedAt: now,
-  };
+  });
 
   period.costCentres = [...period.costCentres, costCentre];
   period.updatedAt = now;
@@ -173,8 +299,11 @@ export function updateCostCentre(
   developmentId,
   costCentreId,
   patch,
-  periodKey = CVR_CURRENT_PERIOD
+  periodKey = CVR_DEFAULT_PERIOD_KEY
 ) {
+  const editable = assertPeriodEditable(developmentId, periodKey);
+  if (!editable.ok) return editable;
+
   const all = readAll();
   const record = ensureCvrRecord(developmentId);
   const period = record.periods[periodKey];
@@ -190,20 +319,56 @@ export function updateCostCentre(
   if (patch.costCodeLabel != null) {
     next.costCodeLabel = String(patch.costCodeLabel).trim() || current.costCodeLabel;
   }
+  if (patch.description !== undefined) {
+    next.description = String(patch.description || '');
+  }
   if (patch.originalBudget !== undefined) {
     next.originalBudget = parseBudgetValue(patch.originalBudget);
   }
   if (patch.currentBudget !== undefined) {
     next.currentBudget = parseBudgetValue(patch.currentBudget);
   }
-  if (patch.forecastFinalCost !== undefined) {
-    next.forecastFinalCost = parseBudgetValue(patch.forecastFinalCost);
+  if (patch.commercialAdjustment !== undefined) {
+    const validation = validateCommercialAdjustment(
+      patch.commercialAdjustment,
+      patch.commercialReason !== undefined ? patch.commercialReason : current.commercialReason
+    );
+    if (!validation.valid) {
+      return { ok: false, errors: validation.errors };
+    }
+
+    const previousAdjustment = parseBudgetValue(current.commercialAdjustment) ?? 0;
+    const nextAdjustment = validation.commercialAdjustment;
+    if (Math.abs(nextAdjustment - previousAdjustment) > 0.005) {
+      next.adjustmentHistory = [
+        ...(Array.isArray(current.adjustmentHistory) ? current.adjustmentHistory : []),
+        {
+          id: newId('adj'),
+          date: now,
+          user: sessionActor(),
+          previousAdjustment,
+          newAdjustment: nextAdjustment,
+          reason: validation.commercialReason,
+        },
+      ];
+    }
+
+    next.commercialAdjustment = nextAdjustment;
+  }
+  if (patch.commercialReason !== undefined) {
+    const validation = validateCommercialAdjustment(
+      patch.commercialAdjustment !== undefined
+        ? patch.commercialAdjustment
+        : current.commercialAdjustment,
+      patch.commercialReason
+    );
+    if (!validation.valid) {
+      return { ok: false, errors: validation.errors };
+    }
+    next.commercialReason = validation.commercialReason;
   }
   if (patch.commercialNotes !== undefined) {
     next.commercialNotes = String(patch.commercialNotes || '');
-  }
-  if (patch.forecastNotes !== undefined) {
-    next.forecastNotes = String(patch.forecastNotes || '');
   }
   if (patch.active !== undefined) {
     next.active = Boolean(patch.active);
@@ -221,7 +386,7 @@ export function updateCostCentre(
 export function deactivateCostCentre(
   developmentId,
   costCentreId,
-  periodKey = CVR_CURRENT_PERIOD
+  periodKey = CVR_DEFAULT_PERIOD_KEY
 ) {
   return updateCostCentre(developmentId, costCentreId, { active: false }, periodKey);
 }
@@ -229,7 +394,7 @@ export function deactivateCostCentre(
 export function deleteCostCentre(
   developmentId,
   costCentreId,
-  periodKey = CVR_CURRENT_PERIOD
+  periodKey = CVR_DEFAULT_PERIOD_KEY
 ) {
   const all = readAll();
   const record = ensureCvrRecord(developmentId);
@@ -248,7 +413,7 @@ export function deleteCostCentre(
 export function upsertAutoCostCentre(
   developmentId,
   { costCodeKey, costCodeLabel, description = '', commercialFamily = 'Direct Cost' },
-  periodKey = CVR_CURRENT_PERIOD
+  periodKey = CVR_DEFAULT_PERIOD_KEY
 ) {
   const period = getPeriodData(developmentId, periodKey);
   const existing = period.costCentres.find(
@@ -265,7 +430,8 @@ export function upsertAutoCostCentre(
       commercialFamily,
       originalBudget: null,
       currentBudget: null,
-      forecastFinalCost: null,
+      commercialAdjustment: 0,
+      commercialReason: '',
     },
     periodKey
   );

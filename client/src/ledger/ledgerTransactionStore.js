@@ -2,6 +2,8 @@
  * BL-012A — Purchase Ledger transaction persistence (localStorage).
  */
 
+import { normaliseCostCodeKey } from '../cvr/cvrCalculations';
+
 const STORAGE_KEY = 'buildlite_purchase_ledgers_v1';
 
 function readAll() {
@@ -96,7 +98,7 @@ function recalculateActualCosts(transactions) {
   const totals = {};
 
   for (const txn of transactions) {
-    const code = String(txn.costCode || '').trim().toLowerCase();
+    const code = normaliseCostCodeKey(txn.costCode);
     if (!code) continue;
     const amount = Number(txn.netAmount) || 0;
     totals[code] = roundMoney((totals[code] || 0) + amount);

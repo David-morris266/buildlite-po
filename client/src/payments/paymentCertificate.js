@@ -100,7 +100,7 @@ export function buildCertificateDetailModel(certificate, order, pkg) {
   };
 }
 
-export function formatCertificateListRow(certificate, orderKey) {
+export function formatCertificateListRow(certificate, orderKey, order = null) {
   const status = getCertificateStatusMeta(certificate.status);
 
   let grossLabel = formatMoneyPlaceholder(certificate.grossValue, true);
@@ -111,7 +111,7 @@ export function formatCertificateListRow(certificate, orderKey) {
     certificate.progress &&
     Object.keys(certificate.progress).length > 0
   ) {
-    const summary = summarizeCertificateProgress(orderKey, certificate.id);
+    const summary = summarizeCertificateProgress(orderKey, certificate.id, order);
     if (summary?.totals) {
       grossLabel = formatMoneyLabel(summary.totals.grossThisCertificate);
       netLabel = formatMoneyLabel(summary.totals.netPayment);

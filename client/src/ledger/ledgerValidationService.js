@@ -3,7 +3,7 @@
  */
 
 import { parseMoneyCell } from '../payments/excelImport';
-import { normaliseCostCodeKey } from '../cvr/cvrCalculations';
+import { normaliseCostCodeKey, findMatchingCostCodeKey } from '../cvr/cvrCalculations';
 import { isBlankRow } from './csvImport';
 import { buildMappedRow, getMissingRequiredFields } from './ledgerImportFields';
 import {
@@ -152,7 +152,7 @@ export function validateLedgerImport(rows, headerRowIndex, fieldByColumn, contex
 
     if (!costCode || !costCodeKey) {
       hardIssues.push(ERROR_TYPES.MISSING_COST_CODE);
-    } else if (!knownCostCentreKeys.has(costCodeKey)) {
+    } else if (!findMatchingCostCodeKey(costCode, knownCostCentreKeys)) {
       softIssues.push(WARNING_TYPES.NEW_COST_CODE);
       if (!pendingNewCostCentres.has(costCodeKey)) {
         pendingNewCostCentres.set(costCodeKey, {

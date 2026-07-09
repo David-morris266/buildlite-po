@@ -15,6 +15,7 @@ import {
 export const PLOT_IMPORT_FIELDS = {
   plotNumber: { label: 'Plot Number', required: true },
   houseType: { label: 'House Type', required: true },
+  configuration: { label: 'Configuration', required: false },
   bedrooms: { label: 'Bedrooms', required: false },
   gia: { label: 'GIA', required: false },
   phase: { label: 'Phase', required: false },
@@ -26,6 +27,14 @@ export const PLOT_IMPORT_FIELDS = {
 const PLOT_HEADER_ALIASES = {
   plotNumber: ['plot', 'plot no', 'plot no.', 'plot number', 'plot #', 'unit'],
   houseType: ['house type', 'type', 'dwelling type', 'product', 'design'],
+  configuration: [
+    'configuration',
+    'config',
+    'dwelling configuration',
+    'house configuration',
+    'plot configuration',
+    'property type',
+  ],
   bedrooms: ['beds', 'bedrooms', 'bed', 'no beds', 'no. beds'],
   gia: ['gia', 'g.i.a', 'floor area', 'sqm', 'sq m', 'internal area'],
   phase: ['phase', 'stage', 'release'],
@@ -113,6 +122,7 @@ function buildPlotRowFromSheetRow(row, fieldByColumn) {
   return {
     plotNumber: String(get('plotNumber') || '').trim(),
     houseType: String(get('houseType') || '').trim(),
+    configuration: String(get('configuration') || '').trim(),
     bedrooms: parseIntegerCell(get('bedrooms')),
     gia: parseAreaCell(get('gia')),
     phase: String(get('phase') || '').trim(),

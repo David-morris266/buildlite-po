@@ -15,6 +15,10 @@ export default defineConfig({
   define: {
     __BUILDLITE_BRANCH__: JSON.stringify(getGitBranch()),
   },
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.js'],
+  },
   server: {
     proxy: {
       '/api': {

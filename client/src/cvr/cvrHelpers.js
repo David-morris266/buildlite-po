@@ -5,6 +5,7 @@
 import { formatMoney } from '../components/poDrawerHelpers';
 import { buildCvrModel } from './cvrEngine';
 import { getVarianceState } from './cvrCalculations';
+import { getAdjustmentState } from './cvrForecastEngine';
 
 export function formatCvrMoney(value) {
   if (value == null || value === '') return '—';
@@ -13,43 +14,72 @@ export function formatCvrMoney(value) {
   return `£${formatMoney(n)}`;
 }
 
+function formatSignedCvrMoney(value) {
+  if (value == null || value === '') return '—';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  if (n > 0) return `+£${formatMoney(n)}`;
+  if (n < 0) return `-£${formatMoney(Math.abs(n))}`;
+  return '£0.00';
+}
+
 export function formatCvrRow(row) {
   return {
     ...row,
     originalBudgetLabel: formatCvrMoney(row.originalBudget),
     currentBudgetLabel: formatCvrMoney(row.currentBudget),
     committedLabel: formatCvrMoney(row.committed),
+    certifiedLabel: formatCvrMoney(row.certified),
     actualCostLabel: formatCvrMoney(row.actualCost),
-    forecastFinalCostLabel: formatCvrMoney(row.forecastFinalCost),
+    systemForecastLabel: formatCvrMoney(row.systemForecast),
+    outstandingCertifiedLabel: formatCvrMoney(row.outstandingCertified),
+    commercialAdjustmentLabel: formatSignedCvrMoney(row.commercialAdjustment),
+    finalForecastLabel: formatCvrMoney(row.finalForecast),
+    forecastFinalCostLabel: formatCvrMoney(row.finalForecast),
     costToCompleteLabel: formatCvrMoney(row.costToComplete),
     varianceLabel: formatCvrMoney(row.variance),
     varianceState: row.varianceState || getVarianceState(row.variance),
+    adjustmentState: row.adjustmentState || getAdjustmentState(row.commercialAdjustment),
+  };
+}
+
+export function formatCvrTotals(totals) {
+  return {
+    ...totals,
+    originalBudgetLabel: formatCvrMoney(totals.originalBudget),
+    currentBudgetLabel: formatCvrMoney(totals.currentBudget),
+    committedLabel: formatCvrMoney(totals.committed),
+    certifiedLabel: formatCvrMoney(totals.certified),
+    actualCostLabel: formatCvrMoney(totals.actualCost),
+    systemForecastLabel: formatCvrMoney(totals.systemForecast),
+    outstandingCertifiedLabel: formatCvrMoney(totals.outstandingCertified),
+    commercialAdjustmentLabel: formatSignedCvrMoney(totals.commercialAdjustment),
+    finalForecastLabel: formatCvrMoney(totals.finalForecast),
+    forecastFinalCostLabel: formatCvrMoney(totals.finalForecast),
+    costToCompleteLabel: formatCvrMoney(totals.costToComplete),
+    varianceLabel: formatCvrMoney(totals.variance),
+    varianceState: getVarianceState(totals.variance),
+    adjustmentState: getAdjustmentState(totals.commercialAdjustment),
   };
 }
 
 export function buildCvrWorkspaceModel(development, options = {}) {
   if (!development) return null;
 
-  const model = buildCvrModel(development.id, options);
+  const periodKey = options.periodKey;
+  const model = buildCvrModel(development.id, { ...options, periodKey });
   const { summary, totals } = model;
+  const period = options.period || null;
 
   return {
     developmentId: development.id,
     developmentName: development.developmentName,
     developmentNumber: development.jobNumber,
     periodKey: model.periodKey,
+    period,
+    readOnly: Boolean(options.readOnly),
     rows: model.rows.map(formatCvrRow),
-    totals: {
-      ...totals,
-      originalBudgetLabel: formatCvrMoney(totals.originalBudget),
-      currentBudgetLabel: formatCvrMoney(totals.currentBudget),
-      committedLabel: formatCvrMoney(totals.committed),
-      actualCostLabel: formatCvrMoney(totals.actualCost),
-      forecastFinalCostLabel: formatCvrMoney(totals.forecastFinalCost),
-      costToCompleteLabel: formatCvrMoney(totals.costToComplete),
-      varianceLabel: formatCvrMoney(totals.variance),
-      varianceState: getVarianceState(totals.variance),
-    },
+    totals: formatCvrTotals(totals),
     developmentNotes: model.developmentNotes,
     summaryCards: [
       {
@@ -68,19 +98,29 @@ export function buildCvrWorkspaceModel(development, options = {}) {
         modifier: 'muted',
       },
       {
+        label: 'Certified',
+        value: formatCvrMoney(summary.certified),
+        modifier: 'default',
+      },
+      {
         label: 'Actual',
         value: formatCvrMoney(summary.actualCost),
         modifier: 'accent',
       },
       {
-        label: 'Forecast',
-        value: formatCvrMoney(summary.forecastFinalCost),
+        label: 'Outstanding Certified (Not Yet in Ledger)',
+        value: formatCvrMoney(summary.outstandingCertified ?? 0),
         modifier: 'default',
       },
       {
-        label: 'Variance',
-        value: formatCvrMoney(summary.variance),
-        modifier: getVarianceState(summary.variance),
+        label: 'System Forecast',
+        value: formatCvrMoney(summary.systemForecast),
+        modifier: 'default',
+      },
+      {
+        label: 'Final Forecast',
+        value: formatCvrMoney(summary.finalForecast),
+        modifier: 'default',
       },
       {
         label: 'Cost To Complete',
@@ -88,9 +128,9 @@ export function buildCvrWorkspaceModel(development, options = {}) {
         modifier: 'muted',
       },
       {
-        label: 'Gross Margin',
-        value: '—',
-        modifier: 'muted',
+        label: 'Variance',
+        value: formatCvrMoney(summary.variance),
+        modifier: getVarianceState(summary.variance),
       },
     ],
   };

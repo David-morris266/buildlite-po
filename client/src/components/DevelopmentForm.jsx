@@ -37,6 +37,14 @@ export default function DevelopmentForm({ onCancel, onCreated }) {
       setError('Development Name is required.');
       return;
     }
+    if (
+      form.startDate &&
+      form.targetCompletion &&
+      form.targetCompletion < form.startDate
+    ) {
+      setError('Target completion must be on or after the start date.');
+      return;
+    }
 
     const development = createDevelopment(form);
     onCreated?.(development.id);

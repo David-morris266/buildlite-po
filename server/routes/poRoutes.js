@@ -227,6 +227,7 @@ router.post("/po/suppliers", async (req, res) => {
     contactPhone: b.contactPhone || "",
     vatNumber: b.vatNumber || "",
     termsDays: Number(b.termsDays || 30),
+    supplierType: b.supplierType || "other",
     notes: b.notes || "",
     createdAt: now,
     updatedAt: now,
@@ -234,6 +235,41 @@ router.post("/po/suppliers", async (req, res) => {
 
   await dbCreateSupplier(active.id, sup);
   res.status(201).json(sup);
+});
+
+router.put("/po/suppliers/:id", async (req, res) => {
+  const active = await getActiveClient();
+  if (!active) return res.status(404).json({ error: "No active client set" });
+
+  const existing = await dbFindSupplierById(active.id, req.params.id);
+  if (!existing) return res.status(404).json({ message: "Supplier not found" });
+
+  const b = req.body || {};
+  const now = new Date().toISOString();
+  const sup = {
+    ...existing,
+    name: b.name != null ? String(b.name).trim() : existing.name,
+    address1: b.address1 ?? existing.address1 ?? "",
+    address2: b.address2 ?? existing.address2 ?? "",
+    city: b.city ?? existing.city ?? "",
+    postcode: b.postcode ?? existing.postcode ?? "",
+    contactName: b.contactName ?? existing.contactName ?? "",
+    contactEmail: b.contactEmail ?? existing.contactEmail ?? "",
+    contactPhone: b.contactPhone ?? existing.contactPhone ?? "",
+    vatNumber: b.vatNumber ?? existing.vatNumber ?? "",
+    termsDays:
+      b.termsDays != null ? Number(b.termsDays || 30) : Number(existing.termsDays || 30),
+    supplierType: b.supplierType ?? existing.supplierType ?? "other",
+    notes: b.notes ?? existing.notes ?? "",
+    updatedAt: now,
+  };
+
+  if (!sup.name) {
+    return res.status(400).json({ message: "Field 'name' is required" });
+  }
+
+  await dbCreateSupplier(active.id, sup);
+  res.json(sup);
 });
 
 /* =========================================
@@ -546,6 +582,10 @@ router.put("/po/:poNumber", async (req, res) => {
 
   po.supplierId = supplierId;
   po.supplierSnapshot = supplierSnapshot;
+
+  if (body.type) {
+    po.type = String(body.type).toUpperCase();
+  }
 
   po.costRef = {
     jobId: body.costRef?.jobId ?? po.costRef?.jobId ?? "",

@@ -8,6 +8,7 @@ import {
   buildPlotStageImport,
   buildPlotStagePreview,
   detectHeaderRowIndex,
+  detectPlotStageHeaderRowIndex,
   detectPlotStageLayout,
   extractHeaders,
   getDetectedColumnsSummary,
@@ -90,7 +91,7 @@ export default function OrderMatrixImportWizard({
   const loadSheet = useCallback((wb, sheetName) => {
     const sheet = wb.Sheets[sheetName];
     const rows = sheetToRows(sheet);
-    const headerIndex = detectHeaderRowIndex(rows);
+    const headerIndex = detectPlotStageHeaderRowIndex(rows);
     const headerCells = extractHeaders(rows[headerIndex] || []);
     const autoMapping = autoDetectColumnMapping(headerCells);
     const fields = mappingToFieldByColumn(headerCells, autoMapping);

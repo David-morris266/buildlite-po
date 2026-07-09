@@ -21,6 +21,12 @@ import {
   requestApproval,
   getActiveBrand,
 } from '../api';
+import { notifyCommercialChanged } from '../commercial/commercialEvents';
+import {
+  getSuggestedOrderTypeForSupplier,
+  isOrderTypeCompatible,
+  getSupplierTypeMeta,
+} from '../suppliers/supplierTypes';
 import {
   buildRequestApprovalBody,
   getSetupApprovalRouting,
@@ -64,6 +70,7 @@ export default function POForm({
   // Supplier (id + name)
   const [supplierId, setSupplierId] = useState('');
   const [supplierName, setSupplierName] = useState('');
+  const [selectedSupplier, setSelectedSupplier] = useState(null);
 
   // Order type (M / S / P)
   const [type, setType] = useState('M');
@@ -216,6 +223,7 @@ export default function POForm({
       initialPo.supplierName ||
       ''
     );
+    setSelectedSupplier(initialPo.supplierSnapshot || null);
 
     // Type
     setType(initialPo.type || 'M');
@@ -315,6 +323,14 @@ export default function POForm({
     }
     if (!['M', 'S', 'P'].includes(type)) {
       errors.type = 'Order type must be Materials, Subcontract, or Plant.';
+    }
+    if (
+      selectedSupplier?.supplierType &&
+      !isOrderTypeCompatible(selectedSupplier.supplierType, type)
+    ) {
+      const supplierLabel = getSupplierTypeMeta(selectedSupplier.supplierType)?.label;
+      const suggested = getSuggestedOrderTypeForSupplier(selectedSupplier);
+      errors.type = `${supplierLabel} suppliers usually require ${suggested === 'S' ? 'Subcontract' : suggested === 'P' ? 'Plant' : 'Materials'} orders. Change the order type to continue.`;
     }
 
     if (Object.keys(errors).length) {
@@ -493,6 +509,7 @@ export default function POForm({
       scrollToActions();
 
       if (onSaved) onSaved(po);
+      notifyCommercialChanged({ source: 'po-form', poNumber: po.poNumber || persistedPoNumber });
     } catch (e) {
       console.error(e);
       setSaveError(e.message || 'Could not save your Purchase Order. Please try again.');
@@ -533,6 +550,7 @@ export default function POForm({
       showSentSuccess(poNumber);
 
       if (onSaved) onSaved(po);
+      notifyCommercialChanged({ source: 'po-form', poNumber });
     } catch (e) {
       console.error(e);
       setSaveError(
@@ -644,6 +662,10 @@ export default function POForm({
                 onChange={(sel) => {
                   setSupplierId(sel?.id || '');
                   setSupplierName(sel?.name || '');
+                }}
+                onSelectFull={setSelectedSupplier}
+                onSuggestedOrderType={(suggestedType) => {
+                  if (suggestedType) setType(suggestedType);
                 }}
               />
               {formErrors.supplier ? (

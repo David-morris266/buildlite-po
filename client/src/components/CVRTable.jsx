@@ -4,9 +4,7 @@ function EditableMoneyCell({ rawValue, label, onChange }) {
       className="dev-cvr__cell-input"
       type="text"
       inputMode="decimal"
-      defaultValue={
-        rawValue == null ? '' : String(rawValue)
-      }
+      defaultValue={rawValue == null ? '' : String(rawValue)}
       placeholder={label === '—' ? '—' : label}
       onBlur={(event) => onChange?.(event.target.value)}
       onKeyDown={(event) => {
@@ -46,27 +44,28 @@ function formatDescriptionCell(row) {
   return '—';
 }
 
-export default function CVRTable({
-  rows,
-  totals,
-  onRowSelect,
-  onBudgetChange,
-}) {
+function hasCommercialAdjustment(row) {
+  const value = Number(row.commercialAdjustment);
+  return Number.isFinite(value) && Math.abs(value) > 0.005;
+}
+
+export default function CVRTable({ rows, totals, onRowSelect, onBudgetChange, readOnly = false }) {
   return (
     <div className="dev-cvr__table-wrap">
-      <div className="po-table-wrap">
+      <div className="po-table-wrap dev-cvr__table-scroll">
         <table className="po-data-table dev-cvr__table">
           <thead>
             <tr>
               <th>Cost Code</th>
               <th>Description</th>
-              <th style={{ textAlign: 'right' }}>Original Budget</th>
-              <th style={{ textAlign: 'right' }}>Current Budget</th>
-              <th style={{ textAlign: 'right' }}>Committed</th>
-              <th style={{ textAlign: 'right' }}>Actual</th>
-              <th style={{ textAlign: 'right' }}>Forecast</th>
-              <th style={{ textAlign: 'right' }}>Cost To Complete</th>
-              <th style={{ textAlign: 'right' }}>Variance</th>
+              <th className="dev-cvr__money-col">Current Budget</th>
+              <th className="dev-cvr__money-col">Committed</th>
+              <th className="dev-cvr__money-col">Certified</th>
+              <th className="dev-cvr__money-col">Actual</th>
+              <th className="dev-cvr__money-col">System Forecast</th>
+              <th className="dev-cvr__money-col">Final Forecast</th>
+              <th className="dev-cvr__money-col">CTC</th>
+              <th className="dev-cvr__money-col">Variance</th>
             </tr>
           </thead>
           <tbody>
@@ -74,59 +73,54 @@ export default function CVRTable({
               rows.map((row) => (
                 <tr key={row.id}>
                   <td>
-                    <button
-                      type="button"
-                      className="dev-cvr__row-link"
-                      onClick={() => onRowSelect?.(row)}
-                    >
-                      {formatCostCodeCell(row)}
-                    </button>
+                    <div className="dev-cvr__row-link-wrap">
+                      <button
+                        type="button"
+                        className="dev-cvr__row-link"
+                        onClick={() => onRowSelect?.(row)}
+                        title="Open cost code details and commercial adjustment"
+                      >
+                        {formatCostCodeCell(row)}
+                      </button>
+                      {hasCommercialAdjustment(row) ? (
+                        <span
+                          className={`dev-cvr__adjustment-badge dev-cvr__adjustment-badge--${row.adjustmentState || 'zero'}`}
+                          title={`Commercial adjustment: ${row.commercialAdjustmentLabel}`}
+                        >
+                          Adj
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
-                  <td>{formatDescriptionCell(row)}</td>
-                  <td style={{ textAlign: 'right' }}>
-                    <EditableMoneyCell
-                      key={`${row.id}-original-${row.originalBudget}`}
-                      rawValue={row.originalBudget}
-                      label={row.originalBudgetLabel}
-                      onChange={(value) =>
-                        onBudgetChange?.(row, 'originalBudget', value)
-                      }
-                    />
+                  <td className="dev-cvr__description" title={formatDescriptionCell(row)}>
+                    {formatDescriptionCell(row)}
                   </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <EditableMoneyCell
-                      key={`${row.id}-current-${row.currentBudget}`}
-                      rawValue={row.currentBudget}
-                      label={row.currentBudgetLabel}
-                      onChange={(value) =>
-                        onBudgetChange?.(row, 'currentBudget', value)
-                      }
-                    />
+                  <td className="dev-cvr__money-col">
+                    {readOnly || !onBudgetChange ? (
+                      row.currentBudgetLabel
+                    ) : (
+                      <EditableMoneyCell
+                        key={`${row.id}-current-${row.currentBudget}`}
+                        rawValue={row.currentBudget}
+                        label={row.currentBudgetLabel}
+                        onChange={(value) => onBudgetChange?.(row, 'currentBudget', value)}
+                      />
+                    )}
                   </td>
-                  <td style={{ textAlign: 'right' }}>{row.committedLabel}</td>
-                  <td style={{ textAlign: 'right' }}>{row.actualCostLabel}</td>
-                  <td style={{ textAlign: 'right' }}>
-                    <EditableMoneyCell
-                      key={`${row.id}-forecast-${row.forecastFinalCost}`}
-                      rawValue={row.forecastFinalCost}
-                      label={row.forecastFinalCostLabel}
-                      onChange={(value) =>
-                        onBudgetChange?.(row, 'forecastFinalCost', value)
-                      }
-                    />
-                  </td>
-                  <td style={{ textAlign: 'right' }}>{row.costToCompleteLabel}</td>
-                  <td style={{ textAlign: 'right' }}>
-                    <VarianceCell
-                      label={row.varianceLabel}
-                      state={row.varianceState}
-                    />
+                  <td className="dev-cvr__money-col">{row.committedLabel}</td>
+                  <td className="dev-cvr__money-col">{row.certifiedLabel}</td>
+                  <td className="dev-cvr__money-col">{row.actualCostLabel}</td>
+                  <td className="dev-cvr__money-col">{row.systemForecastLabel}</td>
+                  <td className="dev-cvr__money-col">{row.finalForecastLabel}</td>
+                  <td className="dev-cvr__money-col">{row.costToCompleteLabel}</td>
+                  <td className="dev-cvr__money-col">
+                    <VarianceCell label={row.varianceLabel} state={row.varianceState} />
                   </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={9} className="po-data-table__empty">
+                <td colSpan={10} className="po-data-table__empty">
                   No cost codes yet. Add a cost code or import ledger / approve
                   purchase orders to populate the CVR.
                 </td>
@@ -139,25 +133,28 @@ export default function CVRTable({
                 <td colSpan={2}>
                   <strong>Totals</strong>
                 </td>
-                <td style={{ textAlign: 'right' }}>
-                  <strong>{totals.originalBudgetLabel}</strong>
-                </td>
-                <td style={{ textAlign: 'right' }}>
+                <td className="dev-cvr__money-col">
                   <strong>{totals.currentBudgetLabel}</strong>
                 </td>
-                <td style={{ textAlign: 'right' }}>
+                <td className="dev-cvr__money-col">
                   <strong>{totals.committedLabel}</strong>
                 </td>
-                <td style={{ textAlign: 'right' }}>
+                <td className="dev-cvr__money-col">
+                  <strong>{totals.certifiedLabel}</strong>
+                </td>
+                <td className="dev-cvr__money-col">
                   <strong>{totals.actualCostLabel}</strong>
                 </td>
-                <td style={{ textAlign: 'right' }}>
-                  <strong>{totals.forecastFinalCostLabel}</strong>
+                <td className="dev-cvr__money-col">
+                  <strong>{totals.systemForecastLabel}</strong>
                 </td>
-                <td style={{ textAlign: 'right' }}>
+                <td className="dev-cvr__money-col">
+                  <strong>{totals.finalForecastLabel}</strong>
+                </td>
+                <td className="dev-cvr__money-col">
                   <strong>{totals.costToCompleteLabel}</strong>
                 </td>
-                <td style={{ textAlign: 'right' }}>
+                <td className="dev-cvr__money-col">
                   <VarianceCell
                     label={totals.varianceLabel}
                     state={totals.varianceState}
@@ -168,6 +165,10 @@ export default function CVRTable({
           ) : null}
         </table>
       </div>
+      <p className="dev-cvr__table-hint">
+        Click a cost code to view system forecast, enter a commercial adjustment, or
+        review adjustment history.
+      </p>
     </div>
   );
 }

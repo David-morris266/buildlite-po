@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import PODrawerShell from './PODrawerShell';
-import { PLOT_DEFAULT_STATUS } from '../developments/plotMaster';
+import { PLOT_DEFAULT_STATUS, PLOT_CONFIGURATION_SUGGESTIONS } from '../developments/plotMaster';
 
 const EMPTY_FORM = {
   plotNumber: '',
   houseType: '',
+  configuration: '',
   bedrooms: '',
   gia: '',
   phase: '',
@@ -26,6 +27,7 @@ export default function PlotDrawer({
       setForm({
         plotNumber: plot.plotNumber || '',
         houseType: plot.houseType || '',
+        configuration: plot.configuration || '',
         bedrooms: plot.bedrooms ?? '',
         gia: plot.gia ?? '',
         phase: plot.phase || '',
@@ -101,6 +103,22 @@ export default function PlotDrawer({
                 onChange={(event) => updateField('houseType', event.target.value)}
                 required
               />
+            </label>
+            <label className="dev-form__field">
+              <span className="dev-form__label">Configuration</span>
+              <input
+                className="input"
+                type="text"
+                list="plot-configuration-suggestions"
+                value={form.configuration}
+                onChange={(event) => updateField('configuration', event.target.value)}
+                placeholder="e.g. Detached, End Terrace"
+              />
+              <datalist id="plot-configuration-suggestions">
+                {PLOT_CONFIGURATION_SUGGESTIONS.map((value) => (
+                  <option key={value} value={value} />
+                ))}
+              </datalist>
             </label>
             <label className="dev-form__field">
               <span className="dev-form__label">Bedrooms</span>

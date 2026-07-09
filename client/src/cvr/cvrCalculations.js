@@ -6,8 +6,52 @@ export function normaliseCostCodeKey(costCode) {
   const raw = String(costCode || '').trim();
   if (!raw) return '';
 
-  const codePart = raw.split('—')[0].split(' - ')[0].trim();
-  return codePart.toLowerCase();
+  let codePart = raw.split('—')[0].split(' - ')[0].split(' – ')[0].trim();
+  if (codePart.includes('-') && !/\s/.test(codePart)) {
+    const hyphenParts = codePart.split('-');
+    if (hyphenParts.length === 2 && hyphenParts[0].length <= 12) {
+      codePart = hyphenParts[0].trim();
+    }
+  }
+
+  return codePart.replace(/\s+/g, '').toLowerCase();
+}
+
+export function stripLeadingZeros(value) {
+  const text = String(value || '');
+  if (!text) return '';
+  const stripped = text.replace(/^0+/, '');
+  return stripped || text;
+}
+
+export function expandCostCodeKeys(costCode) {
+  const normalised = normaliseCostCodeKey(costCode);
+  if (!normalised) return [];
+
+  const keys = new Set([normalised]);
+  const withoutZeros = stripLeadingZeros(normalised);
+  if (withoutZeros) keys.add(withoutZeros);
+
+  const alphanumeric = normalised.replace(/[^a-z0-9]/gi, '');
+  if (alphanumeric) keys.add(alphanumeric.toLowerCase());
+
+  return [...keys];
+}
+
+export function findMatchingCostCodeKey(costCode, knownKeys) {
+  const candidates = expandCostCodeKeys(costCode);
+  for (const candidate of candidates) {
+    if (knownKeys.has(candidate)) return candidate;
+  }
+
+  for (const known of knownKeys) {
+    if (costCodesMatch(known, costCode)) return known;
+    if (stripLeadingZeros(known) === stripLeadingZeros(normaliseCostCodeKey(costCode))) {
+      return known;
+    }
+  }
+
+  return null;
 }
 
 export function buildCostCodeLabel(costCodeKey, fallback = '') {
@@ -36,9 +80,9 @@ export function calculateCostToComplete(forecastFinalCost, actualCost) {
 }
 
 export function calculateVariance(currentBudget, forecastFinalCost) {
-  const budget = roundMoney(currentBudget);
+  const budget = roundMoney(currentBudget) ?? 0;
   const forecast = roundMoney(forecastFinalCost);
-  if (budget == null || forecast == null) return null;
+  if (forecast == null) return null;
   return roundMoney(budget - forecast);
 }
 
@@ -64,29 +108,21 @@ export function sumNullable(values) {
   return hasValue ? roundMoney(total) : null;
 }
 
+export { enrichCvrForecastRow as enrichCvrRow } from './cvrForecastEngine.js';
+
 export function buildCvrTotals(rows) {
   return {
     originalBudget: sumNullable(rows.map((row) => row.originalBudget)),
     currentBudget: sumNullable(rows.map((row) => row.currentBudget)),
     committed: sumNullable(rows.map((row) => row.committed)),
+    certified: sumNullable(rows.map((row) => row.certified)),
     actualCost: sumNullable(rows.map((row) => row.actualCost)),
-    forecastFinalCost: sumNullable(rows.map((row) => row.forecastFinalCost)),
+    systemForecast: sumNullable(rows.map((row) => row.systemForecast)),
+    outstandingCertified: sumNullable(rows.map((row) => row.outstandingCertified)),
+    commercialAdjustment: sumNullable(rows.map((row) => row.commercialAdjustment)),
+    finalForecast: sumNullable(rows.map((row) => row.finalForecast)),
+    forecastFinalCost: sumNullable(rows.map((row) => row.finalForecast)),
     costToComplete: sumNullable(rows.map((row) => row.costToComplete)),
     variance: sumNullable(rows.map((row) => row.variance)),
-  };
-}
-
-export function enrichCvrRow(row) {
-  const costToComplete = calculateCostToComplete(
-    row.forecastFinalCost,
-    row.actualCost
-  );
-  const variance = calculateVariance(row.currentBudget, row.forecastFinalCost);
-
-  return {
-    ...row,
-    costToComplete,
-    variance,
-    varianceState: getVarianceState(variance),
   };
 }

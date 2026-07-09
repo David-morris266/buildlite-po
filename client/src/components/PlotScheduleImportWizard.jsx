@@ -359,6 +359,7 @@ export default function PlotScheduleImportWizard({
                 <tr>
                   <th>Plot</th>
                   <th>House Type</th>
+                  <th>Configuration</th>
                   <th>Bedrooms</th>
                   <th>GIA</th>
                   <th>Phase</th>
@@ -371,6 +372,7 @@ export default function PlotScheduleImportWizard({
                     <tr key={index}>
                       <td>{row.plotNumber || '—'}</td>
                       <td>{row.houseType || '—'}</td>
+                      <td>{row.configuration || '—'}</td>
                       <td>{formatPlotBedrooms(row.bedrooms)}</td>
                       <td>{formatPlotGia(row.gia)}</td>
                       <td>{row.phase || '—'}</td>
@@ -379,7 +381,7 @@ export default function PlotScheduleImportWizard({
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={6} className="po-data-table__empty">
+                    <td colSpan={7} className="po-data-table__empty">
                       No preview rows available yet.
                     </td>
                   </tr>

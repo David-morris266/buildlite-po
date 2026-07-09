@@ -6,6 +6,18 @@ import { getDevelopment, updateDevelopment } from './developmentStore';
 
 export const PLOT_DEFAULT_STATUS = 'Active';
 
+export const PLOT_CONFIGURATION_SUGGESTIONS = [
+  'Detached',
+  'Semi Detached',
+  'Mid Terrace',
+  'End Terrace',
+  'Apartment',
+  'Maisonette',
+  'Bungalow',
+  'Three Storey',
+  'FOG',
+];
+
 export function normalizePlotMaster(development) {
   if (!development) return null;
   if (development.plotMaster?.plots) return development;
@@ -43,6 +55,7 @@ function normalizePlotInput(input, existing = null) {
     id: existing?.id || newPlotId(),
     plotNumber,
     houseType,
+    configuration: String(input.configuration || '').trim(),
     bedrooms:
       bedroomsRaw === '' || bedroomsRaw == null
         ? null
@@ -147,6 +160,7 @@ export function replacePlotMaster(developmentId, plots) {
       ...plot,
       plotNumber: plot.plotNumber,
       houseType: plot.houseType,
+      configuration: plot.configuration,
       bedrooms: plot.bedrooms,
       gia: plot.gia,
       phase: plot.phase,

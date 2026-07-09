@@ -197,6 +197,43 @@ function isBlankRow(values) {
   return values.every((cell) => !String(cell || '').trim());
 }
 
+/**
+ * Summary / total rows that should not be imported as plot or line items.
+ */
+export function isSummaryTotalRow(label) {
+  const text = normaliseHeader(label);
+  if (!text) return false;
+
+  if (
+    /^(grand total|overall total|plot totals?|sub\s*total|subtotal|totals?|sum)$/.test(
+      text
+    )
+  ) {
+    return true;
+  }
+
+  if (text.includes('grand total') || text.includes('overall total')) {
+    return true;
+  }
+
+  return /^plot totals?$/.test(text);
+}
+
+/**
+ * Locate the plot × stage header row (stage names come from uploaded headers).
+ */
+export function detectPlotStageHeaderRowIndex(rows) {
+  const scanLimit = Math.min(rows.length, 25);
+
+  for (let index = 0; index < scanLimit; index += 1) {
+    if (detectPlotStageLayout(rows, index)) {
+      return index;
+    }
+  }
+
+  return detectHeaderRowIndex(rows);
+}
+
 function buildNotesBase(row, fieldByColumn) {
   const parts = [];
   const notesIndex = fieldByColumn.indexOf('notes');
@@ -226,6 +263,10 @@ export function buildImportPreview(rows, headerRowIndex, fieldByColumn, limit = 
     const descriptionIndex = fieldByColumn.indexOf('description');
     const valueIndex = fieldByColumn.indexOf('orderValue');
     const notesIndex = fieldByColumn.indexOf('notes');
+    const description =
+      descriptionIndex >= 0 ? String(row[descriptionIndex] || '').trim() : '';
+
+    if (isSummaryTotalRow(description)) continue;
 
     preview.push({
       description:
@@ -291,6 +332,10 @@ export function validateAndBuildImportRows(
     const rawValue = row[valueIndex];
     const parsedValue = parseMoneyCell(rawValue);
     const notes = buildNotesBase(row, fieldByColumn);
+
+    if (isSummaryTotalRow(description)) {
+      return;
+    }
 
     if (!description) {
       missingValues += 1;
@@ -386,6 +431,20 @@ function isPlotHeaderCell(value) {
   );
 }
 
+function extractPlotStageHeaders(headerRow) {
+  const stages = [];
+  const columnIndexes = [];
+
+  (headerRow || []).slice(1).forEach((cell, offset) => {
+    const header = String(cell || '').trim();
+    if (!header || isSummaryTotalRow(header)) return;
+    stages.push(header);
+    columnIndexes.push(offset + 1);
+  });
+
+  return { stages, columnIndexes };
+}
+
 /**
  * Doc 32 — Detect housebuilder plot × stage valuation matrices.
  */
@@ -394,19 +453,16 @@ export function detectPlotStageLayout(rows, headerRowIndex = 0) {
   if (headerRow.length < 3) return false;
   if (!isPlotHeaderCell(headerRow[0])) return false;
 
-  const stages = headerRow
-    .slice(1)
-    .map((cell) => String(cell || '').trim())
-    .filter(Boolean);
+  const { stages, columnIndexes } = extractPlotStageHeaders(headerRow);
   if (stages.length < 2) return false;
 
   let plotRows = 0;
   for (const row of rows.slice(headerRowIndex + 1)) {
     if (isBlankRow(row)) continue;
     const plotLabel = String(row[0] || '').trim();
-    if (!plotLabel) continue;
-    const numericValues = row
-      .slice(1, 1 + stages.length)
+    if (!plotLabel || isSummaryTotalRow(plotLabel)) continue;
+    const numericValues = columnIndexes
+      .map((index) => row[index])
       .filter((cell) => parseMoneyCell(cell) != null);
     if (numericValues.length >= 1) plotRows += 1;
   }
@@ -416,20 +472,17 @@ export function detectPlotStageLayout(rows, headerRowIndex = 0) {
 
 export function buildPlotStagePreview(rows, headerRowIndex, limit = 5) {
   const headerRow = rows[headerRowIndex] || [];
-  const stages = headerRow
-    .slice(1)
-    .map((cell) => String(cell || '').trim())
-    .filter(Boolean);
+  const { stages, columnIndexes } = extractPlotStageHeaders(headerRow);
   const preview = [];
 
   for (const row of rows.slice(headerRowIndex + 1)) {
     if (preview.length >= limit) break;
     if (isBlankRow(row)) continue;
     const plot = String(row[0] || '').trim();
-    if (!plot) continue;
+    if (!plot || isSummaryTotalRow(plot)) continue;
     preview.push({
       plot,
-      values: stages.map((_, index) => parseMoneyCell(row[index + 1])),
+      values: columnIndexes.map((index) => parseMoneyCell(row[index])),
     });
   }
 
@@ -440,10 +493,7 @@ export function buildPlotStageImport(rows, headerRowIndex, committedValue) {
   const warnings = [];
   const errors = [];
   const headerRow = rows[headerRowIndex] || [];
-  const stages = headerRow
-    .slice(1)
-    .map((cell) => String(cell || '').trim())
-    .filter(Boolean);
+  const { stages, columnIndexes } = extractPlotStageHeaders(headerRow);
 
   if (!isPlotHeaderCell(headerRow[0])) {
     errors.push('The first column must identify each plot.');
@@ -463,10 +513,10 @@ export function buildPlotStageImport(rows, headerRowIndex, committedValue) {
     }
 
     const label = String(row[0] || '').trim();
-    if (!label) continue;
+    if (!label || isSummaryTotalRow(label)) continue;
 
-    const values = stages.map((_, index) => {
-      const parsed = parseMoneyCell(row[index + 1]);
+    const values = columnIndexes.map((index) => {
+      const parsed = parseMoneyCell(row[index]);
       return parsed == null ? 0 : parsed;
     });
 

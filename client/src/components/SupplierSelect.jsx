@@ -1,6 +1,26 @@
 // client/src/components/SupplierSelect.jsx
 import React, { useEffect, useMemo, useState } from 'react';
-import { listSuppliers, createSupplier } from '../api';
+import { listSuppliers, createSupplier, updateSupplier } from '../api';
+import {
+  SUPPLIER_TYPES,
+  getSuggestedOrderTypeForSupplier,
+  getSupplierTypeMeta,
+} from '../suppliers/supplierTypes';
+
+const EMPTY_FORM = {
+  name: '',
+  supplierType: 'subcontractor',
+  address1: '',
+  address2: '',
+  city: '',
+  postcode: '',
+  contactName: '',
+  contactEmail: '',
+  contactPhone: '',
+  vatNumber: '',
+  termsDays: 30,
+  notes: '',
+};
 
 /**
  * SupplierSelect
@@ -8,34 +28,22 @@ import { listSuppliers, createSupplier } from '../api';
  * - value: supplier id (string) OR object { id, name, ... }
  * - onChange: called with { id, name } OR null
  * - onSelectFull: (optional) full supplier object on select/create
+ * - onSuggestedOrderType: (optional) suggested PO order type (M/S/P)
  * - showLabel: show the internal <label> (default true).
  */
 export default function SupplierSelect({
   value,
   onChange,
   onSelectFull,
+  onSuggestedOrderType,
   showLabel = true,
 }) {
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState(null);
+  const [form, setForm] = useState(EMPTY_FORM);
 
-  // New-supplier form state
-  const [form, setForm] = useState({
-    name: '',
-    address1: '',
-    address2: '',
-    city: '',
-    postcode: '',
-    contactName: '',
-    contactEmail: '',
-    contactPhone: '',
-    vatNumber: '',
-    termsDays: 30,
-    notes: '',
-  });
-
-  // Normalise current value to an id
   const currentId = useMemo(() => {
     if (!value) return '';
     if (typeof value === 'string') return value;
@@ -45,16 +53,23 @@ export default function SupplierSelect({
     return '';
   }, [value]);
 
+  const selectedSupplier = useMemo(
+    () => suppliers.find((item) => String(item.id) === String(currentId)) || null,
+    [suppliers, currentId]
+  );
+
   const selectAndEmit = (sup) => {
     if (sup) {
       onChange?.({ id: sup.id, name: sup.name });
       onSelectFull?.(sup);
+      onSuggestedOrderType?.(getSuggestedOrderTypeForSupplier(sup));
     } else {
       onChange?.(null);
+      onSelectFull?.(null);
+      onSuggestedOrderType?.(null);
     }
   };
 
-  // Load suppliers from API helper
   useEffect(() => {
     (async () => {
       try {
@@ -72,49 +87,62 @@ export default function SupplierSelect({
   const handleSelect = (e) => {
     const id = e.target.value;
     if (id === '__new__') {
+      setEditingSupplier(null);
+      setForm(EMPTY_FORM);
       setShowModal(true);
       return;
     }
-    const full =
-      suppliers.find((s) => String(s.id) === String(id)) || null;
+    if (id === '__edit__') {
+      if (!selectedSupplier) return;
+      setEditingSupplier(selectedSupplier);
+      setForm({
+        name: selectedSupplier.name || '',
+        supplierType: selectedSupplier.supplierType || 'other',
+        address1: selectedSupplier.address1 || '',
+        address2: selectedSupplier.address2 || '',
+        city: selectedSupplier.city || '',
+        postcode: selectedSupplier.postcode || '',
+        contactName: selectedSupplier.contactName || '',
+        contactEmail: selectedSupplier.contactEmail || '',
+        contactPhone: selectedSupplier.contactPhone || '',
+        vatNumber: selectedSupplier.vatNumber || '',
+        termsDays: selectedSupplier.termsDays ?? 30,
+        notes: selectedSupplier.notes || '',
+      });
+      setShowModal(true);
+      return;
+    }
+    const full = suppliers.find((s) => String(s.id) === String(id)) || null;
     selectAndEmit(full);
   };
 
   const handleChangeField = (field) => (e) => {
-    const value =
+    const nextValue =
       field === 'termsDays' ? Number(e.target.value || 0) : e.target.value;
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm((prev) => ({ ...prev, [field]: nextValue }));
   };
 
   const closeModal = () => {
     setShowModal(false);
-    setForm({
-      name: '',
-      address1: '',
-      address2: '',
-      city: '',
-      postcode: '',
-      contactName: '',
-      contactEmail: '',
-      contactPhone: '',
-      vatNumber: '',
-      termsDays: 30,
-      notes: '',
-    });
+    setEditingSupplier(null);
+    setForm(EMPTY_FORM);
   };
 
   const saveSupplier = async (e) => {
     e.preventDefault();
     try {
-      const saved = await createSupplier(form);
+      const saved = editingSupplier
+        ? await updateSupplier(editingSupplier.id, form)
+        : await createSupplier(form);
 
-      // Add to list and select it
-      setSuppliers((prev) => [saved, ...prev]);
+      setSuppliers((prev) => {
+        const next = prev.filter((item) => String(item.id) !== String(saved.id));
+        return [saved, ...next];
+      });
       selectAndEmit(saved);
-
       closeModal();
     } catch (err) {
-      console.error('createSupplier failed:', err);
+      console.error('saveSupplier failed:', err);
       alert(err.message || 'Failed to save supplier');
     }
   };
@@ -130,6 +158,10 @@ export default function SupplierSelect({
     );
   }
 
+  const supplierTypeLabel = selectedSupplier
+    ? getSupplierTypeMeta(selectedSupplier.supplierType)?.label || 'Other'
+    : null;
+
   return (
     <div className="field">
       {showLabel && <label>Supplier</label>}
@@ -138,24 +170,27 @@ export default function SupplierSelect({
         {suppliers.map((s) => (
           <option key={s.id} value={s.id}>
             {s.name}
+            {s.supplierType
+              ? ` · ${getSupplierTypeMeta(s.supplierType)?.label || 'Other'}`
+              : ''}
           </option>
         ))}
         <option value="__new__">➕ Add new supplier…</option>
+        {selectedSupplier ? (
+          <option value="__edit__">✎ Edit selected supplier…</option>
+        ) : null}
       </select>
+      {supplierTypeLabel ? (
+        <p className="po-field__hint">Supplier type: {supplierTypeLabel}</p>
+      ) : null}
       {!loading && suppliers.length === 0 ? (
         <p className="po-field__hint">No suppliers yet.</p>
       ) : null}
 
       {showModal && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={closeModal}
-        >
-          <div
-            className="modal"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <h3>New Supplier</h3>
+        <div className="modal-backdrop" onMouseDown={closeModal}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+            <h3>{editingSupplier ? 'Edit Supplier' : 'New Supplier'}</h3>
             <form className="grid2" onSubmit={saveSupplier}>
               <label>
                 Name
@@ -166,10 +201,32 @@ export default function SupplierSelect({
                 />
               </label>
               <label>
+                Supplier Type
+                <select
+                  value={form.supplierType}
+                  onChange={handleChangeField('supplierType')}
+                >
+                  {SUPPLIER_TYPES.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
                 VAT No.
                 <input
                   value={form.vatNumber}
                   onChange={handleChangeField('vatNumber')}
+                />
+              </label>
+              <label>
+                Terms (days)
+                <input
+                  type="number"
+                  min="0"
+                  value={form.termsDays}
+                  onChange={handleChangeField('termsDays')}
                 />
               </label>
 
@@ -190,10 +247,7 @@ export default function SupplierSelect({
 
               <label>
                 City/Town
-                <input
-                  value={form.city}
-                  onChange={handleChangeField('city')}
-                />
+                <input value={form.city} onChange={handleChangeField('city')} />
               </label>
               <label>
                 Postcode
@@ -226,15 +280,6 @@ export default function SupplierSelect({
                   onChange={handleChangeField('contactPhone')}
                 />
               </label>
-              <label>
-                Terms (days)
-                <input
-                  type="number"
-                  min="0"
-                  value={form.termsDays}
-                  onChange={handleChangeField('termsDays')}
-                />
-              </label>
 
               <label style={{ gridColumn: '1 / -1' }}>
                 Notes
@@ -245,17 +290,13 @@ export default function SupplierSelect({
                 />
               </label>
 
-              <div
-                className="modal-actions"
-                style={{ gridColumn: '1 / -1' }}
-              >
-                <button
-                  type="button"
-                  onClick={closeModal}
-                >
+              <div className="modal-actions" style={{ gridColumn: '1 / -1' }}>
+                <button type="button" onClick={closeModal}>
                   Cancel
                 </button>
-                <button type="submit">Save Supplier</button>
+                <button type="submit">
+                  {editingSupplier ? 'Save Changes' : 'Save Supplier'}
+                </button>
               </div>
             </form>
           </div>

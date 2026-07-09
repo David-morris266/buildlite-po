@@ -11,6 +11,7 @@ import {
   submitCertificate,
   updateCertificateProgress,
 } from '../payments/paymentCertificateStore';
+import { notifyCommercialChanged } from '../commercial/commercialEvents';
 import {
   buildCertificateAuditItems,
   buildCertificateHeaderMeta,
@@ -92,7 +93,7 @@ export default function PaymentCertificateDetail({
 
   const summary = useMemo(() => {
     void refreshToken;
-    return summarizeCertificateProgress(order.orderKey, certificateId);
+    return summarizeCertificateProgress(order.orderKey, certificateId, order);
   }, [order.orderKey, certificateId, refreshToken]);
 
   const certificate = summary?.certificate || getCertificate(order.orderKey, certificateId);
@@ -125,6 +126,11 @@ export default function PaymentCertificateDetail({
     approveCertificate(order.orderKey, certificateId, summary?.totals || {});
     setDialog(null);
     refresh();
+    notifyCommercialChanged({
+      source: 'certificate',
+      orderKey: order.orderKey,
+      certificateId,
+    });
   }
 
   function handleRejectConfirm() {
@@ -251,6 +257,7 @@ export default function PaymentCertificateDetail({
           orderKey={order.orderKey}
           certificate={certificate}
           matrix={summary?.matrix}
+          developmentId={order.developmentId}
           editable={editable}
           auditItems={auditItems}
           onProgressChange={handleProgressChange}

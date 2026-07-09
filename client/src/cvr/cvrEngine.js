@@ -13,17 +13,27 @@ import {
 import { listTransactions } from '../ledger/ledgerTransactionStore';
 import {
   CVR_CURRENT_PERIOD,
+  CVR_DEFAULT_PERIOD_KEY,
   getDevelopmentNotes,
   listCostCentres,
   upsertAutoCostCentre,
 } from './costCentreStore';
 import {
   buildCvrTotals,
-  enrichCvrRow,
   normaliseCostCodeKey,
   buildCostCodeLabel,
   costCodesMatch,
 } from './cvrCalculations';
+import { enrichCvrForecastRow } from './cvrForecastEngine';
+import {
+  calculatePackageCertifiedValue,
+  enrichCvrCertifiedFields,
+  getApprovedCertificateValue,
+} from './cvrCertifiedValue';
+import {
+  isApprovedCommercialCertificate,
+  listCertificates,
+} from '../payments/paymentCertificateStore';
 
 function isApprovedPo(po) {
   if (!po || po.archived === true) return false;
@@ -74,56 +84,108 @@ export function buildActualsByCostCode(developmentId) {
   return { totals, labels };
 }
 
+export function buildCertifiedByCostCode(developmentId, pos = []) {
+  const totals = new Map();
+  const labels = new Map();
+  const hasPackage = new Set();
+
+  for (const order of buildSubcontractOrdersFromPos(pos)) {
+    if (order.developmentId !== developmentId) continue;
+
+    const key = normaliseCostCodeKey(order.costCode);
+    if (!key) continue;
+
+    hasPackage.add(key);
+    totals.set(
+      key,
+      (totals.get(key) || 0) + calculatePackageCertifiedValue(order.orderKey)
+    );
+
+    if (!labels.has(key)) {
+      labels.set(key, buildCostCodeLabel(key, order.costCode));
+    }
+  }
+
+  return { totals, labels, hasPackage };
+}
+
 function collectCostCodeKeys(sources) {
   const keys = new Set();
   for (const source of sources) {
     for (const key of source.totals.keys()) {
       keys.add(key);
     }
+    if (source.hasPackage) {
+      for (const key of source.hasPackage) {
+        keys.add(key);
+      }
+    }
   }
   return keys;
 }
 
 export function buildCvrRows(developmentId, options = {}) {
-  const periodKey = options.periodKey || CVR_CURRENT_PERIOD;
+  const periodKey = options.periodKey || CVR_DEFAULT_PERIOD_KEY;
   const pos = options.pos || [];
 
   const commitments = buildCommitmentsByCostCode(developmentId, pos);
+  const certified = buildCertifiedByCostCode(developmentId, pos);
   const actuals = buildActualsByCostCode(developmentId);
   const manualCentres = listCostCentres(developmentId, periodKey);
 
-  const allKeys = collectCostCodeKeys([commitments, actuals]);
-  for (const centre of manualCentres) {
-    if (centre.costCodeKey) allKeys.add(centre.costCodeKey);
-  }
+  const allKeys = collectCostCodeKeys([commitments, certified, actuals]);
+  const manualByKey = new Map();
 
-  const manualByKey = new Map(
-    manualCentres.map((centre) => [centre.costCodeKey, centre])
-  );
+  for (const centre of manualCentres) {
+    const key = normaliseCostCodeKey(centre.costCodeKey);
+    if (!key) continue;
+    allKeys.add(key);
+    if (!manualByKey.has(key)) {
+      manualByKey.set(key, { ...centre, costCodeKey: key });
+    }
+  }
 
   const rows = [...allKeys].map((key) => {
     const manual = manualByKey.get(key);
     const label =
       manual?.costCodeLabel ||
       commitments.labels.get(key) ||
+      certified.labels.get(key) ||
       actuals.labels.get(key) ||
       buildCostCodeLabel(key);
 
-    return enrichCvrRow({
-      id: manual?.id || `auto-${key}`,
-      costCodeKey: key,
-      costCodeLabel: label,
-      description: manual?.description || '',
-      originalBudget: manual?.originalBudget ?? null,
-      currentBudget: manual?.currentBudget ?? null,
-      committed: commitments.totals.get(key) ?? null,
-      actualCost: actuals.totals.get(key) ?? null,
-      forecastFinalCost: manual?.forecastFinalCost ?? null,
-      commercialNotes: manual?.commercialNotes || '',
-      forecastNotes: manual?.forecastNotes || '',
-      isManual: Boolean(manual),
-      canDelete: !commitments.totals.get(key) && !actuals.totals.get(key),
-    });
+    const hasManualBudget =
+      manual &&
+      (manual.originalBudget != null || manual.currentBudget != null);
+
+    const certifiedValue = certified.hasPackage.has(key)
+      ? certified.totals.get(key) ?? 0
+      : hasManualBudget
+        ? 0
+        : null;
+
+    return enrichCvrCertifiedFields(
+      enrichCvrForecastRow({
+        id: manual?.id || `auto-${key}`,
+        costCodeKey: key,
+        costCodeLabel: label,
+        description: manual?.description || '',
+        originalBudget: manual?.originalBudget ?? null,
+        currentBudget: manual?.currentBudget ?? null,
+        committed: commitments.totals.get(key) ?? (hasManualBudget ? 0 : null),
+        certified: certifiedValue,
+        actualCost: actuals.totals.get(key) ?? (hasManualBudget ? 0 : null),
+        commercialAdjustment: manual?.commercialAdjustment ?? 0,
+        commercialReason: manual?.commercialReason || '',
+        adjustmentHistory: manual?.adjustmentHistory || [],
+        commercialNotes: manual?.commercialNotes || '',
+        isManual: Boolean(manual),
+        canDelete:
+          !commitments.totals.get(key) &&
+          !certified.hasPackage.has(key) &&
+          !actuals.totals.get(key),
+      })
+    );
   });
 
   rows.sort((a, b) => a.costCodeLabel.localeCompare(b.costCodeLabel, undefined, {
@@ -134,7 +196,7 @@ export function buildCvrRows(developmentId, options = {}) {
 }
 
 export function buildCvrModel(developmentId, options = {}) {
-  const periodKey = options.periodKey || CVR_CURRENT_PERIOD;
+  const periodKey = options.periodKey || CVR_DEFAULT_PERIOD_KEY;
   const rows = buildCvrRows(developmentId, options);
   const totals = buildCvrTotals(rows);
 
@@ -148,8 +210,13 @@ export function buildCvrModel(developmentId, options = {}) {
       originalBudget: totals.originalBudget,
       currentBudget: totals.currentBudget,
       committed: totals.committed,
+      certified: totals.certified,
       actualCost: totals.actualCost,
-      forecastFinalCost: totals.forecastFinalCost,
+      outstandingCertified: totals.outstandingCertified,
+      systemForecast: totals.systemForecast,
+      commercialAdjustment: totals.commercialAdjustment,
+      finalForecast: totals.finalForecast,
+      forecastFinalCost: totals.finalForecast,
       variance: totals.variance,
       costToComplete: totals.costToComplete,
       grossMargin: null,
@@ -169,9 +236,41 @@ export function buildPackagesForCostCentre(developmentId, costCodeKey, pos = [])
     label: order.supplierLabel,
     costCode: order.costCode,
     committedValue: order.committedValue,
+    certifiedValue: calculatePackageCertifiedValue(order.orderKey),
     poNumbers: order.poNumbers,
     certificateCount: order.certificateCount,
   }));
+}
+
+export function buildCertificatesForCostCentre(developmentId, costCodeKey, pos = []) {
+  const orders = buildSubcontractOrdersFromPos(pos).filter(
+    (order) =>
+      order.developmentId === developmentId &&
+      costCodesMatch(order.costCode, costCodeKey)
+  );
+
+  const certificates = [];
+
+  for (const order of orders) {
+    for (const certificate of listCertificates(order.orderKey)) {
+      certificates.push({
+        id: certificate.id,
+        orderKey: order.orderKey,
+        packageLabel: order.supplierLabel,
+        certificateNumber: certificate.certificateNumber,
+        status: certificate.status,
+        certificateDate: certificate.certificateDate,
+        grossValue: certificate.grossValue,
+        netValue: certificate.netValue,
+        isApproved: isApprovedCommercialCertificate(certificate),
+        certifiedValue: getApprovedCertificateValue(certificate),
+      });
+    }
+  }
+
+  return certificates
+    .filter((item) => item.isApproved)
+    .sort((a, b) => a.certificateNumber - b.certificateNumber);
 }
 
 export function buildLedgerRowsForCostCentre(developmentId, costCodeKey) {
@@ -188,13 +287,18 @@ export function buildLedgerRowsForCostCentre(developmentId, costCodeKey) {
     }));
 }
 
-export function ensureDiscoveredCostCentres(developmentId, pos = [], periodKey = CVR_CURRENT_PERIOD) {
+export function ensureDiscoveredCostCentres(developmentId, pos = [], periodKey = CVR_DEFAULT_PERIOD_KEY) {
   const commitments = buildCommitmentsByCostCode(developmentId, pos);
+  const certified = buildCertifiedByCostCode(developmentId, pos);
   const actuals = buildActualsByCostCode(developmentId);
-  const keys = collectCostCodeKeys([commitments, actuals]);
+  const keys = collectCostCodeKeys([commitments, certified, actuals]);
 
   for (const key of keys) {
-    const label = commitments.labels.get(key) || actuals.labels.get(key) || buildCostCodeLabel(key);
+    const label =
+      commitments.labels.get(key) ||
+      certified.labels.get(key) ||
+      actuals.labels.get(key) ||
+      buildCostCodeLabel(key);
     upsertAutoCostCentre(developmentId, { costCodeKey: key, costCodeLabel: label }, periodKey);
   }
 }

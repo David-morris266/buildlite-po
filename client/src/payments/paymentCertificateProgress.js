@@ -3,17 +3,132 @@
  */
 
 import { formatMoney } from '../components/poDrawerHelpers';
+import { getPlots } from '../developments/plotMaster';
 import { loadOrderMatrix } from './orderMatrixStore';
+import {
+  calculateCertificateCellValues,
+  normalizePct,
+  resolveThisCertificatePct,
+  roundMoney,
+  roundPct,
+  validateThisCertificatePct as validateThisCertificatePctCore,
+} from './paymentCertificateCalculations';
 import {
   getCertificate,
   isApprovedCommercialCertificate,
   listCertificates,
 } from './paymentCertificateStore';
 
+export {
+  normalizePct,
+  resolveThisCertificatePct,
+  calculateCertificateCellValues,
+  sumPreviousApprovedProgress,
+} from './paymentCertificateCalculations';
+
 export const PROGRESS_PRESETS = [10, 25, 40, 50, 60, 75, 90, 100];
 
-const RETENTION_RATE = 0.05;
-const VAT_RATE = 0.2;
+const DEFAULT_RETENTION_RATE = 0.05;
+const DEFAULT_VAT_RATE = 0.2;
+
+function extractPoVatRate(po) {
+  const raw = Number(po?.totals?.vatRate ?? po?.vatRateDefault ?? DEFAULT_VAT_RATE);
+  if (raw === 0) return 0;
+  if (Math.abs(raw - 0.05) < 0.001) return 0.05;
+  if (Math.abs(raw - 0.2) < 0.001) return 0.2;
+  if (raw > 1) {
+    if (raw === 5) return 0.05;
+    if (raw === 20) return 0.2;
+    return raw / 100;
+  }
+  return Number.isFinite(raw) ? raw : DEFAULT_VAT_RATE;
+}
+
+function extractPoRetentionRate(po) {
+  const raw = Number(
+    po?.totals?.retentionRate ?? po?.retentionRateDefault ?? DEFAULT_RETENTION_RATE
+  );
+  if (raw === 0) return 0;
+  if (raw > 1) return raw / 100;
+  return Number.isFinite(raw) ? raw : DEFAULT_RETENTION_RATE;
+}
+
+export function getOrderVatRate(order) {
+  const pos = order?.pos?.length
+    ? order.pos
+    : order?.po
+      ? [order.po]
+      : [];
+
+  if (!pos.length) return DEFAULT_VAT_RATE;
+
+  let primary = pos[0];
+  let maxNet = 0;
+  for (const po of pos) {
+    const net = Number(po.subtotal) || Number(po.totals?.net) || 0;
+    if (net >= maxNet) {
+      maxNet = net;
+      primary = po;
+    }
+  }
+
+  return extractPoVatRate(primary);
+}
+
+export function getOrderRetentionRate(order) {
+  const pos = order?.pos?.length
+    ? order.pos
+    : order?.po
+      ? [order.po]
+      : [];
+
+  if (!pos.length) return DEFAULT_RETENTION_RATE;
+
+  let primary = pos[0];
+  let maxNet = 0;
+  for (const po of pos) {
+    const net = Number(po.subtotal) || Number(po.totals?.net) || 0;
+    if (net >= maxNet) {
+      maxNet = net;
+      primary = po;
+    }
+  }
+
+  return extractPoRetentionRate(primary);
+}
+
+function buildPlotMasterLookup(developmentId) {
+  const lookup = new Map();
+  if (!developmentId) return lookup;
+
+  for (const plot of getPlots(developmentId)) {
+    const key = String(plot.plotNumber || '').trim().toLowerCase();
+    if (key) lookup.set(key, plot);
+  }
+
+  return lookup;
+}
+
+function enrichPlotLabel(label, plotMasterLookup) {
+  const plot = plotMasterLookup.get(String(label || '').trim().toLowerCase());
+  if (!plot) {
+    return {
+      plotLabel: label,
+      houseType: '',
+      configuration: '',
+    };
+  }
+
+  const houseType = String(plot.houseType || '').trim();
+  const configuration = String(plot.configuration || '').trim();
+  const suffix = [houseType, configuration].filter(Boolean).join(' · ');
+
+  return {
+    plotLabel: suffix ? `${label} — ${suffix}` : label,
+    houseType,
+    configuration,
+  };
+}
 
 export function buildCellKey(plotIndex, stageIndex) {
   return `${plotIndex}::${stageIndex}`;
@@ -27,22 +142,12 @@ export function parseCellKey(cellKey) {
   };
 }
 
-function roundMoney(value) {
-  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
-}
-
-function roundPct(value) {
-  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
-}
-
-function normalizePct(value) {
-  const n = Number.parseFloat(String(value));
-  if (!Number.isFinite(n)) return 0;
-  return roundPct(n);
-}
-
 export function getCellProgress(certificate, cellKey) {
   return certificate?.progress?.[cellKey]?.thisCertificatePct ?? 0;
+}
+
+export function validateThisCertificatePct(previousCumulativePct, rawEntry, options) {
+  return validateThisCertificatePctCore(previousCumulativePct, rawEntry, options);
 }
 
 export function getPreviousProgressForCell(orderKey, certificate, cellKey) {
@@ -67,21 +172,6 @@ export function getPreviousProgressForCell(orderKey, certificate, cellKey) {
     previousCumulativePct: cumulativePct,
     previousCertificateNumber: lastCertNumber,
   };
-}
-
-export function validateThisCertificatePct(previousCumulativePct, thisCertificatePct) {
-  const pct = normalizePct(thisCertificatePct);
-  const errors = [];
-
-  if (pct < 0) {
-    errors.push('Progress cannot be negative.');
-  }
-
-  if (pct + previousCumulativePct > 100.005) {
-    errors.push('Progress cannot exceed 100% cumulative.');
-  }
-
-  return { pct, errors, valid: errors.length === 0 };
 }
 
 export function getCellVisualState({ cumulativePct, thisCertificatePct, hasError, selected }) {
@@ -113,11 +203,11 @@ export function buildCertificateCellModel({
     thisCertificatePct
   );
   const pct = validation.pct;
-  const cumulativePct = roundPct(Math.min(100, previousCumulativePct + pct));
-  const previousValue = roundMoney((contract * previousCumulativePct) / 100);
-  const thisCertificateValue = roundMoney((contract * pct) / 100);
-  const certifiedToDateValue = roundMoney((contract * cumulativePct) / 100);
-  const remainingValue = roundMoney(Math.max(0, contract - certifiedToDateValue));
+  const values = calculateCertificateCellValues({
+    previousCumulativePct,
+    thisCertificatePct: pct,
+    contractValue: contract,
+  });
 
   return {
     cellKey,
@@ -126,20 +216,20 @@ export function buildCertificateCellModel({
     plotLabel,
     stageLabel,
     contractValue: contract,
-    previousCumulativePct,
+    previousCumulativePct: values.previousCumulativePct,
     previousCertificateNumber,
-    thisCertificatePct: pct,
-    cumulativePct,
-    previousValue,
-    thisCertificateValue,
-    certifiedToDateValue,
-    remainingValue,
+    thisCertificatePct: values.thisCertificatePct,
+    cumulativePct: values.cumulativePct,
+    previousValue: values.previousValue,
+    thisCertificateValue: values.thisCertificateValue,
+    certifiedToDateValue: values.certifiedToDateValue,
+    remainingValue: values.remainingValue,
     errors: validation.errors,
     valid: validation.valid,
     editable: certificate.status === 'draft',
     selected,
     visualState: getCellVisualState({
-      cumulativePct,
+      cumulativePct: values.cumulativePct,
       thisCertificatePct: pct,
       hasError: !validation.valid,
       selected: false,
@@ -151,7 +241,8 @@ export function buildCertificateValuationGrid(
   orderKey,
   certificate,
   matrix,
-  selectedKeys = new Set()
+  selectedKeys = new Set(),
+  options = {}
 ) {
   if (
     !matrix ||
@@ -162,7 +253,10 @@ export function buildCertificateValuationGrid(
     return null;
   }
 
+  const plotMasterLookup = buildPlotMasterLookup(options.developmentId);
+
   const rows = matrix.plots.map((plot, plotIndex) => {
+    const enriched = enrichPlotLabel(plot.label || String(plotIndex + 1), plotMasterLookup);
     const cells = matrix.stages.map((stageLabel, stageIndex) => {
       const cellKey = buildCellKey(plotIndex, stageIndex);
       const contractValue = Number(plot.values?.[stageIndex]) || 0;
@@ -173,7 +267,8 @@ export function buildCertificateValuationGrid(
         certificate,
         plotIndex,
         stageIndex,
-        plotLabel: plot.label || String(plotIndex + 1),
+        plotLabel: enriched.plotLabel,
+        houseType: enriched.houseType,
         stageLabel,
         contractValue,
         thisCertificatePct,
@@ -183,7 +278,8 @@ export function buildCertificateValuationGrid(
 
     return {
       plotIndex,
-      plotLabel: plot.label || String(plotIndex + 1),
+      plotLabel: enriched.plotLabel,
+      houseType: enriched.houseType,
       cells,
     };
   });
@@ -195,7 +291,11 @@ export function buildCertificateValuationGrid(
   };
 }
 
-export function buildCertificateCommercialTotals(cells, contractTotal) {
+export function buildCertificateCommercialTotals(
+  cells,
+  contractTotal,
+  { vatRate = DEFAULT_VAT_RATE, retentionRate = DEFAULT_RETENTION_RATE } = {}
+) {
   const grossThisCertificate = roundMoney(
     cells.reduce((sum, cell) => sum + cell.thisCertificateValue, 0)
   );
@@ -208,8 +308,8 @@ export function buildCertificateCommercialTotals(cells, contractTotal) {
   const remainingContract = roundMoney(
     Math.max(0, (Number(contractTotal) || 0) - certifiedToDate)
   );
-  const retention = roundMoney(grossThisCertificate * RETENTION_RATE);
-  const vat = roundMoney((grossThisCertificate - retention) * VAT_RATE);
+  const retention = roundMoney(grossThisCertificate * retentionRate);
+  const vat = roundMoney((grossThisCertificate - retention) * vatRate);
   const netPayment = roundMoney(grossThisCertificate - retention + vat);
 
   return {
@@ -224,19 +324,24 @@ export function buildCertificateCommercialTotals(cells, contractTotal) {
   };
 }
 
-export function summarizeCertificateProgress(orderKey, certificateId) {
+export function summarizeCertificateProgress(orderKey, certificateId, order = null) {
   const certificate = getCertificate(orderKey, certificateId);
   if (!certificate) return null;
 
   const matrix = loadOrderMatrix(orderKey);
-  const grid = buildCertificateValuationGrid(orderKey, certificate, matrix);
+  const grid = buildCertificateValuationGrid(orderKey, certificate, matrix, new Set(), {
+    developmentId: order?.developmentId,
+  });
   if (!grid) return null;
 
   const contractTotal = grid.cells.reduce(
     (sum, cell) => sum + cell.contractValue,
     0
   );
-  const totals = buildCertificateCommercialTotals(grid.cells, contractTotal);
+  const totals = buildCertificateCommercialTotals(grid.cells, contractTotal, {
+    vatRate: getOrderVatRate(order),
+    retentionRate: getOrderRetentionRate(order),
+  });
 
   return {
     certificate,

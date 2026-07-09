@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import POPageHeader from './POPageHeader';
 import { listCostCodes } from '../api';
+import { normaliseCostCodeKey } from '../cvr/cvrCalculations';
 import { isAcceptedCsvFile, extractHeaders } from '../ledger/csvImport';
 import {
   LEDGER_IMPORT_FIELDS,
@@ -77,7 +78,7 @@ export default function PurchaseLedgerImportWizard({
   const [selectedProfileId, setSelectedProfileId] = useState('');
   const [profileName, setProfileName] = useState('');
   const [importComplete, setImportComplete] = useState(null);
-  const [createUnknownCostCentres, setCreateUnknownCostCentres] = useState(false);
+  const [createUnknownCostCentres, setCreateUnknownCostCentres] = useState(true);
 
   const profiles = useMemo(
     () => listImportProfiles(development.id),
@@ -89,10 +90,9 @@ export default function PurchaseLedgerImportWizard({
     listCostCodes()
       .then((codes) => {
         if (cancelled) return;
-        const keys = (codes || []).map((item) => {
-          const code = String(item.code || item.label || '').split('—')[0].split(' - ')[0].trim();
-          return code.toLowerCase();
-        });
+        const keys = (codes || []).map((item) =>
+          normaliseCostCodeKey(item.code || item.label)
+        );
         setKnownCostCodes(keys.filter(Boolean));
       })
       .catch(() => {
@@ -577,7 +577,7 @@ export default function PurchaseLedgerImportWizard({
       ) : null}
 
       {currentStep?.id === 'validation' && validationResult ? (
-        <>
+        <div className="po-import-step po-import-step--validation">
           <section className="po-module-card po-import-step">
             <h2 className="po-matrix-section__title">Validation summary</h2>
             <p className="po-import-step__lead">
@@ -730,7 +730,7 @@ export default function PurchaseLedgerImportWizard({
             </section>
           ) : null}
 
-          <div className="po-import-step__actions">
+          <div className="po-import-step__actions po-import-step__actions--sticky">
             <button type="button" className="po-list-btn-secondary" onClick={goBack}>
               Back
             </button>
@@ -746,7 +746,7 @@ export default function PurchaseLedgerImportWizard({
               Cancel
             </button>
           </div>
-        </>
+        </div>
       ) : null}
 
       {currentStep?.id === 'import' && validationResult ? (

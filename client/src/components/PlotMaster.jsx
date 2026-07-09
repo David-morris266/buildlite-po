@@ -170,6 +170,7 @@ export default function PlotMaster({
               <tr>
                 <th>Plot</th>
                 <th>House Type</th>
+                <th>Configuration</th>
                 <th>Bedrooms</th>
                 <th>GIA</th>
                 <th>Phase</th>
@@ -183,6 +184,7 @@ export default function PlotMaster({
                 <tr key={plot.id}>
                   <td>{plot.plotNumber}</td>
                   <td>{plot.houseType}</td>
+                  <td>{plot.configuration || '—'}</td>
                   <td>{formatPlotBedrooms(plot.bedrooms)}</td>
                   <td>{formatPlotGia(plot.gia)}</td>
                   <td>{plot.phase || '—'}</td>

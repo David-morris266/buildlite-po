@@ -53,18 +53,6 @@ export default function BudgetEditor({
           placeholder="Enter amount"
         />
       </label>
-
-      <label className="dev-cvr-budget-editor__field">
-        <span>Forecast Final Cost</span>
-        <input
-          className="input"
-          type="text"
-          inputMode="decimal"
-          value={values.forecastFinalCost ?? ''}
-          onChange={(event) => onChange?.('forecastFinalCost', event.target.value)}
-          placeholder="Expected final cost"
-        />
-      </label>
     </div>
   );
 }

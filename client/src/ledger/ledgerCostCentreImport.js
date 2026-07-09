@@ -2,20 +2,22 @@
  * BL-012A — Create CVR cost codes from ledger import (localStorage).
  */
 
-import { normaliseCostCodeKey } from '../cvr/cvrCalculations';
+import { normaliseCostCodeKey, expandCostCodeKeys } from '../cvr/cvrCalculations';
 import {
-  CVR_CURRENT_PERIOD,
   getPeriodData,
   upsertAutoCostCentre,
 } from '../cvr/costCentreStore';
+import { getEditablePeriodKey } from '../cvr/cvrPeriodStore';
 
 export const DEFAULT_COMMERCIAL_FAMILY = 'Direct Cost';
 
 function readCostCentreKeys(developmentId) {
+  const periodKey = getEditablePeriodKey(developmentId);
   return new Set(
-    getPeriodData(developmentId, CVR_CURRENT_PERIOD).costCentres
+    getPeriodData(developmentId, periodKey).costCentres
       .filter((item) => item.active !== false)
-      .map((item) => item.costCodeKey)
+      .map((item) => normaliseCostCodeKey(item.costCodeKey))
+      .filter(Boolean)
   );
 }
 
@@ -39,8 +41,14 @@ export function buildImportCostCentreDescription(mapped = {}) {
 export function collectKnownCostCentreKeys(developmentId, apiCostCodeKeys = []) {
   const keys = readCostCentreKeys(developmentId);
   for (const key of apiCostCodeKeys) {
-    const normalised = normaliseCostCodeKey(key);
-    if (normalised) keys.add(normalised);
+    for (const variant of expandCostCodeKeys(key)) {
+      if (variant) keys.add(variant);
+    }
+  }
+  for (const key of [...keys]) {
+    for (const variant of expandCostCodeKeys(key)) {
+      if (variant) keys.add(variant);
+    }
   }
   return keys;
 }
@@ -53,6 +61,7 @@ export function createCostCentresFromImport(developmentId, pendingCostCentres = 
     const costCodeKey = normaliseCostCodeKey(pending.costCodeKey || pending.costCode);
     if (!costCodeKey || existingKeys.has(costCodeKey)) continue;
 
+    const periodKey = getEditablePeriodKey(developmentId);
     const costCentre = upsertAutoCostCentre(
       developmentId,
       {
@@ -61,7 +70,7 @@ export function createCostCentresFromImport(developmentId, pendingCostCentres = 
         description: pending.description || '',
         commercialFamily: pending.commercialFamily || DEFAULT_COMMERCIAL_FAMILY,
       },
-      CVR_CURRENT_PERIOD
+      periodKey
     );
 
     if (costCentre) {

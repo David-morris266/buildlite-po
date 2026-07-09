@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import POForm from "./components/POForm";
 import POList from "./components/POList";
 import POArchive from "./components/POArchive";
 import PaymentCertificates from "./components/PaymentCertificates";
 import Developments from "./components/Developments";
+import CVRPortfolio from "./components/CVRPortfolio";
 import DeveloperTools from "./components/DeveloperTools";
 import BrandHeader from "./components/Brandheader";
 import SetupAssistant, { dismissSetupAssistant, isSetupDismissed } from "./setup/SetupAssistant";
@@ -26,6 +27,11 @@ export default function App() {
     orderKey: null,
     tab: 'overview',
   });
+  const [cvrNav, setCvrNav] = useState({
+    developmentId: null,
+    periodKey: null,
+  });
+  const [cvrRefresh, setCvrRefresh] = useState(0);
 
   useEffect(() => {
     if (!localStorage.getItem("userEmail")) {
@@ -111,9 +117,32 @@ export default function App() {
             <DeveloperTools onBack={() => setTab("developments")} />
           </div>
         )}
+        {tab === "cvrs" && (
+          <div key="cvrs" className="po-page po-page-animate-in">
+            <CVRPortfolio
+              refreshToken={cvrRefresh}
+              onOpenDevelopmentCvr={(developmentId) => {
+                setCvrNav({ developmentId, periodKey: null });
+                setTab("developments");
+              }}
+              onOpenDevelopmentPeriod={(developmentId, periodKey) => {
+                setCvrNav({ developmentId, periodKey });
+                setTab("developments");
+              }}
+            />
+          </div>
+        )}
         {tab === "developments" && (
           <div key="developments" className="po-page po-page-animate-in">
-            <Developments />
+            <Developments
+              initialDevelopmentId={cvrNav.developmentId}
+              initialWorkspaceTab={cvrNav.periodKey ? "cvr" : cvrNav.developmentId ? "cvr" : null}
+              initialCvrPeriodKey={cvrNav.periodKey}
+              onInitialDevelopmentHandled={() => {
+                setCvrNav({ developmentId: null, periodKey: null });
+                setCvrRefresh((value) => value + 1);
+              }}
+            />
           </div>
         )}
         {tab === "form" && (

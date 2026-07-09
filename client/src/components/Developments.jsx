@@ -6,18 +6,24 @@ import { getDevelopment } from '../developments/developmentStore';
 
 export default function Developments({
   initialDevelopmentId = null,
+  initialWorkspaceTab = null,
+  initialCvrPeriodKey = null,
   onInitialDevelopmentHandled = null,
 }) {
   const [view, setView] = useState('list');
   const [activeDevelopmentId, setActiveDevelopmentId] = useState(null);
+  const [workspaceTab, setWorkspaceTab] = useState(null);
+  const [cvrPeriodKey, setCvrPeriodKey] = useState(null);
   const [refreshToken, setRefreshToken] = useState(0);
 
   useEffect(() => {
     if (!initialDevelopmentId) return;
     setActiveDevelopmentId(initialDevelopmentId);
+    setWorkspaceTab(initialWorkspaceTab);
+    setCvrPeriodKey(initialCvrPeriodKey);
     setView('workspace');
     onInitialDevelopmentHandled?.();
-  }, [initialDevelopmentId, onInitialDevelopmentHandled]);
+  }, [initialDevelopmentId, initialWorkspaceTab, initialCvrPeriodKey, onInitialDevelopmentHandled]);
 
   const activeDevelopment = useMemo(() => {
     void refreshToken;
@@ -56,10 +62,13 @@ export default function Developments({
     return (
       <DevelopmentWorkspace
         development={activeDevelopment}
+        initialActiveTab={workspaceTab}
+        initialCvrPeriodKey={cvrPeriodKey}
         onBackToList={returnToList}
         onPlotsChanged={() => setRefreshToken((value) => value + 1)}
         onLedgerChanged={() => setRefreshToken((value) => value + 1)}
         onCvrChanged={() => setRefreshToken((value) => value + 1)}
+        onDevelopmentChanged={() => setRefreshToken((value) => value + 1)}
       />
     );
   }

@@ -36,6 +36,16 @@ export async function createSupplier(body = {}) {
   return handleJson(res);
 }
 
+export async function updateSupplier(id, body = {}) {
+  const url = buildUrl(`/api/po/suppliers/${encodeURIComponent(id)}`);
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return handleJson(res);
+}
+
 /** Create supplier or return existing record when name already exists (409). */
 export async function createOrGetSupplier(body = {}) {
   const url = buildUrl('/api/po/suppliers');

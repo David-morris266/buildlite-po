@@ -377,6 +377,7 @@ export default function PaymentCertificateValuationGrid({
   orderKey,
   certificate,
   matrix,
+  developmentId,
   editable = true,
   auditItems = [],
   onProgressChange,
@@ -394,8 +395,11 @@ export default function PaymentCertificateValuationGrid({
   const cellRefs = useRef(new Map());
 
   const grid = useMemo(
-    () => buildCertificateValuationGrid(orderKey, certificate, matrix, selectedKeys),
-    [orderKey, certificate, matrix, selectedKeys]
+    () =>
+      buildCertificateValuationGrid(orderKey, certificate, matrix, selectedKeys, {
+        developmentId,
+      }),
+    [orderKey, certificate, matrix, selectedKeys, developmentId]
   );
 
   const panelCell =
@@ -581,7 +585,7 @@ export default function PaymentCertificateValuationGrid({
     setAnchorKey([...next][0] || null);
   }
 
-  function applyToSelection(updater) {
+  function applyToSelection(updater, options = {}) {
     if (!editable || !selectedKeys.size) return;
     const patch = {};
     const map = cellMap();
@@ -589,10 +593,11 @@ export default function PaymentCertificateValuationGrid({
     selectedKeys.forEach((cellKey) => {
       const cell = map.get(cellKey);
       if (!cell) return;
-      const nextPct = updater(cell);
+      const rawEntry = updater(cell);
       const validation = validateThisCertificatePct(
         cell.previousCumulativePct,
-        nextPct
+        rawEntry,
+        options
       );
       if (validation.valid) {
         patch[cellKey] = { thisCertificatePct: validation.pct };
@@ -688,7 +693,9 @@ export default function PaymentCertificateValuationGrid({
             <FloatingToolbar
               visible={editable && selectedKeys.size > 0}
               style={toolbarStyle}
-              onMarkComplete={() => applyToSelection(() => 100)}
+              onMarkComplete={() =>
+                applyToSelection(() => 100, { complete: true })
+              }
               onSetPercentage={(pct) => applyToSelection(() => pct)}
               onClearSelection={() => applyToSelection(() => 0)}
               customPct={customPct}
@@ -703,7 +710,9 @@ export default function PaymentCertificateValuationGrid({
             <table className="po-data-table po-cert-grid__table">
               <thead>
                 <tr>
-                  <th className="po-cert-grid__plot-header po-cert-grid__corner">Plot</th>
+                  <th className="po-cert-grid__plot-header po-cert-grid__corner">
+                    Plot / House Type
+                  </th>
                   {grid.stages.map((stage, stageIndex) => (
                     <th key={stage} className="po-cert-grid__stage-header">
                       <button
@@ -768,9 +777,19 @@ export default function PaymentCertificateValuationGrid({
             historyDetails={historyDetails}
             auditItems={auditItems}
             onClose={closeDetailPanel}
-            onComplete={(cellKey) =>
-              onProgressChange?.({ [cellKey]: { thisCertificatePct: 100 } })
-            }
+            onComplete={(cellKey) => {
+              const cell = cellMap().get(cellKey);
+              if (!cell) return;
+              const validation = validateThisCertificatePct(
+                cell.previousCumulativePct,
+                100,
+                { complete: true }
+              );
+              if (!validation.valid) return;
+              onProgressChange?.({
+                [cellKey]: { thisCertificatePct: validation.pct },
+              });
+            }}
             onPctChange={handlePctChange}
             panelInputRef={panelInputRef}
           />

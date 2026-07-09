@@ -91,7 +91,7 @@ export default function PaymentCertificateWorkspace({
   const certificates = useMemo(() => {
     void refreshToken;
     return listCertificates(order.orderKey).map((certificate) =>
-      formatCertificateListRow(certificate, order.orderKey)
+      formatCertificateListRow(certificate, order.orderKey, order)
     );
   }, [order.orderKey, refreshToken]);
 

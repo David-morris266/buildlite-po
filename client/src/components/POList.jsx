@@ -16,6 +16,7 @@ import {
 import { getPoRowActionLabel } from './poDrawerHelpers';
 import { getPoDevelopmentListLabel } from '../developments/developmentPoHelpers';
 import { syncPackageFromApprovedPo } from '../payments/subcontractOrders';
+import { notifyCommercialChanged } from '../commercial/commercialEvents';
 import POForm from './POForm';
 import POPageHeader from './POPageHeader';
 import POLoading from './POLoading';
@@ -180,6 +181,7 @@ export default function POList({
             ? `Purchase Order ${number} approved. Ready to generate your PDF.`
             : `Purchase Order ${number} rejected.`,
       });
+      notifyCommercialChanged({ source: 'po-list', poNumber: number, status: newStatus });
     } catch (e) {
       console.error(e);
       setListFeedback({
@@ -205,6 +207,7 @@ export default function POList({
         type: 'success',
         message: `Purchase Order ${number} sent for approval.`,
       });
+      notifyCommercialChanged({ source: 'po-list', poNumber: number, status: 'Pending' });
     } catch (e) {
       console.error(e);
       setListFeedback({
