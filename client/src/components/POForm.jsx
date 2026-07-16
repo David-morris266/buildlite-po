@@ -31,6 +31,11 @@ import {
   buildRequestApprovalBody,
   getSetupApprovalRouting,
 } from '../setup/setupDraft';
+import { isSupplierApproved } from '../suppliers/supplierApproval';
+import {
+  buildProcurementCreateNavigation,
+  buildProcurementEditNavigation,
+} from '../navigation/navigationBuilders';
 import POSaveJourneyPanel from './POSaveJourneyPanel';
 import POPageHeader from './POPageHeader';
 import './POForm.css';
@@ -64,6 +69,8 @@ export default function POForm({
   onReviewAndApprove = null,
   onCreateAnotherPO = null,
   onCreateDevelopment = null,
+  onBack = null,
+  onCancelEdit = null,
 }) {
   const isEdit = !!(initialPo && initialPo.poNumber);
 
@@ -532,6 +539,14 @@ export default function POForm({
     const { ok, costCodeString } = validate();
     if (!ok) return;
 
+    if (selectedSupplier && !isSupplierApproved(selectedSupplier)) {
+      setSaveError(
+        'This supplier is pending approval. Save as draft and approve the supplier in Administration before sending for approval.'
+      );
+      scrollToTop();
+      return;
+    }
+
     const body = buildPayload(costCodeString);
 
     try {
@@ -587,21 +602,32 @@ export default function POForm({
     ? `Edit Purchase Order${persistedPoNumber ? ` – ${persistedPoNumber}` : ''}`
     : 'Create a new Purchase Order';
 
-  const pageEyebrow = isPersisted ? 'Purchase orders' : 'New purchase order';
-
   const pageLead = isPersisted
     ? 'Update your order details and save your changes when you are ready.'
     : 'Create a Purchase Order, save a draft or send it for approval.';
+
+  const pageNavigation = onCancelEdit
+    ? buildProcurementEditNavigation({ poNumber: pageTitle, onBack: onCancelEdit })
+    : buildProcurementCreateNavigation({ onBack });
 
   return (
     <div
       className={`po-form-container${journeyPanel ? ' po-form-container--journey' : ''}`}
     >
       <POPageHeader
-        eyebrow={pageEyebrow}
+        breadcrumbs={pageNavigation.breadcrumbs}
         title={pageTitle}
         lead={pageLead}
+        onBack={pageNavigation.onBack}
+        showBack={Boolean(onBack || onCancelEdit)}
       />
+
+      {selectedSupplier && !isSupplierApproved(selectedSupplier) ? (
+        <div className="po-supplier-pending-banner" role="status">
+          Supplier <strong>{selectedSupplier.name}</strong> is pending approval.
+          You can save this order as a draft. Approve the supplier in Administration before the PO can be approved.
+        </div>
+      ) : null}
 
       {saveError ? (
         <div className="po-form-error-banner" role="alert">

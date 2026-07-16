@@ -1,13 +1,27 @@
 /**
- * Shared page header for Purchase Order module screens (BL-010B.02).
- * Matches Setup Assistant eyebrow / title / lead pattern.
+ * Shared page header for Purchase Order module screens.
+ * Delegates to ApplicationPageHeader for consistent navigation.
  */
-export default function POPageHeader({ eyebrow, title, lead }) {
+import ApplicationPageHeader from './layout/ApplicationPageHeader';
+
+export default function POPageHeader({
+  eyebrow,
+  title,
+  lead,
+  breadcrumbs = [],
+  onBack = null,
+  actions = null,
+  showBack = true,
+}) {
   return (
-    <header className="po-page-header">
-      <p className="po-page-header__eyebrow">{eyebrow}</p>
-      <h1 className="po-page-header__title">{title}</h1>
-      {lead ? <p className="po-page-header__lead">{lead}</p> : null}
-    </header>
+    <ApplicationPageHeader
+      eyebrow={eyebrow}
+      title={title}
+      lead={lead}
+      breadcrumbs={breadcrumbs}
+      onBack={onBack}
+      actions={actions}
+      showBack={showBack}
+    />
   );
 }

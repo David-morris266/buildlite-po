@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import PODrawerShell from './PODrawerShell';
+import ApplicationDrawerHeader from './layout/ApplicationDrawerHeader';
 import { formatCvrMoney } from '../cvr/cvrHelpers';
 import { formatPoDate } from './poDrawerHelpers';
 import { getAdjustmentState } from '../cvr/cvrForecastEngine';
 
-function DrawerSection({ title, children }) {
+function DrawerSection({ title, children, className = '' }) {
   return (
-    <section className="po-drawer-section dev-cvr-drawer__section">
+    <section className={`po-drawer-section dev-cvr-drawer__section${className ? ` ${className}` : ''}`}>
       <h3 className="po-drawer-section__title">{title}</h3>
       {children}
     </section>
@@ -23,6 +24,7 @@ function parseAdjustmentInput(value) {
 export default function CostCentreDrawer({
   open,
   row,
+  drawerBreadcrumbs = [],
   packages = [],
   ledgerRows = [],
   certificates = [],
@@ -89,32 +91,34 @@ export default function CostCentreDrawer({
       wide
       ariaLabel={`Cost code details for ${title}`}
     >
-      <header className="po-drawer-header">
-        <div className="po-drawer-header__bar">
-          <p className="po-drawer-header__eyebrow">Cost Code</p>
-          <button type="button" className="po-drawer-header__close" onClick={onClose}>
-            Close
-          </button>
-        </div>
-        <div className="po-drawer-header__hero">
-          <h2 className="po-drawer-header__number">{title}</h2>
-        </div>
-      </header>
+      <ApplicationDrawerHeader
+        eyebrow="Cost Code"
+        breadcrumbs={drawerBreadcrumbs}
+        title={title}
+        onBack={onClose}
+      />
 
-      <div className="po-drawer-body dev-cvr-drawer">
-        <section className="dev-cvr-drawer__commercial-facts">
-          <h3 className="po-drawer-section__title">Commercial Facts</h3>
-          <dl className="dev-cvr-drawer__facts-grid">
+      <div className="po-drawer-body dev-cvr-drawer dev-cvr-drawer--stacked dev-cvr-drawer--dense">
+        <DrawerSection title="Commercial Facts">
+          <dl className="dev-cvr-drawer__group-grid dev-cvr-drawer__facts-compact">
             <div>
-              <dt>Approved Commitment</dt>
+              <dt>Original Budget</dt>
+              <dd>{formatCvrMoney(row.originalBudget)}</dd>
+            </div>
+            <div>
+              <dt>Current Budget</dt>
+              <dd>{formatCvrMoney(row.currentBudget)}</dd>
+            </div>
+            <div>
+              <dt>Committed</dt>
               <dd>{formatCvrMoney(row.committed)}</dd>
             </div>
             <div>
-              <dt>Certified Value</dt>
+              <dt>Certified</dt>
               <dd>{formatCvrMoney(row.certified)}</dd>
             </div>
             <div>
-              <dt>Actual Cost</dt>
+              <dt>Actual</dt>
               <dd>{formatCvrMoney(row.actualCost)}</dd>
             </div>
             <div>
@@ -126,124 +130,133 @@ export default function CostCentreDrawer({
               </dd>
             </div>
           </dl>
-        </section>
+        </DrawerSection>
 
-        <dl className="dev-cvr-drawer__summary">
-          <div>
-            <dt>Original Budget</dt>
-            <dd>{formatCvrMoney(row.originalBudget)}</dd>
-          </div>
-          <div>
-            <dt>Current Budget</dt>
-            <dd>{formatCvrMoney(row.currentBudget)}</dd>
-          </div>
-          <div>
-            <dt>System Forecast</dt>
-            <dd>{formatCvrMoney(row.systemForecast)}</dd>
-          </div>
-          <div>
-            <dt>Commercial Adjustment</dt>
-            <dd
-              className={`dev-cvr__adjustment dev-cvr__adjustment--${row.adjustmentState || 'zero'}`}
-            >
-              {row.commercialAdjustmentLabel || formatCvrMoney(row.commercialAdjustment)}
-            </dd>
-          </div>
-          <div>
-            <dt>Final Forecast</dt>
-            <dd>{formatCvrMoney(row.finalForecast)}</dd>
-          </div>
-          <div>
-            <dt>Cost To Complete</dt>
-            <dd>{formatCvrMoney(row.costToComplete)}</dd>
-          </div>
-          <div>
-            <dt>Variance</dt>
-            <dd className={`dev-cvr__variance dev-cvr__variance--${row.varianceState}`}>
-              {formatCvrMoney(row.variance)}
-            </dd>
-          </div>
-        </dl>
+        <DrawerSection title="Forecast">
+          <dl className="dev-cvr-drawer__group-grid dev-cvr-drawer__forecast-grid">
+            <div>
+              <dt>System Forecast</dt>
+              <dd>{formatCvrMoney(row.systemForecast)}</dd>
+            </div>
+            <div>
+              <dt>Commercial Adjustment</dt>
+              <dd
+                className={`dev-cvr__adjustment dev-cvr__adjustment--${row.adjustmentState || 'zero'}`}
+              >
+                {row.commercialAdjustmentLabel || formatCvrMoney(row.commercialAdjustment)}
+              </dd>
+            </div>
+            <div>
+              <dt>Final Forecast</dt>
+              <dd>{formatCvrMoney(row.finalForecast)}</dd>
+            </div>
+            <div>
+              <dt>Cost To Complete</dt>
+              <dd
+                className={`dev-cvr__ctc${
+                  Number(row.costToComplete) < -0.005 ? ' dev-cvr__ctc--negative' : ''
+                }`}
+              >
+                {formatCvrMoney(row.costToComplete)}
+              </dd>
+            </div>
+            <div>
+              <dt>Variance</dt>
+              <dd className={`dev-cvr__variance dev-cvr__variance--${row.varianceState}`}>
+                {formatCvrMoney(row.variance)}
+              </dd>
+            </div>
+          </dl>
 
-        <DrawerSection title="Commercial Adjustment">
-          <p className="dev-cvr-drawer__lead">
-            System Forecast is calculated automatically. Enter a Commercial Adjustment
-            and Commercial Reason only where professional judgement differs from the
-            system position.
-          </p>
           {readOnly ? (
             <p className="dev-cvr-drawer__empty">
               This period is read-only. Commercial adjustments cannot be changed.
             </p>
           ) : (
-            <>
-          {saveError ? (
-            <div className="po-list-feedback po-list-feedback--error" role="alert">
-              {saveError}
+            <div className="dev-cvr-drawer__adjustment-panel">
+              {saveError ? (
+                <div className="po-list-feedback po-list-feedback--error" role="alert">
+                  {saveError}
+                </div>
+              ) : null}
+              {reasonMissing ? (
+                <div className="po-list-feedback po-list-feedback--warning" role="status">
+                  Commercial Reason is required when the adjustment is not zero.
+                </div>
+              ) : null}
+              <div className="dev-cvr-drawer__adjustment-fields">
+                <label className="dev-form__field dev-cvr-drawer__adjustment-field">
+                  <span className="dev-form__label">Adjustment</span>
+                  <input
+                    className={`input dev-cvr-drawer__adjustment-input dev-cvr__adjustment--${adjustmentState}`}
+                    type="text"
+                    inputMode="decimal"
+                    value={adjustment}
+                    onChange={(event) => {
+                      setAdjustment(event.target.value);
+                      setSaveError('');
+                    }}
+                    placeholder="e.g. +18000 or -5000"
+                    aria-describedby="commercial-adjustment-help"
+                  />
+                  <span id="commercial-adjustment-help" className="dev-cvr-drawer__field-hint">
+                    Positive or negative. Zero for no adjustment.
+                  </span>
+                </label>
+                <label
+                  className={`dev-form__field dev-cvr-drawer__reason-field${
+                    reasonRequired ? ' dev-cvr-drawer__field--required' : ''
+                  }`}
+                >
+                  <span className="dev-form__label">
+                    Reason
+                    {reasonRequired ? (
+                      <span className="dev-cvr-drawer__required-mark">Required</span>
+                    ) : null}
+                  </span>
+                  <input
+                    className="input"
+                    type="text"
+                    value={reason}
+                    onChange={(event) => {
+                      setReason(event.target.value);
+                      setSaveError('');
+                    }}
+                    placeholder={
+                      reasonRequired
+                        ? 'e.g. Expected Brickwork Variation'
+                        : 'Optional when adjustment is zero'
+                    }
+                    aria-required={reasonRequired}
+                    aria-invalid={reasonMissing}
+                  />
+                </label>
+              </div>
+              <div className="dev-cvr-drawer__adjustment-actions">
+                <button
+                  type="button"
+                  className="po-btn-primary dev-cvr-drawer__save-adjustment"
+                  onClick={handleSaveCommercial}
+                  disabled={reasonMissing || adjustmentValue == null}
+                >
+                  Save Adjustment
+                </button>
+              </div>
             </div>
-          ) : null}
-          {reasonMissing ? (
-            <div className="po-list-feedback po-list-feedback--warning" role="status">
-              Commercial Reason is required when the adjustment is not zero.
-            </div>
-          ) : null}
-          <div className="dev-cvr-drawer__commercial-form">
-            <label className="dev-form__field">
-              <span className="dev-form__label">Commercial Adjustment</span>
-              <input
-                className={`input dev-cvr-drawer__adjustment-input dev-cvr__adjustment--${adjustmentState}`}
-                type="text"
-                inputMode="decimal"
-                value={adjustment}
-                onChange={(event) => {
-                  setAdjustment(event.target.value);
-                  setSaveError('');
-                }}
-                placeholder="e.g. +18000 or -5000"
-                aria-describedby="commercial-adjustment-help"
-              />
-              <span id="commercial-adjustment-help" className="dev-cvr-drawer__field-hint">
-                Positive or negative value. Leave blank or zero for no adjustment.
-              </span>
-            </label>
-            <label
-              className={`dev-form__field${reasonRequired ? ' dev-cvr-drawer__field--required' : ''}`}
-            >
-              <span className="dev-form__label">
-                Commercial Reason
-                {reasonRequired ? <span className="dev-cvr-drawer__required-mark">Required</span> : null}
-              </span>
-              <input
-                className="input"
-                type="text"
-                value={reason}
-                onChange={(event) => {
-                  setReason(event.target.value);
-                  setSaveError('');
-                }}
-                placeholder={
-                  reasonRequired
-                    ? 'e.g. Expected Brickwork Variation'
-                    : 'Optional when adjustment is zero'
-                }
-                aria-required={reasonRequired}
-                aria-invalid={reasonMissing}
-              />
-            </label>
-          </div>
-          <button
-            type="button"
-            className="po-btn-primary dev-cvr-drawer__save-adjustment"
-            onClick={handleSaveCommercial}
-            disabled={reasonMissing || adjustmentValue == null}
-          >
-            Save Commercial Adjustment
-          </button>
-            </>
           )}
         </DrawerSection>
 
-        <DrawerSection title="Adjustment History">
+        <DrawerSection
+          title="Commercial Journal (Future)"
+          className="dev-cvr-drawer__section--placeholder"
+        >
+          <p className="dev-cvr-drawer__journal-placeholder">
+            Commercial journal entries will appear here for timing adjustments, supplier
+            credits, ledger corrections, and other temporary commercial movements.
+          </p>
+        </DrawerSection>
+
+        <DrawerSection title="Audit">
           {row.adjustmentHistory?.length ? (
             <ul className="dev-cvr-drawer__history">
               {row.adjustmentHistory.map((entry) => (
@@ -262,6 +275,19 @@ export default function CostCentreDrawer({
           ) : (
             <p className="dev-cvr-drawer__empty">No commercial adjustments recorded yet.</p>
           )}
+          <label className="dev-form__field dev-cvr-drawer__notes-field">
+            <span className="dev-form__label">Notes</span>
+            <textarea
+              className="input dev-cvr-drawer__notes"
+              rows={3}
+              value={row.commercialNotes || ''}
+              onChange={(event) =>
+                onSaveNotes?.({ commercialNotes: event.target.value })
+              }
+              readOnly={readOnly}
+              placeholder="Record commercial commentary for month-end review."
+            />
+          </label>
         </DrawerSection>
 
         <DrawerSection title="Packages">
@@ -389,19 +415,6 @@ export default function CostCentreDrawer({
               No approved certificates for this cost code.
             </p>
           )}
-        </DrawerSection>
-
-        <DrawerSection title="Commercial Notes">
-          <textarea
-            className="input dev-cvr-drawer__notes"
-            rows={4}
-            value={row.commercialNotes || ''}
-            onChange={(event) =>
-              onSaveNotes?.({ commercialNotes: event.target.value })
-            }
-            readOnly={readOnly}
-            placeholder="Record commercial commentary for month-end review."
-          />
         </DrawerSection>
       </div>
     </PODrawerShell>

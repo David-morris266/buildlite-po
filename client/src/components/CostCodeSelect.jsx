@@ -1,6 +1,7 @@
 // client/src/components/CostCodeSelect.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { listCostCodes } from '../api';
+import { listActiveCostCodesForSelect } from '../admin/costCodeMasterStore';
+import { subscribeMasterDataChanged } from '../admin/masterDataEvents';
 
 /**
  * CostCodeSelect (autocomplete)
@@ -28,17 +29,31 @@ export default function CostCodeSelect({ value, onChange, showLabel = true }) {
   }, [value]);
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+
+    async function loadCodes() {
       try {
         setLoading(true);
-        const data = await listCostCodes('');
-        setCodes(Array.isArray(data) ? data : []);
+        const data = await listActiveCostCodesForSelect();
+        if (!cancelled) setCodes(Array.isArray(data) ? data : []);
       } catch (e) {
-        console.error('cost-codes GET failed:', e);
+        console.error('cost-codes load failed:', e);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    })();
+    }
+
+    loadCodes();
+    const unsubscribe = subscribeMasterDataChanged((scope) => {
+      if (scope === 'all' || scope === 'cost-codes' || scope === 'commercial-structure') {
+        loadCodes();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   // Normalise each row to a consistent shape

@@ -110,7 +110,7 @@ export function buildCvrWorkspaceModel(development, options = {}) {
       {
         label: 'Outstanding Certified (Not Yet in Ledger)',
         value: formatCvrMoney(summary.outstandingCertified ?? 0),
-        modifier: 'default',
+        modifier: 'outstanding',
       },
       {
         label: 'System Forecast',
@@ -125,7 +125,7 @@ export function buildCvrWorkspaceModel(development, options = {}) {
       {
         label: 'Cost To Complete',
         value: formatCvrMoney(summary.costToComplete),
-        modifier: 'muted',
+        modifier: 'ctc',
       },
       {
         label: 'Variance',

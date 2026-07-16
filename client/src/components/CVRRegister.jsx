@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import POPageHeader from './POPageHeader';
+import { useEffect, useMemo, useState } from 'react';
+import SectionHeading from './layout/SectionHeading';
 import {
   buildCvrRegisterModel,
   createNextCvrPeriod,
@@ -19,6 +19,7 @@ export default function CVRRegister({
   development,
   pos = [],
   refreshToken = 0,
+  onPrimaryActionChange = null,
   onOpenPeriod,
   onChanged,
 }) {
@@ -51,30 +52,31 @@ export default function CVRRegister({
     onOpenPeriod?.(result.periodKey);
   }
 
+  const primaryActionLabel = register.draftPeriodKey
+    ? 'Open Draft CVR'
+    : 'Create New CVR Period';
+
+  useEffect(() => {
+    if (!onPrimaryActionChange) return undefined;
+
+    onPrimaryActionChange(
+      <button type="button" className="po-btn-primary" onClick={handleCreatePeriod}>
+        {primaryActionLabel}
+      </button>
+    );
+
+    return () => onPrimaryActionChange(null);
+  }, [onPrimaryActionChange, primaryActionLabel, register.draftPeriodKey]);
+
   return (
-    <div className="dev-cvr-register">
-      <POPageHeader
-        eyebrow="Cost Value Reconciliation"
-        title={register.developmentName}
-        lead={`Development ${register.developmentNumber || '—'} · Monthly CVR register`}
+    <div className="dev-cvr-register dev-cvr-workspace">
+      <SectionHeading
+        title="CVR Register"
+        support="Monthly Commercial Reporting"
+        description="Manage monthly reporting periods for this development. Only one draft may exist at a time."
       />
 
-      <header className="dev-cvr__header">
-        <div>
-          <h2 className="po-matrix-section__title">CVR Register</h2>
-          <p className="dev-cvr__lead">
-            Manage monthly CVR periods. Only one draft may exist at a time. Locked
-            periods remain permanent historical records.
-          </p>
-        </div>
-        <div className="dev-cvr__header-actions">
-          <button type="button" className="po-btn-primary" onClick={handleCreatePeriod}>
-            {register.draftPeriodKey ? 'Open Draft CVR' : 'Create New CVR Period'}
-          </button>
-        </div>
-      </header>
-
-      <div className="po-table-wrap">
+      <div className="po-table-wrap dev-cvr-register__table-wrap">
         <table className="po-data-table dev-cvr-register__table">
           <thead>
             <tr>
@@ -116,9 +118,8 @@ export default function CVRRegister({
               ))
             ) : (
               <tr>
-                <td colSpan={8} className="po-data-table__empty">
-                  No CVR periods yet. Create the first monthly CVR to begin the
-                  commercial workflow.
+                <td colSpan={8} className="po-empty-state__message">
+                  No CVR periods yet. Create your first period to begin monthly reporting.
                 </td>
               </tr>
             )}

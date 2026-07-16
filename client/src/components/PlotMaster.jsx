@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import PlotDrawer from './PlotDrawer';
 import PlotScheduleImportWizard from './PlotScheduleImportWizard';
+import { formatMoney } from './poDrawerHelpers';
 import {
   addPlot,
   deletePlot,
@@ -10,6 +11,11 @@ import {
   replacePlotMaster,
   updatePlot,
 } from '../developments/plotMaster';
+import {
+  REVENUE_STATUS_TONES,
+  getPlotEffectivePrice,
+  getPlotPerFt2,
+} from '../developments/plotCommercial';
 
 function PlotDeleteDialog({ plot, onCancel, onConfirm }) {
   if (!plot) return null;
@@ -40,11 +46,36 @@ function PlotDeleteDialog({ plot, onCancel, onConfirm }) {
   );
 }
 
+function PlotCommercialIndicator({ plot }) {
+  const price = getPlotEffectivePrice(plot);
+  const perFt2 = getPlotPerFt2(plot);
+  const status = plot.revenueStatus || 'Available';
+  const tone = REVENUE_STATUS_TONES[status] || 'muted';
+
+  if (!price && status === 'Available') {
+    return <span className="dev-plot-commercial dev-plot-commercial--empty">—</span>;
+  }
+
+  return (
+    <div className="dev-plot-commercial">
+      <span className={`revenue-status-chip revenue-status-chip--${tone}`}>{status}</span>
+      {price ? (
+        <span className="dev-plot-commercial__price">£{formatMoney(price)}</span>
+      ) : null}
+      {perFt2 ? (
+        <span className="dev-plot-commercial__rate">£{formatMoney(perFt2)}/ft²</span>
+      ) : null}
+    </div>
+  );
+}
+
 export default function PlotMaster({
   developmentId,
   developmentName,
   refreshToken = 0,
+  initialPlotId = null,
   onPlotsChanged,
+  onFocusPlotHandled,
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingPlot, setEditingPlot] = useState(null);
@@ -56,6 +87,16 @@ export default function PlotMaster({
     void refreshToken;
     return getPlots(developmentId);
   }, [developmentId, refreshToken]);
+
+  useEffect(() => {
+    if (!initialPlotId || !plots.length) return;
+    const plot = plots.find((row) => row.id === initialPlotId);
+    if (!plot) return;
+    setEditingPlot(plot);
+    setSaveErrors([]);
+    setDrawerOpen(true);
+    onFocusPlotHandled?.();
+  }, [initialPlotId, plots, onFocusPlotHandled]);
 
   function openAddDrawer() {
     setEditingPlot(null);
@@ -173,6 +214,7 @@ export default function PlotMaster({
                 <th>Configuration</th>
                 <th>Bedrooms</th>
                 <th>GIA</th>
+                <th>Commercial</th>
                 <th>Phase</th>
                 <th>Tenure</th>
                 <th>Status</th>
@@ -187,6 +229,9 @@ export default function PlotMaster({
                   <td>{plot.configuration || '—'}</td>
                   <td>{formatPlotBedrooms(plot.bedrooms)}</td>
                   <td>{formatPlotGia(plot.gia)}</td>
+                  <td>
+                    <PlotCommercialIndicator plot={plot} />
+                  </td>
                   <td>{plot.phase || '—'}</td>
                   <td>{plot.tenure || '—'}</td>
                   <td>{plot.status || '—'}</td>
@@ -216,6 +261,8 @@ export default function PlotMaster({
       <PlotDrawer
         open={drawerOpen}
         plot={editingPlot}
+        developmentId={developmentId}
+        openedFrom="PlotMaster"
         saveErrors={saveErrors}
         onClose={closeDrawer}
         onSave={handleSave}

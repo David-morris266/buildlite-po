@@ -75,24 +75,20 @@ export default function PaymentCertificates({
     }
 
     return (
-      <div key="package" className="po-page po-page-animate-in">
-        <SubcontractPackageWorkspace
-          order={activeOrder}
-          initialTab={activeTab}
-          onBackToList={() => returnToList()}
-        />
-      </div>
+      <SubcontractPackageWorkspace
+        order={activeOrder}
+        initialTab={activeTab}
+        onBackToList={() => returnToList()}
+      />
     );
   }
 
   return (
-    <div key="list" className="po-page po-page-animate-in">
-      <SubcontractOrdersList
+    <SubcontractOrdersList
         refreshToken={refreshToken}
         listFeedback={listFeedback}
         onDismissFeedback={() => setListFeedback(null)}
         onOpenPackage={openPackage}
       />
-    </div>
   );
 }

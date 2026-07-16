@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { listPOs } from '../api';
 import POPageHeader from './POPageHeader';
+import { buildCertificatesRegisterNavigation } from '../navigation/navigationBuilders';
 import POLoading from './POLoading';
 import { formatMoney } from './poDrawerHelpers';
 import { buildSubcontractOrdersFromPos } from '../payments/subcontractOrders';
@@ -53,12 +54,15 @@ export default function SubcontractOrdersList({
     return { count: rows.length, totalCommitted };
   }, [rows]);
 
+  const pageNavigation = buildCertificatesRegisterNavigation();
+
   return (
     <div className="po-subcontract-orders-page">
       <POPageHeader
-        eyebrow="Payment certificates"
-        title="Subcontract Orders"
+        breadcrumbs={pageNavigation.breadcrumbs}
+        title={pageNavigation.title}
         lead="Commercial packages grouped by project and supplier. Import your plot × stage valuation matrix before raising certificates."
+        showBack={false}
       />
 
       {listFeedback ? (

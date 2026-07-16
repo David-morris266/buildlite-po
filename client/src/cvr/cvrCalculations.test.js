@@ -10,6 +10,11 @@ describe('CVR derived calculations', () => {
     expect(calculateCostToComplete(255000, 100000)).toBe(155000);
   });
 
+  it('preserves negative cost to complete when actual exceeds forecast', () => {
+    expect(calculateCostToComplete(100000, 150000)).toBe(-50000);
+    expect(calculateCostToComplete(50000, 80000)).toBe(-30000);
+  });
+
   it('calculates variance from current budget and final forecast', () => {
     expect(calculateVariance(250000, 255000)).toBe(-5000);
   });

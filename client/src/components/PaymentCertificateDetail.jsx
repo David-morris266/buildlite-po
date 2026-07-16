@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
+import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import PaymentCertificateValuationGrid from './PaymentCertificateValuationGrid';
+import { buildCertificateDetailNavigation } from '../navigation/navigationBuilders';
 import {
   approveCertificate,
   deleteCertificate,
@@ -90,6 +92,7 @@ export default function PaymentCertificateDetail({
   const [refreshToken, setRefreshToken] = useState(0);
   const [dialog, setDialog] = useState(null);
   const [rejectComment, setRejectComment] = useState('');
+  const [draftSavedAt, setDraftSavedAt] = useState(null);
 
   const summary = useMemo(() => {
     void refreshToken;
@@ -113,6 +116,12 @@ export default function PaymentCertificateDetail({
 
   function handleProgressChange(patch) {
     updateCertificateProgress(order.orderKey, certificateId, patch);
+    setDraftSavedAt(new Date().toISOString());
+    refresh();
+  }
+
+  function handleSaveDraft() {
+    setDraftSavedAt(new Date().toISOString());
     refresh();
   }
 
@@ -143,19 +152,30 @@ export default function PaymentCertificateDetail({
 
   return (
     <div className="po-cert-detail">
-      <button type="button" className="po-cert-detail__back" onClick={onBack}>
-        Back to certificates
-      </button>
+      <ApplicationPageHeader
+        breadcrumbs={buildCertificateDetailNavigation({
+          certificateNumber: certificate.certificateNumber,
+          packageTitle: getPackageDisplayName(order),
+          onBackToPackage: onBack,
+        }).breadcrumbs}
+        title={`Certificate No. ${certificate.certificateNumber}`}
+        lead="Payment Certificate"
+        onBack={onBack}
+      />
 
       <header className="po-module-card po-cert-detail__header">
         <div className="po-cert-detail__hero">
           <div>
             <p className="po-cert-detail__eyebrow">Payment Certificate</p>
-            <h2 className="po-cert-detail__title">
-              Certificate No. {certificate.certificateNumber}
-            </h2>
           </div>
-          <StatusBadge status={status} />
+          <div className="po-cert-detail__status-wrap">
+            <StatusBadge status={status} />
+            {draftSavedAt && editable ? (
+              <span className="po-cert-detail__draft-saved">
+                Draft saved {new Date(draftSavedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            ) : null}
+          </div>
         </div>
 
         <dl className="po-cert-detail__meta">
@@ -187,6 +207,13 @@ export default function PaymentCertificateDetail({
           <>
             <button
               type="button"
+              className="po-list-btn-secondary"
+              onClick={handleSaveDraft}
+            >
+              Save Draft
+            </button>
+            <button
+              type="button"
               className="po-btn-primary"
               onClick={() => setDialog('submit')}
             >
@@ -199,6 +226,9 @@ export default function PaymentCertificateDetail({
             >
               Delete Draft
             </button>
+            <p className="po-cert-detail__readonly-note">
+              Progress saves automatically as you work. Use Save Draft to confirm your latest changes.
+            </p>
           </>
         ) : null}
 

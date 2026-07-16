@@ -1,36 +1,58 @@
-import { SETUP_STEPS, SETUP_TOTAL_STEPS } from "../constants";
+import { SETUP_SECTIONS, getCompletedSectionCount, getSetupPercentComplete, isSectionComplete } from '../setupProgressStore';
+import { SETUP_STEPS, SETUP_TOTAL_STEPS } from '../constants';
 
-/**
- * Progress indicator — visible on every Setup Assistant screen (Doc 25 §3).
- */
 export default function SetupProgress({ currentStep = 1 }) {
-  const pct = Math.round((currentStep / SETUP_TOTAL_STEPS) * 100);
+  const completedCount = getCompletedSectionCount();
+  const pct = getSetupPercentComplete();
   const stepMeta = SETUP_STEPS[currentStep - 1];
-  const stepName =
-    stepMeta?.progressTitle || stepMeta?.label || "Setup Assistant";
+  const stepName = stepMeta?.progressTitle || stepMeta?.label || 'Setup Assistant';
+  const currentSection = stepMeta?.sectionId
+    ? SETUP_SECTIONS.find((item) => item.id === stepMeta.sectionId)?.label
+    : null;
 
   return (
-    <div className="setup-progress" role="status" aria-live="polite">
+    <div className="setup-progress setup-progress--onboarding" role="status" aria-live="polite">
       <div className="setup-progress__meta">
         <div className="setup-progress__labels">
           <span className="setup-progress__label">
-            Step {currentStep} of {SETUP_TOTAL_STEPS}
+            {currentStep === 1
+              ? 'BuildLite Setup'
+              : `Step ${currentStep} of ${SETUP_TOTAL_STEPS}`}
           </span>
           <span className="setup-progress__step-name">{stepName}</span>
+          {currentSection ? (
+            <span className="setup-progress__section">{currentSection}</span>
+          ) : null}
+        </div>
+        <div className="setup-progress__summary">
+          <strong>{completedCount} of {SETUP_SECTIONS.length} complete</strong>
+          <span>{pct}%</span>
         </div>
       </div>
+
+      <div className="setup-progress__sections" aria-label="Setup sections">
+        {SETUP_SECTIONS.map((section) => {
+          const done = isSectionComplete(section.id);
+          return (
+            <span
+              key={section.id}
+              className={`setup-progress__section-chip${done ? ' setup-progress__section-chip--done' : ''}`}
+            >
+              {done ? '✓' : '○'} {section.label}
+            </span>
+          );
+        })}
+      </div>
+
       <div
         className="setup-progress__track"
         role="progressbar"
-        aria-valuenow={currentStep}
-        aria-valuemin={1}
-        aria-valuemax={SETUP_TOTAL_STEPS}
-        aria-label={`Step ${currentStep} of ${SETUP_TOTAL_STEPS}: ${stepName}`}
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`Setup progress ${pct}%`}
       >
-        <div
-          className="setup-progress__fill"
-          style={{ width: `${pct}%` }}
-        />
+        <div className="setup-progress__fill" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );

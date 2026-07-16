@@ -6,6 +6,11 @@ import {
   getSuggestedOrderTypeForSupplier,
   getSupplierTypeMeta,
 } from '../suppliers/supplierTypes';
+import {
+  buildSupplierCreatePayload,
+  getSupplierApprovalBadge,
+  isSupplierApproved,
+} from '../suppliers/supplierApproval';
 
 const EMPTY_FORM = {
   name: '',
@@ -37,6 +42,7 @@ export default function SupplierSelect({
   onSelectFull,
   onSuggestedOrderType,
   showLabel = true,
+  createdFromPo = true,
 }) {
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -133,7 +139,9 @@ export default function SupplierSelect({
     try {
       const saved = editingSupplier
         ? await updateSupplier(editingSupplier.id, form)
-        : await createSupplier(form);
+        : await createSupplier(
+            buildSupplierCreatePayload(form, { createdFromPo: !editingSupplier && createdFromPo })
+          );
 
       setSuppliers((prev) => {
         const next = prev.filter((item) => String(item.id) !== String(saved.id));
@@ -167,21 +175,32 @@ export default function SupplierSelect({
       {showLabel && <label>Supplier</label>}
       <select value={currentId} onChange={handleSelect}>
         <option value="">Select supplier…</option>
-        {suppliers.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name}
-            {s.supplierType
-              ? ` · ${getSupplierTypeMeta(s.supplierType)?.label || 'Other'}`
-              : ''}
-          </option>
-        ))}
+        {suppliers.map((s) => {
+          const badge = getSupplierApprovalBadge(s);
+          return (
+            <option key={s.id} value={s.id}>
+              {s.name}
+              {s.supplierType
+                ? ` · ${getSupplierTypeMeta(s.supplierType)?.label || 'Other'}`
+                : ''}
+              {badge.modifier === 'pending' ? ' · Pending' : ''}
+            </option>
+          );
+        })}
         <option value="__new__">➕ Add new supplier…</option>
         {selectedSupplier ? (
           <option value="__edit__">✎ Edit selected supplier…</option>
         ) : null}
       </select>
-      {supplierTypeLabel ? (
-        <p className="po-field__hint">Supplier type: {supplierTypeLabel}</p>
+      {selectedSupplier ? (
+        <p className="po-field__hint">
+          Supplier type: {supplierTypeLabel}
+          {!isSupplierApproved(selectedSupplier) ? (
+            <span className="po-supplier-badge po-supplier-badge--pending"> Pending Supplier</span>
+          ) : (
+            <span className="po-supplier-badge po-supplier-badge--approved"> Approved</span>
+          )}
+        </p>
       ) : null}
       {!loading && suppliers.length === 0 ? (
         <p className="po-field__hint">No suppliers yet.</p>
@@ -191,6 +210,11 @@ export default function SupplierSelect({
         <div className="modal-backdrop" onMouseDown={closeModal}>
           <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <h3>{editingSupplier ? 'Edit Supplier' : 'New Supplier'}</h3>
+            {!editingSupplier && createdFromPo ? (
+              <p className="po-field__hint">
+                New suppliers are saved as Pending Approval. You can continue this Purchase Order as a draft.
+              </p>
+            ) : null}
             <form className="grid2" onSubmit={saveSupplier}>
               <label>
                 Name

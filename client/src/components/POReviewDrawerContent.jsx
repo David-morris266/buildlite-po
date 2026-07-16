@@ -1,3 +1,5 @@
+import ApplicationDrawerHeader from './layout/ApplicationDrawerHeader';
+import { buildProcurementRegisterNavigation } from '../navigation/navigationBuilders';
 import {
   canReviewAndApprovePo,
   canSendPoForApproval,
@@ -13,6 +15,7 @@ import {
   getDrawerHeaderMeta,
   getPoDisplayStatus,
 } from './poDrawerHelpers';
+import { isSupplierApproved } from '../suppliers/supplierApproval';
 import OrderMatrixDrawerSection from './OrderMatrixDrawerSection';
 
 function DrawerSection({ title, children, className = '' }) {
@@ -177,6 +180,9 @@ export default function POReviewDrawerContent({
   const headerMeta = getDrawerHeaderMeta(po);
   const showApproverActions = canReviewAndApprovePo(po);
   const showSendForApproval = canSendPoForApproval(po);
+  const supplierPendingApproval = Boolean(
+    po.supplierSnapshot && !isSupplierApproved(po.supplierSnapshot)
+  );
 
   const supplierName =
     po.supplierSnapshot?.name ||
@@ -190,22 +196,23 @@ export default function POReviewDrawerContent({
       ? formatPlotsSummary(development.plotCount)
       : '—';
 
+  const registerNavigation = buildProcurementRegisterNavigation();
+  const drawerBreadcrumbs = [
+    ...registerNavigation.breadcrumbs,
+    { label: po.poNumber },
+  ];
+
   return (
     <>
-      <header className="po-drawer-header">
-        <div className="po-drawer-header__bar">
-          <p className="po-drawer-header__eyebrow">Purchase order</p>
-          <button
-            type="button"
-            className="po-drawer-header__close"
-            onClick={onClose}
-          >
-            Close
-          </button>
-        </div>
+      <ApplicationDrawerHeader
+        eyebrow="Purchase order"
+        breadcrumbs={drawerBreadcrumbs}
+        title={po.poNumber}
+        onBack={onClose}
+      />
 
+      <header className="po-drawer-header po-drawer-header--compact">
         <div className="po-drawer-header__hero">
-          <h2 className="po-drawer-header__number">{po.poNumber}</h2>
           <span
             className={`po-status-badge po-status-badge--${status.modifier}`}
           >
@@ -248,6 +255,11 @@ export default function POReviewDrawerContent({
 
         <DrawerSection title="Supplier">
           <DetailRow label="Name" value={supplierName} />
+          {supplierPendingApproval ? (
+            <p className="po-supplier-pending-banner" role="status">
+              Supplier is pending approval. Approve in Administration before this PO can be approved.
+            </p>
+          ) : null}
           {po.supplierSnapshot?.contactEmail ? (
             <DetailRow label="Email" value={po.supplierSnapshot.contactEmail} />
           ) : null}
@@ -296,7 +308,7 @@ export default function POReviewDrawerContent({
             <button
               type="button"
               className="po-btn-primary"
-              disabled={updatingApproval}
+              disabled={updatingApproval || supplierPendingApproval}
               onClick={onApprove}
             >
               Approve

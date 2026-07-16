@@ -1,26 +1,31 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import POForm from "./components/POForm";
 import POList from "./components/POList";
 import POArchive from "./components/POArchive";
 import PaymentCertificates from "./components/PaymentCertificates";
 import Developments from "./components/Developments";
 import CVRPortfolio from "./components/CVRPortfolio";
-import DeveloperTools from "./components/DeveloperTools";
+import AdministrationModule from "./components/admin/AdministrationModule";
 import BrandHeader from "./components/Brandheader";
-import SetupAssistant, { dismissSetupAssistant, isSetupDismissed } from "./setup/SetupAssistant";
+import {
+  CommercialWorkspace,
+} from "./components/layout/WorkspaceShell";
+import { NavigationProvider } from "./navigation/NavigationContext";
+import SetupAssistant, { dismissSetupAssistant, shouldShowSetupAssistant } from "./setup/SetupAssistant";
 import { buildPoFormSeedFromSetup, loadSetupDraft } from "./setup/setupDraft";
+import { getCommercialStructure } from "./admin/commercialStructureStore";
 import "./styles/brand.css";
 import "./styles/po-module.css";
 
-function shouldShowSetupAssistant() {
+function shouldShowSetupOnLaunch() {
   const params = new URLSearchParams(window.location.search);
-  if (params.get("setup") === "1") return !isSetupDismissed();
-  return false;
+  if (params.get("setup") === "1") return true;
+  return shouldShowSetupAssistant();
 }
 
 export default function App() {
   const [tab, setTab] = useState("form");
-  const [showSetup, setShowSetup] = useState(shouldShowSetupAssistant);
+  const [showSetup, setShowSetup] = useState(shouldShowSetupOnLaunch);
   const [setupLaunchSeed, setSetupLaunchSeed] = useState(null);
   const [listFocusPo, setListFocusPo] = useState(null);
   const [packageNav, setPackageNav] = useState({
@@ -32,6 +37,8 @@ export default function App() {
     periodKey: null,
   });
   const [cvrRefresh, setCvrRefresh] = useState(0);
+  const [adminDashboardReset, setAdminDashboardReset] = useState(0);
+  const [navigationOrigin, setNavigationOrigin] = useState(null);
 
   useEffect(() => {
     if (!localStorage.getItem("userEmail")) {
@@ -40,18 +47,34 @@ export default function App() {
     if (!localStorage.getItem("userName")) {
       localStorage.setItem("userName", "Commercial Manager");
     }
+    getCommercialStructure();
   }, []);
 
   const exitSetup = () => setShowSetup(false);
 
-  const handleLaunchPO = () => {
+  const handleLaunchPO = (seed = null) => {
     dismissSetupAssistant();
     exitSetup();
-    setSetupLaunchSeed(buildPoFormSeedFromSetup(loadSetupDraft()));
+    setSetupLaunchSeed(seed || buildPoFormSeedFromSetup(loadSetupDraft()));
     setTab("form");
   };
 
+  const handleOpenAdministration = () => {
+    dismissSetupAssistant();
+    exitSetup();
+    setTab("administration");
+  };
+
+  const handleOpenDevelopments = () => {
+    dismissSetupAssistant();
+    exitSetup();
+    setTab("developments");
+  };
+
   const handleTab = (nextTab) => {
+    if (nextTab === "administration" && tab === "administration") {
+      setAdminDashboardReset((value) => value + 1);
+    }
     if (tab === "form" && nextTab !== "form") {
       setSetupLaunchSeed(null);
     }
@@ -99,54 +122,67 @@ export default function App() {
         onExit={exitSetup}
         onLaunchPO={handleLaunchPO}
         onExplore={handleExploreBuildLite}
+        onOpenAdministration={handleOpenAdministration}
+        onOpenDevelopments={handleOpenDevelopments}
       />
     );
   }
 
   return (
+    <NavigationProvider>
     <div id="app">
       <BrandHeader
         activeTab={tab}
         onTab={handleTab}
-        onOpenDeveloperTools={() => setTab("developerTools")}
       />
 
       <main className="po-app-main">
-        {tab === "developerTools" && (
-          <div key="developerTools" className="po-page po-page-animate-in">
-            <DeveloperTools onBack={() => setTab("developments")} />
-          </div>
+        {tab === "administration" && (
+          <AdministrationModule
+            dashboardResetToken={adminDashboardReset}
+            onLaunchPO={handleLaunchPO}
+            onOpenDevelopments={handleOpenDevelopments}
+          />
         )}
         {tab === "cvrs" && (
-          <div key="cvrs" className="po-page po-page-animate-in">
+          <CommercialWorkspace>
             <CVRPortfolio
               refreshToken={cvrRefresh}
               onOpenDevelopmentCvr={(developmentId) => {
+                setNavigationOrigin({ label: 'CVR Portfolio', returnTab: 'cvrs' });
                 setCvrNav({ developmentId, periodKey: null });
                 setTab("developments");
               }}
               onOpenDevelopmentPeriod={(developmentId, periodKey) => {
+                setNavigationOrigin({ label: 'CVR Portfolio', returnTab: 'cvrs' });
                 setCvrNav({ developmentId, periodKey });
                 setTab("developments");
               }}
             />
-          </div>
+          </CommercialWorkspace>
         )}
         {tab === "developments" && (
-          <div key="developments" className="po-page po-page-animate-in">
-            <Developments
+          <Developments
               initialDevelopmentId={cvrNav.developmentId}
               initialWorkspaceTab={cvrNav.periodKey ? "cvr" : cvrNav.developmentId ? "cvr" : null}
               initialCvrPeriodKey={cvrNav.periodKey}
+              navigationOrigin={navigationOrigin ? {
+                label: navigationOrigin.label,
+                onReturn: () => {
+                  setTab(navigationOrigin.returnTab || 'cvrs');
+                  setNavigationOrigin(null);
+                },
+              } : null}
+              onOpenPackage={handleOpenPackage}
               onInitialDevelopmentHandled={() => {
                 setCvrNav({ developmentId: null, periodKey: null });
+                setNavigationOrigin(null);
                 setCvrRefresh((value) => value + 1);
               }}
             />
-          </div>
         )}
         {tab === "form" && (
-          <div key="form" className="po-page po-page-animate-in">
+          <CommercialWorkspace>
             <POForm
               setupLaunchSeed={setupLaunchSeed}
               onClearSetupLaunchSeed={() => setSetupLaunchSeed(null)}
@@ -154,11 +190,12 @@ export default function App() {
               onReviewAndApprove={handleReviewAndApprove}
               onCreateAnotherPO={handleCreateAnotherPO}
               onCreateDevelopment={() => setTab("developments")}
+              onBack={() => setTab("list")}
             />
-          </div>
+          </CommercialWorkspace>
         )}
         {tab === "list" && (
-          <div key="list" className="po-page po-page-animate-in">
+          <CommercialWorkspace>
             <POList
               focusPoNumber={listFocusPo}
               onFocusHandled={() => setListFocusPo(null)}
@@ -166,15 +203,15 @@ export default function App() {
               onCreateDevelopment={() => setTab("developments")}
               onOpenPackage={handleOpenPackage}
             />
-          </div>
+          </CommercialWorkspace>
         )}
         {tab === "archive" && (
-          <div key="archive" className="po-page po-page-animate-in">
+          <CommercialWorkspace>
             <POArchive onOpenPackage={handleOpenPackage} />
-          </div>
+          </CommercialWorkspace>
         )}
         {tab === "certificates" && (
-          <div key="certificates" className="po-page po-page-animate-in">
+          <CommercialWorkspace>
             <PaymentCertificates
               initialOrderKey={packageNav.orderKey}
               initialTab={packageNav.tab}
@@ -182,9 +219,10 @@ export default function App() {
                 setPackageNav({ orderKey: null, tab: 'overview' })
               }
             />
-          </div>
+          </CommercialWorkspace>
         )}
       </main>
     </div>
+    </NavigationProvider>
   );
 }

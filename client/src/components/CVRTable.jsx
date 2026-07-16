@@ -1,3 +1,5 @@
+import { memo } from 'react';
+
 function EditableMoneyCell({ rawValue, label, onChange }) {
   return (
     <input
@@ -20,6 +22,22 @@ function EditableMoneyCell({ rawValue, label, onChange }) {
 function VarianceCell({ label, state }) {
   return (
     <span className={`dev-cvr__variance dev-cvr__variance--${state || 'neutral'}`}>
+      {label}
+    </span>
+  );
+}
+
+function getCtcState(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return 'neutral';
+  if (amount < -0.005) return 'negative';
+  return 'neutral';
+}
+
+function CtcCell({ label, value }) {
+  const state = getCtcState(value);
+  return (
+    <span className={`dev-cvr__ctc${state === 'negative' ? ' dev-cvr__ctc--negative' : ''}`}>
       {label}
     </span>
   );
@@ -49,15 +67,15 @@ function hasCommercialAdjustment(row) {
   return Number.isFinite(value) && Math.abs(value) > 0.005;
 }
 
-export default function CVRTable({ rows, totals, onRowSelect, onBudgetChange, readOnly = false }) {
+function CVRTable({ rows, totals, onRowSelect, onBudgetChange, readOnly = false }) {
   return (
     <div className="dev-cvr__table-wrap">
-      <div className="po-table-wrap dev-cvr__table-scroll">
-        <table className="po-data-table dev-cvr__table">
+      <div className="dev-cvr__grid-viewport" role="region" aria-label="CVR cost code grid">
+        <table className="po-data-table dev-cvr__table dev-cvr__table--balanced">
           <thead>
             <tr>
-              <th>Cost Code</th>
-              <th>Description</th>
+              <th className="dev-cvr__col-code">Cost Code</th>
+              <th className="dev-cvr__col-desc">Description</th>
               <th className="dev-cvr__money-col">Current Budget</th>
               <th className="dev-cvr__money-col">Committed</th>
               <th className="dev-cvr__money-col">Certified</th>
@@ -72,7 +90,7 @@ export default function CVRTable({ rows, totals, onRowSelect, onBudgetChange, re
             {rows.length ? (
               rows.map((row) => (
                 <tr key={row.id}>
-                  <td>
+                  <td className="dev-cvr__col-code">
                     <div className="dev-cvr__row-link-wrap">
                       <button
                         type="button"
@@ -92,9 +110,7 @@ export default function CVRTable({ rows, totals, onRowSelect, onBudgetChange, re
                       ) : null}
                     </div>
                   </td>
-                  <td className="dev-cvr__description" title={formatDescriptionCell(row)}>
-                    {formatDescriptionCell(row)}
-                  </td>
+                  <td className="dev-cvr__col-desc">{formatDescriptionCell(row)}</td>
                   <td className="dev-cvr__money-col">
                     {readOnly || !onBudgetChange ? (
                       row.currentBudgetLabel
@@ -112,7 +128,9 @@ export default function CVRTable({ rows, totals, onRowSelect, onBudgetChange, re
                   <td className="dev-cvr__money-col">{row.actualCostLabel}</td>
                   <td className="dev-cvr__money-col">{row.systemForecastLabel}</td>
                   <td className="dev-cvr__money-col">{row.finalForecastLabel}</td>
-                  <td className="dev-cvr__money-col">{row.costToCompleteLabel}</td>
+                  <td className="dev-cvr__money-col">
+                    <CtcCell label={row.costToCompleteLabel} value={row.costToComplete} />
+                  </td>
                   <td className="dev-cvr__money-col">
                     <VarianceCell label={row.varianceLabel} state={row.varianceState} />
                   </td>
@@ -130,7 +148,7 @@ export default function CVRTable({ rows, totals, onRowSelect, onBudgetChange, re
           {rows.length ? (
             <tfoot>
               <tr className="dev-cvr__totals-row">
-                <td colSpan={2}>
+                <td className="dev-cvr__col-code" colSpan={2}>
                   <strong>Totals</strong>
                 </td>
                 <td className="dev-cvr__money-col">
@@ -152,7 +170,7 @@ export default function CVRTable({ rows, totals, onRowSelect, onBudgetChange, re
                   <strong>{totals.finalForecastLabel}</strong>
                 </td>
                 <td className="dev-cvr__money-col">
-                  <strong>{totals.costToCompleteLabel}</strong>
+                  <CtcCell label={totals.costToCompleteLabel} value={totals.costToComplete} />
                 </td>
                 <td className="dev-cvr__money-col">
                   <VarianceCell
@@ -166,9 +184,11 @@ export default function CVRTable({ rows, totals, onRowSelect, onBudgetChange, re
         </table>
       </div>
       <p className="dev-cvr__table-hint">
-        Click a cost code to view system forecast, enter a commercial adjustment, or
-        review adjustment history.
+        Click a cost code for forecast detail and commercial adjustments. Frozen columns
+        remain visible while scrolling.
       </p>
     </div>
   );
 }
+
+export default memo(CVRTable);

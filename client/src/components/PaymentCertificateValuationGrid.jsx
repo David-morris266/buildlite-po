@@ -607,6 +607,9 @@ export default function PaymentCertificateValuationGrid({
     if (Object.keys(patch).length) {
       onProgressChange?.(patch);
     }
+
+    setShowCustomPct(false);
+    setCustomPct('');
   }
 
   function handlePctChange(cellKey, rawValue) {
@@ -696,13 +699,15 @@ export default function PaymentCertificateValuationGrid({
               onMarkComplete={() =>
                 applyToSelection(() => 100, { complete: true })
               }
-              onSetPercentage={(pct) => applyToSelection(() => pct)}
+              onSetPercentage={(pct) => {
+                applyToSelection(() => pct);
+              }}
               onClearSelection={() => applyToSelection(() => 0)}
               customPct={customPct}
               onCustomPctChange={setCustomPct}
-              onApplyCustomPct={() =>
-                applyToSelection(() => Number.parseFloat(customPct) || 0)
-              }
+              onApplyCustomPct={() => {
+                applyToSelection(() => Number.parseFloat(customPct) || 0);
+              }}
               showCustomPct={showCustomPct}
               onToggleCustomPct={() => setShowCustomPct((value) => !value)}
             />

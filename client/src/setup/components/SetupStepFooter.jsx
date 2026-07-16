@@ -9,10 +9,25 @@ export default function SetupStepFooter({
   continueFormId,
   wide = false,
   continueDisabled = false,
+  onSkip,
+  skipLabel = "Skip for now",
+  onExitSetup,
+  exitLabel = "Exit Setup",
+  showContinue = true,
 }) {
   return (
     <div className={`setup-footer${wide ? " setup-footer--wide" : ""}`}>
       <div className="setup-footer__inner">
+        {onExitSetup ? (
+          <button
+            type="button"
+            className="setup-btn setup-btn--link"
+            onClick={onExitSetup}
+            disabled={continueDisabled}
+          >
+            {exitLabel}
+          </button>
+        ) : null}
         <button
           type="button"
           className="setup-btn setup-btn--secondary"
@@ -21,15 +36,27 @@ export default function SetupStepFooter({
         >
           {backLabel}
         </button>
-        <button
-          type={continueFormId ? "submit" : "button"}
-          form={continueFormId || undefined}
-          className="setup-btn setup-btn--primary"
-          onClick={continueFormId ? undefined : onContinue}
-          disabled={continueDisabled}
-        >
-          {continueLabel}
-        </button>
+        {onSkip ? (
+          <button
+            type="button"
+            className="setup-btn setup-btn--secondary"
+            onClick={onSkip}
+            disabled={continueDisabled}
+          >
+            {skipLabel}
+          </button>
+        ) : null}
+        {showContinue ? (
+          <button
+            type={continueFormId ? "submit" : "button"}
+            form={continueFormId || undefined}
+            className="setup-btn setup-btn--primary"
+            onClick={continueFormId ? undefined : onContinue}
+            disabled={continueDisabled}
+          >
+            {continueLabel}
+          </button>
+        ) : null}
       </div>
     </div>
   );

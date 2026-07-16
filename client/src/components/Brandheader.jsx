@@ -1,4 +1,4 @@
-export default function BrandHeader({ activeTab, onTab, onOpenDeveloperTools }) {
+export default function BrandHeader({ activeTab, onTab }) {
   return (
     <header className="brandbar">
       <div className="brand-left">
@@ -6,18 +6,16 @@ export default function BrandHeader({ activeTab, onTab, onOpenDeveloperTools }) 
         <div>
           <div className="brand-name">Build Lite</div>
           <div className="brand-tag">Lean Commercial Control</div>
-          <button
-            type="button"
-            className="brand-dev-tools"
-            onClick={() => onOpenDeveloperTools?.()}
-            title="Development-only utilities"
-          >
-            Developer Tools
-          </button>
         </div>
       </div>
 
       <nav className="nav">
+        <button
+          className={`tab ${activeTab === "administration" ? "active" : ""}`}
+          onClick={() => onTab("administration")}
+        >
+          Administration
+        </button>
         <button
           className={`tab ${activeTab === "cvrs" ? "active" : ""}`}
           onClick={() => onTab("cvrs")}

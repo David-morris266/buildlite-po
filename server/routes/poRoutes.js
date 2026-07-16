@@ -56,6 +56,101 @@ async function dbFindSupplierById(clientId, id) {
   return rows[0]?.payload || null;
 }
 
+function pushSupplierApprovalHistory(supplier, action, by = "", note = "") {
+  if (!Array.isArray(supplier.approvalHistory)) supplier.approvalHistory = [];
+  supplier.approvalHistory.push({
+    at: new Date().toISOString(),
+    by: String(by || "").trim(),
+    action,
+    note: String(note || "").trim(),
+  });
+}
+
+function resolveSupplierApprovalStatus(base = {}, body = {}, { isCreate = false } = {}) {
+  if (body.approvalStatus) return String(body.approvalStatus);
+  if (body.pendingApproval || body.createdFromPo) return "pending";
+  if (body.approvedSupplier === true) return "approved";
+  if (body.approvedSupplier === false) return "pending";
+  if (base.approvalStatus) return base.approvalStatus;
+  if (base.approvedSupplier === false) return "pending";
+  return isCreate ? "approved" : base.approvalStatus || "approved";
+}
+
+function buildSupplierPayload(base = {}, body = {}, { isCreate = false } = {}) {
+  const now = new Date().toISOString();
+  const termsDays =
+    body.termsDays != null ? Number(body.termsDays || 30) : Number(base.termsDays || 30);
+  const approvalStatus = resolveSupplierApprovalStatus(base, body, { isCreate });
+  const approvedSupplier = approvalStatus === "approved";
+
+  const payload = {
+    ...base,
+    id: base.id || body.id || `sup-${Date.now()}`,
+    name:
+      body.name != null ? String(body.name).trim() : String(base.name || "").trim(),
+    address1: body.address1 ?? base.address1 ?? "",
+    address2: body.address2 ?? base.address2 ?? "",
+    city: body.city ?? base.city ?? "",
+    postcode: body.postcode ?? base.postcode ?? "",
+    contactName: body.contactName ?? base.contactName ?? "",
+    contactEmail: body.contactEmail ?? base.contactEmail ?? "",
+    contactPhone: body.contactPhone ?? base.contactPhone ?? "",
+    vatNumber: body.vatNumber ?? base.vatNumber ?? "",
+    termsDays,
+    supplierType: body.supplierType ?? base.supplierType ?? "other",
+    notes: body.notes ?? base.notes ?? "",
+    preferredTrade: body.preferredTrade ?? base.preferredTrade ?? "",
+    preferredCommercialHead:
+      body.preferredCommercialHead ?? base.preferredCommercialHead ?? "",
+    creditAccount:
+      body.creditAccount != null ? Boolean(body.creditAccount) : Boolean(base.creditAccount),
+    cisStatus: body.cisStatus ?? base.cisStatus ?? "",
+    insuranceExpiry: body.insuranceExpiry ?? base.insuranceExpiry ?? "",
+    approvalStatus,
+    approvedSupplier,
+    defaultVat: body.defaultVat ?? base.defaultVat ?? "Standard",
+    vatStatus: body.vatStatus ?? base.vatStatus ?? "",
+    active: body.active != null ? body.active !== false : base.active !== false,
+    bankDetailsPlaceholder:
+      body.bankDetailsPlaceholder ?? base.bankDetailsPlaceholder ?? "Future module",
+    creditLimitPlaceholder:
+      body.creditLimitPlaceholder ?? base.creditLimitPlaceholder ?? "Future module",
+    approvalHistory: Array.isArray(body.approvalHistory)
+      ? body.approvalHistory
+      : base.approvalHistory || [],
+    createdAt: base.createdAt || now,
+    updatedAt: now,
+  };
+
+  if (isCreate && (body.pendingApproval || body.createdFromPo)) {
+    pushSupplierApprovalHistory(
+      payload,
+      "CREATED_PENDING",
+      body.createdBy || "",
+      "Created during Purchase Order entry"
+    );
+  }
+
+  return payload;
+}
+
+async function assertSupplierApprovedForPoApproval(clientId, po) {
+  const supplierId = po?.supplierId || po?.supplierSnapshot?.id;
+  if (!supplierId) return null;
+
+  const supplier = await dbFindSupplierById(clientId, String(supplierId));
+  if (!supplier) return null;
+
+  const pending =
+    supplier.approvalStatus === "pending" || supplier.approvedSupplier === false;
+  if (!pending) return null;
+
+  return {
+    message:
+      "This supplier is pending approval. Approve the supplier in Administration before approving this Purchase Order.",
+  };
+}
+
 // --------------------
 // POs
 // --------------------
@@ -215,23 +310,9 @@ router.post("/po/suppliers", async (req, res) => {
   }
 
   const now = new Date().toISOString();
-  const sup = {
-    id: b.id || `sup-${Date.now()}`,
-    name: String(b.name).trim(),
-    address1: b.address1 || "",
-    address2: b.address2 || "",
-    city: b.city || "",
-    postcode: b.postcode || "",
-    contactName: b.contactName || "",
-    contactEmail: b.contactEmail || "",
-    contactPhone: b.contactPhone || "",
-    vatNumber: b.vatNumber || "",
-    termsDays: Number(b.termsDays || 30),
-    supplierType: b.supplierType || "other",
-    notes: b.notes || "",
-    createdAt: now,
-    updatedAt: now,
-  };
+  const sup = buildSupplierPayload({}, b, { isCreate: true });
+  sup.createdAt = now;
+  sup.updatedAt = now;
 
   await dbCreateSupplier(active.id, sup);
   res.status(201).json(sup);
@@ -245,28 +326,33 @@ router.put("/po/suppliers/:id", async (req, res) => {
   if (!existing) return res.status(404).json({ message: "Supplier not found" });
 
   const b = req.body || {};
-  const now = new Date().toISOString();
-  const sup = {
-    ...existing,
-    name: b.name != null ? String(b.name).trim() : existing.name,
-    address1: b.address1 ?? existing.address1 ?? "",
-    address2: b.address2 ?? existing.address2 ?? "",
-    city: b.city ?? existing.city ?? "",
-    postcode: b.postcode ?? existing.postcode ?? "",
-    contactName: b.contactName ?? existing.contactName ?? "",
-    contactEmail: b.contactEmail ?? existing.contactEmail ?? "",
-    contactPhone: b.contactPhone ?? existing.contactPhone ?? "",
-    vatNumber: b.vatNumber ?? existing.vatNumber ?? "",
-    termsDays:
-      b.termsDays != null ? Number(b.termsDays || 30) : Number(existing.termsDays || 30),
-    supplierType: b.supplierType ?? existing.supplierType ?? "other",
-    notes: b.notes ?? existing.notes ?? "",
-    updatedAt: now,
-  };
+  const sup = buildSupplierPayload(existing, b);
 
   if (!sup.name) {
     return res.status(400).json({ message: "Field 'name' is required" });
   }
+
+  await dbCreateSupplier(active.id, sup);
+  res.json(sup);
+});
+
+router.post("/po/suppliers/:id/approve", async (req, res) => {
+  const active = await getActiveClient();
+  if (!active) return res.status(404).json({ error: "No active client set" });
+
+  const existing = await dbFindSupplierById(active.id, req.params.id);
+  if (!existing) return res.status(404).json({ message: "Supplier not found" });
+
+  const sup = buildSupplierPayload(existing, {
+    approvedSupplier: true,
+    approvalStatus: "approved",
+  });
+  pushSupplierApprovalHistory(
+    sup,
+    "APPROVED",
+    req.body?.by || req.body?.approverName || "",
+    req.body?.note || "Approved in Administration"
+  );
 
   await dbCreateSupplier(active.id, sup);
   res.json(sup);
@@ -667,6 +753,13 @@ router.post("/po/:poNumber/approve", async (req, res) => {
   const norm = String(status).toLowerCase();
   if (!["approved", "rejected"].includes(norm)) {
     return res.status(400).json({ message: "status must be 'Approved' or 'Rejected'" });
+  }
+
+  if (norm === "approved") {
+    const supplierError = await assertSupplierApprovedForPoApproval(active.id, po);
+    if (supplierError) {
+      return res.status(400).json(supplierError);
+    }
   }
 
   const now = new Date().toISOString();

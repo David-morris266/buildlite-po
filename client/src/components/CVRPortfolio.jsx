@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import POPageHeader from './POPageHeader';
+import SectionHeading from './layout/SectionHeading';
+import { buildCvrPortfolioNavigation } from '../navigation/navigationBuilders';
 import { listPOs } from '../api';
 import { buildCvrPortfolioModel } from '../cvr/cvrPeriodHelpers';
 import {
@@ -133,18 +135,25 @@ export default function CVRPortfolio({
     refresh();
   }
 
+  const pageNavigation = buildCvrPortfolioNavigation();
+
   return (
-    <div className="dev-cvr-portfolio">
+    <div className="dev-cvr-portfolio dev-cvr-workspace">
       <POPageHeader
-        eyebrow="Company Portfolio"
-        title="CVRs"
+        breadcrumbs={pageNavigation.breadcrumbs}
+        title={pageNavigation.title}
         lead="Monthly commercial position and approval workflow across all developments."
+        showBack={false}
       />
 
       <PortfolioSummary cards={portfolio.summaryCards} />
 
       <section className="po-module-card dev-cvr-portfolio__section">
-        <h2 className="po-matrix-section__title">Awaiting Approval</h2>
+        <SectionHeading
+          title="Awaiting Approval"
+          support="Submitted CVR periods"
+          description="Review and approve monthly commercial positions awaiting sign-off."
+        />
         <div className="po-table-wrap">
           <table className="po-data-table">
             <thead>
@@ -213,7 +222,11 @@ export default function CVRPortfolio({
       </section>
 
       <section className="po-module-card dev-cvr-portfolio__section">
-        <h2 className="po-matrix-section__title">Developments</h2>
+        <SectionHeading
+          title="Developments"
+          support="Portfolio overview"
+          description="Current CVR period and commercial position by development."
+        />
         <div className="po-table-wrap">
           <table className="po-data-table">
             <thead>

@@ -19,6 +19,7 @@ import { syncPackageFromApprovedPo } from '../payments/subcontractOrders';
 import { notifyCommercialChanged } from '../commercial/commercialEvents';
 import POForm from './POForm';
 import POPageHeader from './POPageHeader';
+import { buildProcurementRegisterNavigation } from '../navigation/navigationBuilders';
 import POLoading from './POLoading';
 import PODrawerShell, { PODrawerLoading } from './PODrawerShell';
 import POReviewDrawerContent from './POReviewDrawerContent';
@@ -241,12 +242,15 @@ export default function POList({
     setEditMode(false);
   }
 
+  const pageNavigation = buildProcurementRegisterNavigation();
+
   return (
     <div className="po-list-page">
       <POPageHeader
-        eyebrow="Purchase orders"
-        title="Purchase Orders"
+        breadcrumbs={pageNavigation.breadcrumbs}
+        title={pageNavigation.title}
         lead="Review, edit and track your Purchase Orders."
+        showBack={false}
       />
 
       {listFeedback ? (
@@ -472,20 +476,12 @@ export default function POList({
         {!selected && drawerOpen ? <PODrawerLoading /> : null}
 
         {selected && editMode ? (
-          <div className="po-drawer-edit">
-            <div className="po-drawer-edit__header">
-              <button
-                type="button"
-                className="po-drawer-close"
-                onClick={closeDrawer}
-              >
-                Close
-              </button>
-            </div>
+          <div className="po-drawer-edit po-drawer-edit--form">
             <div className="po-drawer-edit__body">
               <POForm
                 initialPo={selected}
                 onCreateDevelopment={onCreateDevelopment}
+                onCancelEdit={() => setEditMode(false)}
                 onSaved={async (updatedPo) => {
                   setSelected(updatedPo);
                   setEditMode(false);

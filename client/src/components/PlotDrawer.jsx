@@ -1,6 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import PODrawerShell from './PODrawerShell';
-import { PLOT_DEFAULT_STATUS, PLOT_CONFIGURATION_SUGGESTIONS } from '../developments/plotMaster';
+import { listRevenueCategoryNames, getDefaultRevenueCategory } from '../admin/revenueCategoryStore';
+import {
+  PLOT_DEFAULT_STATUS,
+  PLOT_CONFIGURATION_SUGGESTIONS,
+} from '../developments/plotMaster';
+import { getPlotNiaM2 } from '../developments/plotCommercial';
+import { REVENUE_STATUSES } from '../developments/plotCommercial';
+import { GARAGE_TYPES, REVENUE_SOURCES } from '../revenue/revenueTypes';
+import { resolvePlotForecastPrice } from '../revenue/revenueStrategyCalculations';
+import {
+  getHouseTypePricing,
+  getRevenueStrategy,
+} from '../revenue/revenueStrategy';
+import { getPlots } from '../developments/plotMaster';
 
 const EMPTY_FORM = {
   plotNumber: '',
@@ -8,18 +21,31 @@ const EMPTY_FORM = {
   configuration: '',
   bedrooms: '',
   gia: '',
+  niaFt2: '',
   phase: '',
   tenure: '',
+  sellingPrice: '',
+  revenueCategory: '',
+  revenueStatus: 'Available',
+  revenueSource: 'House Type',
+  garage: 'None',
+  plotPremium: '',
+  plotPremiumReason: '',
+  manualForecastValue: '',
+  plotOverrideValue: '',
 };
 
 export default function PlotDrawer({
   open,
   plot,
+  developmentId,
+  openedFrom = 'PlotMaster',
   saveErrors = [],
   onClose,
   onSave,
 }) {
   const [form, setForm] = useState(EMPTY_FORM);
+  const categoryOptions = listRevenueCategoryNames();
 
   useEffect(() => {
     if (!open) return;
@@ -30,25 +56,72 @@ export default function PlotDrawer({
         configuration: plot.configuration || '',
         bedrooms: plot.bedrooms ?? '',
         gia: plot.gia ?? '',
+        niaFt2: plot.niaFt2 ?? plot.gia ?? '',
         phase: plot.phase || '',
         tenure: plot.tenure || '',
+        sellingPrice: plot.sellingPrice ?? '',
+        revenueCategory: plot.revenueCategory || getDefaultRevenueCategory(),
+        revenueStatus: plot.revenueStatus || 'Available',
+        revenueSource: plot.revenueSource || 'House Type',
+        garage: plot.garage || 'None',
+        plotPremium: plot.plotPremium ?? '',
+        plotPremiumReason: plot.plotPremiumReason || '',
+        manualForecastValue: plot.manualForecastValue ?? '',
+        plotOverrideValue: plot.plotOverrideValue ?? '',
       });
     } else {
-      setForm(EMPTY_FORM);
+      setForm({
+        ...EMPTY_FORM,
+        revenueCategory: getDefaultRevenueCategory(),
+      });
     }
   }, [open, plot]);
 
   function updateField(field, value) {
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
+      if (field === 'garage') {
+        next.garageOverride = true;
+      }
+      return next;
+    });
   }
 
   function handleSubmit(event) {
     event.preventDefault();
-    onSave?.({
+    const strategy = getRevenueStrategy(developmentId || plot?.developmentId);
+    const houseTypePricing = getHouseTypePricing(developmentId || plot?.developmentId);
+    const plots = developmentId || plot?.developmentId ? getPlots(developmentId || plot.developmentId) : [];
+    const payload = {
       ...form,
       status: plot?.status || PLOT_DEFAULT_STATUS,
-    });
+    };
+    if (payload.revenueSource !== 'Manual Value') {
+      payload.forecastSellingPrice = resolvePlotForecastPrice(
+        payload,
+        strategy,
+        houseTypePricing,
+        plots
+      );
+      payload.manualOverrideExplicit = false;
+      payload.manualForecastValue = 0;
+    } else {
+      payload.forecastSellingPrice = payload.manualForecastValue;
+      payload.manualOverrideExplicit = true;
+    }
+    if (!payload.garageOverride) {
+      payload.garageOverride = false;
+    }
+    onSave?.(payload);
   }
+
+  const displayNiaM2 = useMemo(() => {
+    const value = getPlotNiaM2({ niaFt2: form.niaFt2, gia: form.gia });
+    return value > 0 ? value.toFixed(2) : '';
+  }, [form.niaFt2, form.gia]);
+
+  const drawerEyebrow = openedFrom === 'Revenue' ? 'Revenue' : 'Plot Master';
+  const closeLabel = openedFrom === 'Revenue' ? 'Back to Revenue' : 'Close';
 
   return (
     <PODrawerShell
@@ -58,9 +131,9 @@ export default function PlotDrawer({
     >
       <header className="po-drawer-header">
         <div className="po-drawer-header__bar">
-          <p className="po-drawer-header__eyebrow">Plot Master</p>
+          <p className="po-drawer-header__eyebrow">{drawerEyebrow}</p>
           <button type="button" className="po-drawer-header__close" onClick={onClose}>
-            Close
+            {closeLabel}
           </button>
         </div>
         <div className="po-drawer-header__hero">
@@ -132,7 +205,7 @@ export default function PlotDrawer({
               />
             </label>
             <label className="dev-form__field">
-              <span className="dev-form__label">Gross Internal Area</span>
+              <span className="dev-form__label">Gross Internal Area (ft²)</span>
               <input
                 className="input"
                 type="number"
@@ -140,6 +213,29 @@ export default function PlotDrawer({
                 step="0.1"
                 value={form.gia}
                 onChange={(event) => updateField('gia', event.target.value)}
+              />
+            </label>
+            <label className="dev-form__field">
+              <span className="dev-form__label">NIA (ft²)</span>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                step="0.1"
+                value={form.niaFt2}
+                onChange={(event) => updateField('niaFt2', event.target.value)}
+                placeholder="Defaults to GIA when blank"
+              />
+            </label>
+            <label className="dev-form__field">
+              <span className="dev-form__label">NIA (m²)</span>
+              <input
+                className="input"
+                type="text"
+                readOnly
+                value={displayNiaM2}
+                aria-readonly="true"
+                placeholder="Calculated from NIA ft²"
               />
             </label>
             <label className="dev-form__field">
@@ -159,6 +255,125 @@ export default function PlotDrawer({
                 value={form.tenure}
                 onChange={(event) => updateField('tenure', event.target.value)}
               />
+            </label>
+          </div>
+        </section>
+
+        <section className="po-drawer-section">
+          <h3 className="po-drawer-section__title">Plot pricing</h3>
+          <div className="dev-form__grid">
+            <label className="dev-form__field">
+              <span className="dev-form__label">Revenue Source</span>
+              <select
+                className="input"
+                value={form.revenueSource}
+                onChange={(event) => updateField('revenueSource', event.target.value)}
+              >
+                {REVENUE_SOURCES.map((source) => (
+                  <option key={source} value={source}>{source}</option>
+                ))}
+              </select>
+            </label>
+            <label className="dev-form__field">
+              <span className="dev-form__label">Garage</span>
+              <select
+                className="input"
+                value={form.garage}
+                onChange={(event) => updateField('garage', event.target.value)}
+              >
+                {GARAGE_TYPES.map((garage) => (
+                  <option key={garage} value={garage}>{garage}</option>
+                ))}
+              </select>
+            </label>
+            <label className="dev-form__field">
+              <span className="dev-form__label">Plot Premium</span>
+              <input
+                className="input"
+                type="number"
+                step="1000"
+                value={form.plotPremium}
+                onChange={(event) => updateField('plotPremium', event.target.value)}
+                placeholder="e.g. 10000 or -15000"
+              />
+            </label>
+            <label className="dev-form__field">
+              <span className="dev-form__label">Premium Reason</span>
+              <input
+                className="input"
+                type="text"
+                value={form.plotPremiumReason}
+                onChange={(event) => updateField('plotPremiumReason', event.target.value)}
+                placeholder="e.g. Corner plot"
+              />
+            </label>
+            {form.revenueSource === 'Manual Value' ? (
+              <label className="dev-form__field">
+                <span className="dev-form__label">Manual Forecast Value</span>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  step="1000"
+                  value={form.manualForecastValue}
+                  onChange={(event) => updateField('manualForecastValue', event.target.value)}
+                />
+              </label>
+            ) : null}
+            {form.revenueSource === 'Plot Override' ? (
+              <label className="dev-form__field">
+                <span className="dev-form__label">Plot Override Value</span>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  step="1000"
+                  value={form.plotOverrideValue}
+                  onChange={(event) => updateField('plotOverrideValue', event.target.value)}
+                />
+              </label>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="po-drawer-section">
+          <h3 className="po-drawer-section__title">Commercial sales</h3>
+          <div className="dev-form__grid">
+            <label className="dev-form__field">
+              <span className="dev-form__label">Selling Price</span>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                step="1000"
+                value={form.sellingPrice}
+                onChange={(event) => updateField('sellingPrice', event.target.value)}
+                placeholder="Recorded sale price when exchanged/completed"
+              />
+            </label>
+            <label className="dev-form__field">
+              <span className="dev-form__label">Revenue Category</span>
+              <select
+                className="input"
+                value={form.revenueCategory}
+                onChange={(event) => updateField('revenueCategory', event.target.value)}
+              >
+                {categoryOptions.map((category) => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
+            </label>
+            <label className="dev-form__field">
+              <span className="dev-form__label">Revenue Status</span>
+              <select
+                className="input"
+                value={form.revenueStatus}
+                onChange={(event) => updateField('revenueStatus', event.target.value)}
+              >
+                {REVENUE_STATUSES.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
             </label>
           </div>
         </section>

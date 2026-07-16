@@ -167,4 +167,18 @@ describe('enrichCvrForecastRow', () => {
     expect(row.variance).toBe(-5000);
     expect(row.adjustmentState).toBe('positive');
   });
+
+  it('preserves negative cost to complete when ledger actuals exceed budget forecast', () => {
+    const row = enrichCvrForecastRow({
+      currentBudget: 50000,
+      committed: null,
+      actualCost: 80000,
+      commercialAdjustment: 0,
+      commercialReason: '',
+    });
+
+    expect(row.systemForecast).toBe(50000);
+    expect(row.finalForecast).toBe(50000);
+    expect(row.costToComplete).toBe(-30000);
+  });
 });

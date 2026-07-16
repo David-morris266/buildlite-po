@@ -1,12 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
-import POPageHeader from './POPageHeader';
+import { useEffect, useMemo, useState, memo } from 'react';
+import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import CVRTable from './CVRTable';
 import CostCentreDrawer from './CostCentreDrawer';
 import BudgetEditor from './BudgetEditor';
 import CVRBudgetImportWizard from './CVRBudgetImportWizard';
 import { listPOs } from '../api';
 import { subscribeCommercialChanged } from '../commercial/commercialEvents';
-import { buildCvrWorkspaceModel } from '../cvr/cvrHelpers';
+import { buildCvrWorkspaceModel, formatCvrTotals } from '../cvr/cvrHelpers';
+import { buildCvrTotals } from '../cvr/cvrCalculations';
+import {
+  buildHierarchyKeyMap,
+  resolveRowCommercialHead,
+} from '../cvr/commercialReportingHierarchy';
 import {
   buildCvrPeriodAuditItems,
   buildCvrPeriodHeaderMeta,
@@ -43,33 +48,49 @@ function StatusBadge({ status }) {
 
 function CvrSummaryDashboard({ cards }) {
   return (
-    <section className="dev-cvr__cards" aria-label="CVR commercial summary">
+    <section
+      className="dev-cvr__cards dev-cvr__cards--summary dev-cvr__cards--ribbon"
+      aria-label="CVR commercial summary"
+    >
       {cards.map((card) => (
         <div
           key={card.label}
-          className={`dev-cvr__card dev-cvr__card--${card.modifier}`}
+          className={`dev-cvr__card dev-cvr__card--ribbon dev-cvr__card--${card.modifier}`}
         >
           <span className="dev-cvr__card-label">{card.label}</span>
-          <strong
-            className={`dev-cvr__card-value${
-              card.modifier === 'saving' || card.modifier === 'overspend'
-                ? ` dev-cvr__variance dev-cvr__variance--${card.modifier}`
-                : ''
-            }`}
-          >
-            {card.value}
-          </strong>
+          <strong className={getSummaryCardValueClass(card)}>{card.value}</strong>
         </div>
       ))}
     </section>
   );
 }
 
+function getSummaryCardValueClass(card) {
+  const classes = ['dev-cvr__card-value'];
+
+  if (card.modifier === 'saving' || card.modifier === 'overspend') {
+    classes.push('dev-cvr__variance', `dev-cvr__variance--${card.modifier}`);
+  }
+  if (card.modifier === 'outstanding') {
+    classes.push('dev-cvr__card-value--outstanding');
+  }
+  if (card.modifier === 'ctc') {
+    classes.push('dev-cvr__card-value--ctc');
+  }
+  if (card.modifier === 'accent') {
+    classes.push('dev-cvr__card-value--accent');
+  }
+
+  return classes.join(' ');
+}
+
+const MemoCvrSummaryDashboard = memo(CvrSummaryDashboard);
+
 function CvrAuditHistory({ items }) {
   if (!items.length) return null;
 
   return (
-    <details className="po-cert-detail__audit dev-cvr-period__audit" open>
+    <details className="po-cert-detail__audit dev-cvr-period__audit">
       <summary>CVR History</summary>
       <ul className="po-cert-detail__audit-list">
         {items.map((entry) => (
@@ -170,9 +191,15 @@ export default function CVRWorkspace({
   development,
   periodKey,
   refreshToken = 0,
+  pageNavigation = null,
   onCvrChanged,
-  onBackToRegister,
+  onBackToSummary,
   onPeriodChanged,
+  initialCostCodeKey = null,
+  familyFilter = null,
+  headFilter = null,
+  onClearFamilyFilter,
+  onClearHeadFilter,
 }) {
   const [pos, setPos] = useState([]);
   const [localRefresh, setLocalRefresh] = useState(0);
@@ -194,7 +221,9 @@ export default function CVRWorkspace({
   const locked = isCvrPeriodLocked(period);
   const status = getCvrPeriodStatusMeta(period?.status);
   const auditItems = buildCvrPeriodAuditItems(period);
-  const headerMeta = buildCvrPeriodHeaderMeta(period);
+  const headerMeta = buildCvrPeriodHeaderMeta(period).filter(
+    (item) => item.label !== 'Period'
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -233,9 +262,35 @@ export default function CVRWorkspace({
     });
   }, [development, pos, periodKey, period, readOnly, refreshToken, localRefresh]);
 
+  const activeHeadFilter = headFilter || familyFilter;
+
+  const hierarchyMap = useMemo(
+    () => buildHierarchyKeyMap(period?.costCentres || []),
+    [period?.costCentres]
+  );
+
+  const displayedRows = useMemo(() => {
+    if (!workspace?.rows) return [];
+    if (!activeHeadFilter) return workspace.rows;
+    return workspace.rows.filter(
+      (row) => resolveRowCommercialHead(row.costCodeKey, hierarchyMap) === activeHeadFilter
+    );
+  }, [workspace?.rows, activeHeadFilter, hierarchyMap]);
+
+  const displayedTotals = useMemo(() => {
+    const rows = activeHeadFilter ? displayedRows : workspace?.rows || [];
+    return formatCvrTotals(buildCvrTotals(rows));
+  }, [workspace?.rows, displayedRows, activeHeadFilter]);
+
   useEffect(() => {
     setNotes(workspace?.developmentNotes || '');
   }, [workspace?.developmentNotes]);
+
+  useEffect(() => {
+    if (!initialCostCodeKey || !workspace?.rows?.length) return;
+    const row = workspace.rows.find((item) => item.costCodeKey === initialCostCodeKey);
+    if (row) setSelectedRow(row);
+  }, [initialCostCodeKey, workspace?.rows]);
 
   useEffect(() => {
     if (!selectedRow || !workspace?.rows?.length) return;
@@ -395,7 +450,7 @@ export default function CVRWorkspace({
       window.alert(result.errors?.[0] || 'Could not create next CVR period.');
       return;
     }
-    onBackToRegister?.();
+    onBackToSummary?.();
   }
 
   if (!workspace) return null;
@@ -417,129 +472,132 @@ export default function CVRWorkspace({
   }
 
   return (
-    <div className="dev-cvr">
-      <button type="button" className="dev-cvr-period__back" onClick={onBackToRegister}>
-        Back to CVR Register
-      </button>
-
-      <POPageHeader
-        eyebrow="Cost Value Reconciliation"
-        title={`${workspace.developmentName} · ${periodKey}`}
-        lead={`Development ${workspace.developmentNumber || '—'} · ${readOnly ? 'Read-only period' : 'Editable draft period'}`}
-      />
-
-      <header className="po-module-card dev-cvr-period__meta">
-        <div className="dev-cvr-period__meta-row">
-          <div>
-            <p className="dev-cvr-period__eyebrow">Period Status</p>
-            <StatusBadge status={status} />
+    <div className="dev-cvr dev-cvr-workspace dev-cvr-workspace--focused">
+      <ApplicationPageHeader
+        breadcrumbs={pageNavigation?.breadcrumbs || []}
+        title={workspace.developmentName}
+        lead={`Development ${workspace.developmentNumber || '—'}${readOnly ? ' · Read-only period' : ''}`}
+        onBack={onBackToSummary}
+        actions={(
+          <div className="dev-cvr-period__actions dev-cvr-period__actions--inline">
+            {!readOnly ? (
+              <>
+                <button
+                  type="button"
+                  className="po-list-btn-secondary dev-cvr__shell-btn"
+                  onClick={() => setBudgetImportOpen(true)}
+                >
+                  Import Budget
+                </button>
+                <button
+                  type="button"
+                  className="po-list-btn-secondary dev-cvr__shell-btn"
+                  onClick={() => setAddOpen(true)}
+                >
+                  Add Cost Code
+                </button>
+                <button
+                  type="button"
+                  className="po-btn-primary dev-cvr__shell-btn"
+                  onClick={() => setDialog('submit')}
+                >
+                  Submit
+                </button>
+              </>
+            ) : null}
+            {submitted ? (
+              <>
+                <button
+                  type="button"
+                  className="po-btn-primary dev-cvr__shell-btn"
+                  onClick={() => setDialog('approve')}
+                >
+                  Approve &amp; Lock
+                </button>
+                <button
+                  type="button"
+                  className="po-list-btn-secondary dev-cvr__shell-btn"
+                  onClick={() => setDialog('reject')}
+                >
+                  Reject
+                </button>
+              </>
+            ) : null}
+            {locked ? (
+              <button
+                type="button"
+                className="po-list-btn-secondary dev-cvr__shell-btn"
+                onClick={handleCreateNextPeriod}
+              >
+                Next Period
+              </button>
+            ) : null}
           </div>
-          <dl className="dev-cvr-period__meta-grid">
-            {headerMeta.map((item) => (
-              <div key={item.label}>
-                <dt>{item.label}</dt>
-                <dd>{item.value}</dd>
-              </div>
-            ))}
-          </dl>
+        )}
+      >
+        <div className="dev-cvr__shell-status">
+          <StatusBadge status={status} />
         </div>
-
-        <div className="dev-cvr-period__actions">
-          {!readOnly ? (
-            <button
-              type="button"
-              className="po-btn-primary"
-              onClick={() => setDialog('submit')}
-            >
-              Submit for Approval
-            </button>
-          ) : null}
-          {submitted ? (
-            <>
-              <button
-                type="button"
-                className="po-btn-primary"
-                onClick={() => setDialog('approve')}
-              >
-                Approve &amp; Lock
-              </button>
-              <button
-                type="button"
-                className="po-list-btn-secondary"
-                onClick={() => setDialog('reject')}
-              >
-                Reject
-              </button>
-            </>
-          ) : null}
-          {locked ? (
-            <button
-              type="button"
-              className="po-list-btn-secondary"
-              onClick={handleCreateNextPeriod}
-            >
-              Create Next Period
-            </button>
-          ) : null}
-        </div>
-      </header>
+        <dl className="dev-cvr-period__meta-inline">
+          {headerMeta.map((item) => (
+            <div key={item.label}>
+              <dt>{item.label}</dt>
+              <dd>{item.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </ApplicationPageHeader>
 
       <CvrAuditHistory items={auditItems} />
 
-      <CvrSummaryDashboard cards={workspace.summaryCards} />
-
-      <header className="dev-cvr__header">
-        <div>
-          <h2 className="po-matrix-section__title">CVR by Cost Code</h2>
-          <p className="dev-cvr__lead">
-            {readOnly
-              ? 'Historical commercial position for this locked period. Live PO, certificate and ledger values are shown as at today.'
-              : 'Headline commercial position by cost code. Open a cost code to enter Commercial Adjustments and review system forecast detail.'}
-          </p>
+      {activeHeadFilter ? (
+        <div className="cvr-workspace__family-filter" role="status">
+          <span>
+            Showing commercial head: <strong>{activeHeadFilter}</strong>
+          </span>
+          <button
+            type="button"
+            className="cvr-summary__link-btn"
+            onClick={() => {
+              onClearHeadFilter?.();
+              onClearFamilyFilter?.();
+            }}
+          >
+            Clear filter
+          </button>
         </div>
-        {!readOnly ? (
-          <div className="dev-cvr__header-actions">
-            <button
-              type="button"
-              className="po-list-btn-secondary dev-cvr__import-btn"
-              onClick={() => setBudgetImportOpen(true)}
-            >
-              Import Budget
-            </button>
-            <button type="button" className="po-btn-primary" onClick={() => setAddOpen(true)}>
-              Add Cost Code
-            </button>
-          </div>
-        ) : null}
-      </header>
+      ) : null}
+
+      <MemoCvrSummaryDashboard cards={workspace.summaryCards} />
 
       <CVRTable
-        rows={workspace.rows}
-        totals={workspace.totals}
+        rows={displayedRows}
+        totals={activeHeadFilter ? displayedTotals : workspace.totals}
         onRowSelect={setSelectedRow}
         onBudgetChange={readOnly ? undefined : handleBudgetChange}
         readOnly={readOnly}
       />
 
-      <section className="po-module-card dev-cvr__notes">
-        <h2 className="po-matrix-section__title">Notes</h2>
-        <p className="dev-cvr__notes-lead">
-          Development-level commentary for month-end commercial review.
-        </p>
+      <details className="dev-cvr__notes-panel">
+        <summary>Development Notes</summary>
         <textarea
           className="input dev-cvr__notes-input"
-          rows={4}
+          rows={3}
           value={notes}
           onChange={(event) => setNotes(event.target.value)}
           onBlur={handleNotesBlur}
           readOnly={readOnly}
           placeholder="Summarise commercial position, risks and actions for this development."
         />
-      </section>
+      </details>
 
       <CostCentreDrawer
         open={Boolean(selectedRow)}
         row={selectedRow}
+        drawerBreadcrumbs={[
+          ...(pageNavigation?.breadcrumbs || []),
+          ...(selectedRow?.costCodeLabel ? [{ label: selectedRow.costCodeLabel }] : []),
+        ]}
         packages={drawerPackages}
         ledgerRows={drawerLedgerRows}
         certificates={drawerCertificates}

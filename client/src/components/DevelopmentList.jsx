@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import POPageHeader from './POPageHeader';
+import { buildDevelopmentsListNavigation } from '../navigation/navigationBuilders';
 import { listDevelopments } from '../developments/developmentStore';
 import { formatDevelopmentListRow } from '../developments/developmentHelpers';
 
@@ -21,13 +22,16 @@ export default function DevelopmentList({
     return listDevelopments().map(formatDevelopmentListRow);
   }, [refreshToken]);
 
+  const navigation = buildDevelopmentsListNavigation();
+
   return (
     <div className="dev-list-page">
       <div className="dev-list-page__header">
         <POPageHeader
-          eyebrow="Developments"
-          title="Developments"
+          breadcrumbs={navigation.breadcrumbs}
+          title={navigation.title}
           lead="The commercial home for each development — plot schedules, purchase orders, packages and reporting."
+          showBack={false}
         />
         <button
           type="button"

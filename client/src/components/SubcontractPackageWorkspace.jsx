@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import POPageHeader from './POPageHeader';
+import { buildCertificatePackageNavigation } from '../navigation/navigationBuilders';
 import OrderMatrixPlaceholderPreview from './OrderMatrixPlaceholderPreview';
 import PaymentCertificateWorkspace from './PaymentCertificateWorkspace';
 import SubcontractPackageOverview, {
@@ -37,12 +38,19 @@ export default function SubcontractPackageWorkspace({
     return buildPackageViewModel(order);
   }, [order, matrixRefresh, certRefresh]);
 
+  const packageTitle = `${order.supplierLabel} – ${order.projectLabel}`;
+  const pageNavigation = buildCertificatePackageNavigation({
+    packageTitle,
+    onBack: onBackToList,
+  });
+
   return (
     <div className="po-package-workspace">
       <POPageHeader
-        eyebrow="Subcontract Package"
-        title={`${order.supplierLabel} – ${order.projectLabel}`}
+        breadcrumbs={pageNavigation.breadcrumbs}
+        title={pageNavigation.title}
         lead="Manage the commercial progress of this subcontract package, including your plot × stage valuation matrix, Certificates and Variations."
+        onBack={pageNavigation.onBack}
       />
 
       <SubcontractPackageDashboard pkg={pkg} />
@@ -114,16 +122,6 @@ export default function SubcontractPackageWorkspace({
             ]}
           />
         ) : null}
-      </div>
-
-      <div className="po-package-workspace__footer">
-        <button
-          type="button"
-          className="po-package-workspace__back"
-          onClick={onBackToList}
-        >
-          Back to Subcontract Orders
-        </button>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import POPageHeader from './POPageHeader';
-import { listCostCodes } from '../api';
+import { listActiveCostCodesForSelect } from '../admin/costCodeMasterStore';
 import { normaliseCostCodeKey } from '../cvr/cvrCalculations';
 import {
   BUDGET_IMPORT_FIELDS,
@@ -44,7 +44,7 @@ export default function CVRBudgetImportWizard({
   const [complete, setComplete] = useState(null);
 
   useEffect(() => {
-    listCostCodes()
+    listActiveCostCodesForSelect()
       .then((codes) => {
         setKnownCostCodes(
           (codes || []).map((item) => normaliseCostCodeKey(item.code || item.label)).filter(Boolean)

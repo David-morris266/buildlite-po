@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import POPageHeader from './POPageHeader';
-import { listCostCodes } from '../api';
+import { listActiveCostCodesForSelect } from '../admin/costCodeMasterStore';
 import { normaliseCostCodeKey } from '../cvr/cvrCalculations';
 import { isAcceptedCsvFile, extractHeaders } from '../ledger/csvImport';
 import {
@@ -24,6 +24,7 @@ import {
   saveImportProfile,
 } from '../ledger/ledgerImportProfileStore';
 import { formatLedgerMoney } from '../ledger/ledgerHelpers';
+import { buildLedgerImportCrossCheck } from '../ledger/ledgerImportCrossCheck';
 
 const WIZARD_STEPS = [
   { id: 'upload', label: 'Upload' },
@@ -79,6 +80,8 @@ export default function PurchaseLedgerImportWizard({
   const [profileName, setProfileName] = useState('');
   const [importComplete, setImportComplete] = useState(null);
   const [createUnknownCostCentres, setCreateUnknownCostCentres] = useState(true);
+  const [crossCheckConfirmed, setCrossCheckConfirmed] = useState(false);
+  const [showCrossCheckDialog, setShowCrossCheckDialog] = useState(false);
 
   const profiles = useMemo(
     () => listImportProfiles(development.id),
@@ -87,7 +90,7 @@ export default function PurchaseLedgerImportWizard({
 
   useEffect(() => {
     let cancelled = false;
-    listCostCodes()
+    listActiveCostCodesForSelect()
       .then((codes) => {
         if (cancelled) return;
         const keys = (codes || []).map((item) =>
@@ -244,10 +247,21 @@ export default function PurchaseLedgerImportWizard({
     setError('');
   }
 
-  function handleImport() {
+  const crossCheck = useMemo(() => {
+    if (!validationResult || currentStep?.id !== 'import') return null;
+    return buildLedgerImportCrossCheck(parsedState, validationResult);
+  }, [validationResult, parsedState, currentStep?.id]);
+
+  function runImport(forceConfirm = false) {
     const result = buildLedgerValidationResult(parsedState, validationContext);
     if (!result.canImport) {
       setError('No valid rows available to import.');
+      return;
+    }
+
+    const totals = buildLedgerImportCrossCheck(parsedState, result);
+    if (!totals.balanced && !forceConfirm && !crossCheckConfirmed) {
+      setShowCrossCheckDialog(true);
       return;
     }
 
@@ -263,6 +277,10 @@ export default function PurchaseLedgerImportWizard({
     }
 
     setImportComplete(importResult);
+  }
+
+  function handleImport() {
+    runImport(false);
   }
 
   function handleViewLedger() {
@@ -768,8 +786,26 @@ export default function PurchaseLedgerImportWizard({
                 <dd>{development.developmentName}</dd>
               </div>
               <div>
-                <dt>Rows imported</dt>
+                <dt>Imported rows</dt>
                 <dd>{validationResult.importedCount}</dd>
+              </div>
+              <div>
+                <dt>Imported value</dt>
+                <dd>{formatLedgerMoney(crossCheck?.importedValue ?? validationResult.totalValue)}</dd>
+              </div>
+              <div>
+                <dt>CSV total</dt>
+                <dd>{formatLedgerMoney(crossCheck?.csvTotal ?? 0)}</dd>
+              </div>
+              <div>
+                <dt>BuildLite total</dt>
+                <dd>{formatLedgerMoney(crossCheck?.buildliteTotal ?? validationResult.totalValue)}</dd>
+              </div>
+              <div>
+                <dt>Difference</dt>
+                <dd className={crossCheck?.balanced ? 'po-import-review__balanced' : 'dev-ledger-import__errors-count'}>
+                  {formatLedgerMoney(crossCheck?.difference ?? 0)}
+                </dd>
               </div>
               <div>
                 <dt>Warnings</dt>
@@ -785,12 +821,42 @@ export default function PurchaseLedgerImportWizard({
                   {createUnknownCostCentres ? validationResult.newCostCentresPending : 0}
                 </dd>
               </div>
-              <div>
-                <dt>Total value</dt>
-                <dd>{formatLedgerMoney(validationResult.totalValue)}</dd>
-              </div>
             </dl>
+
+            {crossCheck && !crossCheck.balanced ? (
+              <p className="dev-ledger-import__warnings-title">
+                CSV and BuildLite totals differ. You will be asked to confirm before import completes.
+              </p>
+            ) : null}
           </section>
+
+          {showCrossCheckDialog && crossCheck ? (
+            <div className="po-cert-delete-backdrop" role="presentation">
+              <div className="po-cert-delete modal" role="dialog" aria-modal="true">
+                <h3>Confirm import totals</h3>
+                <p>
+                  CSV total ({formatLedgerMoney(crossCheck.csvTotal)}) does not match the BuildLite import total ({formatLedgerMoney(crossCheck.buildliteTotal)}).
+                  Difference: {formatLedgerMoney(crossCheck.difference)}.
+                </p>
+                <div className="po-cert-delete__actions modal-actions">
+                  <button type="button" className="po-list-btn-secondary" onClick={() => setShowCrossCheckDialog(false)}>
+                    Review mapping
+                  </button>
+                  <button
+                    type="button"
+                    className="po-btn-primary"
+                    onClick={() => {
+                      setCrossCheckConfirmed(true);
+                      setShowCrossCheckDialog(false);
+                      runImport(true);
+                    }}
+                  >
+                    Import anyway
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="po-import-step__actions">
             <button type="button" className="po-list-btn-secondary" onClick={goBack}>

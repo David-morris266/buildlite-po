@@ -5,6 +5,7 @@ import {
   buildApproveBody,
 } from '../setup/setupDraft'
 import POPageHeader from './POPageHeader'
+import { buildProcurementArchiveNavigation } from '../navigation/navigationBuilders'
 import POLoading from './POLoading'
 import PODrawerShell from './PODrawerShell'
 import POReviewDrawerContent from './POReviewDrawerContent'
@@ -144,12 +145,15 @@ export default function POArchive({ onOpenPackage = null }) {
     setSelected(null)
   }
 
+  const pageNavigation = buildProcurementArchiveNavigation()
+
   return (
     <div className="po-archive-page">
       <POPageHeader
-        eyebrow="Archive"
-        title="Archive"
+        breadcrumbs={pageNavigation.breadcrumbs}
+        title={pageNavigation.title}
         lead="View completed and archived Purchase Orders."
+        showBack={false}
       />
 
       <div className="po-module-card">

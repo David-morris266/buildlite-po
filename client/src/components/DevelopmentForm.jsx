@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import POPageHeader from './POPageHeader';
+import { buildDevelopmentFormNavigation } from '../navigation/navigationBuilders';
 import {
   DEVELOPMENT_STATUSES,
   createDevelopment,
 } from '../developments/developmentStore';
+import { generateNextDevelopmentNumber } from '../admin/numberingService';
 
 const EMPTY_FORM = {
   jobNumber: '',
@@ -18,7 +20,10 @@ const EMPTY_FORM = {
 };
 
 export default function DevelopmentForm({ onCancel, onCreated }) {
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState(() => ({
+    ...EMPTY_FORM,
+    jobNumber: generateNextDevelopmentNumber(),
+  }));
   const [error, setError] = useState('');
 
   function updateField(field, value) {
@@ -50,12 +55,15 @@ export default function DevelopmentForm({ onCancel, onCreated }) {
     onCreated?.(development.id);
   }
 
+  const navigation = buildDevelopmentFormNavigation({ onCancel });
+
   return (
     <div className="dev-form-page">
       <POPageHeader
-        eyebrow="Developments"
-        title="New Development"
+        breadcrumbs={navigation.breadcrumbs}
+        title={navigation.title}
         lead="Set up the commercial home for this development — plot schedule, purchase orders and packages will connect here."
+        onBack={navigation.onBack}
       />
 
       {error ? (
@@ -77,6 +85,7 @@ export default function DevelopmentForm({ onCancel, onCreated }) {
                 onChange={(event) => updateField('jobNumber', event.target.value)}
                 required
               />
+              <span className="setup-step__hint">Generated automatically using Company Settings.</span>
             </label>
             <label className="dev-form__field">
               <span className="dev-form__label">Development Name</span>

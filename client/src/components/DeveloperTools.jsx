@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import POPageHeader from './POPageHeader';
+import { buildAdminPageNavigation } from '../navigation/navigationBuilders';
 import {
   BUILDLITE_BRANCH,
   BUILDLITE_VERSION,
@@ -95,12 +96,19 @@ export default function DeveloperTools({ onBack }) {
     }
   }
 
+  const navigation = buildAdminPageNavigation({
+    pageTitle: 'Developer Tools',
+    onDashboard: onBack,
+  });
+
   return (
     <div className="dev-tools">
       <POPageHeader
-        eyebrow="Settings"
+        breadcrumbs={navigation.breadcrumbs}
         title="Developer Tools"
-        lead="Development-only utilities for local BuildLite testing. Not visible in production."
+        lead="Development-only utilities for local BuildLite testing. Not available in production builds."
+        onBack={onBack}
+        showBack={Boolean(onBack)}
       />
 
       <section className="po-module-card dev-tools__panel">
@@ -145,14 +153,6 @@ export default function DeveloperTools({ onBack }) {
           </button>
         </div>
       </section>
-
-      {onBack ? (
-        <div className="dev-tools__footer">
-          <button type="button" className="po-list-btn-secondary" onClick={onBack}>
-            Back to BuildLite
-          </button>
-        </div>
-      ) : null}
 
       <ResetConfirmationDialog
         open={confirmOpen}

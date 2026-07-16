@@ -2,13 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import DevelopmentList from './DevelopmentList';
 import DevelopmentForm from './DevelopmentForm';
 import DevelopmentWorkspace from './DevelopmentWorkspace';
+import { StandardWorkspace } from './layout/WorkspaceShell';
 import { getDevelopment } from '../developments/developmentStore';
 
 export default function Developments({
   initialDevelopmentId = null,
   initialWorkspaceTab = null,
   initialCvrPeriodKey = null,
+  navigationOrigin = null,
   onInitialDevelopmentHandled = null,
+  onOpenPackage = null,
 }) {
   const [view, setView] = useState('list');
   const [activeDevelopmentId, setActiveDevelopmentId] = useState(null);
@@ -44,13 +47,15 @@ export default function Developments({
 
   if (view === 'new') {
     return (
-      <DevelopmentForm
-        onCancel={returnToList}
-        onCreated={(developmentId) => {
-          setRefreshToken((value) => value + 1);
-          openWorkspace(developmentId);
-        }}
-      />
+      <StandardWorkspace>
+        <DevelopmentForm
+          onCancel={returnToList}
+          onCreated={(developmentId) => {
+            setRefreshToken((value) => value + 1);
+            openWorkspace(developmentId);
+          }}
+        />
+      </StandardWorkspace>
     );
   }
 
@@ -62,6 +67,7 @@ export default function Developments({
     return (
       <DevelopmentWorkspace
         development={activeDevelopment}
+        navigationOrigin={navigationOrigin}
         initialActiveTab={workspaceTab}
         initialCvrPeriodKey={cvrPeriodKey}
         onBackToList={returnToList}
@@ -69,15 +75,18 @@ export default function Developments({
         onLedgerChanged={() => setRefreshToken((value) => value + 1)}
         onCvrChanged={() => setRefreshToken((value) => value + 1)}
         onDevelopmentChanged={() => setRefreshToken((value) => value + 1)}
+        onOpenPackage={onOpenPackage}
       />
     );
   }
 
   return (
-    <DevelopmentList
-      refreshToken={refreshToken}
-      onNewDevelopment={() => setView('new')}
-      onOpenDevelopment={openWorkspace}
-    />
+    <StandardWorkspace>
+      <DevelopmentList
+        refreshToken={refreshToken}
+        onNewDevelopment={() => setView('new')}
+        onOpenDevelopment={openWorkspace}
+      />
+    </StandardWorkspace>
   );
 }

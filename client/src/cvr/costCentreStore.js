@@ -5,6 +5,12 @@
 import { normaliseCostCodeKey, findMatchingCostCodeKey } from './cvrCalculations';
 import { validateCommercialAdjustment } from './cvrForecastEngine';
 import {
+  migrateCostCentreHierarchy,
+  resolveHierarchyForNewCostCentre,
+  validateCostCentreHierarchy,
+} from './commercialReportingHierarchy';
+import { listCostCodeMasterRecords } from '../admin/costCodeMasterStore';
+import {
   CVR_PERIOD_DEFAULT_STATUS,
   isCvrPeriodEditable,
 } from './cvrPeriodStatus';
@@ -43,8 +49,10 @@ function sessionActor() {
 function normaliseCostCentreRecord(centre) {
   if (!centre) return centre;
 
+  const migrated = migrateCostCentreHierarchy(centre);
+
   return {
-    ...centre,
+    ...migrated,
     commercialAdjustment:
       centre.commercialAdjustment != null
         ? parseBudgetValue(centre.commercialAdjustment) ?? 0
@@ -53,6 +61,25 @@ function normaliseCostCentreRecord(centre) {
     adjustmentHistory: Array.isArray(centre.adjustmentHistory)
       ? centre.adjustmentHistory
       : [],
+  };
+}
+
+function emptyCommentary() {
+  return {
+    keyCommercialIssues: '',
+    commercialOpportunities: '',
+    financialRisks: '',
+    actionsBeforeNextCvr: '',
+  };
+}
+
+function normaliseCommentary(value) {
+  const base = value && typeof value === 'object' ? value : {};
+  return {
+    keyCommercialIssues: String(base.keyCommercialIssues || ''),
+    commercialOpportunities: String(base.commercialOpportunities || ''),
+    financialRisks: String(base.financialRisks || ''),
+    actionsBeforeNextCvr: String(base.actionsBeforeNextCvr || ''),
   };
 }
 
@@ -80,6 +107,7 @@ function emptyPeriod(periodKey = CVR_DEFAULT_PERIOD_KEY) {
     ],
     costCentres: [],
     developmentNotes: '',
+    commercialCommentary: emptyCommentary(),
     updatedAt: now,
   };
 }
@@ -94,8 +122,11 @@ function normalisePeriodRecord(period, periodKey) {
     periodKey,
     status: base.status || CVR_PERIOD_DEFAULT_STATUS,
     auditHistory: Array.isArray(base.auditHistory) ? base.auditHistory : [],
-    costCentres: Array.isArray(base.costCentres) ? base.costCentres : [],
+    costCentres: (Array.isArray(base.costCentres) ? base.costCentres : []).map(
+      normaliseCostCentreRecord
+    ),
     developmentNotes: String(base.developmentNotes || ''),
+    commercialCommentary: normaliseCommentary(base.commercialCommentary),
     updatedAt: now,
   };
 }
@@ -247,6 +278,58 @@ export function updateDevelopmentNotes(
   return record.periods[periodKey];
 }
 
+export function getCvrPeriodCommentary(developmentId, periodKey = CVR_DEFAULT_PERIOD_KEY) {
+  return normaliseCommentary(getPeriodData(developmentId, periodKey).commercialCommentary);
+}
+
+export function updateCvrPeriodCommentary(
+  developmentId,
+  patch,
+  periodKey = CVR_DEFAULT_PERIOD_KEY
+) {
+  const editable = assertPeriodEditable(developmentId, periodKey);
+  if (!editable.ok) return editable;
+
+  const all = readAll();
+  const record = ensureCvrRecord(developmentId);
+  const period = record.periods[periodKey];
+  if (!period) return { ok: false, errors: ['CVR period not found.'] };
+
+  const now = new Date().toISOString();
+  const current = normaliseCommentary(period.commercialCommentary);
+  const next = normaliseCommentary({ ...current, ...patch });
+
+  record.periods[periodKey] = {
+    ...period,
+    commercialCommentary: next,
+    updatedAt: now,
+  };
+  record.updatedAt = now;
+  all[developmentId] = record;
+  writeAll(all);
+
+  return { ok: true, commercialCommentary: next };
+}
+
+function resolveHierarchyForNewCostCentrePayload(payload, label) {
+  const codeKey = normaliseCostCodeKey(payload.costCodeKey || label);
+  const master = listCostCodeMasterRecords({ activeOnly: true }).find(
+    (item) => normaliseCostCodeKey(item.code) === codeKey
+  );
+
+  if (master) {
+    return resolveHierarchyForNewCostCentre({
+      ...payload,
+      commercialHead: master.commercialHead,
+      commercialFamily: master.commercialFamily,
+      trade: master.trade,
+      description: payload.description || master.description,
+    });
+  }
+
+  return resolveHierarchyForNewCostCentre(payload);
+}
+
 function parseBudgetValue(value) {
   if (value == null || value === '') return null;
   const n = Number.parseFloat(String(value).replace(/[£,\s]/g, ''));
@@ -266,12 +349,15 @@ export function addCostCentre(developmentId, payload, periodKey = CVR_DEFAULT_PE
     return { ok: false, errors: ['Cost code is required.'] };
   }
 
+  const hierarchy = resolveHierarchyForNewCostCentrePayload(payload, label);
   const costCentre = normaliseCostCentreRecord({
     id: newId(),
     costCodeKey: normaliseCostCodeKey(payload.costCodeKey || label),
     costCodeLabel: label,
     description: String(payload.description || '').trim(),
-    commercialFamily: String(payload.commercialFamily || 'Direct Cost').trim(),
+    commercialHead: hierarchy.commercialHead,
+    commercialFamily: hierarchy.commercialFamily,
+    trade: hierarchy.trade,
     originalBudget: parseBudgetValue(payload.originalBudget),
     currentBudget:
       parseBudgetValue(payload.currentBudget) ??
@@ -321,6 +407,32 @@ export function updateCostCentre(
   }
   if (patch.description !== undefined) {
     next.description = String(patch.description || '');
+    if (patch.trade === undefined && !String(current.trade || '').trim()) {
+      next.trade = migrateCostCentreHierarchy({
+        ...next,
+        trade: '',
+      }).trade;
+    }
+  }
+  if (patch.commercialHead !== undefined) {
+    next.commercialHead = String(patch.commercialHead || '').trim();
+  }
+  if (patch.commercialFamily !== undefined) {
+    next.commercialFamily = String(patch.commercialFamily || '').trim();
+  }
+  if (patch.trade !== undefined) {
+    next.trade = String(patch.trade || '').trim();
+  }
+  if (
+    patch.commercialHead !== undefined ||
+    patch.commercialFamily !== undefined ||
+    patch.trade !== undefined
+  ) {
+    const hierarchyValidation = validateCostCentreHierarchy(next);
+    if (!hierarchyValidation.valid) {
+      return { ok: false, errors: hierarchyValidation.errors };
+    }
+    Object.assign(next, hierarchyValidation.hierarchy);
   }
   if (patch.originalBudget !== undefined) {
     next.originalBudget = parseBudgetValue(patch.originalBudget);
@@ -412,14 +524,21 @@ export function deleteCostCentre(
 
 export function upsertAutoCostCentre(
   developmentId,
-  { costCodeKey, costCodeLabel, description = '', commercialFamily = 'Direct Cost' },
+  {
+    costCodeKey,
+    costCodeLabel,
+    description = '',
+    commercialHead,
+    commercialFamily,
+    trade,
+  },
   periodKey = CVR_DEFAULT_PERIOD_KEY
 ) {
   const period = getPeriodData(developmentId, periodKey);
   const existing = period.costCentres.find(
     (item) => item.costCodeKey === costCodeKey && item.active !== false
   );
-  if (existing) return existing;
+  if (existing) return normaliseCostCentreRecord(existing);
 
   const result = addCostCentre(
     developmentId,
@@ -427,7 +546,9 @@ export function upsertAutoCostCentre(
       costCodeKey,
       costCodeLabel,
       description,
+      commercialHead,
       commercialFamily,
+      trade,
       originalBudget: null,
       currentBudget: null,
       commercialAdjustment: 0,

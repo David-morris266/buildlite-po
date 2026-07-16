@@ -3,6 +3,7 @@
  */
 
 import { getDevelopment, updateDevelopment } from './developmentStore';
+import { normalizePlotCommercialFields } from './plotCommercial';
 
 export const PLOT_DEFAULT_STATUS = 'Active';
 
@@ -50,6 +51,7 @@ function normalizePlotInput(input, existing = null) {
   const houseType = String(input.houseType || '').trim();
   const bedroomsRaw = input.bedrooms;
   const giaRaw = input.gia;
+  const commercial = normalizePlotCommercialFields(input, existing);
 
   return {
     id: existing?.id || newPlotId(),
@@ -64,9 +66,24 @@ function normalizePlotInput(input, existing = null) {
       giaRaw === '' || giaRaw == null
         ? null
         : Number.parseFloat(String(giaRaw)),
+    niaFt2: commercial.niaFt2,
+    niaM2: commercial.niaM2,
     phase: String(input.phase || '').trim(),
     tenure: String(input.tenure || '').trim(),
     status: String(input.status || existing?.status || PLOT_DEFAULT_STATUS).trim(),
+    sellingPrice: commercial.sellingPrice,
+    forecastSellingPrice: commercial.forecastSellingPrice,
+    revenueCategory: commercial.revenueCategory,
+    revenueStatus: commercial.revenueStatus,
+    revenueSource: commercial.revenueSource,
+    garage: commercial.garage,
+    garageOverride: commercial.garageOverride,
+    plotPremium: commercial.plotPremium,
+    plotPremiumReason: commercial.plotPremiumReason,
+    manualForecastValue: commercial.manualForecastValue,
+    plotOverrideValue: commercial.plotOverrideValue,
+    manualOverrideExplicit: commercial.manualOverrideExplicit,
+    pricingMigrated: commercial.pricingMigrated,
     createdAt: existing?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -96,6 +113,12 @@ export function validatePlot(plot, plots, excludeId = null) {
   }
   if (plot.gia != null && Number.isNaN(plot.gia)) {
     errors.push('Gross Internal Area must be a number.');
+  }
+  if (plot.sellingPrice != null && Number.isNaN(Number(plot.sellingPrice))) {
+    errors.push('Selling Price must be a number.');
+  }
+  if (plot.forecastSellingPrice != null && Number.isNaN(Number(plot.forecastSellingPrice))) {
+    errors.push('Forecast Selling Price must be a number.');
   }
 
   return errors;
@@ -163,14 +186,47 @@ export function replacePlotMaster(developmentId, plots) {
       configuration: plot.configuration,
       bedrooms: plot.bedrooms,
       gia: plot.gia,
+      niaFt2: plot.niaFt2,
+      niaM2: plot.niaM2,
       phase: plot.phase,
       tenure: plot.tenure,
       status: plot.status,
+      sellingPrice: plot.sellingPrice,
+      forecastSellingPrice: plot.forecastSellingPrice,
+      revenueCategory: plot.revenueCategory,
+      revenueStatus: plot.revenueStatus,
+      revenueSource: plot.revenueSource,
+      garage: plot.garage,
+      garageOverride: plot.garageOverride,
+      plotPremium: plot.plotPremium,
+      plotPremiumReason: plot.plotPremiumReason,
+      manualForecastValue: plot.manualForecastValue,
+      plotOverrideValue: plot.plotOverrideValue,
+      manualOverrideExplicit: plot.manualOverrideExplicit,
+      pricingMigrated: plot.pricingMigrated,
     })
   );
 
   const saved = persistPlots(developmentId, normalized);
   return { ok: true, development: saved, plots: normalized };
+}
+
+export function bulkUpdatePlots(developmentId, plotUpdates = []) {
+  const development = normalizePlotMaster(getDevelopment(developmentId));
+  if (!development) return { ok: false, errors: ['Development not found.'] };
+
+  const plots = [...(development.plotMaster?.plots || [])];
+  const byId = new Map(plots.map((plot) => [plot.id, plot]));
+
+  for (const patch of plotUpdates) {
+    const existing = byId.get(patch.id);
+    if (!existing) continue;
+    const next = normalizePlotInput({ ...existing, ...patch }, existing);
+    byId.set(patch.id, next);
+  }
+
+  const saved = persistPlots(developmentId, [...byId.values()]);
+  return { ok: true, development: saved, plots: [...byId.values()] };
 }
 
 export function formatPlotGia(value) {

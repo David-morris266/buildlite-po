@@ -9,8 +9,6 @@ import {
 } from '../cvr/costCentreStore';
 import { getEditablePeriodKey } from '../cvr/cvrPeriodStore';
 
-export const DEFAULT_COMMERCIAL_FAMILY = 'Direct Cost';
-
 function readCostCentreKeys(developmentId) {
   const periodKey = getEditablePeriodKey(developmentId);
   return new Set(
@@ -68,7 +66,8 @@ export function createCostCentresFromImport(developmentId, pendingCostCentres = 
         costCodeKey,
         costCodeLabel: buildCostCentreLabel(pending.costCode, pending.description),
         description: pending.description || '',
-        commercialFamily: pending.commercialFamily || DEFAULT_COMMERCIAL_FAMILY,
+        commercialFamily: pending.commercialFamily,
+        trade: pending.trade || buildImportCostCentreDescription(pending),
       },
       periodKey
     );

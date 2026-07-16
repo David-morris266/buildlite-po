@@ -7,7 +7,9 @@ import {
   ensureCvrRecord,
   getCvrRecord,
   getPeriodData,
+  updateCvrPeriodCommentary as persistCvrPeriodCommentary,
 } from './costCentreStore';
+import { migrateCostCentreHierarchy } from './commercialReportingHierarchy';
 import {
   canApproveCvrPeriod,
   canCreateNextCvrPeriod,
@@ -63,12 +65,11 @@ function appendAuditEvent(period, entry) {
 
 function copyCostCentreForRollForward(centre) {
   const now = new Date().toISOString();
+  const hierarchy = migrateCostCentreHierarchy(centre);
+
   return {
+    ...hierarchy,
     id: newId('cc'),
-    costCodeKey: centre.costCodeKey,
-    costCodeLabel: centre.costCodeLabel,
-    description: centre.description || '',
-    commercialFamily: centre.commercialFamily || 'Direct Cost',
     originalBudget: centre.originalBudget ?? null,
     currentBudget: centre.currentBudget ?? null,
     commercialAdjustment: centre.commercialAdjustment ?? 0,
@@ -109,6 +110,18 @@ function copyPeriodManualData(sourcePeriod, periodKey) {
       .filter((item) => item.active !== false)
       .map(copyCostCentreForRollForward),
     developmentNotes: sourcePeriod?.developmentNotes || '',
+    commercialCommentary: {
+      keyCommercialIssues: String(
+        sourcePeriod?.commercialCommentary?.keyCommercialIssues || ''
+      ),
+      commercialOpportunities: String(
+        sourcePeriod?.commercialCommentary?.commercialOpportunities || ''
+      ),
+      financialRisks: String(sourcePeriod?.commercialCommentary?.financialRisks || ''),
+      actionsBeforeNextCvr: String(
+        sourcePeriod?.commercialCommentary?.actionsBeforeNextCvr || ''
+      ),
+    },
     updatedAt: now,
   };
 }
@@ -294,6 +307,22 @@ export function assertCvrPeriodEditable(developmentId, periodKey) {
   }
 
   return { ok: true };
+}
+
+export function saveCvrPeriodCommentary(developmentId, periodKey, patch) {
+  const persist = persistCvrPeriodCommentary(developmentId, patch, periodKey);
+  if (!persist.ok) return persist;
+
+  return updatePeriodRecord(developmentId, periodKey, (period) => {
+    appendAuditEvent(period, {
+      action: 'commentary_updated',
+      comment: 'Commercial commentary updated',
+    });
+    return {
+      ...period,
+      commercialCommentary: persist.commercialCommentary,
+    };
+  });
 }
 
 export {
