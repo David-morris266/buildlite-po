@@ -13,6 +13,7 @@ export const NUMBERING_TYPES = {
   salesPlot: { settingsKey: 'salesPlot', defaultPrefix: 'SP-', defaultPad: 3 },
   cvr: { settingsKey: 'cvr', defaultPrefix: 'CVR-', defaultPad: 3 },
   variationOrder: { settingsKey: 'variationOrder', defaultPrefix: 'VO-', defaultPad: 3 },
+  commercialEvent: { settingsKey: 'commercialEvent', defaultPrefix: 'CE-', defaultPad: 4 },
 };
 
 function escapeRegExp(value) {
@@ -84,6 +85,10 @@ export function generateNextPaymentCertificateNumber(existingValues = [], settin
 
 export function generateNextSalesPlotNumber(existingValues = [], settings = null) {
   return generateNextNumber('salesPlot', existingValues, settings);
+}
+
+export function generateNextCommercialEventNumber(existingValues = [], settings = null) {
+  return generateNextNumber('commercialEvent', existingValues, settings);
 }
 
 export function previewNextDevelopmentNumber(settings = null) {

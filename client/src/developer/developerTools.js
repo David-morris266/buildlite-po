@@ -30,6 +30,7 @@ export const KNOWN_BUILDLITE_DEMO_KEYS = [
   'buildlite_clients_master_v1',
   'buildlite_users_master_v1',
   'buildlite_approval_settings_v1',
+  'buildlite_commercial_events_v1',
 ];
 
 /** Keys that must survive a demo reset (auth, preferences — not buildlite_* commercial data). */

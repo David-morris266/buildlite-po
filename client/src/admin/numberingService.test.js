@@ -16,6 +16,7 @@ import {
   generateNextNumber,
   generateNextPaymentCertificateNumber,
   generateNextPurchaseOrderNumber,
+  generateNextCommercialEventNumber,
   parseNumberingValue,
 } from './numberingService';
 
@@ -67,6 +68,15 @@ describe('numberingService', () => {
       width: 6,
     });
     expect(parseNumberingValue('OTHER-001', 'DEV-')).toBeNull();
+  });
+
+  it('generates commercial event numbers with CE prefix', () => {
+    saveCompanySettings({
+      numberingPrefixes: { commercialEvent: 'CE-' },
+    });
+
+    expect(generateNextCommercialEventNumber()).toBe('CE-0001');
+    expect(generateNextCommercialEventNumber(['CE-0001', 'CE-0009'])).toBe('CE-0010');
   });
 
   it('preserves existing sequence width when generating the next number', () => {

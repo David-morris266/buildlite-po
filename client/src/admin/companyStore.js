@@ -28,6 +28,8 @@ function defaultNumberingPrefixes() {
 
     variationOrder: 'VO-',
 
+    commercialEvent: 'CE-',
+
     salesPlot: 'SP-',
 
   };

@@ -9,6 +9,7 @@ import SubcontractPackageOverview, {
   SubcontractPackageTabPlaceholder,
 } from './SubcontractPackageOverview';
 import { buildPackageViewModel } from '../payments/subcontractPackage';
+import PackageCommercialEvents from './PackageCommercialEvents';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -100,15 +101,7 @@ export default function SubcontractPackageWorkspace({
         ) : null}
 
         {activeTab === 'variations' ? (
-          <SubcontractPackageTabPlaceholder
-            title="Variations"
-            lead="Approved variations to this subcontract package will be recorded here."
-            points={[
-              'Capture agreed changes to scope and value.',
-              'See how variations adjust your contract total.',
-              'Keep a clear audit trail for commercial sign-off.',
-            ]}
-          />
+          <PackageCommercialEvents order={order} />
         ) : null}
 
         {activeTab === 'history' ? (
