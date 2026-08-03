@@ -21,6 +21,7 @@ server/.cache/
 .env
 server/.env
 .continue/
+*.code-workspace
 
 # Puppeteer / Chromium downloads (very large)
 server/.cache/
