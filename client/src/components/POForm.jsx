@@ -33,6 +33,12 @@ import {
 } from '../setup/setupDraft';
 import { isSupplierApproved } from '../suppliers/supplierApproval';
 import {
+  resolveLiveSupplier,
+  shouldUseLiveSupplierMaster,
+  createAsyncSequenceGuard,
+} from '../suppliers/supplierMasterSync';
+import { subscribeMasterDataChanged } from '../admin/masterDataEvents';
+import {
   buildProcurementCreateNavigation,
   buildProcurementEditNavigation,
 } from '../navigation/navigationBuilders';
@@ -127,6 +133,7 @@ export default function POForm({
   const [formErrors, setFormErrors] = useState({});
   const [saveError, setSaveError] = useState('');
   const actionsRef = useRef(null);
+  const liveSyncSequenceRef = useRef(createAsyncSequenceGuard());
 
   const persistedPoNumber = initialPo?.poNumber || activePoNumber;
   const isPersisted = !!persistedPoNumber;
@@ -230,7 +237,11 @@ export default function POForm({
       initialPo.supplierName ||
       ''
     );
-    setSelectedSupplier(initialPo.supplierSnapshot || null);
+    if (shouldUseLiveSupplierMaster(initialPo)) {
+      // BL-021A.2 — live master sync owns selectedSupplier for draft POs.
+    } else {
+      setSelectedSupplier(initialPo.supplierSnapshot || null);
+    }
 
     // Type
     setType(initialPo.type || 'M');
@@ -288,6 +299,40 @@ export default function POForm({
     setClauseTermsVersion(c.termsVersion || '');
     setClauseRAMS(!!c.ramsRequired);
   }, [initialPo]);
+
+  useEffect(() => {
+    if (!shouldUseLiveSupplierMaster(initialPo)) return undefined;
+    if (!supplierId) return undefined;
+
+    let cancelled = false;
+
+    async function syncLiveSupplier() {
+      const syncToken = liveSyncSequenceRef.current.next();
+      const live = await resolveLiveSupplier(supplierId);
+      if (
+        cancelled ||
+        !liveSyncSequenceRef.current.isCurrent(syncToken) ||
+        !live
+      ) {
+        return;
+      }
+      setSelectedSupplier(live);
+      setSupplierName(live.name || '');
+    }
+
+    syncLiveSupplier();
+    const unsubscribe = subscribeMasterDataChanged((scope) => {
+      if (scope === 'all' || scope === 'suppliers') {
+        syncLiveSupplier();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      liveSyncSequenceRef.current.invalidate();
+      unsubscribe();
+    };
+  }, [supplierId, initialPo]);
 
   useEffect(() => {
     if (!developmentId || title.trim()) return;

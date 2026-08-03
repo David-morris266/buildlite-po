@@ -15,7 +15,8 @@ import {
   getDrawerHeaderMeta,
   getPoDisplayStatus,
 } from './poDrawerHelpers';
-import { isSupplierApproved } from '../suppliers/supplierApproval';
+import { resolvePoReviewSupplierApprovalState } from '../suppliers/supplierMasterSync';
+import { usePoReviewLiveSupplier } from '../suppliers/usePoReviewLiveSupplier';
 import OrderMatrixDrawerSection from './OrderMatrixDrawerSection';
 
 function DrawerSection({ title, children, className = '' }) {
@@ -172,6 +173,8 @@ export default function POReviewDrawerContent({
   canEdit = false,
   onOpenPackage,
 }) {
+  const liveSupplierState = usePoReviewLiveSupplier(po);
+
   if (!po) return null;
 
   const status = getPoDisplayStatus(po);
@@ -180,9 +183,16 @@ export default function POReviewDrawerContent({
   const headerMeta = getDrawerHeaderMeta(po);
   const showApproverActions = canReviewAndApprovePo(po);
   const showSendForApproval = canSendPoForApproval(po);
-  const supplierPendingApproval = Boolean(
-    po.supplierSnapshot && !isSupplierApproved(po.supplierSnapshot)
-  );
+  const {
+    supplierPendingApproval,
+    supplierApprovalLoading,
+    supplierLookupFailed,
+    approveDisabled: supplierBlocksApproval,
+  } = resolvePoReviewSupplierApprovalState(po, {
+    supplier: liveSupplierState.supplier,
+    loading: liveSupplierState.loading,
+    error: liveSupplierState.error,
+  });
 
   const supplierName =
     po.supplierSnapshot?.name ||
@@ -255,7 +265,15 @@ export default function POReviewDrawerContent({
 
         <DrawerSection title="Supplier">
           <DetailRow label="Name" value={supplierName} />
-          {supplierPendingApproval ? (
+          {supplierApprovalLoading ? (
+            <p className="po-drawer-empty-note" role="status">
+              Checking supplier approval status…
+            </p>
+          ) : supplierLookupFailed ? (
+            <p className="po-drawer-empty-note" role="status">
+              Unable to verify supplier approval. Refresh or try again later.
+            </p>
+          ) : supplierPendingApproval ? (
             <p className="po-supplier-pending-banner" role="status">
               Supplier is pending approval. Approve in Administration before this PO can be approved.
             </p>
@@ -308,7 +326,7 @@ export default function POReviewDrawerContent({
             <button
               type="button"
               className="po-btn-primary"
-              disabled={updatingApproval || supplierPendingApproval}
+              disabled={updatingApproval || supplierBlocksApproval}
               onClick={onApprove}
             >
               Approve

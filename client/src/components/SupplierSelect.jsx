@@ -1,6 +1,7 @@
 // client/src/components/SupplierSelect.jsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { listSuppliers, createSupplier, updateSupplier } from '../api';
+import { subscribeMasterDataChanged } from '../admin/masterDataEvents';
 import {
   SUPPLIER_TYPES,
   getSuggestedOrderTypeForSupplier,
@@ -11,6 +12,7 @@ import {
   getSupplierApprovalBadge,
   isSupplierApproved,
 } from '../suppliers/supplierApproval';
+import { createAsyncSequenceGuard } from '../suppliers/supplierMasterSync';
 
 const EMPTY_FORM = {
   name: '',
@@ -49,6 +51,7 @@ export default function SupplierSelect({
   const [showModal, setShowModal] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const fetchSequenceRef = useRef(createAsyncSequenceGuard());
 
   const currentId = useMemo(() => {
     if (!value) return '';
@@ -77,18 +80,43 @@ export default function SupplierSelect({
   };
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+
+    async function loadSuppliers() {
+      const fetchToken = fetchSequenceRef.current.next();
       try {
         setLoading(true);
         const data = await listSuppliers('');
+        if (cancelled || !fetchSequenceRef.current.isCurrent(fetchToken)) return;
         setSuppliers(Array.isArray(data) ? data : []);
       } catch (e) {
         console.error('suppliers GET failed:', e);
       } finally {
-        setLoading(false);
+        if (!cancelled && fetchSequenceRef.current.isCurrent(fetchToken)) {
+          setLoading(false);
+        }
       }
-    })();
+    }
+
+    loadSuppliers();
+    const unsubscribe = subscribeMasterDataChanged((scope) => {
+      if (scope === 'all' || scope === 'suppliers') {
+        loadSuppliers();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      fetchSequenceRef.current.invalidate();
+      unsubscribe();
+    };
   }, []);
+
+  useEffect(() => {
+    if (!currentId || !suppliers.length || !onSelectFull) return;
+    const fresh = suppliers.find((item) => String(item.id) === String(currentId));
+    if (fresh) onSelectFull(fresh);
+  }, [suppliers, currentId, onSelectFull]);
 
   const handleSelect = (e) => {
     const id = e.target.value;

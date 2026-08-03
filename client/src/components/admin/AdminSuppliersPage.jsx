@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createSupplier, listSuppliers, updateSupplier, approveSupplier } from '../../api';
+import { notifyMasterDataChanged } from '../../admin/masterDataEvents';
 import { SUPPLIER_TYPES } from '../../suppliers/supplierTypes';
 import {
   formatSupplierApprovalAction,
@@ -127,6 +128,7 @@ export default function AdminSuppliersPage({ onBack }) {
       });
       await loadSuppliers();
       selectSupplier(saved);
+      notifyMasterDataChanged('suppliers');
     } finally {
       setSaving(false);
     }
