@@ -2459,6 +2459,63 @@
   line-height: 1;
 }
 
+.revenue-house-type-summary {
+  padding: 12px 16px;
+}
+
+.revenue-house-type-summary__header {
+  margin-bottom: 8px;
+}
+
+.revenue-house-type-summary__title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.revenue-house-type-summary__table-wrap {
+  overflow-x: auto;
+}
+
+.revenue-house-type-summary__table {
+  width: 100%;
+  font-size: 0.8125rem;
+}
+
+.revenue-house-type-summary__table th,
+.revenue-house-type-summary__table td {
+  padding: 0.4rem 0.55rem;
+  white-space: nowrap;
+}
+
+.revenue-house-type-summary__table thead th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.revenue-house-type-summary__table tbody th[scope='row'] {
+  font-weight: 600;
+  text-align: left;
+}
+
+.revenue-house-type-summary__table td,
+.revenue-house-type-summary__table tfoot th,
+.revenue-house-type-summary__table tfoot td {
+  font-variant-numeric: tabular-nums;
+}
+
+.revenue-house-type-summary__totals-row th,
+.revenue-house-type-summary__totals-row td {
+  border-top: 1px solid var(--line);
+  font-weight: 600;
+}
+
+.revenue-house-type-summary__footer-metric {
+  display: inline-block;
+  margin-right: 1rem;
+}
+
 .revenue-register__header {
   display: flex;
   flex-wrap: wrap;

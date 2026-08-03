@@ -12,6 +12,8 @@ import RevenueDiagnosticsPanel from './RevenueDiagnosticsPanel';
 
 import RevenueStrategyPanel from './RevenueStrategyPanel';
 
+import RevenueHouseTypeSummary from './RevenueHouseTypeSummary';
+
 import PlotDrawer from './PlotDrawer';
 import TenureBadge from './TenureBadge';
 
@@ -52,6 +54,8 @@ import {
 import { buildRevenueDiagnostics } from '../revenue/revenueDiagnostics';
 
 import { buildRevenuePricingModel } from '../revenue/revenuePricingModel';
+
+import { buildRevenueHouseTypeSummary } from '../revenue/revenueHouseTypeSummary';
 
 import { buildStrategyInsights } from '../revenue/revenueStrategyCalculations';
 
@@ -322,6 +326,16 @@ export default function RevenueWorkspace({
   const registerRows = useMemo(
 
     () => buildPlotRevenueRegisterRows(displayPricedPlots),
+
+    [displayPricedPlots]
+
+  );
+
+
+
+  const houseTypeSummary = useMemo(
+
+    () => buildRevenueHouseTypeSummary(displayPricedPlots),
 
     [displayPricedPlots]
 
@@ -678,6 +692,10 @@ export default function RevenueWorkspace({
           </section>
 
         </div>
+
+
+
+        <RevenueHouseTypeSummary summary={houseTypeSummary} />
 
       </div>
 
