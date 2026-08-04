@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import POPageHeader from './POPageHeader';
-import { buildCertificatePackageNavigation } from '../navigation/navigationBuilders';
+import { buildPackageWorkspaceNavigation } from '../navigation/navigationBuilders';
 import OrderMatrixPlaceholderPreview from './OrderMatrixPlaceholderPreview';
 import PaymentCertificateWorkspace from './PaymentCertificateWorkspace';
 import SubcontractPackageOverview, {
@@ -23,6 +23,9 @@ export default function SubcontractPackageWorkspace({
   order,
   initialTab = 'overview',
   onBackToList,
+  navigationContext = null,
+  developmentName = null,
+  onBackToDevelopmentList = null,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab);
 
@@ -40,9 +43,13 @@ export default function SubcontractPackageWorkspace({
   }, [order, matrixRefresh, certRefresh]);
 
   const packageTitle = `${order.supplierLabel} – ${order.projectLabel}`;
-  const pageNavigation = buildCertificatePackageNavigation({
+  const pageNavigation = buildPackageWorkspaceNavigation({
     packageTitle,
     onBack: onBackToList,
+    navigationContext,
+    developmentName,
+    onBackToDevelopmentList,
+    onBackToDevelopmentPackages: onBackToList,
   });
 
   return (

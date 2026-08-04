@@ -1,4 +1,9 @@
 import { formatMoney } from './poDrawerHelpers';
+import { buildSubcontractOrderKey } from '../payments/packageKeyMigration';
+import {
+  buildPackageWorkspaceLaunchContext,
+  PACKAGE_OPENED_FROM,
+} from '../payments/packageWorkspaceLaunch';
 
 export function SummaryDashboard({ cards }) {
   return (
@@ -19,7 +24,13 @@ export function SummaryDashboard({ cards }) {
   );
 }
 
-function PackageTable({ packages }) {
+function buildOpenPackageLabel(pkg) {
+  const supplier = pkg.supplierLabel || 'supplier';
+  const costCode = pkg.costCode || 'package';
+  return `Open package for ${supplier}, cost code ${costCode}`;
+}
+
+export function PackageTable({ packages, onOpenPackage, packageError = null }) {
   if (!packages?.length) {
     return (
       <>
@@ -32,37 +43,79 @@ function PackageTable({ packages }) {
     );
   }
 
+  function handleOpenPackage(pkg) {
+    if (!onOpenPackage || !pkg) return;
+    const launch = buildPackageWorkspaceLaunchContext({
+      packageRow: pkg,
+      openedFrom: PACKAGE_OPENED_FROM.DevelopmentPackages,
+      initialTab: 'overview',
+    });
+    if (launch.identityError) {
+      onOpenPackage(null, launch);
+      return;
+    }
+    onOpenPackage(launch.orderKey, launch);
+  }
+
   return (
-    <div className="po-table-wrap">
-      <table className="po-data-table dev-workspace__packages-table">
-        <thead>
-          <tr>
-            <th>Supplier</th>
-            <th>Cost Code</th>
-            <th>POs</th>
-            <th style={{ textAlign: 'right' }}>Committed</th>
-            <th style={{ textAlign: 'right' }}>Certificates</th>
-          </tr>
-        </thead>
-        <tbody>
-          {packages.map((pkg) => (
-            <tr key={pkg.orderKey}>
-              <td>{pkg.supplierLabel || '—'}</td>
-              <td>{pkg.costCode || '—'}</td>
-              <td>{pkg.poNumbers?.join(', ') || '—'}</td>
-              <td style={{ textAlign: 'right' }}>
-                £{formatMoney(pkg.committedValue || 0)}
-              </td>
-              <td style={{ textAlign: 'right' }}>{pkg.certificateCount || 0}</td>
+    <>
+      {packageError ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          {packageError}
+        </div>
+      ) : null}
+      <div className="po-table-wrap">
+        <table className="po-data-table dev-workspace__packages-table">
+          <thead>
+            <tr>
+              <th>Supplier</th>
+              <th>Cost Code</th>
+              <th>POs</th>
+              <th style={{ textAlign: 'right' }}>Committed</th>
+              <th style={{ textAlign: 'right' }}>Certificates</th>
+              <th>Open</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {packages.map((pkg) => (
+              <tr
+                key={pkg.orderKey || buildSubcontractOrderKey(
+                  pkg.developmentId,
+                  pkg.supplierId,
+                  pkg.costCode
+                )}
+                className="dev-workspace__packages-row"
+              >
+                <td>{pkg.supplierLabel || '—'}</td>
+                <td>{pkg.costCode || '—'}</td>
+                <td>{pkg.poNumbers?.join(', ') || '—'}</td>
+                <td style={{ textAlign: 'right' }}>
+                  £{formatMoney(pkg.committedValue || 0)}
+                </td>
+                <td style={{ textAlign: 'right' }}>{pkg.certificateCount || 0}</td>
+                <td className="dev-workspace__packages-action">
+                  <button
+                    type="button"
+                    className="dev-workspace__packages-open"
+                    aria-label={buildOpenPackageLabel(pkg)}
+                    onClick={() => handleOpenPackage(pkg)}
+                  >
+                    <span>Open Package</span>
+                    <span className="dev-workspace__packages-chevron" aria-hidden="true">
+                      ›
+                    </span>
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
-export default function DevelopmentOverview({ model }) {
+export default function DevelopmentOverview({ model, onOpenPackage, packageError = null }) {
   if (!model) return null;
 
   const setupItems = [
@@ -119,18 +172,30 @@ export default function DevelopmentOverview({ model }) {
 
         <section className="po-module-card dev-workspace__section">
           <h2 className="po-matrix-section__title">Packages</h2>
-          <PackageTable packages={model.packages} />
+          <PackageTable
+            packages={model.packages}
+            onOpenPackage={onOpenPackage}
+            packageError={packageError}
+          />
         </section>
       </div>
     </>
   );
 }
 
-export function DevelopmentPackagesTab({ model }) {
+export function DevelopmentPackagesTab({
+  model,
+  onOpenPackage,
+  packageError = null,
+}) {
   return (
     <section className="po-module-card dev-workspace__section">
       <h2 className="po-matrix-section__title">Packages</h2>
-      <PackageTable packages={model?.packages} />
+      <PackageTable
+        packages={model?.packages}
+        onOpenPackage={onOpenPackage}
+        packageError={packageError}
+      />
     </section>
   );
 }

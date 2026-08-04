@@ -2210,6 +2210,42 @@
   font-size: 0.875rem;
 }
 
+.dev-workspace__packages-table tbody tr.dev-workspace__packages-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.dev-workspace__packages-action {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.dev-workspace__packages-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dev-workspace__packages-open:hover,
+.dev-workspace__packages-open:focus-visible {
+  border-color: rgba(124, 255, 107, 0.35);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(124, 255, 107, 0.18);
+}
+
+.dev-workspace__packages-chevron {
+  color: var(--accent);
+  font-size: 1rem;
+  line-height: 1;
+}
+
 .dev-workspace__section .po-btn-primary:disabled {
   opacity: 0.72;
   cursor: not-allowed;

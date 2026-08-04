@@ -216,6 +216,32 @@ export function buildCertificatePackageNavigation({ packageTitle, onBack }) {
   };
 }
 
+export function buildPackageWorkspaceNavigation({
+  packageTitle,
+  onBack,
+  navigationContext = null,
+  developmentName = null,
+  onBackToDevelopmentList = null,
+  onBackToDevelopmentPackages = null,
+}) {
+  if (navigationContext?.openedFrom === 'DevelopmentPackages') {
+    const breadcrumbs = [
+      createBreadcrumb('Developments', onBackToDevelopmentList),
+      createBreadcrumb(developmentName || 'Development', onBackToDevelopmentPackages),
+      createBreadcrumb('Packages', onBack),
+      createBreadcrumb(packageTitle),
+    ];
+
+    return {
+      breadcrumbs,
+      title: packageTitle,
+      onBack,
+    };
+  }
+
+  return buildCertificatePackageNavigation({ packageTitle, onBack });
+}
+
 export function buildCertificateDetailNavigation({
   certificateNumber,
   packageTitle,

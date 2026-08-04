@@ -20,6 +20,12 @@ import CVRSummaryPage from './CVRSummaryPage';
 import CVRRegister from './CVRRegister';
 import CVRWorkspace from './CVRWorkspace';
 import RevenueWorkspace from './RevenueWorkspace';
+import SubcontractPackageWorkspace from './SubcontractPackageWorkspace';
+import PackageWorkspaceNotFound from './PackageWorkspaceNotFound';
+import {
+  getPackageLaunchErrorMessage,
+  resolvePackageOrderFromList,
+} from '../payments/packageWorkspaceLaunch';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -64,6 +70,8 @@ export default function DevelopmentWorkspace({
   const [focusPlotId, setFocusPlotId] = useState(null);
   const [cvrRegisterAction, setCvrRegisterAction] = useState(null);
   const [pos, setPos] = useState([]);
+  const [packageLaunch, setPackageLaunch] = useState(null);
+  const [packageLaunchError, setPackageLaunchError] = useState('');
   const [startDate, setStartDate] = useState(development.startDate || '');
   const [targetCompletion, setTargetCompletion] = useState(
     development.targetCompletion || ''
@@ -82,6 +90,8 @@ export default function DevelopmentWorkspace({
     setCvrFocusCostCodeKey(null);
     setCvrHeadFilter(null);
     setFocusPlotId(null);
+    setPackageLaunch(null);
+    setPackageLaunchError('');
   }, [development.id, development.startDate, development.targetCompletion, initialActiveTab, initialCvrPeriodKey]);
 
   useEffect(() => {
@@ -141,8 +151,15 @@ export default function DevelopmentWorkspace({
     [development, pos, plotRefresh, ledgerRefresh, cvrRefresh, commercialRefresh]
   );
 
+  const activePackageOrder = useMemo(
+    () => resolvePackageOrderFromList(model?.packages, packageLaunch?.orderKey),
+    [model?.packages, packageLaunch?.orderKey]
+  );
+
   useEffect(() => {
     setActiveTab('overview');
+    setPackageLaunch(null);
+    setPackageLaunchError('');
   }, [development?.id]);
 
   if (!model) return null;
@@ -201,6 +218,70 @@ export default function DevelopmentWorkspace({
     setCvrHeadFilter(null);
   }
 
+  function handleOpenPackageFromDevelopment(_orderKey, launchContext) {
+    if (!launchContext) return;
+
+    if (launchContext.identityError) {
+      setPackageLaunchError(launchContext.identityError);
+      setPackageLaunch(null);
+      setActiveTab('packages');
+      return;
+    }
+
+    setPackageLaunchError('');
+    setPackageLaunch(launchContext);
+    setActiveTab('packages');
+  }
+
+  function handleBackToDevelopmentPackages() {
+    setPackageLaunch(null);
+    setPackageLaunchError('');
+    setActiveTab('packages');
+  }
+
+  const packageLaunchErrorMessage = packageLaunch
+    ? getPackageLaunchErrorMessage(packageLaunch, activePackageOrder)
+    : packageLaunchError;
+
+  const isCvrPeriodOpen =
+    activeTab === 'cvr' && Boolean(cvrPeriodKey) && cvrView !== 'register';
+  const WorkspaceShell =
+    activeTab === 'cvr' || activeTab === 'ledger' || activeTab === 'revenue'
+      ? CommercialWorkspace
+      : StandardWorkspace;
+
+  if (packageLaunch) {
+    if (packageLaunchErrorMessage) {
+      return (
+        <WorkspaceShell>
+          <PackageWorkspaceNotFound
+            message={packageLaunchErrorMessage}
+            onBack={handleBackToDevelopmentPackages}
+            breadcrumbs={[
+              { label: 'Developments', onClick: onBackToList },
+              { label: model?.developmentName || 'Development' },
+              { label: 'Packages' },
+            ]}
+            title="Package unavailable"
+          />
+        </WorkspaceShell>
+      );
+    }
+
+    return (
+      <WorkspaceShell>
+        <SubcontractPackageWorkspace
+          order={activePackageOrder}
+          initialTab={packageLaunch.initialTab}
+          navigationContext={packageLaunch}
+          developmentName={model.developmentName}
+          onBackToDevelopmentList={onBackToList}
+          onBackToList={handleBackToDevelopmentPackages}
+        />
+      </WorkspaceShell>
+    );
+  }
+
   const workspaceNavigation = buildDevelopmentWorkspaceNavigation({
     developmentName: model.developmentName,
     activeTab,
@@ -216,13 +297,6 @@ export default function DevelopmentWorkspace({
       setCvrHeadFilter(null);
     },
   });
-
-  const isCvrPeriodOpen =
-    activeTab === 'cvr' && Boolean(cvrPeriodKey) && cvrView !== 'register';
-  const WorkspaceShell =
-    activeTab === 'cvr' || activeTab === 'ledger' || activeTab === 'revenue'
-      ? CommercialWorkspace
-      : StandardWorkspace;
 
   return (
     <WorkspaceShell>
@@ -314,7 +388,13 @@ export default function DevelopmentWorkspace({
       </nav>
 
       <div className="dev-workspace__tab-panel">
-        {activeTab === 'overview' ? <DevelopmentOverview model={model} /> : null}
+        {activeTab === 'overview' ? (
+          <DevelopmentOverview
+            model={model}
+            onOpenPackage={handleOpenPackageFromDevelopment}
+            packageError={packageLaunchError}
+          />
+        ) : null}
 
         {activeTab === 'plot-master' ? (
           <PlotMaster
@@ -327,7 +407,13 @@ export default function DevelopmentWorkspace({
           />
         ) : null}
 
-        {activeTab === 'packages' ? <DevelopmentPackagesTab model={model} /> : null}
+        {activeTab === 'packages' ? (
+          <DevelopmentPackagesTab
+            model={model}
+            onOpenPackage={handleOpenPackageFromDevelopment}
+            packageError={packageLaunchError}
+          />
+        ) : null}
 
         {activeTab === 'commercial' ? <DevelopmentCommercialTab model={model} /> : null}
 

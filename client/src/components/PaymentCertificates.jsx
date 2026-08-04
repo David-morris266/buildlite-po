@@ -2,8 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { listPOs } from '../api';
 import SubcontractOrdersList from './SubcontractOrdersList';
 import SubcontractPackageWorkspace from './SubcontractPackageWorkspace';
+import PackageWorkspaceNotFound from './PackageWorkspaceNotFound';
 import POLoading from './POLoading';
 import { buildSubcontractOrdersFromPos } from '../payments/subcontractOrders';
+import {
+  buildPackageWorkspaceLaunchContext,
+  getPackageLaunchErrorMessage,
+  PACKAGE_OPENED_FROM,
+} from '../payments/packageWorkspaceLaunch';
 
 export default function PaymentCertificates({
   initialOrderKey = null,
@@ -52,6 +58,17 @@ export default function PaymentCertificates({
     [orders, activeOrderKey]
   );
 
+  const navigationContext = useMemo(() => {
+    if (!activeOrderKey) return null;
+    return buildPackageWorkspaceLaunchContext({
+      orderKey: activeOrderKey,
+      packageRow: activeOrder,
+      openedFrom: PACKAGE_OPENED_FROM.PaymentCertificates,
+      initialTab: activeTab,
+      developmentId: activeOrder?.developmentId || null,
+    });
+  }, [activeOrderKey, activeOrder, activeTab]);
+
   function openPackage(orderKey, tab = 'overview') {
     setActiveOrderKey(orderKey);
     setActiveTab(tab);
@@ -70,14 +87,27 @@ export default function PaymentCertificates({
   }
 
   if (view === 'package') {
-    if (loadingOrder || !activeOrder) {
+    if (loadingOrder) {
       return <POLoading message="Loading Subcontract Package…" />;
+    }
+
+    const launchError = getPackageLaunchErrorMessage(navigationContext, activeOrder);
+    if (launchError) {
+      return (
+        <PackageWorkspaceNotFound
+          message={launchError}
+          onBack={() => returnToList()}
+          breadcrumbs={[{ label: 'Certificates' }]}
+          title="Package unavailable"
+        />
+      );
     }
 
     return (
       <SubcontractPackageWorkspace
         order={activeOrder}
         initialTab={activeTab}
+        navigationContext={navigationContext}
         onBackToList={() => returnToList()}
       />
     );
