@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildPackageWorkspaceNavigation } from './navigationBuilders';
 import { PACKAGE_OPENED_FROM } from '../payments/packageWorkspaceLaunch';
 import { PackageTable } from '../components/DevelopmentOverview';
+import { buildPackageCommercialDisplayFields } from '../commercialEvents/commercialEventPackageValue';
+import { buildPackageCommercialDisplayFields } from '../commercialEvents/commercialEventPackageValue';
 
 describe('buildPackageWorkspaceNavigation', () => {
   it('builds development package breadcrumbs when opened from Developments', () => {
@@ -83,6 +85,21 @@ describe('Development package table navigation', () => {
     expect(button.props.type).toBe('button');
     expect(button.props['aria-label']).toMatch(/Open package for PlumbCo/i);
   });
+
+  it('shows PO commitment, approved events and current package columns', () => {
+    const display = buildPackageCommercialDisplayFields(packageRow);
+    const element = PackageTable({
+      packages: [packageRow],
+      onOpenPackage: vi.fn(),
+    });
+    const text = findTextContent(element).join(' ');
+
+    expect(text).toContain('PO Commitment');
+    expect(text).toContain('Approved Events');
+    expect(text).toContain('Current Package');
+    expect(display.originalPoCommitment).toBe(1000);
+    expect(display.currentPackageValue).toBe(1000);
+  });
 });
 
 function findButton(element) {
@@ -99,4 +116,21 @@ function findButton(element) {
     }
   }
   return null;
+}
+
+function findTextContent(element) {
+  if (!element) return [];
+  const parts = [];
+  if (typeof element === 'string' || typeof element === 'number') {
+    parts.push(String(element));
+  }
+  const children = Array.isArray(element?.props?.children)
+    ? element.props.children
+    : element?.props?.children != null
+      ? [element.props.children]
+      : [];
+  for (const child of children) {
+    parts.push(...findTextContent(child));
+  }
+  return parts;
 }

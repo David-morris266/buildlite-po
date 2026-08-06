@@ -1,6 +1,10 @@
 import { formatMoney } from './poDrawerHelpers';
 import { buildSubcontractOrderKey } from '../payments/packageKeyMigration';
 import {
+  buildPackageCommercialDisplayFields,
+  formatSignedCommercialEventValue,
+} from '../commercialEvents/commercialEventPackageValue';
+import {
   buildPackageWorkspaceLaunchContext,
   PACKAGE_OPENED_FROM,
 } from '../payments/packageWorkspaceLaunch';
@@ -71,13 +75,17 @@ export function PackageTable({ packages, onOpenPackage, packageError = null }) {
               <th>Supplier</th>
               <th>Cost Code</th>
               <th>POs</th>
-              <th style={{ textAlign: 'right' }}>Committed</th>
+              <th style={{ textAlign: 'right' }}>PO Commitment</th>
+              <th style={{ textAlign: 'right' }}>Approved Events</th>
+              <th style={{ textAlign: 'right' }}>Current Package</th>
               <th style={{ textAlign: 'right' }}>Certificates</th>
               <th>Open</th>
             </tr>
           </thead>
           <tbody>
-            {packages.map((pkg) => (
+            {packages.map((pkg) => {
+              const commercialDisplay = buildPackageCommercialDisplayFields(pkg);
+              return (
               <tr
                 key={pkg.orderKey || buildSubcontractOrderKey(
                   pkg.developmentId,
@@ -90,7 +98,15 @@ export function PackageTable({ packages, onOpenPackage, packageError = null }) {
                 <td>{pkg.costCode || '—'}</td>
                 <td>{pkg.poNumbers?.join(', ') || '—'}</td>
                 <td style={{ textAlign: 'right' }}>
-                  £{formatMoney(pkg.committedValue || 0)}
+                  £{formatMoney(commercialDisplay.originalPoCommitment)}
+                </td>
+                <td style={{ textAlign: 'right' }}>
+                  {formatSignedCommercialEventValue(
+                    commercialDisplay.approvedCommercialEventMovement
+                  )}
+                </td>
+                <td style={{ textAlign: 'right' }}>
+                  £{formatMoney(commercialDisplay.currentPackageValue)}
                 </td>
                 <td style={{ textAlign: 'right' }}>{pkg.certificateCount || 0}</td>
                 <td className="dev-workspace__packages-action">
@@ -107,7 +123,8 @@ export function PackageTable({ packages, onOpenPackage, packageError = null }) {
                   </button>
                 </td>
               </tr>
-            ))}
+            );
+            })}
           </tbody>
         </table>
       </div>

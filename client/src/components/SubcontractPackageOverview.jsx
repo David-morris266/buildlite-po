@@ -1,4 +1,5 @@
 import { formatMoney, formatPoDate, formatPoDateTime } from './poDrawerHelpers';
+import { formatSignedCommercialEventValue } from '../commercialEvents/commercialEventPackageValue';
 
 function StatusBadge({ status }) {
   return (
@@ -97,18 +98,22 @@ export default function SubcontractPackageOverview({
           <h2 className="po-matrix-section__title">Commercial position</h2>
           <dl className="po-package-facts">
             <div>
-              <dt>Committed value</dt>
-              <dd>£{formatMoney(pkg.committedValue)}</dd>
+              <dt>Original PO commitment</dt>
+              <dd>£{formatMoney(pkg.originalPoCommitment)}</dd>
             </div>
             <div>
-              <dt>Approved variations</dt>
+              <dt>Approved commercial events</dt>
               <dd>
-                <PlaceholderValue money zeroOk value={pkg.approvedVariations} />
+                {formatSignedCommercialEventValue(pkg.approvedCommercialEventMovement)}
               </dd>
             </div>
             <div>
-              <dt>Adjusted contract</dt>
-              <dd>£{formatMoney(pkg.adjustedContract)}</dd>
+              <dt>Current package value</dt>
+              <dd>£{formatMoney(pkg.currentPackageValue)}</dd>
+            </div>
+            <div>
+              <dt>Pending events</dt>
+              <dd>£{formatMoney(pkg.pendingCommercialEventValue)}</dd>
             </div>
             <div>
               <dt>Certified to date</dt>
@@ -117,7 +122,7 @@ export default function SubcontractPackageOverview({
               </dd>
             </div>
             <div>
-              <dt>Remaining</dt>
+              <dt>Remaining (PO contract)</dt>
               <dd>£{formatMoney(pkg.remaining)}</dd>
             </div>
           </dl>
@@ -202,19 +207,24 @@ export function SubcontractPackageDashboard({ pkg }) {
 
   const cards = [
     {
-      label: 'Committed value',
-      value: `£${formatMoney(pkg.committedValue)}`,
+      label: 'Original PO commitment',
+      value: `£${formatMoney(pkg.originalPoCommitment)}`,
       modifier: 'default',
     },
     {
-      label: 'Approved variations',
-      value: '£0.00',
+      label: 'Approved events',
+      value: formatSignedCommercialEventValue(pkg.approvedCommercialEventMovement),
+      modifier: pkg.approvedCommercialEventMovement >= 0 ? 'default' : 'accent',
+    },
+    {
+      label: 'Current package value',
+      value: `£${formatMoney(pkg.currentPackageValue)}`,
+      modifier: 'accent',
+    },
+    {
+      label: 'Pending events',
+      value: `£${formatMoney(pkg.pendingCommercialEventValue)}`,
       modifier: 'muted',
-    },
-    {
-      label: 'Adjusted contract',
-      value: `£${formatMoney(pkg.adjustedContract)}`,
-      modifier: 'default',
     },
     {
       label: 'Certified to date',
@@ -225,9 +235,9 @@ export function SubcontractPackageDashboard({ pkg }) {
       modifier: 'muted',
     },
     {
-      label: 'Remaining value',
+      label: 'Remaining (PO contract)',
       value: `£${formatMoney(pkg.remaining)}`,
-      modifier: 'accent',
+      modifier: 'default',
     },
     {
       label: 'Overall progress',
@@ -287,23 +297,31 @@ export function SubcontractPackageSummary({ pkg }) {
           <dd>{pkg.poNumbers?.length ?? pkg.pos?.length ?? 0}</dd>
         </div>
         <div>
-          <dt>Committed value</dt>
-          <dd>£{formatMoney(pkg.committedValue)}</dd>
+          <dt>Original PO commitment</dt>
+          <dd>£{formatMoney(pkg.originalPoCommitment)}</dd>
         </div>
         <div>
-          <dt>Approved variations</dt>
-          <dd>£0.00</dd>
+          <dt>Approved commercial events</dt>
+          <dd>
+            {formatSignedCommercialEventValue(pkg.approvedCommercialEventMovement)}
+          </dd>
         </div>
         <div>
-          <dt>Adjusted contract</dt>
-          <dd>£{formatMoney(pkg.adjustedContract)}</dd>
+          <dt>Current package value</dt>
+          <dd>£{formatMoney(pkg.currentPackageValue)}</dd>
+        </div>
+        <div>
+          <dt>Pending events</dt>
+          <dd>£{formatMoney(pkg.pendingCommercialEventValue)}</dd>
         </div>
         <div>
           <dt>Certified to date</dt>
-          <dd>£0.00</dd>
+          <dd>
+            <PlaceholderValue money zeroOk value={pkg.certifiedToDate} />
+          </dd>
         </div>
         <div>
-          <dt>Remaining</dt>
+          <dt>Remaining (PO contract)</dt>
           <dd>£{formatMoney(pkg.remaining)}</dd>
         </div>
         <div>

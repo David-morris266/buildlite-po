@@ -31,6 +31,7 @@ export default function SubcontractPackageWorkspace({
 
   const [matrixRefresh, setMatrixRefresh] = useState(0);
   const [certRefresh, setCertRefresh] = useState(0);
+  const [commercialEventRefresh, setCommercialEventRefresh] = useState(0);
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -39,8 +40,9 @@ export default function SubcontractPackageWorkspace({
   const pkg = useMemo(() => {
     void matrixRefresh;
     void certRefresh;
+    void commercialEventRefresh;
     return buildPackageViewModel(order);
-  }, [order, matrixRefresh, certRefresh]);
+  }, [order, matrixRefresh, certRefresh, commercialEventRefresh]);
 
   const packageTitle = `${order.supplierLabel} – ${order.projectLabel}`;
   const pageNavigation = buildPackageWorkspaceNavigation({
@@ -108,7 +110,13 @@ export default function SubcontractPackageWorkspace({
         ) : null}
 
         {activeTab === 'variations' ? (
-          <PackageCommercialEvents order={order} />
+          <PackageCommercialEvents
+            order={order}
+            refreshToken={commercialEventRefresh}
+            onCommercialEventsChanged={() =>
+              setCommercialEventRefresh((value) => value + 1)
+            }
+          />
         ) : null}
 
         {activeTab === 'history' ? (

@@ -59,7 +59,11 @@ function CommercialEventKpiStrip({ summary }) {
   );
 }
 
-export default function PackageCommercialEvents({ order, refreshToken = 0 }) {
+export default function PackageCommercialEvents({
+  order,
+  refreshToken = 0,
+  onCommercialEventsChanged = null,
+}) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState('create');
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -96,6 +100,7 @@ export default function PackageCommercialEvents({ order, refreshToken = 0 }) {
 
   function handleSaved() {
     setLocalRefresh((value) => value + 1);
+    onCommercialEventsChanged?.();
   }
 
   return (

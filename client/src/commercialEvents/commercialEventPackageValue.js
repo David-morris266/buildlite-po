@@ -3,6 +3,7 @@
  * Does not alter existing certificate or CVR calculations.
  */
 
+import { listCommercialEventsByPackage } from './commercialEventStore';
 import {
   COMMERCIAL_EVENT_STATUSES,
   COMMERCIAL_EVENT_TYPES,
@@ -20,6 +21,48 @@ function sumEventValues(events, predicate) {
     if (!predicate(event)) return total;
     return total + toNumber(event.value);
   }, 0);
+}
+
+export function resolvePackageDevelopmentId(order) {
+  return (
+    order?.developmentId ||
+    order?.scopeId ||
+    order?.jobId ||
+    null
+  );
+}
+
+/**
+ * Display-only commercial event fields for package screens (BL-021A.5).
+ * Does not mutate PO commitment or certificate contract values.
+ */
+export function buildPackageCommercialDisplayFields(order) {
+  const developmentId = resolvePackageDevelopmentId(order);
+  const orderKey = order?.orderKey || null;
+  const originalPoCommitment = toNumber(order?.committedValue);
+
+  if (!developmentId || !orderKey) {
+    return {
+      originalPoCommitment,
+      approvedCommercialEventMovement: 0,
+      currentPackageValue: originalPoCommitment,
+      pendingCommercialEventValue: 0,
+    };
+  }
+
+  const events = listCommercialEventsByPackage(developmentId, orderKey);
+  const summary = buildPackageCommercialEventSummaryForPackage(
+    originalPoCommitment,
+    events,
+    orderKey
+  );
+
+  return {
+    originalPoCommitment: summary.originalOrderValue,
+    approvedCommercialEventMovement: summary.netCommercialEventMovement,
+    currentPackageValue: summary.currentPackageValue,
+    pendingCommercialEventValue: summary.pendingEventValue,
+  };
 }
 
 export function filterEventsByPackage(events, packageId) {
@@ -117,7 +160,10 @@ export function isNegativePackageEvent(event) {
 
 export function formatSignedCommercialEventValue(value) {
   const amount = toNumber(value);
-  const prefix = amount < 0 ? '-£' : '£';
+  if (amount === 0) {
+    return `£${Math.abs(amount).toFixed(2)}`;
+  }
+  const prefix = amount > 0 ? '+£' : '−£';
   return `${prefix}${Math.abs(amount).toFixed(2)}`;
 }
 
