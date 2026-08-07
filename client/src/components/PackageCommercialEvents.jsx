@@ -1,14 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import CommercialEventDrawer from './CommercialEventDrawer';
-import { formatMoney, formatPoDate } from './poDrawerHelpers';
-import { listCommercialEventsByPackage } from '../commercialEvents/commercialEventStore';
-import { buildPackageCommercialEventSummaryForPackage } from '../commercialEvents/commercialEventPackageValue';
+import { formatPoDate } from './poDrawerHelpers';
+import { subscribeCommercialChanged } from '../commercial/commercialEvents';
+import { listCommercialEventsByPackage, getCommercialEventById } from '../commercialEvents/commercialEventStore';
+import { buildPackageCommercialEventSummaryForPackage, formatSignedCommercialEventValue } from '../commercialEvents/commercialEventPackageValue';
+import { getCommercialEventLinkBadges } from '../commercialEvents/commercialEventRegisterBadges';
 import {
-  getCommercialEventCategoryMeta,
-  getCommercialEventResponsibilityMeta,
   getCommercialEventStatusMeta,
   getCommercialEventTypeMeta,
-  isCommercialEventEditable,
 } from '../commercialEvents/commercialEventTypes';
 
 function StatusBadge({ statusKey }) {
@@ -20,41 +19,41 @@ function StatusBadge({ statusKey }) {
   );
 }
 
-function CommercialEventKpiStrip({ summary }) {
-  const cards = [
-    {
-      label: 'Original order value',
-      value: `£${formatMoney(summary.originalOrderValue)}`,
-      modifier: 'default',
-    },
-    {
-      label: 'Pending events',
-      value: `£${formatMoney(summary.pendingEventValue)}`,
-      modifier: 'muted',
-    },
-    {
-      label: 'Approved movement',
-      value: `£${formatMoney(summary.netCommercialEventMovement)}`,
-      modifier: summary.netCommercialEventMovement >= 0 ? 'default' : 'accent',
-    },
-    {
-      label: 'Current package value',
-      value: `£${formatMoney(summary.currentPackageValue)}`,
-      modifier: 'accent',
-    },
-  ];
-
+function LinkBadge({ badge }) {
   return (
-    <section className="po-ce-kpi" aria-label="Commercial event summary">
-      {cards.map((card) => (
-        <div
-          key={card.label}
-          className={`po-ce-kpi__card po-ce-kpi__card--${card.modifier}`}
-        >
-          <span className="po-ce-kpi__label">{card.label}</span>
-          <strong className="po-ce-kpi__value">{card.value}</strong>
-        </div>
-      ))}
+    <span className={`po-ce-link-badge po-ce-link-badge--${badge.modifier}`}>
+      {badge.label}
+    </span>
+  );
+}
+
+function PackageCommercialEventKpiStrip({ summary }) {
+  return (
+    <section className="po-ce-kpi po-ce-kpi--events" aria-label="Commercial events on this package">
+      <div className="po-ce-kpi__card po-ce-kpi__card--default">
+        <span className="po-ce-kpi__label">Commercial events</span>
+        <strong className="po-ce-kpi__value">{summary.totalEventCount}</strong>
+      </div>
+      <div className="po-ce-kpi__card po-ce-kpi__card--muted">
+        <span className="po-ce-kpi__label">Pending value</span>
+        <strong className="po-ce-kpi__value">
+          {formatSignedCommercialEventValue(summary.pendingEventValue)}
+        </strong>
+      </div>
+      <div
+        className={`po-ce-kpi__card po-ce-kpi__card--${
+          summary.netCommercialEventMovement >= 0 ? 'default' : 'accent'
+        }`}
+      >
+        <span className="po-ce-kpi__label">Approved movement</span>
+        <strong className="po-ce-kpi__value">
+          {formatSignedCommercialEventValue(summary.netCommercialEventMovement)}
+        </strong>
+      </div>
+      <div className="po-ce-kpi__card po-ce-kpi__card--muted">
+        <span className="po-ce-kpi__label">Approved events</span>
+        <strong className="po-ce-kpi__value">{summary.approvedEventCount}</strong>
+      </div>
     </section>
   );
 }
@@ -62,12 +61,39 @@ function CommercialEventKpiStrip({ summary }) {
 export default function PackageCommercialEvents({
   order,
   refreshToken = 0,
+  commercialEventTarget = null,
   onCommercialEventsChanged = null,
+  onNavigateToLinkedCommercialEvent = null,
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState('create');
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [localRefresh, setLocalRefresh] = useState(0);
+
+  useEffect(() => {
+    return subscribeCommercialChanged(() => {
+      setLocalRefresh((value) => value + 1);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!commercialEventTarget?.eventId || !order?.developmentId) return;
+
+    const event = getCommercialEventById(
+      order.developmentId,
+      commercialEventTarget.eventId
+    );
+    if (!event) return;
+
+    setSelectedEvent(event);
+    setDrawerMode(commercialEventTarget.mode || 'view');
+    setDrawerOpen(true);
+  }, [
+    commercialEventTarget?.eventId,
+    commercialEventTarget?.navigationKey,
+    commercialEventTarget?.mode,
+    order?.developmentId,
+  ]);
 
   const events = useMemo(() => {
     void refreshToken;
@@ -86,6 +112,11 @@ export default function PackageCommercialEvents({
     [order?.committedValue, order?.orderKey, events]
   );
 
+  function refreshRegisters() {
+    setLocalRefresh((value) => value + 1);
+    onCommercialEventsChanged?.();
+  }
+
   function openCreateDrawer() {
     setSelectedEvent(null);
     setDrawerMode('create');
@@ -99,97 +130,96 @@ export default function PackageCommercialEvents({
   }
 
   function handleSaved() {
-    setLocalRefresh((value) => value + 1);
-    onCommercialEventsChanged?.();
+    refreshRegisters();
+  }
+
+  function handleLinkedRecoveryCreated(recovery) {
+    refreshRegisters();
+    setSelectedEvent(recovery);
+    setDrawerMode('edit');
+    setDrawerOpen(true);
+  }
+
+  function handleNavigateToLinkedEvent(sourceEvent) {
+    if (!sourceEvent || !onNavigateToLinkedCommercialEvent) return;
+    onNavigateToLinkedCommercialEvent(sourceEvent);
   }
 
   return (
     <div className="po-ce-workspace">
-      <CommercialEventKpiStrip summary={summary} />
+      <PackageCommercialEventKpiStrip summary={summary} />
 
       <section className="po-module-card po-ce-register">
         <div className="po-ce-register__header">
           <div>
-            <h2 className="po-matrix-section__title">Commercial Events</h2>
+            <h2 className="po-matrix-section__title">Commercial Events register</h2>
             <p className="po-ce-register__lead">
-              Record variations, contra charges and other commercial movements
-              against this package. Only approved events affect current package value.
+              Record and track commercial events against this package. Only approved
+              events affect current package value.
             </p>
           </div>
           <button type="button" className="po-btn-primary" onClick={openCreateDrawer}>
-            New event
+            New Commercial Event
           </button>
         </div>
 
         {events.length === 0 ? (
           <p className="po-ce-register__empty">
-            No commercial events recorded yet. Original order value remains
-            £{formatMoney(summary.originalOrderValue)}.
+            No commercial events recorded yet.
           </p>
         ) : (
           <div className="po-table-wrap">
-            <table className="po-data-table po-ce-register__table">
+            <table className="po-data-table po-ce-register__table po-ce-register__table--compact">
               <thead>
                 <tr>
                   <th>Event</th>
                   <th>Type</th>
-                  <th>Category</th>
                   <th>Description</th>
                   <th>Status</th>
                   <th style={{ textAlign: 'right' }}>Value</th>
                   <th>Date</th>
-                  <th>Responsibility</th>
-                  <th />
                 </tr>
               </thead>
               <tbody>
-                {events.map((event) => (
-                  <tr key={event.id}>
-                    <td>
-                      <button
-                        type="button"
-                        className="po-ce-register__link"
-                        onClick={() => openEventDrawer(event, 'view')}
-                      >
-                        {event.eventNumber}
-                      </button>
-                    </td>
-                    <td>{getCommercialEventTypeMeta(event.eventType).label}</td>
-                    <td>{getCommercialEventCategoryMeta(event.category).label}</td>
-                    <td>{event.description}</td>
-                    <td>
-                      <StatusBadge statusKey={event.status} />
-                    </td>
-                    <td
-                      style={{ textAlign: 'right' }}
-                      className={Number(event.value) < 0 ? 'po-ce-value--negative' : ''}
+                {events.map((event) => {
+                  const badges = getCommercialEventLinkBadges(event);
+                  return (
+                    <tr
+                      key={event.id}
+                      className="po-ce-register__row"
+                      onClick={() => openEventDrawer(event, 'view')}
                     >
-                      £{formatMoney(event.value)}
-                    </td>
-                    <td>{formatPoDate(event.dateRaised)}</td>
-                    <td>
-                      {getCommercialEventResponsibilityMeta(event.responsibility).label}
-                    </td>
-                    <td className="po-ce-register__actions">
-                      <button
-                        type="button"
-                        className="po-list-btn-secondary"
-                        onClick={() => openEventDrawer(event, 'view')}
+                      <td>
+                        <div className="po-ce-register__event-cell">
+                          <span className="po-ce-register__event-number">{event.eventNumber}</span>
+                          {badges.length ? (
+                            <span className="po-ce-register__badges">
+                              {badges.map((badge) => (
+                                <LinkBadge key={badge.key} badge={badge} />
+                              ))}
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td>{getCommercialEventTypeMeta(event.eventType).label}</td>
+                      <td className="po-ce-register__description">{event.description}</td>
+                      <td>
+                        <StatusBadge statusKey={event.status} />
+                      </td>
+                      <td
+                        style={{ textAlign: 'right' }}
+                        className={
+                          Number(event.value) < 0
+                            ? 'po-ce-value--negative'
+                            : 'po-ce-value--positive'
+                        }
                       >
-                        View
-                      </button>
-                      {isCommercialEventEditable(event.status) ? (
-                        <button
-                          type="button"
-                          className="po-list-btn-secondary"
-                          onClick={() => openEventDrawer(event, 'edit')}
-                        >
-                          Edit
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
+                        {formatSignedCommercialEventValue(event.value)}
+                      </td>
+                      <td>{formatPoDate(event.dateRaised)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -203,6 +233,8 @@ export default function PackageCommercialEvents({
         order={order}
         onClose={() => setDrawerOpen(false)}
         onSaved={handleSaved}
+        onLinkedRecoveryCreated={handleLinkedRecoveryCreated}
+        onNavigateToLinkedEvent={handleNavigateToLinkedEvent}
       />
     </div>
   );

@@ -146,9 +146,9 @@ describe('buildPackageViewModel commercial display fields', () => {
     const labels = findTextContent(dashboard).join(' ');
 
     expect(labels).toContain('Original PO commitment');
-    expect(labels).toContain('Approved events');
+    expect(labels).toContain('Approved commercial events');
     expect(labels).toContain('Current package value');
-    expect(labels).toContain('+£2500.00');
+    expect(labels).toContain('+£2.5k');
     expect(labels).not.toContain('Approved variations');
   });
 });

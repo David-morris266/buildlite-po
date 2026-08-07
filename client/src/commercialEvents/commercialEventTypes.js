@@ -1,5 +1,5 @@
 /**
- * BL-021A — Commercial Events canonical types, statuses and taxonomies (Doc 54).
+ * BL-021A / BL-021B.1 — Commercial Events canonical types, statuses and taxonomies.
  */
 
 export const COMMERCIAL_EVENT_TYPES = {
@@ -64,15 +64,51 @@ export const COMMERCIAL_EVENT_VAT_TREATMENTS = {
 export const COMMERCIAL_EVENT_CERTIFICATE_STATUSES = {
   notIncluded: { key: 'notIncluded', label: 'Not included' },
   pendingInclusion: { key: 'pendingInclusion', label: 'Pending inclusion' },
+  partiallyIncluded: { key: 'partiallyIncluded', label: 'Partially included' },
+  fullyIncluded: { key: 'fullyIncluded', label: 'Fully included' },
+  /** @deprecated BL-021A alias — normalised to fullyIncluded on read */
   included: { key: 'included', label: 'Included' },
 };
 
 export const COMMERCIAL_EVENT_RECOVERY_STATUSES = {
   notApplicable: { key: 'notApplicable', label: 'Not applicable' },
+  outstanding: { key: 'outstanding', label: 'Outstanding' },
+  includedInCertificate: {
+    key: 'includedInCertificate',
+    label: 'Included in certificate',
+  },
+  partiallyRecovered: { key: 'partiallyRecovered', label: 'Partially recovered' },
+  fullyRecovered: { key: 'fullyRecovered', label: 'Fully recovered' },
+  closed: { key: 'closed', label: 'Closed' },
+  writtenOff: { key: 'writtenOff', label: 'Written off' },
+  /** @deprecated BL-021A aliases — normalised on read */
   pending: { key: 'pending', label: 'Pending recovery' },
   recovered: { key: 'recovered', label: 'Recovered' },
-  writtenOff: { key: 'writtenOff', label: 'Written off' },
 };
+
+export const COMMERCIAL_EVENT_RELATIONSHIP_TYPES = {
+  origin: { key: 'origin', label: 'Origin' },
+  recovery: { key: 'recovery', label: 'Recovery' },
+  mirror: { key: 'mirror', label: 'Mirror' },
+};
+
+/** BL-021A recovery status keys mapped to BL-021B.1 canonical keys. */
+export const LEGACY_RECOVERY_STATUS_ALIASES = {
+  pending: COMMERCIAL_EVENT_RECOVERY_STATUSES.outstanding.key,
+  recovered: COMMERCIAL_EVENT_RECOVERY_STATUSES.fullyRecovered.key,
+};
+
+/** BL-021A certificate status keys mapped to BL-021B.1 canonical keys. */
+export const LEGACY_CERTIFICATE_STATUS_ALIASES = {
+  included: COMMERCIAL_EVENT_CERTIFICATE_STATUSES.fullyIncluded.key,
+};
+
+/** Recovery statuses considered unresolved for reporting (BL-021B.1). */
+export const ACTIVE_RECOVERY_STATUSES = new Set([
+  COMMERCIAL_EVENT_RECOVERY_STATUSES.outstanding.key,
+  COMMERCIAL_EVENT_RECOVERY_STATUSES.includedInCertificate.key,
+  COMMERCIAL_EVENT_RECOVERY_STATUSES.partiallyRecovered.key,
+]);
 
 export const COMMERCIAL_EVENT_CATEGORIES = {
   design: {
@@ -209,6 +245,30 @@ export function getCommercialEventResponsibilityMeta(responsibilityKey) {
   );
 }
 
+export function getCommercialEventRecoveryStatusMeta(recoveryStatusKey) {
+  const normalized = normalizeRecoveryStatusKey(recoveryStatusKey);
+  return (
+    Object.values(COMMERCIAL_EVENT_RECOVERY_STATUSES).find(
+      (item) => item.key === normalized
+    ) || {
+      key: normalized,
+      label: normalized,
+    }
+  );
+}
+
+export function getCommercialEventCertificateStatusMeta(certificateStatusKey) {
+  const normalized = normalizeCertificateStatusKey(certificateStatusKey);
+  return (
+    Object.values(COMMERCIAL_EVENT_CERTIFICATE_STATUSES).find(
+      (item) => item.key === normalized
+    ) || {
+      key: normalized,
+      label: normalized,
+    }
+  );
+}
+
 export function isCommercialEventEditable(statusKey) {
   return statusKey === COMMERCIAL_EVENT_STATUSES.draft.key;
 }
@@ -231,4 +291,80 @@ export function canCloseCommercialEvent(statusKey) {
     statusKey === COMMERCIAL_EVENT_STATUSES.includedInCertificate.key ||
     statusKey === COMMERCIAL_EVENT_STATUSES.recovered.key
   );
+}
+
+export function normalizeRecoveryStatusKey(statusKey) {
+  if (!statusKey) {
+    return COMMERCIAL_EVENT_RECOVERY_STATUSES.notApplicable.key;
+  }
+  return LEGACY_RECOVERY_STATUS_ALIASES[statusKey] || statusKey;
+}
+
+export function normalizeCertificateStatusKey(statusKey) {
+  if (!statusKey) {
+    return COMMERCIAL_EVENT_CERTIFICATE_STATUSES.notIncluded.key;
+  }
+  return LEGACY_CERTIFICATE_STATUS_ALIASES[statusKey] || statusKey;
+}
+
+export function getCommercialEventRelationshipMeta(relationshipKey) {
+  if (!relationshipKey) return null;
+  return (
+    COMMERCIAL_EVENT_RELATIONSHIP_TYPES[relationshipKey] || {
+      key: relationshipKey,
+      label: relationshipKey,
+    }
+  );
+}
+
+export function isRecoveryRelationshipType(relationshipType) {
+  return relationshipType === COMMERCIAL_EVENT_RELATIONSHIP_TYPES.recovery.key;
+}
+
+export function isOriginRelationshipType(relationshipType) {
+  return relationshipType === COMMERCIAL_EVENT_RELATIONSHIP_TYPES.origin.key;
+}
+
+const RECOVERY_STATUS_TRANSITIONS = {
+  [COMMERCIAL_EVENT_RECOVERY_STATUSES.outstanding.key]: new Set([
+    COMMERCIAL_EVENT_RECOVERY_STATUSES.includedInCertificate.key,
+    COMMERCIAL_EVENT_RECOVERY_STATUSES.partiallyRecovered.key,
+    COMMERCIAL_EVENT_RECOVERY_STATUSES.fullyRecovered.key,
+    COMMERCIAL_EVENT_RECOVERY_STATUSES.closed.key,
+    COMMERCIAL_EVENT_RECOVERY_STATUSES.writtenOff.key,
+  ]),
+  [COMMERCIAL_EVENT_RECOVERY_STATUSES.includedInCertificate.key]: new Set([
+    COMMERCIAL_EVENT_RECOVERY_STATUSES.partiallyRecovered.key,
+    COMMERCIAL_EVENT_RECOVERY_STATUSES.fullyRecovered.key,
+    COMMERCIAL_EVENT_RECOVERY_STATUSES.closed.key,
+    COMMERCIAL_EVENT_RECOVERY_STATUSES.writtenOff.key,
+  ]),
+  [COMMERCIAL_EVENT_RECOVERY_STATUSES.partiallyRecovered.key]: new Set([
+    COMMERCIAL_EVENT_RECOVERY_STATUSES.fullyRecovered.key,
+    COMMERCIAL_EVENT_RECOVERY_STATUSES.closed.key,
+    COMMERCIAL_EVENT_RECOVERY_STATUSES.writtenOff.key,
+  ]),
+  [COMMERCIAL_EVENT_RECOVERY_STATUSES.fullyRecovered.key]: new Set([
+    COMMERCIAL_EVENT_RECOVERY_STATUSES.closed.key,
+  ]),
+};
+
+export function canTransitionRecoveryStatus(fromStatusKey, toStatusKey) {
+  const from = normalizeRecoveryStatusKey(fromStatusKey);
+  const to = normalizeRecoveryStatusKey(toStatusKey);
+
+  if (from === to) return true;
+
+  const terminal = new Set([
+    COMMERCIAL_EVENT_RECOVERY_STATUSES.notApplicable.key,
+    COMMERCIAL_EVENT_RECOVERY_STATUSES.closed.key,
+    COMMERCIAL_EVENT_RECOVERY_STATUSES.writtenOff.key,
+  ]);
+  if (terminal.has(from)) return false;
+
+  return RECOVERY_STATUS_TRANSITIONS[from]?.has(to) ?? false;
+}
+
+export function listCommercialEventRelationshipOptions() {
+  return Object.values(COMMERCIAL_EVENT_RELATIONSHIP_TYPES);
 }

@@ -15,7 +15,7 @@ const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'matrix', label: 'Order Matrix' },
   { id: 'certificates', label: 'Certificates' },
-  { id: 'variations', label: 'Variations' },
+  { id: 'variations', label: 'Commercial Events' },
   { id: 'history', label: 'History' },
 ];
 
@@ -24,8 +24,11 @@ export default function SubcontractPackageWorkspace({
   initialTab = 'overview',
   onBackToList,
   navigationContext = null,
+  commercialEventTarget = null,
   developmentName = null,
   onBackToDevelopmentList = null,
+  onNavigateToLinkedCommercialEvent = null,
+  packageLaunchError = '',
 }) {
   const [activeTab, setActiveTab] = useState(initialTab);
 
@@ -36,6 +39,12 @@ export default function SubcontractPackageWorkspace({
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
+
+  useEffect(() => {
+    if (commercialEventTarget?.eventId) {
+      setActiveTab('variations');
+    }
+  }, [commercialEventTarget?.eventId, commercialEventTarget?.navigationKey]);
 
   const pkg = useMemo(() => {
     void matrixRefresh;
@@ -59,12 +68,18 @@ export default function SubcontractPackageWorkspace({
       <POPageHeader
         breadcrumbs={pageNavigation.breadcrumbs}
         title={pageNavigation.title}
-        lead="Manage the commercial progress of this subcontract package, including your plot × stage valuation matrix, Certificates and Variations."
+        lead="Manage the commercial progress of this subcontract package — order matrix, payment certificates and commercial events."
         onBack={pageNavigation.onBack}
       />
 
-      <SubcontractPackageDashboard pkg={pkg} />
-      <SubcontractPackageSummary pkg={pkg} />
+      {packageLaunchError ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          {packageLaunchError}
+        </div>
+      ) : null}
+
+      <SubcontractPackageDashboard pkg={pkg} compact={activeTab === 'variations'} />
+      {activeTab !== 'variations' ? <SubcontractPackageSummary pkg={pkg} compact /> : null}
 
       <nav className="po-package-tabs" aria-label="Package sections">
         {TABS.map((tab) => (
@@ -113,9 +128,11 @@ export default function SubcontractPackageWorkspace({
           <PackageCommercialEvents
             order={order}
             refreshToken={commercialEventRefresh}
+            commercialEventTarget={commercialEventTarget}
             onCommercialEventsChanged={() =>
               setCommercialEventRefresh((value) => value + 1)
             }
+            onNavigateToLinkedCommercialEvent={onNavigateToLinkedCommercialEvent}
           />
         ) : null}
 
@@ -125,7 +142,7 @@ export default function SubcontractPackageWorkspace({
             lead="A full commercial history for this package will appear here."
             points={[
               'Purchase Order approvals and matrix imports.',
-              'Certificate decisions and variation approvals.',
+              'Certificate decisions and commercial event approvals.',
               'Everything you need for audit and handover.',
             ]}
           />

@@ -129,9 +129,10 @@ describe('BL-021A.4 package workspace reuse', () => {
     expect(Object.keys(glob)).toEqual(['../components/SubcontractPackageWorkspace.jsx']);
   });
 
-  it('keeps Commercial Events available on the Variations tab', async () => {
+  it('keeps Commercial Events available on the commercial events tab', async () => {
     const source = await import('../components/SubcontractPackageWorkspace.jsx?raw');
     expect(String(source.default)).toMatch(/PackageCommercialEvents/);
     expect(String(source.default)).toMatch(/id: 'variations'/);
+    expect(String(source.default)).toMatch(/Commercial Events/);
   });
 });

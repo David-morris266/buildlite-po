@@ -3,7 +3,6 @@ import { buildPackageWorkspaceNavigation } from './navigationBuilders';
 import { PACKAGE_OPENED_FROM } from '../payments/packageWorkspaceLaunch';
 import { PackageTable } from '../components/DevelopmentOverview';
 import { buildPackageCommercialDisplayFields } from '../commercialEvents/commercialEventPackageValue';
-import { buildPackageCommercialDisplayFields } from '../commercialEvents/commercialEventPackageValue';
 
 describe('buildPackageWorkspaceNavigation', () => {
   it('builds development package breadcrumbs when opened from Developments', () => {
@@ -38,6 +37,24 @@ describe('buildPackageWorkspaceNavigation', () => {
     expect(navigation.breadcrumbs.map((item) => item.label)).toEqual([
       'Certificates',
       'PlumbCo – Oakwood Meadows',
+    ]);
+  });
+
+  it('adds Commercial Events breadcrumb when opened from linked-event navigation', () => {
+    const onBack = vi.fn();
+    const navigation = buildPackageWorkspaceNavigation({
+      packageTitle: 'PlumbCo – Oakwood Meadows',
+      onBack,
+      navigationContext: { openedFrom: PACKAGE_OPENED_FROM.CommercialEventLink },
+      developmentName: 'Oakwood Meadows',
+    });
+
+    expect(navigation.breadcrumbs.map((item) => item.label)).toEqual([
+      'Developments',
+      'Oakwood Meadows',
+      'Packages',
+      'PlumbCo – Oakwood Meadows',
+      'Commercial Events',
     ]);
   });
 });
@@ -86,7 +103,7 @@ describe('Development package table navigation', () => {
     expect(button.props['aria-label']).toMatch(/Open package for PlumbCo/i);
   });
 
-  it('shows PO commitment, approved events and current package columns', () => {
+  it('shows approved and current package columns with compact headers', () => {
     const display = buildPackageCommercialDisplayFields(packageRow);
     const element = PackageTable({
       packages: [packageRow],
@@ -94,11 +111,27 @@ describe('Development package table navigation', () => {
     });
     const text = findTextContent(element).join(' ');
 
-    expect(text).toContain('PO Commitment');
-    expect(text).toContain('Approved Events');
-    expect(text).toContain('Current Package');
+    expect(text).toContain('Approved');
+    expect(text).toContain('Current');
+    expect(text).not.toContain('PO Commitment');
     expect(display.originalPoCommitment).toBe(1000);
     expect(display.currentPackageValue).toBe(1000);
+  });
+
+  it('truncates long supplier names and exposes full name via title', () => {
+    const element = PackageTable({
+      packages: [
+        {
+          ...packageRow,
+          supplierLabel: 'Very Long Subcontractor Partnership Name',
+        },
+      ],
+      onOpenPackage: vi.fn(),
+    });
+
+    const supplier = findElementByClass(element, 'dev-workspace__packages-supplier');
+    expect(supplier.props.children).toMatch(/…$/);
+    expect(supplier.props.title).toContain('Very Long Subcontractor Partnership Name');
   });
 });
 
@@ -115,6 +148,26 @@ function findButton(element) {
       if (found) return found;
     }
   }
+  return null;
+}
+
+function findElementByClass(element, className) {
+  if (!element) return null;
+  const classes = String(element.props?.className || '');
+  if (classes.split(/\s+/).includes(className)) return element;
+
+  const children = Array.isArray(element?.props?.children)
+    ? element.props.children
+    : element?.props?.children != null
+      ? [element.props.children]
+      : [];
+
+  for (const child of children) {
+    if (!child || typeof child !== 'object') continue;
+    const found = findElementByClass(child, className);
+    if (found) return found;
+  }
+
   return null;
 }
 

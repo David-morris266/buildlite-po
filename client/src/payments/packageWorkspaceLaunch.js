@@ -3,6 +3,7 @@ import { buildSubcontractOrderKey } from './packageKeyMigration';
 export const PACKAGE_OPENED_FROM = {
   DevelopmentPackages: 'DevelopmentPackages',
   PaymentCertificates: 'PaymentCertificates',
+  CommercialEventLink: 'CommercialEventLink',
 };
 
 /**
@@ -14,6 +15,7 @@ export function buildPackageWorkspaceLaunchContext({
   openedFrom,
   initialTab = 'overview',
   developmentId = null,
+  commercialEventTarget = null,
 }) {
   const resolvedDevelopmentId =
     developmentId || packageRow?.developmentId || null;
@@ -40,6 +42,7 @@ export function buildPackageWorkspaceLaunchContext({
     costCode,
     openedFrom,
     initialTab: resolvePackageWorkspaceInitialTab(openedFrom, initialTab),
+    commercialEventTarget: commercialEventTarget || null,
     identityError,
   };
 }
@@ -91,6 +94,9 @@ export function resolvePackageWorkspaceBackTarget(openedFrom) {
   }
   if (openedFrom === PACKAGE_OPENED_FROM.PaymentCertificates) {
     return 'payment-certificates-list';
+  }
+  if (openedFrom === PACKAGE_OPENED_FROM.CommercialEventLink) {
+    return 'commercial-event-link';
   }
   return 'unknown';
 }

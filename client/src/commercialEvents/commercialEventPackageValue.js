@@ -175,6 +175,10 @@ export function getCommercialEventAuditActionLabel(action) {
     APPROVED: 'Approved',
     REJECTED: 'Rejected',
     CLOSED: 'Closed',
+    LINKED_RECOVERY_CREATED: 'Linked recovery created',
+    LINKED_TO_ORIGIN: 'Linked to origin',
+    RECOVERY_STATUS_CHANGED: 'Recovery status changed',
+    POTENTIAL_CONTRA_CHARGE_DISMISSED: 'Potential contra charge dismissed',
   };
   return labels[action] || action;
 }

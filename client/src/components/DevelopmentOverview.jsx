@@ -1,9 +1,11 @@
-import { formatMoney } from './poDrawerHelpers';
+import { formatDisplayMoney, formatSignedDisplayMoney } from './poDrawerHelpers';
 import { buildSubcontractOrderKey } from '../payments/packageKeyMigration';
+import { buildPackageCommercialDisplayFields } from '../commercialEvents/commercialEventPackageValue';
 import {
-  buildPackageCommercialDisplayFields,
-  formatSignedCommercialEventValue,
-} from '../commercialEvents/commercialEventPackageValue';
+  buildPackageTableCostCodeDisplay,
+  buildPackageTableSecondaryTooltip,
+  buildPackageTableSupplierDisplay,
+} from '../developments/developmentPackageTableDisplay';
 import {
   buildPackageWorkspaceLaunchContext,
   PACKAGE_OPENED_FROM,
@@ -68,23 +70,40 @@ export function PackageTable({ packages, onOpenPackage, packageError = null }) {
           {packageError}
         </div>
       ) : null}
-      <div className="po-table-wrap">
+      <div className="po-table-wrap dev-workspace__packages-wrap">
         <table className="po-data-table dev-workspace__packages-table">
+          <colgroup>
+            <col className="dev-workspace__packages-col dev-workspace__packages-col--supplier" />
+            <col className="dev-workspace__packages-col dev-workspace__packages-col--cost-code" />
+            <col className="dev-workspace__packages-col dev-workspace__packages-col--approved" />
+            <col className="dev-workspace__packages-col dev-workspace__packages-col--current" />
+            <col className="dev-workspace__packages-col dev-workspace__packages-col--action" />
+          </colgroup>
           <thead>
             <tr>
-              <th>Supplier</th>
-              <th>Cost Code</th>
-              <th>POs</th>
-              <th style={{ textAlign: 'right' }}>PO Commitment</th>
-              <th style={{ textAlign: 'right' }}>Approved Events</th>
-              <th style={{ textAlign: 'right' }}>Current Package</th>
-              <th style={{ textAlign: 'right' }}>Certificates</th>
-              <th>Open</th>
+              <th scope="col">Supplier</th>
+              <th scope="col">Cost code</th>
+              <th scope="col" className="dev-workspace__packages-num">
+                <abbr title="Approved commercial events">Approved</abbr>
+              </th>
+              <th scope="col" className="dev-workspace__packages-num">
+                <abbr title="Current package value">Current</abbr>
+              </th>
+              <th scope="col" className="dev-workspace__packages-action-head">
+                <span className="visually-hidden">Open package</span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {packages.map((pkg) => {
               const commercialDisplay = buildPackageCommercialDisplayFields(pkg);
+              const supplier = buildPackageTableSupplierDisplay(pkg.supplierLabel);
+              const costCode = buildPackageTableCostCodeDisplay(pkg);
+              const secondaryTooltip = buildPackageTableSecondaryTooltip(
+                pkg,
+                commercialDisplay
+              );
+
               return (
               <tr
                 key={pkg.orderKey || buildSubcontractOrderKey(
@@ -93,30 +112,45 @@ export function PackageTable({ packages, onOpenPackage, packageError = null }) {
                   pkg.costCode
                 )}
                 className="dev-workspace__packages-row"
+                title={secondaryTooltip || undefined}
               >
-                <td>{pkg.supplierLabel || '—'}</td>
-                <td>{pkg.costCode || '—'}</td>
-                <td>{pkg.poNumbers?.join(', ') || '—'}</td>
-                <td style={{ textAlign: 'right' }}>
-                  £{formatMoney(commercialDisplay.originalPoCommitment)}
+                <td className="dev-workspace__packages-supplier-cell">
+                  <span
+                    className="dev-workspace__packages-supplier"
+                    title={supplier.truncated ? supplier.full : undefined}
+                  >
+                    {supplier.compact}
+                  </span>
                 </td>
-                <td style={{ textAlign: 'right' }}>
-                  {formatSignedCommercialEventValue(
-                    commercialDisplay.approvedCommercialEventMovement
-                  )}
+                <td className="dev-workspace__packages-cost-cell">
+                  <span
+                    className="dev-workspace__packages-cost-code"
+                    title={costCode.truncated || costCode.description ? costCode.full : secondaryTooltip || undefined}
+                  >
+                    {costCode.compact}
+                  </span>
                 </td>
-                <td style={{ textAlign: 'right' }}>
-                  £{formatMoney(commercialDisplay.currentPackageValue)}
+                <td className="dev-workspace__packages-num">
+                  <span className="dev-workspace__packages-money">
+                    {formatSignedDisplayMoney(
+                      commercialDisplay.approvedCommercialEventMovement
+                    )}
+                  </span>
                 </td>
-                <td style={{ textAlign: 'right' }}>{pkg.certificateCount || 0}</td>
+                <td className="dev-workspace__packages-num">
+                  <span className="dev-workspace__packages-money">
+                    {formatDisplayMoney(commercialDisplay.currentPackageValue)}
+                  </span>
+                </td>
                 <td className="dev-workspace__packages-action">
                   <button
                     type="button"
-                    className="dev-workspace__packages-open"
+                    className="dev-workspace__packages-open dev-workspace__packages-open--compact"
                     aria-label={buildOpenPackageLabel(pkg)}
+                    title={secondaryTooltip || 'Open package'}
                     onClick={() => handleOpenPackage(pkg)}
                   >
-                    <span>Open Package</span>
+                    <span className="dev-workspace__packages-open-label">Open</span>
                     <span className="dev-workspace__packages-chevron" aria-hidden="true">
                       ›
                     </span>

@@ -8,7 +8,7 @@ const DEVELOPMENT_TAB_LABELS = {
   overview: 'Overview',
   'plot-master': 'Plot Master',
   packages: 'Packages',
-  commercial: 'Commercial',
+  commercial: 'Commercial Events',
   ledger: 'Ledger',
   revenue: 'Revenue',
   cvr: 'CVRs',
@@ -224,13 +224,20 @@ export function buildPackageWorkspaceNavigation({
   onBackToDevelopmentList = null,
   onBackToDevelopmentPackages = null,
 }) {
-  if (navigationContext?.openedFrom === 'DevelopmentPackages') {
+  if (
+    navigationContext?.openedFrom === 'DevelopmentPackages' ||
+    navigationContext?.openedFrom === 'CommercialEventLink'
+  ) {
     const breadcrumbs = [
       createBreadcrumb('Developments', onBackToDevelopmentList),
       createBreadcrumb(developmentName || 'Development', onBackToDevelopmentPackages),
       createBreadcrumb('Packages', onBack),
       createBreadcrumb(packageTitle),
     ];
+
+    if (navigationContext?.openedFrom === 'CommercialEventLink') {
+      breadcrumbs.push(createBreadcrumb('Commercial Events'));
+    }
 
     return {
       breadcrumbs,

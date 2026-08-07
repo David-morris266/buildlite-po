@@ -1,5 +1,4 @@
-import { formatMoney, formatPoDate, formatPoDateTime } from './poDrawerHelpers';
-import { formatSignedCommercialEventValue } from '../commercialEvents/commercialEventPackageValue';
+import { formatDisplayMoney, formatSignedDisplayMoney, formatPoDate, formatPoDateTime } from './poDrawerHelpers';
 
 function StatusBadge({ status }) {
   return (
@@ -7,19 +6,6 @@ function StatusBadge({ status }) {
       {status.label}
     </span>
   );
-}
-
-function PlaceholderValue({ money = false, zeroOk = false, value }) {
-  if (value == null || value === '') {
-    return <span className="po-package-value--empty">—</span>;
-  }
-  if (money) {
-    if (!zeroOk && Number(value) === 0) {
-      return <span className="po-package-value--zero">£0.00</span>;
-    }
-    return <>£{formatMoney(value)}</>;
-  }
-  return value;
 }
 
 export default function SubcontractPackageOverview({
@@ -30,44 +16,38 @@ export default function SubcontractPackageOverview({
 
   return (
     <div className="po-package-overview">
-      <section className="po-module-card po-package-next">
-        <h2 className="po-matrix-section__title">What happens next</h2>
-        {pkg.matrixExists ? (
-          <>
-            <p className="po-package-next__lead">
-              Your plot × stage valuation matrix is in place. When you are ready,
-              monthly Payment Certificates will update certified values inside
-              that layout — without replacing it.
-            </p>
-            <button
-              type="button"
-              className="po-list-btn-secondary"
-              onClick={() => onOpenMatrix?.()}
-            >
-              Review Order Matrix
-            </button>
-          </>
-        ) : (
-          <>
-            <p className="po-package-next__lead">
-              Import your existing valuation matrix — plots as rows, payment
-              stages as columns. BuildLite preserves the layout you already use
-              on site.
-            </p>
-            <button
-              type="button"
-              className="po-btn-primary"
-              onClick={() => onOpenMatrix?.()}
-            >
-              Open Order Matrix
-            </button>
-          </>
-        )}
-      </section>
+      {!pkg.matrixExists ? (
+        <section className="po-module-card po-package-next">
+          <h2 className="po-matrix-section__title">Get started</h2>
+          <p className="po-package-next__lead">
+            Import your plot × stage valuation matrix to unlock payment certificates
+            and commercial event tracking for this package.
+          </p>
+          <button
+            type="button"
+            className="po-btn-primary"
+            onClick={() => onOpenMatrix?.()}
+          >
+            Open Order Matrix
+          </button>
+        </section>
+      ) : (
+        <p className="po-package-overview__hint">
+          Order matrix is in place.
+          <button
+            type="button"
+            className="po-package-overview__inline-link"
+            onClick={() => onOpenMatrix?.()}
+          >
+            Review matrix
+          </button>
+          or continue with certificates and commercial events.
+        </p>
+      )}
 
       <div className="po-package-overview__grid">
         <section className="po-module-card">
-          <h2 className="po-matrix-section__title">Order Matrix status</h2>
+          <h2 className="po-matrix-section__title">Order Matrix</h2>
           <dl className="po-package-facts">
             <div>
               <dt>Status</dt>
@@ -95,35 +75,23 @@ export default function SubcontractPackageOverview({
         </section>
 
         <section className="po-module-card">
-          <h2 className="po-matrix-section__title">Commercial position</h2>
+          <h2 className="po-matrix-section__title">Package details</h2>
           <dl className="po-package-facts">
             <div>
-              <dt>Original PO commitment</dt>
-              <dd>£{formatMoney(pkg.originalPoCommitment)}</dd>
+              <dt>Supplier</dt>
+              <dd>{pkg.supplierLabel}</dd>
             </div>
             <div>
-              <dt>Approved commercial events</dt>
-              <dd>
-                {formatSignedCommercialEventValue(pkg.approvedCommercialEventMovement)}
-              </dd>
+              <dt>Project</dt>
+              <dd>{pkg.projectLabel}</dd>
             </div>
             <div>
-              <dt>Current package value</dt>
-              <dd>£{formatMoney(pkg.currentPackageValue)}</dd>
+              <dt>Purchase orders</dt>
+              <dd>{pkg.poNumbers?.length ?? pkg.pos?.length ?? 0}</dd>
             </div>
             <div>
-              <dt>Pending events</dt>
-              <dd>£{formatMoney(pkg.pendingCommercialEventValue)}</dd>
-            </div>
-            <div>
-              <dt>Certified to date</dt>
-              <dd>
-                <PlaceholderValue money zeroOk value={pkg.certifiedToDate} />
-              </dd>
-            </div>
-            <div>
-              <dt>Remaining (PO contract)</dt>
-              <dd>£{formatMoney(pkg.remaining)}</dd>
+              <dt>Created</dt>
+              <dd>{formatPoDate(pkg.createdAt)}</dd>
             </div>
           </dl>
         </section>
@@ -146,8 +114,8 @@ export default function SubcontractPackageOverview({
                 <tr key={po.poNumber || po.number}>
                   <td>{po.poNumber || po.number}</td>
                   <td>{po.title || po.description || '—'}</td>
-                  <td style={{ textAlign: 'right' }}>
-                    £{formatMoney(po.subtotal ?? po.totals?.net ?? 0)}
+                  <td className="po-package-overview__money">
+                    {formatDisplayMoney(po.subtotal ?? po.totals?.net ?? 0)}
                   </td>
                   <td>{po.approval?.status || po.status || '—'}</td>
                 </tr>
@@ -202,77 +170,96 @@ export function SubcontractPackageTabPlaceholder({ title, lead, points = [] }) {
   );
 }
 
-export function SubcontractPackageDashboard({ pkg }) {
+export function SubcontractPackageDashboard({ pkg, compact = false }) {
   if (!pkg) return null;
 
-  const cards = [
-    {
-      label: 'Original PO commitment',
-      value: `£${formatMoney(pkg.originalPoCommitment)}`,
-      modifier: 'default',
-    },
-    {
-      label: 'Approved events',
-      value: formatSignedCommercialEventValue(pkg.approvedCommercialEventMovement),
-      modifier: pkg.approvedCommercialEventMovement >= 0 ? 'default' : 'accent',
-    },
-    {
-      label: 'Current package value',
-      value: `£${formatMoney(pkg.currentPackageValue)}`,
-      modifier: 'accent',
-    },
-    {
-      label: 'Pending events',
-      value: `£${formatMoney(pkg.pendingCommercialEventValue)}`,
-      modifier: 'muted',
-    },
-    {
-      label: 'Certified to date',
-      value:
-        pkg.certifiedToDate > 0
-          ? `£${formatMoney(pkg.certifiedToDate)}`
-          : '£0.00',
-      modifier: 'muted',
-    },
-    {
-      label: 'Remaining (PO contract)',
-      value: `£${formatMoney(pkg.remaining)}`,
-      modifier: 'default',
-    },
-    {
-      label: 'Overall progress',
-      value: `${pkg.overallProgress}%`,
-      modifier: 'progress',
-    },
-    {
-      label: 'Status',
-      value: pkg.status.label,
-      modifier: pkg.status.modifier,
-      isBadge: true,
-    },
-  ];
+  const cards = compact
+    ? [
+        {
+          label: 'Original PO commitment',
+          value: formatDisplayMoney(pkg.originalPoCommitment),
+          modifier: 'default',
+        },
+        {
+          label: 'Approved commercial events',
+          value: formatSignedDisplayMoney(pkg.approvedCommercialEventMovement),
+          modifier: pkg.approvedCommercialEventMovement >= 0 ? 'default' : 'accent',
+        },
+        {
+          label: 'Current package value',
+          value: formatDisplayMoney(pkg.currentPackageValue),
+          modifier: 'accent',
+        },
+        {
+          label: 'Certified to date',
+          value:
+            pkg.certifiedToDate > 0
+              ? formatDisplayMoney(pkg.certifiedToDate)
+              : '£0',
+          modifier: 'muted',
+        },
+        {
+          label: 'Remaining (PO contract)',
+          value: formatDisplayMoney(pkg.remaining),
+          modifier: 'default',
+        },
+      ]
+    : [
+        {
+          label: 'Original PO commitment',
+          value: formatDisplayMoney(pkg.originalPoCommitment),
+          modifier: 'default',
+        },
+        {
+          label: 'Approved commercial events',
+          value: formatSignedDisplayMoney(pkg.approvedCommercialEventMovement),
+          modifier: pkg.approvedCommercialEventMovement >= 0 ? 'default' : 'accent',
+        },
+        {
+          label: 'Current package value',
+          value: formatDisplayMoney(pkg.currentPackageValue),
+          modifier: 'accent',
+        },
+        {
+          label: 'Pending commercial events',
+          value: formatDisplayMoney(pkg.pendingCommercialEventValue),
+          modifier: 'muted',
+        },
+        {
+          label: 'Certified to date',
+          value:
+            pkg.certifiedToDate > 0
+              ? formatDisplayMoney(pkg.certifiedToDate)
+              : '£0',
+          modifier: 'muted',
+        },
+        {
+          label: 'Remaining (PO contract)',
+          value: formatDisplayMoney(pkg.remaining),
+          modifier: 'default',
+        },
+      ];
 
   return (
-    <section className="po-package-dashboard" aria-label="Commercial dashboard">
+    <section
+      className={`po-package-dashboard${compact ? ' po-package-dashboard--compact' : ''}`}
+      aria-label="Package commercial summary"
+    >
       {cards.map((card) => (
         <div
           key={card.label}
           className={`po-package-dashboard__card po-package-dashboard__card--${card.modifier}`}
         >
           <span className="po-package-dashboard__label">{card.label}</span>
-          {card.isBadge ? (
-            <StatusBadge status={pkg.status} />
-          ) : (
-            <strong className="po-package-dashboard__value">{card.value}</strong>
-          )}
+          <strong className="po-package-dashboard__value po-package-dashboard__value--money">{card.value}</strong>
         </div>
       ))}
     </section>
   );
 }
 
-export function SubcontractPackageSummary({ pkg }) {
-  if (!pkg) return null;
+export function SubcontractPackageSummary({ pkg, compact = false }) {
+  if (!pkg || compact) return null;
 
   return (
     <section className="po-module-card po-package-summary">
@@ -293,40 +280,8 @@ export function SubcontractPackageSummary({ pkg }) {
           </dd>
         </div>
         <div>
-          <dt>Purchase Orders linked</dt>
-          <dd>{pkg.poNumbers?.length ?? pkg.pos?.length ?? 0}</dd>
-        </div>
-        <div>
-          <dt>Original PO commitment</dt>
-          <dd>£{formatMoney(pkg.originalPoCommitment)}</dd>
-        </div>
-        <div>
-          <dt>Approved commercial events</dt>
-          <dd>
-            {formatSignedCommercialEventValue(pkg.approvedCommercialEventMovement)}
-          </dd>
-        </div>
-        <div>
-          <dt>Current package value</dt>
-          <dd>£{formatMoney(pkg.currentPackageValue)}</dd>
-        </div>
-        <div>
-          <dt>Pending events</dt>
-          <dd>£{formatMoney(pkg.pendingCommercialEventValue)}</dd>
-        </div>
-        <div>
-          <dt>Certified to date</dt>
-          <dd>
-            <PlaceholderValue money zeroOk value={pkg.certifiedToDate} />
-          </dd>
-        </div>
-        <div>
-          <dt>Remaining (PO contract)</dt>
-          <dd>£{formatMoney(pkg.remaining)}</dd>
-        </div>
-        <div>
-          <dt>Created</dt>
-          <dd>{formatPoDate(pkg.createdAt)}</dd>
+          <dt>Overall progress</dt>
+          <dd>{pkg.overallProgress}%</dd>
         </div>
         <div>
           <dt>Last updated</dt>

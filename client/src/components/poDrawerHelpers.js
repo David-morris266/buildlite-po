@@ -176,3 +176,54 @@ export function formatMoney(value) {
       })
     : '0.00';
 }
+
+function trimTrailingZero(value) {
+  return String(value).replace(/\.0$/, '');
+}
+
+/**
+ * Compact presentation format for dashboard and overview monetary values.
+ * Abbreviates thousands/millions and omits pence.
+ */
+export function formatDisplayMoney(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount === 0) {
+    return '£0';
+  }
+
+  const abs = Math.abs(amount);
+
+  if (abs >= 1_000_000) {
+    const millions = abs / 1_000_000;
+    const text =
+      millions >= 10
+        ? String(Math.round(millions))
+        : trimTrailingZero(millions.toFixed(1));
+    return `£${text}m`;
+  }
+
+  if (abs >= 1_000) {
+    const thousands = abs / 1_000;
+    const text =
+      thousands >= 100 && Number.isInteger(thousands)
+        ? String(Math.round(thousands))
+        : trimTrailingZero(thousands.toFixed(1));
+    return `£${text}k`;
+  }
+
+  return `£${Math.round(abs).toLocaleString('en-GB')}`;
+}
+
+export function formatSignedDisplayMoney(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount === 0) {
+    return '£0';
+  }
+
+  const formatted = formatDisplayMoney(Math.abs(amount));
+  if (amount > 0) {
+    return `+${formatted}`;
+  }
+
+  return `−${formatted}`;
+}

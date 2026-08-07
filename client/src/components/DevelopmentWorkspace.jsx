@@ -9,11 +9,15 @@ import {
 } from './layout/WorkspaceShell';
 import { subscribeCommercialChanged } from '../commercial/commercialEvents';
 import { buildDevelopmentWorkspaceModel } from '../developments/developmentHelpers';
+import DevelopmentCommercialEvents from './DevelopmentCommercialEvents';
 import DevelopmentOverview, {
-  DevelopmentCommercialTab,
   DevelopmentPackagesTab,
   SummaryDashboard,
 } from './DevelopmentOverview';
+import {
+  buildDevelopmentCommercialEventPackageLaunch,
+  createDevelopmentCommercialNavigationSnapshot,
+} from '../commercialEvents/commercialEventDevelopmentRegister';
 import PlotMaster from './PlotMaster';
 import PurchaseLedger from './PurchaseLedger';
 import CVRSummaryPage from './CVRSummaryPage';
@@ -23,6 +27,10 @@ import RevenueWorkspace from './RevenueWorkspace';
 import SubcontractPackageWorkspace from './SubcontractPackageWorkspace';
 import PackageWorkspaceNotFound from './PackageWorkspaceNotFound';
 import {
+  createCommercialEventNavigationSnapshot,
+  resolveLinkedCommercialEventNavigation,
+} from '../commercialEvents/commercialEventNavigation';
+import {
   getPackageLaunchErrorMessage,
   resolvePackageOrderFromList,
 } from '../payments/packageWorkspaceLaunch';
@@ -31,7 +39,7 @@ const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'plot-master', label: 'Plot Master' },
   { id: 'packages', label: 'Packages' },
-  { id: 'commercial', label: 'Commercial' },
+  { id: 'commercial', label: 'Commercial Events' },
   { id: 'ledger', label: 'Ledger' },
   { id: 'revenue', label: 'Revenue' },
   { id: 'cvr', label: 'CVR' },
@@ -72,6 +80,9 @@ export default function DevelopmentWorkspace({
   const [pos, setPos] = useState([]);
   const [packageLaunch, setPackageLaunch] = useState(null);
   const [packageLaunchError, setPackageLaunchError] = useState('');
+  const [commercialNavigationStack, setCommercialNavigationStack] = useState([]);
+  const [developmentCommercialTarget, setDevelopmentCommercialTarget] = useState(null);
+  const [commercialRegisterError, setCommercialRegisterError] = useState('');
   const [startDate, setStartDate] = useState(development.startDate || '');
   const [targetCompletion, setTargetCompletion] = useState(
     development.targetCompletion || ''
@@ -92,6 +103,9 @@ export default function DevelopmentWorkspace({
     setFocusPlotId(null);
     setPackageLaunch(null);
     setPackageLaunchError('');
+    setCommercialNavigationStack([]);
+    setDevelopmentCommercialTarget(null);
+    setCommercialRegisterError('');
   }, [development.id, development.startDate, development.targetCompletion, initialActiveTab, initialCvrPeriodKey]);
 
   useEffect(() => {
@@ -160,6 +174,7 @@ export default function DevelopmentWorkspace({
     setActiveTab('overview');
     setPackageLaunch(null);
     setPackageLaunchError('');
+    setCommercialNavigationStack([]);
   }, [development?.id]);
 
   if (!model) return null;
@@ -236,7 +251,132 @@ export default function DevelopmentWorkspace({
   function handleBackToDevelopmentPackages() {
     setPackageLaunch(null);
     setPackageLaunchError('');
+    setCommercialNavigationStack([]);
+    setDevelopmentCommercialTarget(null);
+    setCommercialRegisterError('');
     setActiveTab('packages');
+  }
+
+  function handlePackageWorkspaceBack() {
+    if (commercialNavigationStack.length > 0) {
+      const previous = commercialNavigationStack[commercialNavigationStack.length - 1];
+      setCommercialNavigationStack((stack) => stack.slice(0, -1));
+
+      if (previous.kind === 'development-commercial') {
+        setPackageLaunch(null);
+        setPackageLaunchError('');
+        setActiveTab('commercial');
+        setDevelopmentCommercialTarget(previous.developmentCommercialTarget);
+        return;
+      }
+
+      setPackageLaunch(previous.packageLaunch);
+      setPackageLaunchError('');
+      return;
+    }
+
+    handleBackToDevelopmentPackages();
+  }
+
+  function handleOpenPackageFromCommercialRegister(event) {
+    if (!event) return;
+
+    const result = buildDevelopmentCommercialEventPackageLaunch({
+      event,
+      packages: model?.packages || [],
+      developmentId: development.id,
+    });
+
+    if (!result.ok) {
+      setCommercialRegisterError(result.errors?.[0] || 'Unable to open package');
+      return;
+    }
+
+    const snapshot = createDevelopmentCommercialNavigationSnapshot(event.id);
+    if (snapshot) {
+      setCommercialNavigationStack([snapshot]);
+    }
+
+    setCommercialRegisterError('');
+    setPackageLaunchError('');
+    setPackageLaunch(result.launch);
+  }
+
+  function handleNavigateToLinkedFromCommercialRegister(sourceEvent) {
+    if (!sourceEvent) return;
+
+    const navigation = resolveLinkedCommercialEventNavigation({
+      developmentId: development.id,
+      sourceEvent,
+      currentPackageId: sourceEvent.packageId,
+      packages: model?.packages || [],
+    });
+
+    if (!navigation.ok) {
+      setCommercialRegisterError(
+        navigation.errors?.[0] || 'Unable to open related commercial event'
+      );
+      return;
+    }
+
+    if (navigation.kind === 'same-package') {
+      setCommercialRegisterError('');
+      setDevelopmentCommercialTarget({
+        eventId: navigation.linkedEvent.id,
+        mode: 'view',
+        navigationKey: `${navigation.linkedEvent.id}-${Date.now()}`,
+      });
+      return;
+    }
+
+    const snapshot = createDevelopmentCommercialNavigationSnapshot(sourceEvent.id);
+    if (snapshot) {
+      setCommercialNavigationStack([snapshot]);
+    }
+
+    setCommercialRegisterError('');
+    setPackageLaunchError('');
+    setPackageLaunch(navigation.launch);
+  }
+
+  function handleNavigateToLinkedCommercialEvent(sourceEvent) {
+    if (!sourceEvent || !packageLaunch) return;
+
+    const navigation = resolveLinkedCommercialEventNavigation({
+      developmentId: development.id,
+      sourceEvent,
+      currentPackageId: packageLaunch.orderKey,
+      packages: model?.packages || [],
+    });
+
+    if (!navigation.ok) {
+      setPackageLaunchError(navigation.errors?.[0] || 'Unable to open related commercial event');
+      return;
+    }
+
+    setPackageLaunchError('');
+
+    if (navigation.kind === 'same-package') {
+      setPackageLaunch({
+        ...packageLaunch,
+        initialTab: 'variations',
+        commercialEventTarget: {
+          eventId: navigation.linkedEvent.id,
+          mode: 'view',
+          navigationKey: `${navigation.linkedEvent.id}-${Date.now()}`,
+        },
+      });
+      return;
+    }
+
+    const snapshot = createCommercialEventNavigationSnapshot(
+      packageLaunch,
+      sourceEvent.id
+    );
+    if (snapshot) {
+      setCommercialNavigationStack((stack) => [...stack, snapshot]);
+    }
+    setPackageLaunch(navigation.launch);
   }
 
   const packageLaunchErrorMessage = packageLaunch
@@ -274,9 +414,12 @@ export default function DevelopmentWorkspace({
           order={activePackageOrder}
           initialTab={packageLaunch.initialTab}
           navigationContext={packageLaunch}
+          commercialEventTarget={packageLaunch.commercialEventTarget}
           developmentName={model.developmentName}
           onBackToDevelopmentList={onBackToList}
-          onBackToList={handleBackToDevelopmentPackages}
+          onBackToList={handlePackageWorkspaceBack}
+          onNavigateToLinkedCommercialEvent={handleNavigateToLinkedCommercialEvent}
+          packageLaunchError={packageLaunchError}
         />
       </WorkspaceShell>
     );
@@ -415,7 +558,17 @@ export default function DevelopmentWorkspace({
           />
         ) : null}
 
-        {activeTab === 'commercial' ? <DevelopmentCommercialTab model={model} /> : null}
+        {activeTab === 'commercial' ? (
+          <DevelopmentCommercialEvents
+            model={model}
+            commercialEventTarget={developmentCommercialTarget}
+            onCommercialEventTargetHandled={() => setDevelopmentCommercialTarget(null)}
+            onOpenPackage={handleOpenPackageFromCommercialRegister}
+            onNavigateToLinkedCrossPackage={handleNavigateToLinkedFromCommercialRegister}
+            registerError={commercialRegisterError}
+            onRegisterError={setCommercialRegisterError}
+          />
+        ) : null}
 
         {activeTab === 'ledger' ? (
           <PurchaseLedger
