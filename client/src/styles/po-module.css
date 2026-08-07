@@ -8494,6 +8494,114 @@
   cursor: pointer;
 }
 
+/* BL-021B.3.3 — Package recovery position */
+
+.po-package-recovery {
+  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.po-package-recovery--empty {
+  padding-bottom: 14px;
+}
+
+.po-package-recovery__title {
+  font-size: 0.9375rem;
+  color: var(--muted);
+}
+
+.po-package-recovery__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 20px;
+  margin: 0;
+}
+
+.po-package-recovery__grid dt {
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.po-package-recovery__grid dd {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.po-ce-recovery-note {
+  margin: -8px 0 16px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.po-ce-recovery-note strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+@media (max-width: 960px) {
+  .po-package-recovery__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* BL-021B.3.4 — Package history tab */
+
+.po-package-history__header {
+  margin-bottom: 12px;
+}
+
+.po-package-history__lead {
+  margin: 6px 0 0;
+  max-width: 62ch;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.po-package-history__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.po-package-history__filter {
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.po-package-history__filter--active {
+  border-color: rgba(124, 255, 107, 0.35);
+  background: rgba(124, 255, 107, 0.08);
+  color: var(--text);
+}
+
+.po-package-history__timeline {
+  margin-top: 4px;
+}
+
+.po-package-history__actor,
+.po-package-history__detail {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
 .po-ce-kpi--events {
   margin-bottom: 16px;
 }

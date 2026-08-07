@@ -45,6 +45,8 @@ export default function SubcontractPackageOverview({
         </p>
       )}
 
+      <PackageRecoveryPosition summary={pkg.recoverySummary} />
+
       <div className="po-package-overview__grid">
         <section className="po-module-card">
           <h2 className="po-matrix-section__title">Order Matrix</h2>
@@ -151,6 +153,46 @@ export default function SubcontractPackageOverview({
         )}
       </section>
     </div>
+  );
+}
+
+export function PackageRecoveryPosition({ summary }) {
+  if (!summary?.hasRecoveries) {
+    return (
+      <section
+        className="po-module-card po-package-recovery po-package-recovery--empty"
+        aria-label="Recovery position"
+      >
+        <h2 className="po-matrix-section__title po-package-recovery__title">Recovery Position</h2>
+        <p className="po-package-empty-note">
+          No recovery or contra charge events on this package.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="po-module-card po-package-recovery" aria-label="Recovery position">
+      <h2 className="po-matrix-section__title po-package-recovery__title">Recovery Position</h2>
+      <dl className="po-package-recovery__grid">
+        <div>
+          <dt>Outstanding</dt>
+          <dd>{formatDisplayMoney(summary.outstandingRecoveries)}</dd>
+        </div>
+        <div>
+          <dt>Recovered</dt>
+          <dd>{formatDisplayMoney(summary.recoveredValue)}</dd>
+        </div>
+        <div>
+          <dt>Written off</dt>
+          <dd>{formatDisplayMoney(summary.writtenOff)}</dd>
+        </div>
+        <div>
+          <dt>Open items</dt>
+          <dd>{summary.openRecoveryItems}</dd>
+        </div>
+      </dl>
+    </section>
   );
 }
 

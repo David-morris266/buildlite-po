@@ -10,6 +10,7 @@ import {
 import { getSubcontractOrderStatus } from './subcontractOrders';
 import { getCertificateCount } from './paymentCertificateStore';
 import { buildPackageCommercialDisplayFields } from '../commercialEvents/commercialEventPackageValue';
+import { buildPackageRecoverySummaryFromOrder } from '../commercialEvents/commercialEventPackageRecoveryKpis';
 
 export function buildPackageViewModel(order) {
   if (!order) return null;
@@ -23,6 +24,7 @@ export function buildPackageViewModel(order) {
   const approvedVariations = 0;
   const adjustedContract = committedValue + approvedVariations;
   const commercialDisplay = buildPackageCommercialDisplayFields(order);
+  const recoverySummary = buildPackageRecoverySummaryFromOrder(order);
   const certificateCount = getCertificateCount(order.orderKey);
   const certifiedToDate = Number(order.certifiedToDate) || 0;
   const remaining = Math.max(0, adjustedContract - certifiedToDate);
@@ -45,6 +47,7 @@ export function buildPackageViewModel(order) {
     approvedCommercialEventMovement: commercialDisplay.approvedCommercialEventMovement,
     currentPackageValue: commercialDisplay.currentPackageValue,
     pendingCommercialEventValue: commercialDisplay.pendingCommercialEventValue,
+    recoverySummary,
     certifiedToDate,
     remaining,
     overallProgress,

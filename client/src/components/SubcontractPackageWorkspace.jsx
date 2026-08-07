@@ -6,10 +6,10 @@ import PaymentCertificateWorkspace from './PaymentCertificateWorkspace';
 import SubcontractPackageOverview, {
   SubcontractPackageDashboard,
   SubcontractPackageSummary,
-  SubcontractPackageTabPlaceholder,
 } from './SubcontractPackageOverview';
 import { buildPackageViewModel } from '../payments/subcontractPackage';
 import PackageCommercialEvents from './PackageCommercialEvents';
+import PackageCommercialHistory from './PackageCommercialHistory';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -137,14 +137,10 @@ export default function SubcontractPackageWorkspace({
         ) : null}
 
         {activeTab === 'history' ? (
-          <SubcontractPackageTabPlaceholder
-            title="History"
-            lead="A full commercial history for this package will appear here."
-            points={[
-              'Purchase Order approvals and matrix imports.',
-              'Certificate decisions and commercial event approvals.',
-              'Everything you need for audit and handover.',
-            ]}
+          <PackageCommercialHistory
+            order={order}
+            refreshToken={commercialEventRefresh}
+            certRefreshToken={certRefresh}
           />
         ) : null}
       </div>

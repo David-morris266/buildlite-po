@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import CommercialEventDrawer from './CommercialEventDrawer';
-import { formatPoDate } from './poDrawerHelpers';
+import { formatDisplayMoney, formatPoDate } from './poDrawerHelpers';
 import { subscribeCommercialChanged } from '../commercial/commercialEvents';
 import { listCommercialEventsByPackage, getCommercialEventById } from '../commercialEvents/commercialEventStore';
 import { buildPackageCommercialEventSummaryForPackage, formatSignedCommercialEventValue } from '../commercialEvents/commercialEventPackageValue';
+import { buildPackageRecoverySummary } from '../commercialEvents/commercialEventPackageRecoveryKpis';
 import { getCommercialEventLinkBadges } from '../commercialEvents/commercialEventRegisterBadges';
 import {
   getCommercialEventStatusMeta,
@@ -24,6 +25,21 @@ function LinkBadge({ badge }) {
     <span className={`po-ce-link-badge po-ce-link-badge--${badge.modifier}`}>
       {badge.label}
     </span>
+  );
+}
+
+function PackageCommercialEventRecoveryNote({ summary }) {
+  if (!summary?.hasRecoveries) return null;
+
+  return (
+    <p className="po-ce-recovery-note" aria-label="Recovery summary">
+      Recovery position:{' '}
+      <strong>{formatDisplayMoney(summary.outstandingRecoveries)}</strong> outstanding
+      {' · '}
+      <strong>{formatDisplayMoney(summary.recoveredValue)}</strong> recovered
+      {' · '}
+      <strong>{summary.openRecoveryItems}</strong> open
+    </p>
   );
 }
 
@@ -112,6 +128,11 @@ export default function PackageCommercialEvents({
     [order?.committedValue, order?.orderKey, events]
   );
 
+  const recoverySummary = useMemo(
+    () => buildPackageRecoverySummary(events),
+    [events]
+  );
+
   function refreshRegisters() {
     setLocalRefresh((value) => value + 1);
     onCommercialEventsChanged?.();
@@ -148,6 +169,7 @@ export default function PackageCommercialEvents({
   return (
     <div className="po-ce-workspace">
       <PackageCommercialEventKpiStrip summary={summary} />
+      <PackageCommercialEventRecoveryNote summary={recoverySummary} />
 
       <section className="po-module-card po-ce-register">
         <div className="po-ce-register__header">
