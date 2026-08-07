@@ -49,6 +49,10 @@ import {
   evaluatePotentialContraRecommendation,
 } from './commercialEventsRecommendationProvider';
 import {
+  buildCertificateRecommendations,
+  certificateRecommendationProvider,
+} from './certificateRecommendationProvider';
+import {
   isDeferralActive,
   mergeRecommendations,
   resolveMergedRecommendationStatus,
@@ -227,16 +231,16 @@ describe('BL-024A.1 Commercial Assistant foundation', () => {
     expect(recommendation.priority).toBe('low');
   });
 
-  it('reuses isActiveRecovery rather than inventing new outstanding logic', () => {
+  it('reuses isActiveRecovery in the certificate recovery rule', () => {
     const spy = vi.spyOn(recoveryHelpers, 'isActiveRecovery');
-    const origin = createApprovedOrigin({ value: 2500 });
+    const origin = createApprovedOrigin({ value: 2500, potentialContraCharge: true });
     const linked = createLinkedRecoveryFromOrigin(DEV_ID, origin.id, {
       recoveryPackageId: PACKAGE_B,
     });
     submitCommercialEvent(DEV_ID, linked.recovery.id);
     approveCommercialEvent(DEV_ID, linked.recovery.id);
 
-    buildCommercialEventsRecommendations({ developmentId: DEV_ID });
+    buildCertificateRecommendations({ developmentId: DEV_ID });
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });
@@ -375,7 +379,7 @@ describe('BL-024A.1 Commercial Assistant foundation', () => {
     expect(afterApprove.badgeCounts.warnings).toBe(1);
   });
 
-  it('shows Outstanding Recovery after recovery approval without changing development scope', () => {
+  it('shows Outstanding Recovery after recovery approval via certificate provider', () => {
     const origin = createApprovedOrigin({ value: 3800, potentialContraCharge: true });
     const linked = createLinkedRecoveryFromOrigin(DEV_ID, origin.id, {
       recoveryPackageId: PACKAGE_B,
@@ -388,9 +392,14 @@ describe('BL-024A.1 Commercial Assistant foundation', () => {
     const snapshot = buildAssistantRecommendationSnapshot(context);
     expect(
       snapshot.visible.some(
-        (item) => item.ruleId === COMMERCIAL_EVENTS_RULE_ID.outstandingRecovery
+        (item) => item.ruleId === 'cert.outstanding-recovery.v1'
       )
     ).toBe(true);
+    expect(
+      snapshot.visible.some(
+        (item) => item.ruleId === COMMERCIAL_EVENTS_RULE_ID.outstandingRecovery
+      )
+    ).toBe(false);
     expect(snapshot.badgeCounts.actionRequired).toBeGreaterThan(0);
   });
 
@@ -472,8 +481,9 @@ describe('BL-024A.1 Commercial Assistant foundation', () => {
     expect(snapshot.visible.some((item) => item.category === 'information')).toBe(true);
   });
 
-  it('registers the commercial events provider by default', () => {
+  it('registers the commercial events and certificate providers by default', () => {
     expect(commercialEventsRecommendationProvider.id).toBe('commercialEvents');
+    expect(certificateRecommendationProvider.id).toBe('certificates');
   });
 });
 

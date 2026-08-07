@@ -15,6 +15,7 @@ import { COMMERCIAL_CHANGED } from '../commercial/commercialEvents';
 import { clearCommercialEventsStore } from '../commercialEvents/commercialEventStore';
 import { ensureCommercialAssistantProvidersRegistered, resetCommercialAssistantProvidersForTests } from './registerCommercialAssistantProviders';
 import { clearRecommendationDispositionsForTests } from './recommendationDispositionStore';
+import { usePackageWorkspaceAssistantScope } from './usePackageWorkspaceAssistantScope';
 
 const DEV_ID = 'dev-assistant-context';
 const PACKAGE_A = `${DEV_ID}::sup-1::0100`;
@@ -199,6 +200,139 @@ describe('CommercialAssistantContext scope stabilisation', () => {
     });
 
     expect(document.querySelector('[data-development-id="dev-clear"]')).toBeFalsy();
+  });
+
+  describe('BL-024A.2.1 package workspace assistant scope', () => {
+  const ROUTE_DEV_ID = 'dev-route-scope';
+  const ROUTE_PACKAGE_A = `${ROUTE_DEV_ID}::sup-1::0100`;
+  const routePackageRowA = {
+    orderKey: ROUTE_PACKAGE_A,
+    developmentId: ROUTE_DEV_ID,
+    supplierId: 'sup-1',
+    costCode: '0100',
+    supplierLabel: 'Alpha Plumbing',
+    committedValue: 50000,
+  };
+  const routePackageRowB = {
+    orderKey: `${ROUTE_DEV_ID}::sup-2::0200`,
+    developmentId: ROUTE_DEV_ID,
+    supplierId: 'sup-2',
+    costCode: '0200',
+    supplierLabel: 'Beta Brickwork',
+    committedValue: 30000,
+  };
+  const routeOrderA = {
+    ...routePackageRowA,
+    projectLabel: 'Oakwood',
+    poNumbers: ['S0001'],
+  };
+  const routeDevelopmentPackages = [routePackageRowA, routePackageRowB];
+
+  function PackageScopeProbe({ order, developmentPackages, enabled = true }) {
+    usePackageWorkspaceAssistantScope(order, { developmentPackages, enabled });
+    const { scope } = useCommercialAssistant();
+    return (
+      <div
+        data-testid="package-scope-probe"
+        data-development-id={scope.developmentId || ''}
+        data-package-count={scope.packages.length}
+      />
+    );
+  }
+
+  function DevelopmentScopeOwner({ enabled = true }) {
+    useCommercialAssistantScope(
+      {
+        developmentId: ROUTE_DEV_ID,
+        packages: routeDevelopmentPackages,
+        onNavigate: null,
+      },
+      [ROUTE_DEV_ID],
+      { enabled }
+    );
+    const { scope } = useCommercialAssistant();
+    return (
+      <div
+        data-testid="development-scope-probe"
+        data-development-id={scope.developmentId || ''}
+        data-package-count={scope.packages.length}
+      />
+    );
+  }
+
+  it('activates assistant scope from standalone package workspace context', () => {
+    renderTree(
+      <PackageScopeProbe order={routeOrderA} developmentPackages={routeDevelopmentPackages} />
+    );
+
+    const probe = document.querySelector('[data-testid="package-scope-probe"]');
+    expect(probe?.dataset.developmentId).toBe(ROUTE_DEV_ID);
+    expect(probe?.dataset.packageCount).toBe('2');
+  });
+
+  it('yields development scope to an open package without clearing active scope', () => {
+    function ScopeReader() {
+      const { scope } = useCommercialAssistant();
+      return (
+        <div
+          data-testid="scope-reader"
+          data-development-id={scope.developmentId || ''}
+          data-package-count={scope.packages.length}
+        />
+      );
+    }
+
+    renderTree(
+      <>
+        <ScopeReader />
+        <DevelopmentScopeOwner enabled />
+      </>
+    );
+    expect(document.querySelector('[data-testid="scope-reader"]')?.dataset.developmentId).toBe(
+      ROUTE_DEV_ID
+    );
+
+    renderTree(
+      <>
+        <ScopeReader />
+        <DevelopmentScopeOwner enabled={false} />
+        <PackageScopeProbe order={routeOrderA} developmentPackages={routeDevelopmentPackages} />
+      </>
+    );
+
+    expect(document.querySelector('[data-testid="scope-reader"]')?.dataset.developmentId).toBe(
+      ROUTE_DEV_ID
+    );
+    expect(document.querySelector('[data-testid="scope-reader"]')?.dataset.packageCount).toBe('2');
+  });
+
+  it('clears assistant scope when the package workspace unmounts', () => {
+    function ScopeReader() {
+      const { scope } = useCommercialAssistant();
+      return (
+        <div
+          data-testid="scope-reader"
+          data-development-id={scope.developmentId || ''}
+        />
+      );
+    }
+
+    renderTree(
+      <>
+        <ScopeReader />
+        <PackageScopeProbe order={routeOrderA} developmentPackages={routeDevelopmentPackages} />
+      </>
+    );
+
+    expect(document.querySelector('[data-testid="scope-reader"]')?.dataset.developmentId).toBe(
+      ROUTE_DEV_ID
+    );
+
+    renderTree(<ScopeReader />);
+
+    expect(document.querySelector('[data-testid="package-scope-probe"]')).toBeNull();
+    expect(document.querySelector('[data-testid="scope-reader"]')?.dataset.developmentId).toBe('');
+  });
   });
 });
 

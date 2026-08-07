@@ -296,7 +296,7 @@ describe('BL-021B.3.3 package recovery KPIs', () => {
     expect(text).toContain('Recovery Position');
     expect(text).toContain('Outstanding');
     expect(text).toContain('£3.8k');
-    expect(text).toContain('Open items');
+    expect(text).toContain('Recovery records open');
   });
 
   it('does not change current package value when recovery KPIs are calculated', () => {

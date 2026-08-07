@@ -188,7 +188,11 @@ export function PackageRecoveryPosition({ summary }) {
           <dd>{formatDisplayMoney(summary.writtenOff)}</dd>
         </div>
         <div>
-          <dt>Open items</dt>
+          <dt>
+            <abbr title="Recovery or contra charge records not yet fully recovered, closed, or written off. Includes draft and submitted records.">
+              Recovery records open
+            </abbr>
+          </dt>
           <dd>{summary.openRecoveryItems}</dd>
         </div>
       </dl>

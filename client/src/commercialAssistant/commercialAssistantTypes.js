@@ -18,6 +18,7 @@ export const RECOMMENDATION_PRIORITY = {
 
 export const RECOMMENDATION_SOURCE_MODULE = {
   commercialEvents: 'commercialEvents',
+  certificates: 'certificates',
 };
 
 export const RECOMMENDATION_GENERATED_BY = {
@@ -40,6 +41,8 @@ export const MERGED_RECOMMENDATION_STATUS = {
 
 export const COMMERCIAL_ASSISTANT_NAVIGATION_KIND = {
   developmentCommercialEvent: 'developmentCommercialEvent',
+  packageCertificates: 'packageCertificates',
+  packageCommercialEvents: 'packageCommercialEvents',
 };
 
 export const PRIORITY_ORDER = {

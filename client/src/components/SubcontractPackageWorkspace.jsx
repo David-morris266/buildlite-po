@@ -10,6 +10,7 @@ import SubcontractPackageOverview, {
 import { buildPackageViewModel } from '../payments/subcontractPackage';
 import PackageCommercialEvents from './PackageCommercialEvents';
 import PackageCommercialHistory from './PackageCommercialHistory';
+import { usePackageWorkspaceAssistantScope } from '../commercialAssistant/usePackageWorkspaceAssistantScope';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -25,10 +26,13 @@ export default function SubcontractPackageWorkspace({
   onBackToList,
   navigationContext = null,
   commercialEventTarget = null,
+  certificateTarget = null,
   developmentName = null,
   onBackToDevelopmentList = null,
   onNavigateToLinkedCommercialEvent = null,
   packageLaunchError = '',
+  assistantDevelopmentPackages = null,
+  onAssistantNavigate = null,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab);
 
@@ -45,6 +49,18 @@ export default function SubcontractPackageWorkspace({
       setActiveTab('variations');
     }
   }, [commercialEventTarget?.eventId, commercialEventTarget?.navigationKey]);
+
+  useEffect(() => {
+    if (certificateTarget?.certificateId) {
+      setActiveTab('certificates');
+    }
+  }, [certificateTarget?.certificateId, certificateTarget?.navigationKey]);
+
+  usePackageWorkspaceAssistantScope(order, {
+    developmentPackages: assistantDevelopmentPackages,
+    onNavigate: onAssistantNavigate,
+    enabled: Boolean(order),
+  });
 
   const pkg = useMemo(() => {
     void matrixRefresh;
@@ -120,6 +136,7 @@ export default function SubcontractPackageWorkspace({
             order={order}
             pkg={pkg}
             refreshToken={certRefresh}
+            certificateTarget={certificateTarget}
             onCertificatesChanged={() => setCertRefresh((value) => value + 1)}
           />
         ) : null}

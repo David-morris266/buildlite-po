@@ -196,13 +196,6 @@ export function buildCommercialEventsRecommendations(context = {}, now = new Dat
 
   for (const event of listCommercialEventsByDevelopment(developmentId)) {
     try {
-      const outstanding = evaluateOutstandingRecoveryRecommendation(
-        event,
-        developmentId,
-        now
-      );
-      if (outstanding) recommendations.push(outstanding);
-
       const potentialContra = evaluatePotentialContraRecommendation(
         event,
         developmentId,

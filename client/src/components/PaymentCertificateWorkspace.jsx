@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import POPageHeader from './POPageHeader';
 import PaymentCertificateDetail from './PaymentCertificateDetail';
 import {
@@ -78,6 +78,7 @@ export default function PaymentCertificateWorkspace({
   order,
   pkg,
   refreshToken = 0,
+  certificateTarget = null,
   onCertificatesChanged,
 }) {
   const [selectedCertificateId, setSelectedCertificateId] = useState(null);
@@ -99,6 +100,12 @@ export default function PaymentCertificateWorkspace({
     () => getCreateCertificateState(order.orderKey, certificates.length),
     [order.orderKey, certificates.length, refreshToken]
   );
+
+  useEffect(() => {
+    if (certificateTarget?.certificateId) {
+      setSelectedCertificateId(certificateTarget.certificateId);
+    }
+  }, [certificateTarget?.certificateId, certificateTarget?.navigationKey]);
 
   if (!workspace) return null;
 

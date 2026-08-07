@@ -3,6 +3,7 @@
  */
 
 import { registerRecommendationProvider, clearRecommendationProvidersForTests } from './recommendationEngine';
+import { certificateRecommendationProvider } from './certificateRecommendationProvider';
 import { commercialEventsRecommendationProvider } from './commercialEventsRecommendationProvider';
 
 let registered = false;
@@ -10,6 +11,7 @@ let registered = false;
 export function ensureCommercialAssistantProvidersRegistered() {
   if (registered) return;
   registerRecommendationProvider(commercialEventsRecommendationProvider);
+  registerRecommendationProvider(certificateRecommendationProvider);
   registered = true;
 }
 

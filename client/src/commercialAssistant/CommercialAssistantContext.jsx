@@ -181,7 +181,8 @@ export function useCommercialAssistant() {
   return useContext(CommercialAssistantContext);
 }
 
-export function useCommercialAssistantScope(scope, deps = []) {
+export function useCommercialAssistantScope(scope, deps = [], options = {}) {
+  const { enabled = true } = options;
   const { setAssistantScope, clearAssistantScope } = useCommercialAssistant() ?? {};
   const developmentId = scope?.developmentId || null;
   const packages = scope?.packages || [];
@@ -189,6 +190,7 @@ export function useCommercialAssistantScope(scope, deps = []) {
 
   useEffect(() => {
     if (!setAssistantScope || !clearAssistantScope) return undefined;
+    if (!enabled) return undefined;
 
     if (!developmentId) {
       clearAssistantScope();
@@ -197,5 +199,13 @@ export function useCommercialAssistantScope(scope, deps = []) {
 
     setAssistantScope({ developmentId, packages, onNavigate });
     return () => clearAssistantScope();
-  }, [setAssistantScope, clearAssistantScope, developmentId, packages, onNavigate, ...deps]);
+  }, [
+    enabled,
+    setAssistantScope,
+    clearAssistantScope,
+    developmentId,
+    packages,
+    onNavigate,
+    ...deps,
+  ]);
 }

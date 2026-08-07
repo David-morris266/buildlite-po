@@ -13,7 +13,6 @@ import {
   submitCertificate,
   updateCertificateProgress,
 } from '../payments/paymentCertificateStore';
-import { notifyCommercialChanged } from '../commercial/commercialEvents';
 import {
   buildCertificateAuditItems,
   buildCertificateHeaderMeta,
@@ -135,11 +134,6 @@ export default function PaymentCertificateDetail({
     approveCertificate(order.orderKey, certificateId, summary?.totals || {});
     setDialog(null);
     refresh();
-    notifyCommercialChanged({
-      source: 'certificate',
-      orderKey: order.orderKey,
-      certificateId,
-    });
   }
 
   function handleRejectConfirm() {

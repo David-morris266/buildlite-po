@@ -169,9 +169,13 @@ export default function DevelopmentWorkspace({
   const handleAssistantNavigation = useCallback((resolution) => {
     if (!resolution?.launch) return;
 
-    const snapshot = createDevelopmentCommercialNavigationSnapshot(resolution.event?.id);
-    if (snapshot) {
-      setCommercialNavigationStack([snapshot]);
+    if (resolution.event?.id) {
+      const snapshot = createDevelopmentCommercialNavigationSnapshot(resolution.event.id);
+      if (snapshot) {
+        setCommercialNavigationStack([snapshot]);
+      }
+    } else {
+      setCommercialNavigationStack([]);
     }
 
     setCommercialRegisterError('');
@@ -179,11 +183,15 @@ export default function DevelopmentWorkspace({
     setPackageLaunch(resolution.launch);
   }, []);
 
-  useCommercialAssistantScope({
-    developmentId: development.id,
-    packages: model?.packages || [],
-    onNavigate: handleAssistantNavigation,
-  }, [development.id, model?.packages, handleAssistantNavigation]);
+  useCommercialAssistantScope(
+    {
+      developmentId: development.id,
+      packages: model?.packages || [],
+      onNavigate: handleAssistantNavigation,
+    },
+    [development.id, model?.packages, handleAssistantNavigation],
+    { enabled: !packageLaunch }
+  );
 
   const activePackageOrder = useMemo(
     () => resolvePackageOrderFromList(model?.packages, packageLaunch?.orderKey),
@@ -435,11 +443,14 @@ export default function DevelopmentWorkspace({
           initialTab={packageLaunch.initialTab}
           navigationContext={packageLaunch}
           commercialEventTarget={packageLaunch.commercialEventTarget}
+          certificateTarget={packageLaunch.certificateTarget}
           developmentName={model.developmentName}
           onBackToDevelopmentList={onBackToList}
           onBackToList={handlePackageWorkspaceBack}
           onNavigateToLinkedCommercialEvent={handleNavigateToLinkedCommercialEvent}
           packageLaunchError={packageLaunchError}
+          assistantDevelopmentPackages={model?.packages || []}
+          onAssistantNavigate={handleAssistantNavigation}
         />
       </WorkspaceShell>
     );

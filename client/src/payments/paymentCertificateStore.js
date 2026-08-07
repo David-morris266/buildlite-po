@@ -3,6 +3,7 @@
  */
 
 import { appendPackageActivity, ensurePackageRecord } from './subcontractPackageStore';
+import { notifyCommercialChanged } from '../commercial/commercialEvents';
 
 const STORAGE_KEY = 'buildlite_subcontract_packages_v1';
 
@@ -49,6 +50,27 @@ function sessionActor() {
     localStorage.getItem('userEmail') ||
     'Commercial Manager'
   );
+}
+
+function resolveDevelopmentIdFromOrder(order) {
+  return order?.developmentId || order?.scopeId || order?.jobId || null;
+}
+
+function resolveDevelopmentIdFromOrderKey(orderKey) {
+  if (!orderKey) return null;
+  const [developmentId] = String(orderKey).split('::');
+  return developmentId || null;
+}
+
+function notifyCertificateWorkflowChanged(orderKey, certificateId, action, order = null) {
+  notifyCommercialChanged({
+    source: 'certificate',
+    orderKey,
+    certificateId,
+    action,
+    developmentId:
+      resolveDevelopmentIdFromOrder(order) || resolveDevelopmentIdFromOrderKey(orderKey),
+  });
 }
 
 export function normalizeCertificate(certificate) {
@@ -233,6 +255,8 @@ export function createCertificate(orderKey, order = {}) {
     modifier: 'certificate',
   });
 
+  notifyCertificateWorkflowChanged(orderKey, certificate.id, 'created', order);
+
   return { ok: true, certificate };
 }
 
@@ -259,11 +283,13 @@ export function deleteCertificate(orderKey, certificateId) {
   all[orderKey] = record;
   writeAll(all);
 
+  notifyCertificateWorkflowChanged(orderKey, certificateId, 'deleted');
+
   return { ok: true };
 }
 
 export function submitCertificate(orderKey, certificateId) {
-  return updateCertificateRecord(orderKey, certificateId, (certificate) => {
+  const result = updateCertificateRecord(orderKey, certificateId, (certificate) => {
     if (certificate.status !== CERTIFICATE_DEFAULT_STATUS) {
       return null;
     }
@@ -279,10 +305,16 @@ export function submitCertificate(orderKey, certificateId) {
       submittedAt: now,
     };
   });
+
+  if (result.ok) {
+    notifyCertificateWorkflowChanged(orderKey, certificateId, 'submitted');
+  }
+
+  return result;
 }
 
 export function approveCertificate(orderKey, certificateId, totals = {}) {
-  return updateCertificateRecord(orderKey, certificateId, (certificate) => {
+  const result = updateCertificateRecord(orderKey, certificateId, (certificate) => {
     if (certificate.status !== 'submitted') {
       return null;
     }
@@ -305,6 +337,12 @@ export function approveCertificate(orderKey, certificateId, totals = {}) {
       netValue: totals.netPayment ?? certificate.netValue,
     };
   });
+
+  if (result.ok) {
+    notifyCertificateWorkflowChanged(orderKey, certificateId, 'approved');
+  }
+
+  return result;
 }
 
 export function rejectCertificate(orderKey, certificateId, comment = '') {
@@ -313,7 +351,7 @@ export function rejectCertificate(orderKey, certificateId, comment = '') {
     return { ok: false, errors: ['A rejection comment is required.'] };
   }
 
-  return updateCertificateRecord(orderKey, certificateId, (certificate) => {
+  const result = updateCertificateRecord(orderKey, certificateId, (certificate) => {
     if (certificate.status !== 'submitted') {
       return null;
     }
@@ -334,6 +372,12 @@ export function rejectCertificate(orderKey, certificateId, comment = '') {
       submittedAt: null,
     };
   });
+
+  if (result.ok) {
+    notifyCertificateWorkflowChanged(orderKey, certificateId, 'rejected');
+  }
+
+  return result;
 }
 
 export function updateCertificateProgress(orderKey, certificateId, progressPatch) {

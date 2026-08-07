@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listPOs } from '../api';
 import SubcontractOrdersList from './SubcontractOrdersList';
 import SubcontractPackageWorkspace from './SubcontractPackageWorkspace';
 import PackageWorkspaceNotFound from './PackageWorkspaceNotFound';
 import POLoading from './POLoading';
+import { buildAssistantPackagesForDevelopment } from '../commercialAssistant/commercialAssistantPackageScope';
 import { buildSubcontractOrdersFromPos } from '../payments/subcontractOrders';
 import {
   buildPackageWorkspaceLaunchContext,
@@ -23,6 +24,8 @@ export default function PaymentCertificates({
   const [loadingOrder, setLoadingOrder] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
   const [listFeedback, setListFeedback] = useState(null);
+  const [commercialEventTarget, setCommercialEventTarget] = useState(null);
+  const [certificateTarget, setCertificateTarget] = useState(null);
 
   useEffect(() => {
     if (!initialOrderKey) return;
@@ -58,6 +61,11 @@ export default function PaymentCertificates({
     [orders, activeOrderKey]
   );
 
+  const assistantDevelopmentPackages = useMemo(() => {
+    if (!activeOrder?.developmentId) return [];
+    return buildAssistantPackagesForDevelopment(activeOrder.developmentId, orders);
+  }, [activeOrder?.developmentId, orders]);
+
   const navigationContext = useMemo(() => {
     if (!activeOrderKey) return null;
     return buildPackageWorkspaceLaunchContext({
@@ -66,12 +74,34 @@ export default function PaymentCertificates({
       openedFrom: PACKAGE_OPENED_FROM.PaymentCertificates,
       initialTab: activeTab,
       developmentId: activeOrder?.developmentId || null,
+      commercialEventTarget,
+      certificateTarget,
     });
-  }, [activeOrderKey, activeOrder, activeTab]);
+  }, [activeOrderKey, activeOrder, activeTab, commercialEventTarget, certificateTarget]);
+
+  const handleAssistantNavigation = useCallback(
+    (resolution) => {
+      if (!resolution?.launch) return;
+
+      const launch = resolution.launch;
+      setCommercialEventTarget(launch.commercialEventTarget || null);
+      setCertificateTarget(launch.certificateTarget || null);
+
+      if (launch.orderKey && launch.orderKey !== activeOrderKey) {
+        setActiveOrderKey(launch.orderKey);
+      }
+
+      setActiveTab(launch.initialTab || 'overview');
+      setView('package');
+    },
+    [activeOrderKey]
+  );
 
   function openPackage(orderKey, tab = 'overview') {
     setActiveOrderKey(orderKey);
     setActiveTab(tab);
+    setCommercialEventTarget(null);
+    setCertificateTarget(null);
     setView('package');
     setListFeedback(null);
   }
@@ -80,6 +110,8 @@ export default function PaymentCertificates({
     setView('list');
     setActiveOrderKey(null);
     setActiveTab('overview');
+    setCommercialEventTarget(null);
+    setCertificateTarget(null);
     setRefreshToken((value) => value + 1);
     if (message) {
       setListFeedback({ type: 'success', message });
@@ -108,6 +140,10 @@ export default function PaymentCertificates({
         order={activeOrder}
         initialTab={activeTab}
         navigationContext={navigationContext}
+        commercialEventTarget={commercialEventTarget}
+        certificateTarget={certificateTarget}
+        assistantDevelopmentPackages={assistantDevelopmentPackages}
+        onAssistantNavigate={handleAssistantNavigation}
         onBackToList={() => returnToList()}
       />
     );
@@ -115,10 +151,10 @@ export default function PaymentCertificates({
 
   return (
     <SubcontractOrdersList
-        refreshToken={refreshToken}
-        listFeedback={listFeedback}
-        onDismissFeedback={() => setListFeedback(null)}
-        onOpenPackage={openPackage}
-      />
+      refreshToken={refreshToken}
+      listFeedback={listFeedback}
+      onDismissFeedback={() => setListFeedback(null)}
+      onOpenPackage={openPackage}
+    />
   );
 }

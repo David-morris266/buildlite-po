@@ -16,6 +16,7 @@ export function buildPackageWorkspaceLaunchContext({
   initialTab = 'overview',
   developmentId = null,
   commercialEventTarget = null,
+  certificateTarget = null,
 }) {
   const resolvedDevelopmentId =
     developmentId || packageRow?.developmentId || null;
@@ -43,6 +44,7 @@ export function buildPackageWorkspaceLaunchContext({
     openedFrom,
     initialTab: resolvePackageWorkspaceInitialTab(openedFrom, initialTab),
     commercialEventTarget: commercialEventTarget || null,
+    certificateTarget: certificateTarget || null,
     identityError,
   };
 }
