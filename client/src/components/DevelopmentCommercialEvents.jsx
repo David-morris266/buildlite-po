@@ -5,6 +5,7 @@ import { subscribeCommercialChanged } from '../commercial/commercialEvents';
 import { getCommercialEventById } from '../commercialEvents/commercialEventStore';
 import {
   buildDevelopmentCommercialEventFilterOptions,
+  buildDevelopmentCommercialEventPackageOptions,
   buildDevelopmentCommercialEventSummary,
   DEFAULT_DEVELOPMENT_COMMERCIAL_SORT,
   DEVELOPMENT_COMMERCIAL_SORT_KEYS,
@@ -17,6 +18,8 @@ import {
   listEnrichedDevelopmentCommercialEvents,
   sortDevelopmentCommercialEventRows,
 } from '../commercialEvents/commercialEventDevelopmentRegister';
+import { formatRecoveryPackageOptionLabel } from '../commercialEvents/commercialEventRecoveryPackages';
+import { formatMoney } from './poDrawerHelpers';
 import { getLinkedEventNavigationLabel } from '../commercialEvents/commercialEventNavigation';
 import { getCommercialEventLinkBadges } from '../commercialEvents/commercialEventRegisterBadges';
 import {
@@ -120,6 +123,9 @@ export default function DevelopmentCommercialEvents({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState('view');
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [packagePickerOpen, setPackagePickerOpen] = useState(false);
+  const [selectedPackageOrderKey, setSelectedPackageOrderKey] = useState('');
+  const [createPackageOrder, setCreatePackageOrder] = useState(null);
 
   const developmentId = model?.id;
 
@@ -174,7 +180,16 @@ export default function DevelopmentCommercialEvents({
     return sortDevelopmentCommercialEventRows(filtered, sort);
   }, [rows, filters, sort]);
 
+  const packageOptions = useMemo(
+    () => buildDevelopmentCommercialEventPackageOptions(model?.packages || []),
+    [model?.packages]
+  );
+
   const drawerOrder = useMemo(() => {
+    if (drawerMode === 'create' && createPackageOrder) {
+      return createPackageOrder;
+    }
+
     if (!selectedEvent || !developmentId) return null;
     const row = rows.find((item) => item.event.id === selectedEvent.id);
     const packageRow =
@@ -192,13 +207,54 @@ export default function DevelopmentCommercialEvents({
       committedValue: 0,
       poNumbers: row?.poNumbers || [],
     };
-  }, [selectedEvent, rows, model?.packages, model?.developmentName, developmentId]);
+  }, [
+    drawerMode,
+    createPackageOrder,
+    selectedEvent,
+    rows,
+    model?.packages,
+    model?.developmentName,
+    developmentId,
+  ]);
 
   function refreshRegister() {
     setLocalRefresh((value) => value + 1);
   }
 
+  function closeDrawer() {
+    setDrawerOpen(false);
+    setCreatePackageOrder(null);
+    setSelectedPackageOrderKey('');
+  }
+
+  function openCreatePackagePicker() {
+    setSelectedEvent(null);
+    setDrawerMode('create');
+    setCreatePackageOrder(null);
+    setSelectedPackageOrderKey('');
+    setPackagePickerOpen(true);
+    onRegisterError?.('');
+  }
+
+  function closePackagePicker() {
+    setPackagePickerOpen(false);
+    setSelectedPackageOrderKey('');
+  }
+
+  function confirmPackageSelection() {
+    const selected = packageOptions.find(
+      (option) => option.orderKey === selectedPackageOrderKey
+    );
+    if (!selected) return;
+
+    setCreatePackageOrder(selected.packageRow);
+    setPackagePickerOpen(false);
+    setDrawerOpen(true);
+  }
+
   function openEventDrawer(event, mode = 'view') {
+    setCreatePackageOrder(null);
+    setSelectedPackageOrderKey('');
     setSelectedEvent(event);
     setDrawerMode(mode);
     setDrawerOpen(true);
@@ -273,6 +329,13 @@ export default function DevelopmentCommercialEvents({
               Open an event to review details or navigate to its package.
             </p>
           </div>
+          <button
+            type="button"
+            className="po-btn-primary"
+            onClick={openCreatePackagePicker}
+          >
+            New Commercial Event
+          </button>
         </div>
 
         <div className="po-module-card po-filters po-ce-dev-register__filters">
@@ -499,12 +562,88 @@ export default function DevelopmentCommercialEvents({
         )}
       </section>
 
+      {packagePickerOpen ? (
+        <div
+          className="po-ce-dev-register__package-picker-backdrop"
+          onClick={closePackagePicker}
+          aria-hidden="true"
+        />
+      ) : null}
+
+      {packagePickerOpen ? (
+        <section
+          className="po-module-card po-ce-dev-register__package-picker"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Select package for new commercial event"
+        >
+          <header className="po-ce-dev-register__package-picker-header">
+            <div>
+              <h3 className="po-matrix-section__title">New Commercial Event</h3>
+              <p className="po-ce-register__lead">
+                Select the package this commercial event belongs to.
+              </p>
+            </div>
+            <button type="button" className="po-list-btn-secondary" onClick={closePackagePicker}>
+              Cancel
+            </button>
+          </header>
+
+          {packageOptions.length === 0 ? (
+            <p className="po-ce-register__empty">
+              No valid packages are available in this development.
+            </p>
+          ) : (
+            <div className="po-ce-drawer__package-picker">
+              {packageOptions.map((option) => (
+                <label
+                  key={option.orderKey}
+                  className={`po-ce-drawer__package-option${
+                    selectedPackageOrderKey === option.orderKey
+                      ? ' po-ce-drawer__package-option--selected'
+                      : ''
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="developmentCommercialPackage"
+                    value={option.orderKey}
+                    checked={selectedPackageOrderKey === option.orderKey}
+                    onChange={() => setSelectedPackageOrderKey(option.orderKey)}
+                  />
+                  <span className="po-ce-drawer__package-option-body">
+                    <strong>{formatRecoveryPackageOptionLabel(option)}</strong>
+                    <span>
+                      Current package value £{formatMoney(option.currentPackageValue)}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+
+          <div className="po-ce-drawer__actions">
+            <button type="button" className="po-list-btn-secondary" onClick={closePackagePicker}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="po-btn-primary"
+              disabled={!selectedPackageOrderKey}
+              onClick={confirmPackageSelection}
+            >
+              Continue
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       <CommercialEventDrawer
         open={drawerOpen}
         mode={drawerMode}
         event={selectedEvent}
         order={drawerOrder}
-        onClose={() => setDrawerOpen(false)}
+        onClose={closeDrawer}
         onSaved={handleSaved}
         onLinkedRecoveryCreated={handleLinkedRecoveryCreated}
         onNavigateToLinkedEvent={handleNavigateToLinkedEvent}

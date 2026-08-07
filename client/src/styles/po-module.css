@@ -8459,6 +8459,34 @@
   font-style: italic;
 }
 
+.po-ce-dev-register__package-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 120;
+}
+
+.po-ce-dev-register__package-picker {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 121;
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 20px;
+}
+
+.po-ce-dev-register__package-picker-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
 .po-ce-value--positive {
   color: var(--text);
 }
@@ -8600,6 +8628,204 @@
   color: var(--muted);
   font-size: 0.8125rem;
   line-height: 1.45;
+}
+
+/* BL-024A.1 — Commercial Assistant */
+
+.po-assistant-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.po-assistant-indicator__badge {
+  min-width: 20px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(124, 255, 107, 0.18);
+  color: var(--accent);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.po-assistant-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) min(420px, 100vw);
+}
+
+.po-assistant-drawer__backdrop {
+  border: none;
+  background: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+
+.po-assistant-drawer__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  background: var(--surface, #111);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: auto;
+}
+
+.po-assistant-drawer__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.po-assistant-drawer__header h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.po-assistant-drawer__header p,
+.po-assistant-drawer__empty,
+.po-assistant-drawer__error {
+  margin: 0;
+  color: var(--muted);
+}
+
+.po-assistant-drawer__close,
+.po-btn-secondary {
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.po-assistant-drawer__list {
+  display: grid;
+  gap: 14px;
+}
+
+.po-assistant-card {
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.po-assistant-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.po-assistant-card__category,
+.po-assistant-card__priority {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.po-assistant-card__category--actionRequired {
+  color: #ffb4b4;
+}
+
+.po-assistant-card__category--warning {
+  color: #ffd59a;
+}
+
+.po-assistant-card__category--information {
+  color: var(--muted);
+}
+
+.po-assistant-card__title {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.po-assistant-card__description,
+.po-assistant-card__facts dd,
+.po-assistant-card__evidence {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.po-assistant-card__facts {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.po-assistant-card__facts dt {
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.po-assistant-card__facts dd {
+  margin: 0;
+  color: var(--text);
+}
+
+.po-assistant-card__evidence {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.po-assistant-card__evidence li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.po-assistant-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.po-assistant-card__defer {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.po-assistant-card__defer label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.po-assistant-card__defer input {
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--text);
+  font: inherit;
+}
+
+.po-assistant-card__error {
+  margin: 10px 0 0;
+  color: #ffb4b4;
+  font-size: 0.8125rem;
 }
 
 .po-ce-kpi--events {

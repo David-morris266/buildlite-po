@@ -387,4 +387,33 @@ export function getDevelopmentCommercialTypeLabel(eventTypeKey) {
   }
 }
 
+export function isValidDevelopmentPackageIdentity(pkg) {
+  if (!pkg?.orderKey || !pkg?.developmentId || !pkg?.supplierId) return false;
+  const costCode = pkg?.costCode;
+  return costCode != null && String(costCode).trim() !== '';
+}
+
+export function buildDevelopmentCommercialEventPackageOptions(packages = []) {
+  return packages
+    .filter(isValidDevelopmentPackageIdentity)
+    .map((pkg) => {
+      const display = buildPackageCommercialDisplayFields(pkg);
+      return {
+        orderKey: pkg.orderKey,
+        packageRow: pkg,
+        supplierLabel: pkg.supplierLabel || pkg.supplierId || '—',
+        costCode: pkg.costCode,
+        poNumbers: Array.isArray(pkg.poNumbers) ? pkg.poNumbers : [],
+        currentPackageValue: display.currentPackageValue,
+      };
+    })
+    .sort((left, right) => {
+      const supplierCompare = String(left.supplierLabel).localeCompare(
+        String(right.supplierLabel)
+      );
+      if (supplierCompare !== 0) return supplierCompare;
+      return String(left.costCode).localeCompare(String(right.costCode));
+    });
+}
+
 export { formatSignedCommercialEventValue };

@@ -3,6 +3,7 @@ import POLoading from './POLoading';
 
 /**
  * Accessible drawer shell — backdrop, focus trap, Escape to close (BL-010B.03).
+ * BL-024A.1.1 — Autofocus only on closed → open transition.
  */
 export default function PODrawerShell({
   open,
@@ -12,24 +13,37 @@ export default function PODrawerShell({
   children,
 }) {
   const panelRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  const wasOpenRef = useRef(false);
+
+  onCloseRef.current = onClose;
 
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open) {
+      wasOpenRef.current = false;
+      return undefined;
+    }
 
     const panel = panelRef.current;
     if (!panel) return undefined;
+
+    const justOpened = !wasOpenRef.current;
+    wasOpenRef.current = true;
 
     const focusables = panel.querySelectorAll(
       'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
     );
     const first = focusables[0];
     const last = focusables[focusables.length - 1];
-    first?.focus();
+
+    if (justOpened) {
+      first?.focus();
+    }
 
     const onKeyDown = (event) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose?.();
+        onCloseRef.current?.();
         return;
       }
 
@@ -46,7 +60,7 @@ export default function PODrawerShell({
 
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -54,7 +68,7 @@ export default function PODrawerShell({
     <>
       <div
         className="po-drawer-backdrop"
-        onClick={onClose}
+        onClick={() => onCloseRef.current?.()}
         aria-hidden="true"
       />
       <div

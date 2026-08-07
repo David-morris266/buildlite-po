@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import { listPOs } from '../api';
 import { updateDevelopment } from '../developments/developmentStore';
@@ -30,6 +30,7 @@ import {
   createCommercialEventNavigationSnapshot,
   resolveLinkedCommercialEventNavigation,
 } from '../commercialEvents/commercialEventNavigation';
+import { useCommercialAssistantScope } from '../commercialAssistant/CommercialAssistantContext';
 import {
   getPackageLaunchErrorMessage,
   resolvePackageOrderFromList,
@@ -164,6 +165,25 @@ export default function DevelopmentWorkspace({
     () => buildDevelopmentWorkspaceModel(development, { pos }),
     [development, pos, plotRefresh, ledgerRefresh, cvrRefresh, commercialRefresh]
   );
+
+  const handleAssistantNavigation = useCallback((resolution) => {
+    if (!resolution?.launch) return;
+
+    const snapshot = createDevelopmentCommercialNavigationSnapshot(resolution.event?.id);
+    if (snapshot) {
+      setCommercialNavigationStack([snapshot]);
+    }
+
+    setCommercialRegisterError('');
+    setPackageLaunchError('');
+    setPackageLaunch(resolution.launch);
+  }, []);
+
+  useCommercialAssistantScope({
+    developmentId: development.id,
+    packages: model?.packages || [],
+    onNavigate: handleAssistantNavigation,
+  }, [development.id, model?.packages, handleAssistantNavigation]);
 
   const activePackageOrder = useMemo(
     () => resolvePackageOrderFromList(model?.packages, packageLaunch?.orderKey),

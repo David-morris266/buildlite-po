@@ -18,6 +18,7 @@ import {
   createLinkedRecoveryFromOrigin,
   getCommercialEventById,
   listCommercialEventsByDevelopment,
+  listCommercialEventsByPackage,
   submitCommercialEvent,
   updateCommercialEventDraft,
   updateRecoveryStatus,
@@ -25,10 +26,12 @@ import {
 import {
   buildDevelopmentCommercialEventPackageLaunch,
   buildDevelopmentCommercialEventSummary,
+  buildDevelopmentCommercialEventPackageOptions,
   buildDevelopmentPackageLookup,
   createDevelopmentCommercialNavigationSnapshot,
   enrichDevelopmentCommercialEventRow,
   filterDevelopmentCommercialEventRows,
+  isValidDevelopmentPackageIdentity,
   listEnrichedDevelopmentCommercialEvents,
   resolveDevelopmentLinkedEventNavigation,
   sortDevelopmentCommercialEventRows,
@@ -357,6 +360,49 @@ describe('BL-021B.3.2 development commercial events register', () => {
     expect(JSON.stringify(listCommercialEventsByDevelopment(DEV_A))).toBe(before);
     expect(setItemSpy.mock.calls.length).toBe(writesBefore);
   });
+
+  it('builds valid package options with canonical orderKey and display context', () => {
+    const options = buildDevelopmentCommercialEventPackageOptions([
+      packageRowA,
+      packageRowB,
+      { orderKey: PACKAGE_A, developmentId: DEV_A, supplierId: '', costCode: '0100' },
+      { orderKey: 'orphan', developmentId: DEV_A, supplierId: 'sup-9', costCode: '' },
+    ]);
+
+    expect(options).toHaveLength(2);
+    expect(options[0].orderKey).toBe(PACKAGE_A);
+    expect(options[0].supplierLabel).toBe('Alpha Plumbing');
+    expect(options[0].poNumbers).toEqual(['S0001']);
+    expect(options[0].currentPackageValue).toBe(50000);
+    expect(options[1].orderKey).toBe(PACKAGE_B);
+  });
+
+  it('excludes invalid package identities from development create options', () => {
+    expect(
+      isValidDevelopmentPackageIdentity({
+        orderKey: PACKAGE_A,
+        developmentId: DEV_A,
+        supplierId: 'sup-1',
+        costCode: '0100',
+      })
+    ).toBe(true);
+    expect(
+      isValidDevelopmentPackageIdentity({
+        orderKey: '',
+        developmentId: DEV_A,
+        supplierId: 'sup-1',
+        costCode: '0100',
+      })
+    ).toBe(false);
+    expect(
+      isValidDevelopmentPackageIdentity({
+        orderKey: PACKAGE_A,
+        developmentId: DEV_A,
+        supplierId: 'sup-1',
+        costCode: '',
+      })
+    ).toBe(false);
+  });
 });
 
 describe('BL-021B.3.2 development register UI wiring', () => {
@@ -364,6 +410,54 @@ describe('BL-021B.3.2 development register UI wiring', () => {
     const source = await import('../components/DevelopmentCommercialEvents.jsx?raw');
     expect(String(source.default)).toMatch(/CommercialEventDrawer/);
     expect(String(source.default)).not.toMatch(/delete/i);
+  });
+
+  it('shows New Commercial Event on the development register', async () => {
+    const source = await import('../components/DevelopmentCommercialEvents.jsx?raw');
+    expect(String(source.default)).toMatch(/New Commercial Event/);
+    expect(String(source.default)).toMatch(/openCreatePackagePicker/);
+    expect(String(source.default)).toMatch(/buildDevelopmentCommercialEventPackageOptions/);
+  });
+
+  it('requires package selection before opening the create drawer', async () => {
+    const source = await import('../components/DevelopmentCommercialEvents.jsx?raw');
+    expect(String(source.default)).toMatch(/packagePickerOpen/);
+    expect(String(source.default)).toMatch(/confirmPackageSelection/);
+    expect(String(source.default)).toMatch(/Select the package this commercial event belongs to/);
+  });
+
+  it('opens the existing CommercialEventDrawer with selected package order', async () => {
+    const source = await import('../components/DevelopmentCommercialEvents.jsx?raw');
+    expect(String(source.default)).toMatch(/<CommercialEventDrawer/);
+    expect(String(source.default)).toMatch(/createPackageOrder/);
+    expect(String(source.default)).toMatch(/drawerMode === 'create'/);
+  });
+
+  it('persists created events against canonical package orderKey in both registers', () => {
+    const draft = createCommercialEvent(
+      DEV_A,
+      basePayload({
+        packageId: PACKAGE_A,
+        description: 'Development register create',
+      })
+    );
+
+    const developmentRows = listEnrichedDevelopmentCommercialEvents(DEV_A, [packageRowA]);
+    const packageEvents = listCommercialEventsByPackage(DEV_A, PACKAGE_A);
+
+    expect(draft.event.packageId).toBe(PACKAGE_A);
+    expect(developmentRows).toHaveLength(1);
+    expect(developmentRows[0].event.id).toBe(draft.event.id);
+    expect(packageEvents).toHaveLength(1);
+    expect(packageEvents[0].id).toBe(draft.event.id);
+  });
+
+  it('leaves package-level New Commercial Event flow unchanged', async () => {
+    const source = await import('../components/PackageCommercialEvents.jsx?raw');
+    expect(String(source.default)).toMatch(/New Commercial Event/);
+    expect(String(source.default)).toMatch(/function openCreateDrawer/);
+    expect(String(source.default)).not.toMatch(/packagePickerOpen/);
+    expect(String(source.default)).not.toMatch(/buildDevelopmentCommercialEventPackageOptions/);
   });
 
   it('subscribes to commercial change notifications for refresh', async () => {

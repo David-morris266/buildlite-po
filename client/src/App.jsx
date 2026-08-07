@@ -8,6 +8,10 @@ import CVRPortfolio from "./components/CVRPortfolio";
 import AdministrationModule from "./components/admin/AdministrationModule";
 import BrandHeader from "./components/Brandheader";
 import {
+  CommercialAssistantProvider,
+} from "./commercialAssistant/CommercialAssistantContext";
+import CommercialAssistantDrawer from "./commercialAssistant/CommercialAssistantDrawer";
+import {
   CommercialWorkspace,
 } from "./components/layout/WorkspaceShell";
 import { NavigationProvider } from "./navigation/NavigationContext";
@@ -130,11 +134,14 @@ export default function App() {
 
   return (
     <NavigationProvider>
+    <CommercialAssistantProvider>
     <div id="app">
       <BrandHeader
         activeTab={tab}
         onTab={handleTab}
       />
+
+      <CommercialAssistantDrawer />
 
       <main className="po-app-main">
         {tab === "administration" && (
@@ -223,6 +230,7 @@ export default function App() {
         )}
       </main>
     </div>
+    </CommercialAssistantProvider>
     </NavigationProvider>
   );
 }

@@ -17,7 +17,9 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.js'],
+    include: ['src/**/*.test.js', 'src/**/*.test.jsx'],
+    environmentMatchGlobs: [['src/**/*.test.jsx', 'jsdom']],
+    testTimeout: 15_000,
   },
   server: {
     proxy: {

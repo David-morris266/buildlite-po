@@ -1,3 +1,5 @@
+import CommercialAssistantIndicator from '../commercialAssistant/CommercialAssistantIndicator';
+
 export default function BrandHeader({ activeTab, onTab }) {
   return (
     <header className="brandbar">
@@ -10,6 +12,7 @@ export default function BrandHeader({ activeTab, onTab }) {
       </div>
 
       <nav className="nav">
+        <CommercialAssistantIndicator />
         <button
           className={`tab ${activeTab === "administration" ? "active" : ""}`}
           onClick={() => onTab("administration")}

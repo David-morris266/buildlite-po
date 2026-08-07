@@ -475,6 +475,9 @@ export function submitCommercialEvent(
   });
 
   const saved = saveEvent(developmentId, event);
+  if (saved) {
+    notifyCommercialChanged({ developmentId, eventId, action: 'submitted' });
+  }
   return saved ? { ok: true, event: saved } : { ok: false, errors: ['Save failed'] };
 }
 
@@ -514,6 +517,9 @@ export function approveCommercialEvent(
   }
 
   const saved = saveEvent(developmentId, event);
+  if (saved) {
+    notifyCommercialChanged({ developmentId, eventId, action: 'approved' });
+  }
   return saved ? { ok: true, event: saved } : { ok: false, errors: ['Save failed'] };
 }
 
@@ -539,6 +545,9 @@ export function rejectCommercialEvent(
   });
 
   const saved = saveEvent(developmentId, event);
+  if (saved) {
+    notifyCommercialChanged({ developmentId, eventId, action: 'rejected' });
+  }
   return saved ? { ok: true, event: saved } : { ok: false, errors: ['Save failed'] };
 }
 
@@ -564,6 +573,9 @@ export function closeCommercialEvent(
   });
 
   const saved = saveEvent(developmentId, event);
+  if (saved) {
+    notifyCommercialChanged({ developmentId, eventId, action: 'closed' });
+  }
   return saved ? { ok: true, event: saved } : { ok: false, errors: ['Save failed'] };
 }
 
