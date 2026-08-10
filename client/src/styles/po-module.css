@@ -1680,6 +1680,18 @@
   white-space: nowrap;
 }
 
+.po-package-dashboard__net-detail,
+.po-package-dashboard__progress-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.po-package-dashboard__progress-note--warning {
+  color: var(--danger, #b42318);
+}
+
 .po-package-summary {
   margin-bottom: 16px;
 }

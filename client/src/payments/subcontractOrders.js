@@ -211,8 +211,10 @@ export function buildSubcontractOrdersFromPos(pos) {
 
 export function getSubcontractOrderStatus(order) {
   const hasMatrix = hasOrderMatrix(order.orderKey);
-  const committed = Number(order.committedValue) || 0;
-  const certified = Number(order.certifiedToDate) || 0;
+  const committed =
+    Number(order.currentContractValue ?? order.committedValue) || 0;
+  const certified =
+    Number(order.certifiedGrossToDate ?? order.certifiedToDate) || 0;
   const remaining = Math.max(0, committed - certified);
 
   if (!hasMatrix) {

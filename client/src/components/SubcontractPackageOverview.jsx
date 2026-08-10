@@ -219,70 +219,67 @@ export function SubcontractPackageTabPlaceholder({ title, lead, points = [] }) {
 export function SubcontractPackageDashboard({ pkg, compact = false }) {
   if (!pkg) return null;
 
+  const progressTitle =
+    'Gross certified ÷ current contract. Approved commercial events increase contract value but are not yet certifiable on certificates until BL-025.2+.';
+
   const cards = compact
     ? [
         {
-          label: 'Original PO commitment',
-          value: formatDisplayMoney(pkg.originalPoCommitment),
+          label: 'Original order',
+          value: formatDisplayMoney(pkg.originalOrderValue),
           modifier: 'default',
         },
         {
-          label: 'Approved commercial events',
-          value: formatSignedDisplayMoney(pkg.approvedCommercialEventMovement),
-          modifier: pkg.approvedCommercialEventMovement >= 0 ? 'default' : 'accent',
+          label: 'Approved events',
+          value: formatSignedDisplayMoney(pkg.approvedCommercialMovement),
+          modifier: pkg.approvedCommercialMovement >= 0 ? 'default' : 'accent',
         },
         {
-          label: 'Current package value',
-          value: formatDisplayMoney(pkg.currentPackageValue),
+          label: 'Current contract',
+          value: formatDisplayMoney(pkg.currentContractValue),
           modifier: 'accent',
         },
         {
-          label: 'Certified to date',
-          value:
-            pkg.certifiedToDate > 0
-              ? formatDisplayMoney(pkg.certifiedToDate)
-              : '£0',
+          label: 'Certified gross',
+          value: formatDisplayMoney(pkg.certifiedGrossToDate),
           modifier: 'muted',
         },
         {
-          label: 'Remaining (PO contract)',
-          value: formatDisplayMoney(pkg.remaining),
-          modifier: 'default',
+          label: 'Remaining',
+          value: formatDisplayMoney(Math.max(0, pkg.remainingContractValue ?? 0)),
+          modifier: pkg.isOverCertified ? 'accent' : 'default',
         },
       ]
     : [
         {
-          label: 'Original PO commitment',
-          value: formatDisplayMoney(pkg.originalPoCommitment),
+          label: 'Original order',
+          value: formatDisplayMoney(pkg.originalOrderValue),
           modifier: 'default',
         },
         {
-          label: 'Approved commercial events',
-          value: formatSignedDisplayMoney(pkg.approvedCommercialEventMovement),
-          modifier: pkg.approvedCommercialEventMovement >= 0 ? 'default' : 'accent',
+          label: 'Approved events',
+          value: formatSignedDisplayMoney(pkg.approvedCommercialMovement),
+          modifier: pkg.approvedCommercialMovement >= 0 ? 'default' : 'accent',
         },
         {
-          label: 'Current package value',
-          value: formatDisplayMoney(pkg.currentPackageValue),
+          label: 'Current contract',
+          value: formatDisplayMoney(pkg.currentContractValue),
           modifier: 'accent',
         },
         {
-          label: 'Pending commercial events',
-          value: formatDisplayMoney(pkg.pendingCommercialEventValue),
+          label: 'Pending events',
+          value: formatDisplayMoney(pkg.pendingCommercialMovement),
           modifier: 'muted',
         },
         {
-          label: 'Certified to date',
-          value:
-            pkg.certifiedToDate > 0
-              ? formatDisplayMoney(pkg.certifiedToDate)
-              : '£0',
+          label: 'Certified gross',
+          value: formatDisplayMoney(pkg.certifiedGrossToDate),
           modifier: 'muted',
         },
         {
-          label: 'Remaining (PO contract)',
-          value: formatDisplayMoney(pkg.remaining),
-          modifier: 'default',
+          label: 'Remaining',
+          value: formatDisplayMoney(Math.max(0, pkg.remainingContractValue ?? 0)),
+          modifier: pkg.isOverCertified ? 'accent' : 'default',
         },
       ];
 
@@ -300,6 +297,22 @@ export function SubcontractPackageDashboard({ pkg, compact = false }) {
           <strong className="po-package-dashboard__value po-package-dashboard__value--money">{card.value}</strong>
         </div>
       ))}
+      {!compact && pkg.certifiedNetPaymentToDate > 0 ? (
+        <p className="po-package-dashboard__net-detail">
+          Net payment certified to date: {formatDisplayMoney(pkg.certifiedNetPaymentToDate)}
+        </p>
+      ) : null}
+      {pkg.commercialProgressPct > 0 || pkg.certifiedGrossToDate > 0 ? (
+        <p className="po-package-dashboard__progress-note">
+          <abbr title={progressTitle}>Commercial progress</abbr>: {pkg.commercialProgressPct}%
+        </p>
+      ) : null}
+      {pkg.isOverCertified ? (
+        <p className="po-package-dashboard__progress-note po-package-dashboard__progress-note--warning">
+          Gross certified exceeds current contract by{' '}
+          {formatDisplayMoney(Math.abs(pkg.remainingContractValue))}.
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -326,9 +339,19 @@ export function SubcontractPackageSummary({ pkg, compact = false }) {
           </dd>
         </div>
         <div>
-          <dt>Overall progress</dt>
-          <dd>{pkg.overallProgress}%</dd>
+          <dt>
+            <abbr title="Gross certified ÷ current contract. Approved events increase contract value but are not yet certifiable on certificates until BL-025.2+.">
+              Commercial progress
+            </abbr>
+          </dt>
+          <dd>{pkg.commercialProgressPct}%</dd>
         </div>
+        {pkg.certifiedNetPaymentToDate > 0 ? (
+          <div>
+            <dt>Net payment certified</dt>
+            <dd>{formatDisplayMoney(pkg.certifiedNetPaymentToDate)}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Last updated</dt>
           <dd>{formatPoDate(pkg.updatedAt)}</dd>

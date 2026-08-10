@@ -1,5 +1,5 @@
 /**
- * BL-011C.01 — Subcontract Package view model (Doc 29–32).
+ * BL-011C.01 / BL-025.1 — Subcontract Package view model (Doc 29–32, Doc 64 / Doc 65).
  */
 
 import { hasOrderMatrix, loadOrderMatrix } from './orderMatrixStore';
@@ -11,6 +11,12 @@ import { getSubcontractOrderStatus } from './subcontractOrders';
 import { getCertificateCount } from './paymentCertificateStore';
 import { buildPackageCommercialDisplayFields } from '../commercialEvents/commercialEventPackageValue';
 import { buildPackageRecoverySummaryFromOrder } from '../commercialEvents/commercialEventPackageRecoveryKpis';
+import {
+  calculateCommercialProgressPct,
+  calculatePackageCertifiedGross,
+  calculatePackageCertifiedNet,
+  calculateRemainingContractValue,
+} from './packageCertifiedTotals';
 
 export function buildPackageViewModel(order) {
   if (!order) return null;
@@ -21,32 +27,62 @@ export function buildPackageViewModel(order) {
   const matrixExists = hasOrderMatrix(order.orderKey);
 
   const committedValue = Number(order.committedValue) || 0;
-  const approvedVariations = 0;
-  const adjustedContract = committedValue + approvedVariations;
   const commercialDisplay = buildPackageCommercialDisplayFields(order);
   const recoverySummary = buildPackageRecoverySummaryFromOrder(order);
   const certificateCount = getCertificateCount(order.orderKey);
-  const certifiedToDate = Number(order.certifiedToDate) || 0;
-  const remaining = Math.max(0, adjustedContract - certifiedToDate);
-  const overallProgress =
-    adjustedContract > 0
-      ? Math.min(100, Math.round((certifiedToDate / adjustedContract) * 100))
-      : 0;
+
+  const originalOrderValue = commercialDisplay.originalPoCommitment;
+  const approvedCommercialMovement = commercialDisplay.approvedCommercialEventMovement;
+  const pendingCommercialMovement = commercialDisplay.pendingCommercialEventValue;
+  const currentContractValue = commercialDisplay.currentPackageValue;
+
+  const certifiedGrossToDate = calculatePackageCertifiedGross(order.orderKey, order);
+  const certifiedNetPaymentToDate = calculatePackageCertifiedNet(order.orderKey, order);
+  const remainingContractValue = calculateRemainingContractValue(
+    currentContractValue,
+    certifiedGrossToDate
+  );
+  const commercialProgressPct = calculateCommercialProgressPct(
+    certifiedGrossToDate,
+    currentContractValue
+  );
+
+  /** @deprecated BL-025.1 — use approvedCommercialMovement */
+  const approvedVariations = approvedCommercialMovement;
+  /** @deprecated BL-025.1 — use currentContractValue */
+  const adjustedContract = currentContractValue;
+  /** @deprecated BL-025.1 — use certifiedGrossToDate */
+  const certifiedToDate = certifiedGrossToDate;
+  /** @deprecated BL-025.1 — use remainingContractValue (may be negative when over-certified) */
+  const remaining = remainingContractValue;
+  /** @deprecated BL-025.1 — use commercialProgressPct */
+  const overallProgress = commercialProgressPct;
 
   const status = getSubcontractOrderStatus({
     ...order,
     orderKey: order.orderKey,
+    currentContractValue,
+    certifiedGrossToDate,
   });
 
   return {
     ...order,
     committedValue,
+    originalOrderValue,
+    approvedCommercialMovement,
+    pendingCommercialMovement,
+    currentContractValue,
+    certifiedGrossToDate,
+    certifiedNetPaymentToDate,
+    remainingContractValue,
+    commercialProgressPct,
+    isOverCertified: remainingContractValue < -0.005,
     approvedVariations,
     adjustedContract,
-    originalPoCommitment: commercialDisplay.originalPoCommitment,
-    approvedCommercialEventMovement: commercialDisplay.approvedCommercialEventMovement,
-    currentPackageValue: commercialDisplay.currentPackageValue,
-    pendingCommercialEventValue: commercialDisplay.pendingCommercialEventValue,
+    originalPoCommitment: originalOrderValue,
+    approvedCommercialEventMovement: approvedCommercialMovement,
+    currentPackageValue: currentContractValue,
+    pendingCommercialEventValue: pendingCommercialMovement,
     recoverySummary,
     certifiedToDate,
     remaining,

@@ -24,6 +24,13 @@ import { buildPackageCommercialDisplayFields } from '../commercialEvents/commerc
 import {
   SubcontractPackageDashboard,
 } from '../components/SubcontractPackageOverview';
+import {
+  approveCertificate,
+  createCertificate,
+  submitCertificate,
+} from './paymentCertificateStore';
+import { ensurePackageRecord } from './subcontractPackageStore';
+import { calculatePackageCertifiedValue } from '../cvr/cvrCertifiedValue';
 import { buildPackageViewModel } from '../payments/subcontractPackage';
 
 const DEV_ID = 'dev-001';
@@ -59,12 +66,22 @@ function seedEvent(overrides = {}) {
   return created.event;
 }
 
+function approveCertGross(gross, net = gross * 1.14) {
+  const created = createCertificate(ORDER_KEY, baseOrder);
+  submitCertificate(ORDER_KEY, created.certificate.id);
+  approveCertificate(ORDER_KEY, created.certificate.id, {
+    grossThisCertificate: gross,
+    netPayment: net,
+  });
+}
+
 describe('buildPackageViewModel commercial display fields', () => {
   beforeEach(() => {
     storage.clear();
     clearCommercialEventsStore();
     saveCompanySettings({ numberingPrefixes: { commercialEvent: 'CE-' } });
     localStorage.setItem('userName', 'Test Manager');
+    ensurePackageRecord(ORDER_KEY, baseOrder);
   });
 
   it('increases current package value for a positive approved event', () => {
@@ -73,10 +90,12 @@ describe('buildPackageViewModel commercial display fields', () => {
     approveCommercialEvent(DEV_ID, draft.id);
 
     const pkg = buildPackageViewModel(baseOrder);
+    expect(pkg.originalOrderValue).toBe(12000);
     expect(pkg.originalPoCommitment).toBe(12000);
-    expect(pkg.approvedCommercialEventMovement).toBe(2000);
+    expect(pkg.approvedCommercialMovement).toBe(2000);
+    expect(pkg.currentContractValue).toBe(14000);
     expect(pkg.currentPackageValue).toBe(14000);
-    expect(pkg.adjustedContract).toBe(12000);
+    expect(pkg.adjustedContract).toBe(14000);
   });
 
   it('reduces current package value for an approved contra charge', () => {
@@ -89,11 +108,11 @@ describe('buildPackageViewModel commercial display fields', () => {
     approveCommercialEvent(DEV_ID, draft.id);
 
     const pkg = buildPackageViewModel(baseOrder);
-    expect(pkg.approvedCommercialEventMovement).toBe(-1500);
-    expect(pkg.currentPackageValue).toBe(10500);
+    expect(pkg.approvedCommercialMovement).toBe(-1500);
+    expect(pkg.currentContractValue).toBe(10500);
   });
 
-  it('shows pending events separately from current package value', () => {
+  it('shows pending events separately from current contract value', () => {
     const approved = seedEvent({ value: 1000, description: 'Approved scope' });
     submitCommercialEvent(DEV_ID, approved.id);
     approveCommercialEvent(DEV_ID, approved.id);
@@ -103,8 +122,8 @@ describe('buildPackageViewModel commercial display fields', () => {
     });
 
     const pkg = buildPackageViewModel(baseOrder);
-    expect(pkg.pendingCommercialEventValue).toBe(500);
-    expect(pkg.currentPackageValue).toBe(13000);
+    expect(pkg.pendingCommercialMovement).toBe(500);
+    expect(pkg.currentContractValue).toBe(13000);
   });
 
   it('ignores rejected events for approved movement and current value', () => {
@@ -113,30 +132,35 @@ describe('buildPackageViewModel commercial display fields', () => {
     rejectCommercialEvent(DEV_ID, draft.id);
 
     const pkg = buildPackageViewModel(baseOrder);
-    expect(pkg.approvedCommercialEventMovement).toBe(0);
-    expect(pkg.currentPackageValue).toBe(12000);
-    expect(pkg.pendingCommercialEventValue).toBe(0);
+    expect(pkg.approvedCommercialMovement).toBe(0);
+    expect(pkg.currentContractValue).toBe(12000);
+    expect(pkg.pendingCommercialMovement).toBe(0);
   });
 
-  it('leaves certificate-facing adjustedContract unchanged', () => {
+  it('aliases legacy fields to canonical BL-025.1 values', () => {
     const draft = seedEvent({ value: 3000 });
     submitCommercialEvent(DEV_ID, draft.id);
     approveCommercialEvent(DEV_ID, draft.id);
 
     const pkg = buildPackageViewModel(baseOrder);
-    expect(pkg.adjustedContract).toBe(12000);
-    expect(pkg.approvedVariations).toBe(0);
+    expect(pkg.adjustedContract).toBe(pkg.currentContractValue);
+    expect(pkg.approvedVariations).toBe(pkg.approvedCommercialMovement);
+    expect(pkg.certifiedToDate).toBe(pkg.certifiedGrossToDate);
+    expect(pkg.overallProgress).toBe(pkg.commercialProgressPct);
   });
 
   it('preserves legacy package display when no commercial events exist', () => {
     const pkg = buildPackageViewModel(baseOrder);
-    expect(pkg.originalPoCommitment).toBe(12000);
-    expect(pkg.approvedCommercialEventMovement).toBe(0);
-    expect(pkg.currentPackageValue).toBe(12000);
-    expect(pkg.pendingCommercialEventValue).toBe(0);
+    expect(pkg.originalOrderValue).toBe(12000);
+    expect(pkg.approvedCommercialMovement).toBe(0);
+    expect(pkg.currentContractValue).toBe(12000);
+    expect(pkg.pendingCommercialMovement).toBe(0);
+    expect(pkg.certifiedGrossToDate).toBe(0);
+    expect(pkg.certifiedNetPaymentToDate).toBe(0);
+    expect(pkg.remainingContractValue).toBe(12000);
   });
 
-  it('feeds event-adjusted fields to the package dashboard without hard-coded zero', () => {
+  it('feeds canonical fields to the package dashboard', () => {
     const draft = seedEvent({ value: 2500 });
     submitCommercialEvent(DEV_ID, draft.id);
     approveCommercialEvent(DEV_ID, draft.id);
@@ -145,11 +169,134 @@ describe('buildPackageViewModel commercial display fields', () => {
     const dashboard = SubcontractPackageDashboard({ pkg });
     const labels = findTextContent(dashboard).join(' ');
 
-    expect(labels).toContain('Original PO commitment');
-    expect(labels).toContain('Approved commercial events');
-    expect(labels).toContain('Current package value');
+    expect(labels).toContain('Original order');
+    expect(labels).toContain('Approved events');
+    expect(labels).toContain('Current contract');
+    expect(labels).toContain('Certified gross');
+    expect(labels).toContain('Remaining');
     expect(labels).toContain('+£2.5k');
     expect(labels).not.toContain('Approved variations');
+  });
+});
+
+describe('BL-025.1 canonical package value and certified totals', () => {
+  beforeEach(() => {
+    storage.clear();
+    clearCommercialEventsStore();
+    saveCompanySettings({ numberingPrefixes: { commercialEvent: 'CE-' } });
+    localStorage.setItem('userName', 'Test Manager');
+  });
+
+  const po100Order = {
+    orderKey: 'dev-bl25::sup-1::brick',
+    developmentId: 'dev-bl25',
+    supplierId: 'sup-1',
+    costCode: 'brick',
+    supplierLabel: 'BrickCo',
+    projectLabel: 'BL-025 Site',
+    committedValue: 100000,
+    poNumbers: ['S100'],
+    pos: [],
+  };
+
+  function approveVariation(value) {
+    ensurePackageRecord(po100Order.orderKey, po100Order);
+    const event = createCommercialEvent('dev-bl25', {
+      packageId: po100Order.orderKey,
+      poNumber: 'S100',
+      supplierId: 'sup-1',
+      costCode: 'brick',
+      eventType: COMMERCIAL_EVENT_TYPES.variation.key,
+      category: 'commercial',
+      subcategory: 'scopeChange',
+      responsibility: 'commercial',
+      description: 'Approved variation',
+      value,
+    }).event;
+    submitCommercialEvent('dev-bl25', event.id);
+    approveCommercialEvent('dev-bl25', event.id);
+  }
+
+  it('does not add approved CE value to certified gross (no double counting)', () => {
+    ensurePackageRecord(po100Order.orderKey, po100Order);
+    approveVariation(10000);
+
+    const created = createCertificate(po100Order.orderKey, po100Order);
+    submitCertificate(po100Order.orderKey, created.certificate.id);
+    approveCertificate(po100Order.orderKey, created.certificate.id, {
+      grossThisCertificate: 40000,
+      netPayment: 45600,
+    });
+
+    const pkg = buildPackageViewModel(po100Order);
+    expect(pkg.originalOrderValue).toBe(100000);
+    expect(pkg.approvedCommercialMovement).toBe(10000);
+    expect(pkg.currentContractValue).toBe(110000);
+    expect(pkg.certifiedGrossToDate).toBe(40000);
+    expect(pkg.certifiedNetPaymentToDate).toBe(45600);
+    expect(pkg.remainingContractValue).toBe(70000);
+    expect(pkg.commercialProgressPct).toBe(36);
+  });
+
+  it('reduces current contract for approved credit without affecting certified gross', () => {
+    ensurePackageRecord(po100Order.orderKey, po100Order);
+    const credit = createCommercialEvent('dev-bl25', {
+      packageId: po100Order.orderKey,
+      poNumber: 'S100',
+      supplierId: 'sup-1',
+      costCode: 'brick',
+      eventType: COMMERCIAL_EVENT_TYPES.credit.key,
+      category: 'commercial',
+      subcategory: 'scopeChange',
+      responsibility: 'commercial',
+      description: 'Credit note',
+      value: -5000,
+    }).event;
+    submitCommercialEvent('dev-bl25', credit.id);
+    approveCommercialEvent('dev-bl25', credit.id);
+
+    const pkg = buildPackageViewModel(po100Order);
+    expect(pkg.currentContractValue).toBe(95000);
+    expect(pkg.certifiedGrossToDate).toBe(0);
+    expect(pkg.remainingContractValue).toBe(95000);
+  });
+
+  it('sums multiple approved certificate gross values', () => {
+    ensurePackageRecord(po100Order.orderKey, po100Order);
+    approveCertGross(25000, 28000);
+    approveCertGross(15000, 16800);
+
+    const pkg = buildPackageViewModel({ ...baseOrder, orderKey: ORDER_KEY });
+    expect(pkg.certifiedGrossToDate).toBe(40000);
+    expect(pkg.certifiedNetPaymentToDate).toBe(44800);
+  });
+
+  it('does not mutate source order committedValue', () => {
+    ensurePackageRecord(po100Order.orderKey, po100Order);
+    approveVariation(5000);
+    buildPackageViewModel(po100Order);
+    expect(po100Order.committedValue).toBe(100000);
+  });
+
+  it('leaves CVR calculatePackageCertifiedValue net-preferred semantics unchanged', () => {
+    ensurePackageRecord(ORDER_KEY, baseOrder);
+    approveCertGross(40000, 45600);
+    expect(calculatePackageCertifiedValue(ORDER_KEY)).toBe(45600);
+    const pkg = buildPackageViewModel(baseOrder);
+    expect(pkg.certifiedGrossToDate).toBe(40000);
+    expect(pkg.certifiedGrossToDate).not.toBe(calculatePackageCertifiedValue(ORDER_KEY));
+  });
+
+  it('handles zero current contract value without dividing by zero', () => {
+    const zeroOrder = {
+      ...baseOrder,
+      orderKey: 'dev-zero::sup-1::000',
+      committedValue: 0,
+    };
+    ensurePackageRecord(zeroOrder.orderKey, zeroOrder);
+    const pkg = buildPackageViewModel(zeroOrder);
+    expect(pkg.currentContractValue).toBe(0);
+    expect(pkg.commercialProgressPct).toBe(0);
   });
 });
 
@@ -185,18 +332,12 @@ describe('CVR commitment remains PO-only', () => {
 });
 
 function findTextContent(element) {
-  if (!element) return [];
-  const parts = [];
+  if (element == null || typeof element === 'boolean') return [];
   if (typeof element === 'string' || typeof element === 'number') {
-    parts.push(String(element));
+    return [String(element)];
   }
-  const children = Array.isArray(element?.props?.children)
-    ? element.props.children
-    : element?.props?.children != null
-      ? [element.props.children]
-      : [];
-  for (const child of children) {
-    parts.push(...findTextContent(child));
+  if (Array.isArray(element)) {
+    return element.flatMap(findTextContent);
   }
-  return parts;
+  return findTextContent(element.props?.children);
 }

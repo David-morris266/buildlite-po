@@ -314,8 +314,9 @@ describe('BL-021B.3.3 package recovery KPIs', () => {
     createApprovedRecoveryOnPackage(PACKAGE_B, { value: 3800 });
 
     const pkg = buildPackageViewModel(baseOrder);
-    expect(pkg.adjustedContract).toBe(40000);
-    expect(pkg.approvedVariations).toBe(0);
+    expect(pkg.adjustedContract).toBe(pkg.currentContractValue);
+    expect(pkg.currentContractValue).toBe(36200);
+    expect(pkg.approvedCommercialMovement).toBe(-3800);
     expect(pkg.committedValue).toBe(40000);
   });
 
@@ -344,25 +345,19 @@ describe('BL-021B.3.3 package recovery KPIs', () => {
     const dashboard = SubcontractPackageDashboard({ pkg, compact: false });
     const labels = findTextContent(dashboard).join(' ');
 
-    expect(labels).toContain('Current package value');
+    expect(labels).toContain('Current contract');
     expect(labels).toContain('£36.2k');
     expect(labels).not.toContain('Recovery Position');
   });
 });
 
 function findTextContent(element) {
-  if (!element) return [];
-  const parts = [];
+  if (element == null || typeof element === 'boolean') return [];
   if (typeof element === 'string' || typeof element === 'number') {
-    parts.push(String(element));
+    return [String(element)];
   }
-  const children = Array.isArray(element?.props?.children)
-    ? element.props.children
-    : element?.props?.children != null
-      ? [element.props.children]
-      : [];
-  for (const child of children) {
-    parts.push(...findTextContent(child));
+  if (Array.isArray(element)) {
+    return element.flatMap(findTextContent);
   }
-  return parts;
+  return findTextContent(element.props?.children);
 }
