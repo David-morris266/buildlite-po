@@ -1,7 +1,5 @@
 /**
- * BL-025.2 — Certificate commercial line helpers (Doc 64 / Doc 65).
- *
- * Draft-only proposed inclusions. Does not alter matrix gross/net maths (BL-025.3).
+ * BL-025.2 / BL-025.3 — Certificate commercial line helpers (Doc 64 / Doc 65).
  */
 
 import {
@@ -22,6 +20,11 @@ import {
   isCertificateEditable,
   listCertificates,
 } from './paymentCertificateStore';
+
+function readStoredMoney(value) {
+  if (value == null || value === '') return null;
+  return roundMoney(value);
+}
 
 function toNumber(value) {
   const parsed = Number(value);
@@ -217,11 +220,52 @@ export function buildCertificateCommercialLineRows(
 }
 
 export function sumCommercialLinesThisCertificate(commercialLines) {
+  return sumValueInclusionCommercialLines(commercialLines);
+}
+
+/** Sum signed valueInclusion lines on a certificate (BL-025.3). */
+export function sumValueInclusionCommercialLines(commercialLines) {
   return roundMoney(
-    normalizeCommercialLines(commercialLines).reduce(
-      (sum, line) => sum + toNumber(line.amountThisCertificate),
-      0
-    )
+    normalizeCommercialLines(commercialLines)
+      .filter(
+        (line) =>
+          !line.lineType ||
+          line.lineType === CERTIFICATE_COMMERCIAL_LINE_TYPES.valueInclusion
+      )
+      .reduce((sum, line) => sum + toNumber(line.amountThisCertificate), 0)
+  );
+}
+
+/** Prior approved certificates' combined commercial-event gross (BL-025.3). */
+export function calculatePreviousApprovedCommercialEventGross(orderKey, certificate) {
+  if (!orderKey || !certificate) return 0;
+
+  return roundMoney(
+    listCertificates(orderKey)
+      .filter(
+        (item) =>
+          isApprovedCommercialCertificate(item) &&
+          item.certificateNumber < certificate.certificateNumber
+      )
+      .reduce(
+        (sum, item) => sum + sumValueInclusionCommercialLines(item.commercialLines),
+        0
+      )
+  );
+}
+
+/** Prior approved certificates' combined gross works (matrix + CE), from stored grossValue. */
+export function calculatePreviousApprovedGrossWorks(orderKey, certificate) {
+  if (!orderKey || !certificate) return 0;
+
+  return roundMoney(
+    listCertificates(orderKey)
+      .filter(
+        (item) =>
+          isApprovedCommercialCertificate(item) &&
+          item.certificateNumber < certificate.certificateNumber
+      )
+      .reduce((sum, item) => sum + (readStoredMoney(item.grossValue) ?? 0), 0)
   );
 }
 

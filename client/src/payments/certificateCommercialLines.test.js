@@ -46,7 +46,7 @@ import {
   validateCommercialLineAmount,
   validateCommercialLinesForCertificate,
 } from './certificateCommercialLines';
-import { buildCertificateCommercialTotals } from './paymentCertificateProgress';
+import { buildCertificateCommercialTotals, buildCertificateWorksTotals } from './paymentCertificateProgress';
 import { ensurePackageRecord } from './subcontractPackageStore';
 
 const DEV_ID = 'dev-001';
@@ -395,10 +395,20 @@ describe('certificateCommercialLines BL-025.2', () => {
       baseOrder
     );
     const saved = getCertificate(ORDER_KEY, certificate.id);
-    const cells = [{ thisCertificateValue: 1000, previousValue: 0, certifiedToDateValue: 1000 }];
-    const totals = buildCertificateCommercialTotals(cells, 12000);
-    expect(totals.grossThisCertificate).toBe(1000);
-    expect(sumCommercialLinesThisCertificate(saved.commercialLines)).toBe(5000);
+    const matrixTotals = buildCertificateCommercialTotals(
+      [{ thisCertificateValue: 1000, previousValue: 0, certifiedToDateValue: 1000 }],
+      12000
+    );
+    const worksTotals = buildCertificateWorksTotals(
+      [{ thisCertificateValue: 1000, previousValue: 0, certifiedToDateValue: 1000 }],
+      {
+        commercialLines: saved.commercialLines,
+        currentContractValue: 125000,
+        previousGrossWorks: 0,
+      }
+    );
+    expect(matrixTotals.grossThisCertificate).toBe(1000);
+    expect(worksTotals.grossWorksThisCertificate).toBe(6000);
   });
 
   it('24. no CE certificateStatus mutation when adding lines', () => {

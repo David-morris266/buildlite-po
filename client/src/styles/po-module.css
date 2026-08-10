@@ -4130,6 +4130,22 @@
   font-size: 1.05rem;
 }
 
+.po-cert-detail__summary-lead {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.po-cert-detail__commercial-item--emphasis dd {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.po-cert-detail__commercial-item--warning dd {
+  color: #fbbf24;
+}
+
 .po-cert-detail__commercial-events {
   margin-bottom: 16px;
 }

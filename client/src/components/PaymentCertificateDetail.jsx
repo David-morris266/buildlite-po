@@ -269,22 +269,22 @@ export default function PaymentCertificateDetail({
         aria-label="Running commercial totals"
       >
         <h3 className="po-matrix-section__title">Commercial Summary</h3>
-        {summary?.commercialEventsPreview?.lineCount ? (
-          <div className="po-cert-detail__ce-preview">
-            <dl className="po-cert-detail__commercial-grid po-cert-detail__commercial-grid--preview">
-              <div>
-                <dt>{summary.commercialEventsPreview.label}</dt>
-                <dd>{summary.commercialEventsPreview.value}</dd>
-              </div>
-            </dl>
-            <p className="po-cert-detail__ce-preview-note">
-              {summary.commercialEventsPreview.note}
-            </p>
-          </div>
-        ) : null}
+        <p className="po-cert-detail__summary-lead">
+          Combined matrix valuation and commercial event lines. VAT uses the package PO rate on
+          gross works minus retention (transitional — per-line VAT treatment deferred).
+        </p>
         <dl className="po-cert-detail__commercial-grid po-cert-detail__commercial-grid--sticky">
           {commercialSummary.map((item) => (
-            <div key={item.label}>
+            <div
+              key={item.label}
+              className={
+                item.emphasis
+                  ? 'po-cert-detail__commercial-item--emphasis'
+                  : item.modifier
+                    ? `po-cert-detail__commercial-item--${item.modifier}`
+                    : undefined
+              }
+            >
               <dt>{item.label}</dt>
               <dd>{item.value}</dd>
             </div>

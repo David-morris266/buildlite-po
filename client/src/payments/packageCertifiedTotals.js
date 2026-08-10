@@ -27,6 +27,13 @@ function recomputeFromProgress(orderKey, certificate, order, field) {
   const totals = summary?.totals;
   if (!totals) return null;
 
+  if (field === 'grossThisCertificate' || field === 'grossWorksThisCertificate') {
+    return (
+      readStoredMoney(totals.grossWorksThisCertificate) ??
+      readStoredMoney(totals.grossThisCertificate)
+    );
+  }
+
   return readStoredMoney(totals[field]);
 }
 

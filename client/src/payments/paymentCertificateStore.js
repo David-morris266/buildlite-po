@@ -346,7 +346,10 @@ export function approveCertificate(orderKey, certificateId, totals = {}) {
       status: 'locked',
       approvedBy: actor,
       approvedAt: now,
-      grossValue: totals.grossThisCertificate ?? certificate.grossValue,
+      grossValue:
+        totals.grossWorksThisCertificate ??
+        totals.grossThisCertificate ??
+        certificate.grossValue,
       netValue: totals.netPayment ?? certificate.netValue,
     };
   });

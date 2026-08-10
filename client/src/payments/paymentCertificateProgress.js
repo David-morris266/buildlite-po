@@ -3,6 +3,7 @@
  */
 
 import { formatMoney } from '../components/poDrawerHelpers';
+import { buildPackageCommercialDisplayFields } from '../commercialEvents/commercialEventPackageValue';
 import { getPlots } from '../developments/plotMaster';
 import { loadOrderMatrix } from './orderMatrixStore';
 import {
@@ -19,9 +20,11 @@ import {
   listCertificates,
 } from './paymentCertificateStore';
 import {
+  calculatePreviousApprovedCommercialEventGross,
+  calculatePreviousApprovedGrossWorks,
   formatSignedCommercialLineTotal,
   normalizeCertificateCommercialLines,
-  sumCommercialLinesThisCertificate,
+  sumValueInclusionCommercialLines,
 } from './certificateCommercialLines';
 
 export {
@@ -296,37 +299,100 @@ export function buildCertificateValuationGrid(
   };
 }
 
-export function buildCertificateCommercialTotals(
+/** Matrix-only totals — preserved for grid/cell logic (BL-025.3). */
+export function buildMatrixOnlyCertificateTotals(
   cells,
   contractTotal,
   { vatRate = DEFAULT_VAT_RATE, retentionRate = DEFAULT_RETENTION_RATE } = {}
 ) {
-  const grossThisCertificate = roundMoney(
+  const matrixGrossThisCertificate = roundMoney(
     cells.reduce((sum, cell) => sum + cell.thisCertificateValue, 0)
   );
-  const previousCertified = roundMoney(
+  const previousMatrixCertified = roundMoney(
     cells.reduce((sum, cell) => sum + cell.previousValue, 0)
   );
-  const certifiedToDate = roundMoney(
+  const matrixCertifiedToDate = roundMoney(
     cells.reduce((sum, cell) => sum + cell.certifiedToDateValue, 0)
   );
-  const remainingContract = roundMoney(
-    Math.max(0, (Number(contractTotal) || 0) - certifiedToDate)
-  );
-  const retention = roundMoney(grossThisCertificate * retentionRate);
-  const vat = roundMoney((grossThisCertificate - retention) * vatRate);
-  const netPayment = roundMoney(grossThisCertificate - retention + vat);
+  const retention = roundMoney(matrixGrossThisCertificate * retentionRate);
+  const vat = roundMoney((matrixGrossThisCertificate - retention) * vatRate);
+  const netPayment = roundMoney(matrixGrossThisCertificate - retention + vat);
 
   return {
-    grossThisCertificate,
-    previousCertified,
-    certifiedToDate,
-    remainingContract,
+    matrixGrossThisCertificate,
+    grossThisCertificate: matrixGrossThisCertificate,
+    previousMatrixCertified,
+    previousCertified: previousMatrixCertified,
+    certifiedToDate: matrixCertifiedToDate,
+    remainingContract: roundMoney(Math.max(0, (Number(contractTotal) || 0) - matrixCertifiedToDate)),
     retention,
     vat,
     netPayment,
     contractTotal: roundMoney(contractTotal),
   };
+}
+
+/**
+ * Combined matrix + commercial-event certificate totals (BL-025.3).
+ */
+export function buildCertificateWorksTotals(
+  cells,
+  {
+    commercialLines = [],
+    currentContractValue = 0,
+    previousGrossWorks = 0,
+    previousCommercialEventCertified = 0,
+    vatRate = DEFAULT_VAT_RATE,
+    retentionRate = DEFAULT_RETENTION_RATE,
+  } = {}
+) {
+  const matrixGrossThisCertificate = roundMoney(
+    cells.reduce((sum, cell) => sum + cell.thisCertificateValue, 0)
+  );
+  const commercialEventGrossThisCertificate =
+    sumValueInclusionCommercialLines(commercialLines);
+  const grossWorksThisCertificate = roundMoney(
+    matrixGrossThisCertificate + commercialEventGrossThisCertificate
+  );
+
+  const previousMatrixCertified = roundMoney(
+    cells.reduce((sum, cell) => sum + cell.previousValue, 0)
+  );
+  const previousCertified = roundMoney(previousGrossWorks);
+  const certifiedToDate = roundMoney(previousCertified + grossWorksThisCertificate);
+  const contract = roundMoney(currentContractValue);
+  const remainingContract = roundMoney(contract - certifiedToDate);
+  const retention = roundMoney(grossWorksThisCertificate * retentionRate);
+  const vat = roundMoney((grossWorksThisCertificate - retention) * vatRate);
+  const netPayment = roundMoney(grossWorksThisCertificate - retention + vat);
+
+  return {
+    matrixGrossThisCertificate,
+    commercialEventGrossThisCertificate,
+    grossWorksThisCertificate,
+    /** @deprecated BL-025.3 alias — use grossWorksThisCertificate */
+    grossThisCertificate: grossWorksThisCertificate,
+    previousMatrixCertified,
+    previousCommercialEventCertified: roundMoney(previousCommercialEventCertified),
+    previousCertified,
+    certifiedToDate,
+    remainingContract,
+    currentContractValue: contract,
+    retention,
+    vat,
+    netPayment,
+    overCertified: certifiedToDate > contract + Number.EPSILON,
+    contractTotal: contract,
+  };
+}
+
+/** @deprecated BL-025.3 — use buildCertificateWorksTotals; matrix-only when no CE lines. */
+export function buildCertificateCommercialTotals(
+  cells,
+  contractTotal,
+  options = {}
+) {
+  return buildMatrixOnlyCertificateTotals(cells, contractTotal, options);
 }
 
 export function summarizeCertificateProgress(orderKey, certificateId, order = null) {
@@ -339,32 +405,60 @@ export function summarizeCertificateProgress(orderKey, certificateId, order = nu
   });
   if (!grid) return null;
 
-  const contractTotal = grid.cells.reduce(
-    (sum, cell) => sum + cell.contractValue,
-    0
-  );
-  const totals = buildCertificateCommercialTotals(grid.cells, contractTotal, {
-    vatRate: getOrderVatRate(order),
-    retentionRate: getOrderRetentionRate(order),
+  const currentContractValue =
+    buildPackageCommercialDisplayFields(order || { orderKey }).currentPackageValue;
+  const previousGrossWorks = calculatePreviousApprovedGrossWorks(orderKey, certificate);
+  const previousCommercialEventCertified =
+    calculatePreviousApprovedCommercialEventGross(orderKey, certificate);
+
+  const vatRate = getOrderVatRate(order);
+  const retentionRate = getOrderRetentionRate(order);
+
+  let totals = buildCertificateWorksTotals(grid.cells, {
+    commercialLines: normalizeCertificateCommercialLines(certificate),
+    currentContractValue,
+    previousGrossWorks,
+    previousCommercialEventCertified,
+    vatRate,
+    retentionRate,
   });
+
+  if (
+    isApprovedCommercialCertificate(certificate) &&
+    certificate.grossValue != null &&
+    certificate.netValue != null
+  ) {
+    totals = {
+      ...totals,
+      grossWorksThisCertificate: roundMoney(certificate.grossValue),
+      grossThisCertificate: roundMoney(certificate.grossValue),
+      netPayment: roundMoney(certificate.netValue),
+      previousCertified: previousGrossWorks,
+      certifiedToDate: roundMoney(previousGrossWorks + roundMoney(certificate.grossValue)),
+      remainingContract: roundMoney(
+        roundMoney(currentContractValue) - roundMoney(previousGrossWorks + certificate.grossValue)
+      ),
+      overCertified:
+        roundMoney(previousGrossWorks + certificate.grossValue) >
+        roundMoney(currentContractValue) + Number.EPSILON,
+    };
+  }
 
   return {
     certificate,
     grid,
     totals,
     matrix,
-    commercialEventsPreview: buildCommercialEventsPreview(certificate),
   };
 }
 
 export function buildCommercialEventsPreview(certificate) {
   const lines = normalizeCertificateCommercialLines(certificate);
-  const total = sumCommercialLinesThisCertificate(lines);
+  const total = sumValueInclusionCommercialLines(lines);
 
   return {
     label: 'Commercial Events this certificate',
     value: formatSignedCommercialLineTotal(total),
-    note: 'Preview only — certificate totals below remain matrix-only until BL-025.3.',
     total,
     lineCount: lines.length,
   };
@@ -383,40 +477,62 @@ export function formatMoneyLabel(value) {
 export function buildCommercialSummaryItems(totals) {
   if (!totals) {
     return [
-      { label: 'Gross This Certificate', value: '—' },
-      { label: 'Previous Certified', value: '—' },
-      { label: 'Certified To Date', value: '—' },
-      { label: 'Remaining Contract', value: '—' },
+      { label: 'Matrix valuation', value: '—' },
+      { label: 'Gross this certificate', value: '—' },
+      { label: 'Previous certified', value: '—' },
+      { label: 'Certified to date', value: '—' },
+      { label: 'Remaining contract', value: '—' },
       { label: 'Retention', value: '—' },
       { label: 'VAT', value: '—' },
-      { label: 'Net Payment', value: '—' },
+      { label: 'Net payment', value: '—' },
     ];
   }
 
-  return [
+  const items = [
     {
-      label: 'Gross This Certificate',
-      value: formatMoneyLabel(totals.grossThisCertificate),
+      label: 'Matrix valuation',
+      value: formatMoneyLabel(totals.matrixGrossThisCertificate),
+    },
+  ];
+
+  if (totals.commercialEventGrossThisCertificate) {
+    items.push({
+      label: 'Commercial Events',
+      value: formatSignedCommercialLineTotal(totals.commercialEventGrossThisCertificate),
+    });
+  }
+
+  items.push(
+    {
+      label: 'Gross this certificate',
+      value: formatMoneyLabel(totals.grossWorksThisCertificate ?? totals.grossThisCertificate),
+      emphasis: true,
     },
     {
-      label: 'Previous Certified',
+      label: 'Previous certified',
       value: formatMoneyLabel(totals.previousCertified),
     },
     {
-      label: 'Certified To Date',
+      label: 'Certified to date',
       value: formatMoneyLabel(totals.certifiedToDate),
     },
     {
-      label: 'Remaining Contract',
+      label: 'Remaining contract',
       value: formatMoneyLabel(totals.remainingContract),
+      modifier: totals.overCertified ? 'warning' : null,
     },
     {
       label: 'Retention',
       value: formatMoneyLabel(totals.retention),
     },
     { label: 'VAT', value: formatMoneyLabel(totals.vat) },
-    { label: 'Net Payment', value: formatMoneyLabel(totals.netPayment) },
-  ];
+    {
+      label: 'Net payment',
+      value: formatMoneyLabel(totals.netPayment),
+    }
+  );
+
+  return items;
 }
 
 export function getPreviousCertificationDetails(orderKey, certificate, cellKeys) {
