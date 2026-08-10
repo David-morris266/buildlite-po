@@ -14,6 +14,7 @@ import {
   approveCommercialEvent,
   clearCommercialEventsStore,
   createCommercialEvent,
+  createLinkedRecoveryFromOrigin,
   getCommercialEventById,
   submitCommercialEvent,
 } from '../commercialEvents/commercialEventStore';
@@ -37,8 +38,12 @@ import {
 } from './paymentCertificateStore';
 import {
   buildCertificateCommercialLineRows,
+  buildSelectedCommercialEventPreview,
   calculateCommercialEventCertifiedToDate,
   calculateCommercialEventRemaining,
+  formatEligibleCommercialEventOptionLabel,
+  formatSignedCommercialEventAmount,
+  getCommercialEventApprovedValueLabel,
   getMaxAmountThisCertificate,
   listEligibleCommercialEvents,
   normalizeCommercialLines,
@@ -459,5 +464,254 @@ describe('certificateCommercialLines BL-025.2', () => {
 
   it('normalizes missing commercialLines arrays', () => {
     expect(normalizeCommercialLines(undefined)).toEqual([]);
+  });
+});
+
+describe('BL-025.2 UAT potential contra origin certifiability', () => {
+  const PACKAGE_B = 'dev-001::sup-2::0200';
+
+  beforeEach(() => {
+    storage.clear();
+    clearCommercialEventsStore();
+    saveCompanySettings({ numberingPrefixes: { commercialEvent: 'CE-' } });
+    localStorage.setItem('userName', 'Test Manager');
+    ensurePackageRecord(ORDER_KEY, baseOrder);
+  });
+
+  function seedPotentialContraOrigin(overrides = {}) {
+    return seedApprovedEvent({
+      eventNumber: 'CE-0014',
+      description: 'Repair damage',
+      value: 7500,
+      potentialContraCharge: true,
+      potentialContraChargeNotes: 'Recover from brickwork',
+      ...overrides,
+    });
+  }
+
+  it('lists approved potential contra origin in eligible commercial events', () => {
+    const event = seedPotentialContraOrigin();
+    const certificate = createDraftCertificate();
+    const eligible = listEligibleCommercialEvents(DEV_ID, ORDER_KEY, certificate);
+    expect(eligible.some((item) => item.id === event.id)).toBe(true);
+  });
+
+  it('adds CE-0014-style origin to a draft certificate as valueInclusion', () => {
+    const event = seedPotentialContraOrigin();
+    const certificate = createDraftCertificate();
+    const result = addCommercialLineToCertificate(
+      ORDER_KEY,
+      certificate.id,
+      event.id,
+      2500,
+      baseOrder
+    );
+    expect(result.ok).toBe(true);
+    const saved = getCertificate(ORDER_KEY, certificate.id);
+    expect(saved.commercialLines[0].amountThisCertificate).toBe(2500);
+    expect(saved.commercialLines[0].sourceEventValue).toBe(7500);
+  });
+
+  it('keeps sales upgrade events certifiable without potential contra flag', () => {
+    const event = seedApprovedEvent({
+      eventNumber: 'CE-0013',
+      eventType: COMMERCIAL_EVENT_TYPES.salesUpgrade.key,
+      category: 'sales',
+      subcategory: 'buyerUpgrade',
+      description: 'Sales upgrade',
+      value: 5000,
+      potentialContraCharge: false,
+    });
+    const certificate = createDraftCertificate();
+    expect(listEligibleCommercialEvents(DEV_ID, ORDER_KEY, certificate)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: event.id })])
+    );
+  });
+
+  it('excludes linked recovery events on another package from origin eligibility', () => {
+    const origin = seedPotentialContraOrigin();
+
+    const linked = createLinkedRecoveryFromOrigin(DEV_ID, origin.id, {
+      recoveryPackageId: PACKAGE_B,
+    });
+    expect(linked.ok).toBe(true);
+
+    const certificate = createDraftCertificate();
+    const originEligible = listEligibleCommercialEvents(DEV_ID, ORDER_KEY, certificate);
+    expect(originEligible.some((item) => item.id === origin.id)).toBe(true);
+
+    const recoveryEligible = listEligibleCommercialEvents(DEV_ID, PACKAGE_B, certificate);
+    expect(recoveryEligible.some((item) => item.id === linked.recovery.id)).toBe(false);
+  });
+
+  it('does not mutate CE lifecycle fields when adding certificate lines', () => {
+    const event = seedPotentialContraOrigin();
+    const before = getCommercialEventById(DEV_ID, event.id);
+    const certificate = createDraftCertificate();
+    addCommercialLineToCertificate(ORDER_KEY, certificate.id, event.id, 1000, baseOrder);
+    const after = getCommercialEventById(DEV_ID, event.id);
+
+    expect(after.potentialContraCharge).toBe(before.potentialContraCharge);
+    expect(after.linkedEventId).toBe(before.linkedEventId);
+    expect(after.relationshipType).toBe(before.relationshipType);
+    expect(after.recoveryStatus).toBe(before.recoveryStatus);
+    expect(after.recoveredAmount).toBe(before.recoveredAmount);
+    expect(after.certificateStatus).toBe(before.certificateStatus);
+    expect(after.status).toBe(before.status);
+  });
+
+  it('leaves package current contract value unchanged when cert line is added', () => {
+    const event = seedPotentialContraOrigin();
+    const before = buildPackageCommercialDisplayFields(baseOrder).currentPackageValue;
+    const certificate = createDraftCertificate();
+    addCommercialLineToCertificate(ORDER_KEY, certificate.id, event.id, 2500, baseOrder);
+    const after = buildPackageCommercialDisplayFields(baseOrder).currentPackageValue;
+    expect(after).toBe(before);
+    expect(after).toBe(19500);
+  });
+});
+
+describe('certificate commercial event selector valuation context', () => {
+  beforeEach(() => {
+    storage.clear();
+    clearCommercialEventsStore();
+    saveCompanySettings({ numberingPrefixes: { commercialEvent: 'CE-' } });
+    localStorage.setItem('userName', 'Test Manager');
+    ensurePackageRecord(ORDER_KEY, baseOrder);
+  });
+
+  it('shows full approved value available on first certificate', () => {
+    const event = seedApprovedEvent({
+      description: 'Repair damage',
+      value: 7500,
+    });
+    const liveEvent = getCommercialEventById(DEV_ID, event.id);
+    const certificate = createDraftCertificate();
+    const preview = buildSelectedCommercialEventPreview(
+      liveEvent,
+      ORDER_KEY,
+      certificate.id
+    );
+
+    expect(preview.approvedValue).toBe(7500);
+    expect(preview.previouslyCertified).toBe(0);
+    expect(preview.availableThisCertificate).toBe(7500);
+    expect(formatEligibleCommercialEventOptionLabel(liveEvent, ORDER_KEY, certificate.id)).toBe(
+      `${liveEvent.eventNumber} — Repair damage — £7,500.00 remaining`
+    );
+  });
+
+  it('shows partially certified positive CE remaining on subsequent certificate', () => {
+    const event = seedApprovedEvent({
+      description: 'Repair damage',
+      value: 7500,
+    });
+    const cert1 = createDraftCertificate();
+    addCommercialLineToCertificate(ORDER_KEY, cert1.id, event.id, 4000, baseOrder);
+    submitCertificate(ORDER_KEY, cert1.id);
+    approveCertificate(ORDER_KEY, cert1.id, {
+      grossThisCertificate: 4000,
+      netPayment: 4560,
+    });
+
+    const cert2 = createDraftCertificate();
+    const liveEvent = getCommercialEventById(DEV_ID, event.id);
+    const preview = buildSelectedCommercialEventPreview(
+      liveEvent,
+      ORDER_KEY,
+      cert2.id
+    );
+
+    expect(preview.previouslyCertified).toBe(4000);
+    expect(preview.availableThisCertificate).toBe(3500);
+    expect(formatEligibleCommercialEventOptionLabel(liveEvent, ORDER_KEY, cert2.id)).toBe(
+      `${liveEvent.eventNumber} — Repair damage — £3,500.00 remaining`
+    );
+  });
+
+  it('shows partially certified negative credit remaining correctly', () => {
+    const event = seedApprovedEvent({
+      eventType: COMMERCIAL_EVENT_TYPES.credit.key,
+      category: 'commercial',
+      subcategory: 'credit',
+      description: 'Credit allowance',
+      value: -5000,
+    });
+    const cert1 = createDraftCertificate();
+    addCommercialLineToCertificate(ORDER_KEY, cert1.id, event.id, -2000, baseOrder);
+    submitCertificate(ORDER_KEY, cert1.id);
+    approveCertificate(ORDER_KEY, cert1.id, {
+      grossThisCertificate: -2000,
+      netPayment: -2280,
+    });
+
+    const cert2 = createDraftCertificate();
+    const liveEvent = getCommercialEventById(DEV_ID, event.id);
+    const preview = buildSelectedCommercialEventPreview(
+      liveEvent,
+      ORDER_KEY,
+      cert2.id
+    );
+
+    expect(getCommercialEventApprovedValueLabel(liveEvent)).toBe('Approved credit');
+    expect(preview.approvedValueFormatted).toBe('-£5,000.00');
+    expect(preview.previouslyCertifiedFormatted).toBe('-£2,000.00');
+    expect(preview.availableThisCertificateFormatted).toBe('-£3,000.00');
+    expect(formatSignedCommercialEventAmount(preview.availableThisCertificate)).toBe('-£3,000.00');
+  });
+
+  it('derives remaining from locked prior certificate only', () => {
+    const event = seedApprovedEvent({ value: 10000 });
+    const cert1 = createDraftCertificate();
+    addCommercialLineToCertificate(ORDER_KEY, cert1.id, event.id, 4000, baseOrder);
+    submitCertificate(ORDER_KEY, cert1.id);
+    approveCertificate(ORDER_KEY, cert1.id, {
+      grossThisCertificate: 4000,
+      netPayment: 4560,
+    });
+
+    const cert2 = createDraftCertificate();
+    const liveEvent = getCommercialEventById(DEV_ID, event.id);
+    const preview = buildSelectedCommercialEventPreview(
+      liveEvent,
+      ORDER_KEY,
+      cert2.id
+    );
+
+    expect(calculateCommercialEventCertifiedToDate(ORDER_KEY, event.id)).toBe(4000);
+    expect(preview.availableThisCertificate).toBe(6000);
+    expect(listEligibleCommercialEvents(DEV_ID, ORDER_KEY, cert2)).toHaveLength(1);
+  });
+
+  it('keeps existing add edit and remove behaviour unchanged', () => {
+    const event = seedApprovedEvent({ value: 10000 });
+    const certificate = createDraftCertificate();
+    const addResult = addCommercialLineToCertificate(
+      ORDER_KEY,
+      certificate.id,
+      event.id,
+      2500,
+      baseOrder
+    );
+    expect(addResult.ok).toBe(true);
+
+    const lineId = getCertificate(ORDER_KEY, certificate.id).commercialLines[0].id;
+    const editResult = updateCommercialLineAmount(
+      ORDER_KEY,
+      certificate.id,
+      lineId,
+      3000,
+      baseOrder
+    );
+    expect(editResult.ok).toBe(true);
+
+    const removeResult = removeCommercialLineFromCertificate(
+      ORDER_KEY,
+      certificate.id,
+      lineId,
+      baseOrder
+    );
+    expect(removeResult.ok).toBe(true);
+    expect(getCertificate(ORDER_KEY, certificate.id).commercialLines).toHaveLength(0);
   });
 });

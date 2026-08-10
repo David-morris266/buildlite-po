@@ -68,12 +68,22 @@ describe('commercialEventCertifiability', () => {
     ).toBe(false);
   });
 
-  it('excludes potential contra charge origins', () => {
+  it('allows approved potential contra charge origin events on their package', () => {
     expect(
       isCommercialEventCertifiable(
+        makeEvent({
+          eventNumber: 'CE-0014',
+          potentialContraCharge: true,
+          value: 7500,
+          description: 'Repair damage',
+        })
+      )
+    ).toBe(true);
+    expect(
+      getCommercialEventCertifiabilityReason(
         makeEvent({ potentialContraCharge: true })
       )
-    ).toBe(false);
+    ).toBeNull();
   });
 
   it('returns a readable reason for excluded events', () => {

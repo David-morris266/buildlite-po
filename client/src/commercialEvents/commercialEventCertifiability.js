@@ -5,7 +5,6 @@
  * Certifiability governs which events may appear on a payment certificate draft.
  */
 
-import { isPotentialContraChargePending } from './commercialEventRecovery';
 import { isRecoveryCommercialEvent } from './commercialEventRegisterBadges';
 import {
   COMMERCIAL_EVENT_STATUSES,
@@ -40,10 +39,6 @@ export function isCommercialEventCertifiable(event) {
     return false;
   }
 
-  if (isPotentialContraChargePending(event)) {
-    return false;
-  }
-
   if (event.eventType === COMMERCIAL_EVENT_TYPES.budgetTransfer.key) {
     return false;
   }
@@ -58,9 +53,6 @@ export function getCommercialEventCertifiabilityReason(event) {
   }
   if (isRecoveryCommercialEvent(event)) {
     return 'Recovery commercial events cannot be certified on a payment certificate.';
-  }
-  if (isPotentialContraChargePending(event)) {
-    return 'Potential contra charge origins cannot be certified until resolved.';
   }
   if (event.eventType === COMMERCIAL_EVENT_TYPES.budgetTransfer.key) {
     return 'Budget transfer events are internal-only and cannot be certified.';

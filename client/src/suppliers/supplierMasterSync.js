@@ -16,6 +16,17 @@ export function shouldResolveLiveSupplierForPoApproval(po) {
 }
 
 /**
+ * Single source of truth for PO review live supplier fetch + approval resolution.
+ * Hook and resolver must stay aligned on this decision.
+ */
+export function shouldFetchLiveSupplierForPo(po) {
+  if (!po?.supplierId && !po?.supplierSnapshot?.id) return false;
+  return (
+    shouldResolveLiveSupplierForPoApproval(po) || shouldUseLiveSupplierMaster(po)
+  );
+}
+
+/**
  * Resolve supplier approval gating for POReviewDrawerContent.
  * Pending Issued POs use live master; historical POs use supplierSnapshot only.
  */
@@ -23,7 +34,7 @@ export function resolvePoReviewSupplierApprovalState(
   po,
   { supplier = null, loading = false, error = false } = {}
 ) {
-  if (shouldResolveLiveSupplierForPoApproval(po)) {
+  if (shouldFetchLiveSupplierForPo(po)) {
     if (loading) {
       return {
         supplierPendingApproval: false,

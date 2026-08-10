@@ -4186,6 +4186,33 @@
   font-size: 0.75rem;
 }
 
+.po-cert-ce-add__preview {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.po-cert-ce-add__preview-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.po-cert-ce-add__preview-row dt {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.po-cert-ce-add__preview-row dd {
+  margin: 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 .po-cert-ce-table-wrap {
   overflow-x: auto;
 }

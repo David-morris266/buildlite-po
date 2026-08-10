@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { PO_SAVED_DRAFT_SUPPLIER_PENDING_MESSAGE } from "../suppliers/poRequestApprovalGate";
 
 function SuccessIcon({ compact = false }) {
   return (
@@ -26,6 +27,7 @@ export default function POSaveJourneyPanel({
   poNumber,
   approverName = "",
   approvalMode = "self",
+  supplierPendingApproval = false,
   sendingFromDraft = false,
   onContinueEditing,
   onSendForApproval,
@@ -43,13 +45,17 @@ export default function POSaveJourneyPanel({
   const isDraft = variant === "draft-saved";
   const isSelf = approvalMode === "self";
 
-  const title = isDraft
-    ? "Purchase Order saved successfully"
-    : "Purchase Order sent for approval";
+  const title = supplierPendingApproval
+    ? "Purchase Order saved as Draft"
+    : isDraft
+      ? "Purchase Order saved successfully"
+      : "Purchase Order sent for approval";
 
-  const detail = isDraft
-    ? `Purchase Order ${poNumber} has been saved as a Draft.`
-    : `Purchase Order ${poNumber} is now waiting for approval.`;
+  const detail = supplierPendingApproval
+    ? PO_SAVED_DRAFT_SUPPLIER_PENDING_MESSAGE
+    : isDraft
+      ? `Purchase Order ${poNumber} has been saved as a Draft.`
+      : `Purchase Order ${poNumber} is now waiting for approval.`;
 
   let nextStepHint;
   let recommendedLabel;
@@ -57,15 +63,21 @@ export default function POSaveJourneyPanel({
   let primaryAction;
   let secondaryLabel;
   let secondaryAction;
+  let showSecondaryAction = true;
 
   if (isDraft) {
-    nextStepHint =
-      "Your order is saved. You can keep editing, send it for approval, or open it in your list.";
+    nextStepHint = supplierPendingApproval
+      ? "Your order is saved as a Draft and has not been sent for approval. Approve the supplier in Administration, then return to send this order for approval."
+      : "Your order is saved. You can keep editing, send it for approval, or open it in your list.";
     recommendedLabel = "Recommended next step";
     primaryLabel = "Continue editing";
     primaryAction = onContinueEditing;
-    secondaryLabel = sendingFromDraft ? "Sending…" : "Send for Approval";
-    secondaryAction = onSendForApproval;
+    if (supplierPendingApproval) {
+      showSecondaryAction = false;
+    } else {
+      secondaryLabel = sendingFromDraft ? "Sending…" : "Send for Approval";
+      secondaryAction = onSendForApproval;
+    }
   } else if (isSelf) {
     nextStepHint =
       "You are the approver. Review and approve from Purchase Orders at any time.";
@@ -131,14 +143,16 @@ export default function POSaveJourneyPanel({
             >
               {primaryLabel}
             </button>
-            <button
-              type="button"
-              className="po-journey-panel__btn po-journey-panel__btn--secondary"
-              onClick={secondaryAction}
-              disabled={isDraft && sendingFromDraft}
-            >
-              {secondaryLabel}
-            </button>
+            {showSecondaryAction ? (
+              <button
+                type="button"
+                className="po-journey-panel__btn po-journey-panel__btn--secondary"
+                onClick={secondaryAction}
+                disabled={isDraft && sendingFromDraft}
+              >
+                {secondaryLabel}
+              </button>
+            ) : null}
             {isDraft ? (
               <button
                 type="button"

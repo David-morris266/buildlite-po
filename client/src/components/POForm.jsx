@@ -37,6 +37,10 @@ import {
   shouldUseLiveSupplierMaster,
   createAsyncSequenceGuard,
 } from '../suppliers/supplierMasterSync';
+import {
+  executePoRequestApprovalFromDraft,
+  executePoSaveAndSendWorkflow,
+} from '../suppliers/poRequestApprovalGate';
 import { subscribeMasterDataChanged } from '../admin/masterDataEvents';
 import {
   buildProcurementCreateNavigation,
@@ -557,6 +561,8 @@ export default function POForm({
       setJourneyPanel({
         variant: 'draft-saved',
         poNumber: poNumber || '',
+        supplierPendingApproval:
+          selectedSupplier && !isSupplierApproved(selectedSupplier),
       });
       scrollToActions();
 
@@ -584,32 +590,37 @@ export default function POForm({
     const { ok, costCodeString } = validate();
     if (!ok) return;
 
-    if (selectedSupplier && !isSupplierApproved(selectedSupplier)) {
-      setSaveError(
-        'This supplier is pending approval. Save as draft and approve the supplier in Administration before sending for approval.'
-      );
-      scrollToTop();
-      return;
-    }
-
     const body = buildPayload(costCodeString);
 
     try {
       setSavingAndSending(true);
       setSaveError('');
 
-      const po = await persistDraft(body);
-      const poNumber = po.poNumber || persistedPoNumber;
+      const result = await executePoSaveAndSendWorkflow({
+        supplier: selectedSupplier,
+        persistDraft: () => persistDraft(body),
+        requestApproval: sendForApproval,
+        buildRequestApprovalBody,
+      });
 
-      if (!poNumber) throw new Error('PO number missing after save');
-
+      const poNumber = result.poNumber;
       setActivePoNumber(poNumber);
       persistDevelopmentRef(poNumber);
 
-      await sendForApproval(poNumber);
-      showSentSuccess(poNumber);
+      if (result.outcome === 'saved-draft-supplier-pending') {
+        setJourneyPanel({
+          variant: 'draft-saved',
+          poNumber,
+          supplierPendingApproval: true,
+        });
+        scrollToActions();
+        if (onSaved) onSaved(result.po);
+        notifyCommercialChanged({ source: 'po-form', poNumber });
+        return;
+      }
 
-      if (onSaved) onSaved(po);
+      showSentSuccess(poNumber);
+      if (onSaved) onSaved(result.po);
       notifyCommercialChanged({ source: 'po-form', poNumber });
     } catch (e) {
       console.error(e);
@@ -628,7 +639,12 @@ export default function POForm({
     try {
       setSendingFromDraftPanel(true);
       setSaveError('');
-      await sendForApproval(persistedPoNumber);
+      await executePoRequestApprovalFromDraft({
+        poNumber: persistedPoNumber,
+        supplier: selectedSupplier,
+        requestApproval: sendForApproval,
+        buildRequestApprovalBody,
+      });
       showSentSuccess(persistedPoNumber);
     } catch (e) {
       console.error(e);
@@ -1119,6 +1135,7 @@ export default function POForm({
               poNumber={journeyPanel.poNumber}
               approverName={journeyPanel.approverName}
               approvalMode={journeyPanel.approvalMode}
+              supplierPendingApproval={journeyPanel.supplierPendingApproval}
               sendingFromDraft={sendingFromDraftPanel}
               onContinueEditing={() => setJourneyPanel(null)}
               onSendForApproval={handleSendFromDraftPanel}

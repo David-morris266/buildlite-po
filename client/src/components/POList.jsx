@@ -7,12 +7,18 @@ import {
   approvePO,
   requestApproval,
   poPdfUrl,
+  listSuppliers,
 } from '../api';
 import {
   buildApproveBody,
   buildRequestApprovalBody,
-  canSendPoForApproval,
 } from '../setup/setupDraft';
+import {
+  canSendPoForApprovalWithSupplier,
+  executePoRequestApprovalFromDraft,
+  isPoSupplierApprovalOutstanding,
+  resolvePoLinkedSupplier,
+} from '../suppliers/poRequestApprovalGate';
 import { getPoRowActionLabel } from './poDrawerHelpers';
 import { getPoDevelopmentListLabel } from '../developments/developmentPoHelpers';
 import { syncPackageFromApprovedPo } from '../payments/subcontractOrders';
@@ -49,6 +55,7 @@ export default function POList({
   onOpenPackage = null,
 }) {
   const [rows, setRows] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -70,16 +77,20 @@ export default function POList({
     try {
       setLoading(true);
       setError('');
-      const data = await listPOs({
-        q,
-        job,
-        type,
-        supplier,
-        pageSize: 500,
-        archived: showArchived ? 'true' : 'false',
-      });
+      const [data, supplierRows] = await Promise.all([
+        listPOs({
+          q,
+          job,
+          type,
+          supplier,
+          pageSize: 500,
+          archived: showArchived ? 'true' : 'false',
+        }),
+        listSuppliers(''),
+      ]);
       const items = Array.isArray(data) ? data : data.items || [];
       setRows(items);
+      setSuppliers(Array.isArray(supplierRows) ? supplierRows : []);
     } catch (e) {
       setError(e.message || 'Failed to load POs');
     } finally {
@@ -196,9 +207,19 @@ export default function POList({
 
   async function onSendForApproval(number) {
     if (!number) return;
+    const po =
+      rows.find((row) => (row.poNumber || row.number || row.id) === number) ||
+      (await getPO(number));
+    const linkedSupplier = resolvePoLinkedSupplier(po, suppliers);
+
     try {
       setListFeedback(null);
-      await requestApproval(number, buildRequestApprovalBody());
+      await executePoRequestApprovalFromDraft({
+        poNumber: number,
+        supplier: linkedSupplier,
+        requestApproval,
+        buildRequestApprovalBody,
+      });
       await fetchData();
       if (selected?.poNumber === number) {
         const fresh = await getPO(number);
@@ -378,7 +399,14 @@ export default function POList({
                     approvalStatus || po.status || 'Pending';
                   const rowCanEdit = canEditStatus(po.status);
 
-                  const canSendRow = canSendPoForApproval(po);
+                  const canSendRow = canSendPoForApprovalWithSupplier(
+                    po,
+                    resolvePoLinkedSupplier(po, suppliers)
+                  );
+                  const supplierApprovalOutstanding = isPoSupplierApprovalOutstanding(
+                    po,
+                    resolvePoLinkedSupplier(po, suppliers)
+                  );
                   const rowActionLabel = getPoRowActionLabel(po);
 
                   return (
@@ -408,7 +436,14 @@ export default function POList({
                         £{asMoney(amount)}
                       </td>
 
-                      <td>{badge(statusForBadge)}</td>
+                      <td>
+                        {badge(statusForBadge)}
+                        {supplierApprovalOutstanding ? (
+                          <span className="po-list-supplier-pending-note">
+                            Supplier approval outstanding
+                          </span>
+                        ) : null}
+                      </td>
 
                       <td>
                         <div className="po-data-table__actions">

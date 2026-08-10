@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { formatMoney } from './poDrawerHelpers';
-import { getCommercialEventTypeMeta } from '../commercialEvents/commercialEventTypes';
 import {
   addCommercialLineToCertificate,
   removeCommercialLineFromCertificate,
@@ -8,6 +7,8 @@ import {
 } from '../payments/paymentCertificateStore';
 import {
   buildCertificateCommercialLineRows,
+  buildSelectedCommercialEventPreview,
+  formatEligibleCommercialEventOptionLabel,
   listEligibleCommercialEvents,
 } from '../payments/certificateCommercialLines';
 
@@ -16,13 +17,6 @@ function formatSignedValue(value) {
   if (amount === 0) return '£0.00';
   const prefix = amount > 0 ? '' : '-';
   return `${prefix}£${formatMoney(Math.abs(amount))}`;
-}
-
-function formatSignedApproved(value) {
-  const amount = Number(value) || 0;
-  if (amount === 0) return 'Approved £0.00';
-  const prefix = amount > 0 ? '' : '-';
-  return `Approved ${prefix}£${formatMoney(Math.abs(amount))}`;
 }
 
 export default function PaymentCertificateCommercialEvents({
@@ -151,6 +145,15 @@ export default function PaymentCertificateCommercialEvents({
 
   const selectedEvent = eligibleEvents.find((item) => item.id === selectedEventId) || null;
 
+  const selectedEventPreview = useMemo(() => {
+    if (!selectedEvent || !orderKey || !certificate?.id) return null;
+    return buildSelectedCommercialEventPreview(
+      selectedEvent,
+      orderKey,
+      certificate.id
+    );
+  }, [selectedEvent, orderKey, certificate?.id]);
+
   return (
     <section className="po-module-card po-cert-detail__commercial-events">
       <div className="po-cert-detail__commercial-events-header">
@@ -189,14 +192,15 @@ export default function PaymentCertificateCommercialEvents({
               }}
             >
               <option value="">Select commercial event…</option>
-              {eligibleEvents.map((event) => {
-                const typeLabel = getCommercialEventTypeMeta(event.eventType).label;
-                return (
-                  <option key={event.id} value={event.id}>
-                    {event.eventNumber} · {typeLabel} · {event.description || '—'}
-                  </option>
-                );
-              })}
+              {eligibleEvents.map((event) => (
+                <option key={event.id} value={event.id}>
+                  {formatEligibleCommercialEventOptionLabel(
+                    event,
+                    orderKey,
+                    certificate.id
+                  )}
+                </option>
+              ))}
             </select>
             <input
               type="number"
@@ -225,10 +229,21 @@ export default function PaymentCertificateCommercialEvents({
               Add to certificate
             </button>
           </div>
-          {selectedEvent ? (
-            <p className="po-cert-ce-add__hint">
-              Approved value {formatSignedApproved(selectedEvent.value)}.
-            </p>
+          {selectedEventPreview ? (
+            <dl className="po-cert-ce-add__preview">
+              <div className="po-cert-ce-add__preview-row">
+                <dt>{selectedEventPreview.approvedValueLabel}:</dt>
+                <dd>{selectedEventPreview.approvedValueFormatted}</dd>
+              </div>
+              <div className="po-cert-ce-add__preview-row">
+                <dt>Previously certified:</dt>
+                <dd>{selectedEventPreview.previouslyCertifiedFormatted}</dd>
+              </div>
+              <div className="po-cert-ce-add__preview-row">
+                <dt>Available this certificate:</dt>
+                <dd>{selectedEventPreview.availableThisCertificateFormatted}</dd>
+              </div>
+            </dl>
           ) : null}
         </div>
       ) : null}

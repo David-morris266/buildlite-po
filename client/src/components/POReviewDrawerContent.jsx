@@ -182,7 +182,11 @@ export default function POReviewDrawerContent({
   const timeline = getApprovalTimelineEntries(po);
   const headerMeta = getDrawerHeaderMeta(po);
   const showApproverActions = canReviewAndApprovePo(po);
-  const showSendForApproval = canSendPoForApproval(po);
+  const showSendForApproval =
+    canSendPoForApproval(po) &&
+    !supplierPendingApproval &&
+    !supplierApprovalLoading &&
+    !supplierLookupFailed;
   const {
     supplierPendingApproval,
     supplierApprovalLoading,

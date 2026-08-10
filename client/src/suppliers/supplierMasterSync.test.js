@@ -8,6 +8,7 @@ import {
   resolveLatestSupplierList,
   resolveLiveSupplier,
   resolvePoReviewSupplierApprovalState,
+  shouldFetchLiveSupplierForPo,
   shouldResolveLiveSupplierForPoApproval,
   shouldUseLiveSupplierMaster,
   simulateSupplierSelectionRace,
@@ -362,5 +363,138 @@ describe('BL-021A.3 PO review drawer live supplier approval', () => {
         'This supplier is pending approval. Approve the supplier in Administration before approving this Purchase Order.',
     });
     expect(mirrorServerPoApprovalSupplierGate(liveApproved)).toBeNull();
+  });
+});
+
+describe('BL-025.5 PO review live supplier fetch alignment', () => {
+  const stalePendingSnapshot = {
+    id: 'sup-1786369659922',
+    name: 'Mucky Plasterers',
+    approvalStatus: 'pending',
+    approvedSupplier: false,
+  };
+  const liveApprovedSupplier = {
+    id: 'sup-1786369659922',
+    name: 'Mucky Plasterers',
+    approvalStatus: 'approved',
+    approvedSupplier: true,
+  };
+  const s0008Po = {
+    poNumber: 'S0008',
+    status: 'Issued',
+    approval: { status: 'Pending' },
+    supplierId: 'sup-1786369659922',
+    supplierSnapshot: stalePendingSnapshot,
+  };
+  const draftPo = {
+    poNumber: 'S0007',
+    status: 'Draft',
+    approval: { status: 'Draft' },
+    supplierId: 'sup-1786369659922',
+    supplierSnapshot: stalePendingSnapshot,
+  };
+  const approvedHistoricalPo = {
+    poNumber: 'S0005',
+    status: 'Approved',
+    approval: { status: 'Approved' },
+    supplierId: 'sup-1786369659922',
+    supplierSnapshot: stalePendingSnapshot,
+  };
+
+  it('requires live fetch for Issued/Pending and Draft POs but not approved history', () => {
+    expect(shouldFetchLiveSupplierForPo(s0008Po)).toBe(true);
+    expect(shouldFetchLiveSupplierForPo(draftPo)).toBe(true);
+    expect(shouldFetchLiveSupplierForPo(approvedHistoricalPo)).toBe(false);
+  });
+
+  it('keeps hook and resolver aligned on the live-fetch decision', () => {
+    const cases = [s0008Po, draftPo, approvedHistoricalPo, null, {}];
+    cases.forEach((po) => {
+      const fetchDecision = shouldFetchLiveSupplierForPo(po);
+      const resolverNeedsLive =
+        shouldResolveLiveSupplierForPoApproval(po) ||
+        (shouldUseLiveSupplierMaster(po) &&
+          Boolean(po?.supplierId || po?.supplierSnapshot?.id));
+      expect(fetchDecision).toBe(resolverNeedsLive);
+    });
+  });
+
+  it('fetches live supplier for Issued/Pending PO with stale pending snapshot', async () => {
+    const listFn = vi.fn().mockResolvedValue([liveApprovedSupplier]);
+    const live = await resolveLiveSupplier('sup-1786369659922', listFn);
+
+    expect(listFn).toHaveBeenCalledWith('');
+    expect(live?.id).toBe('sup-1786369659922');
+    expect(isSupplierApproved(live)).toBe(true);
+  });
+
+  it('enables approval when live supplier is approved despite stale pending snapshot', () => {
+    const state = resolvePoReviewSupplierApprovalState(s0008Po, {
+      supplier: liveApprovedSupplier,
+      loading: false,
+      error: false,
+    });
+
+    expect(state.supplierLookupFailed).toBe(false);
+    expect(state.approveDisabled).toBe(false);
+    expect(state.supplierPendingApproval).toBe(false);
+    expect(s0008Po.supplierSnapshot.approvalStatus).toBe('pending');
+  });
+
+  it('keeps approval disabled when canonical live supplier is still pending', () => {
+    const state = resolvePoReviewSupplierApprovalState(s0008Po, {
+      supplier: stalePendingSnapshot,
+      loading: false,
+      error: false,
+    });
+
+    expect(state.supplierPendingApproval).toBe(true);
+    expect(state.approveDisabled).toBe(true);
+    expect(state.supplierLookupFailed).toBe(false);
+  });
+
+  it('keeps approval safely disabled when live supplier lookup fails', () => {
+    const missing = resolvePoReviewSupplierApprovalState(s0008Po, {
+      supplier: null,
+      loading: false,
+      error: false,
+    });
+    const failed = resolvePoReviewSupplierApprovalState(s0008Po, {
+      supplier: null,
+      loading: false,
+      error: true,
+    });
+
+    expect(missing.supplierLookupFailed).toBe(true);
+    expect(missing.approveDisabled).toBe(true);
+    expect(failed.supplierLookupFailed).toBe(true);
+    expect(failed.approveDisabled).toBe(true);
+  });
+
+  it('supports full workflow through Issued/Pending review with stable IDs and PO number', async () => {
+    const listFn = vi
+      .fn()
+      .mockResolvedValueOnce([stalePendingSnapshot])
+      .mockResolvedValueOnce([liveApprovedSupplier]);
+
+    const draftState = resolvePoReviewSupplierApprovalState(draftPo, {
+      supplier: await resolveLiveSupplier('sup-1786369659922', listFn),
+      loading: false,
+      error: false,
+    });
+    expect(draftState.approveDisabled).toBe(true);
+
+    const approvedLive = await resolveLiveSupplier('sup-1786369659922', listFn);
+    const issuedState = resolvePoReviewSupplierApprovalState(s0008Po, {
+      supplier: approvedLive,
+      loading: false,
+      error: false,
+    });
+
+    expect(approvedLive.id).toBe(draftPo.supplierId);
+    expect(s0008Po.poNumber).toBe('S0008');
+    expect(issuedState.supplierLookupFailed).toBe(false);
+    expect(issuedState.approveDisabled).toBe(false);
+    expect(mirrorServerPoApprovalSupplierGate(approvedLive)).toBeNull();
   });
 });

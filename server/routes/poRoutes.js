@@ -134,7 +134,7 @@ function buildSupplierPayload(base = {}, body = {}, { isCreate = false } = {}) {
   return payload;
 }
 
-async function assertSupplierApprovedForPoApproval(clientId, po) {
+async function findPendingSupplierForPo(clientId, po) {
   const supplierId = po?.supplierId || po?.supplierSnapshot?.id;
   if (!supplierId) return null;
 
@@ -143,11 +143,26 @@ async function assertSupplierApprovedForPoApproval(clientId, po) {
 
   const pending =
     supplier.approvalStatus === "pending" || supplier.approvedSupplier === false;
+  return pending ? supplier : null;
+}
+
+async function assertSupplierApprovedForPoApproval(clientId, po) {
+  const pending = await findPendingSupplierForPo(clientId, po);
   if (!pending) return null;
 
   return {
     message:
       "This supplier is pending approval. Approve the supplier in Administration before approving this Purchase Order.",
+  };
+}
+
+async function assertSupplierApprovedForPoRequestApproval(clientId, po) {
+  const pending = await findPendingSupplierForPo(clientId, po);
+  if (!pending) return null;
+
+  return {
+    message:
+      "The supplier must be approved before this order can be sent for approval.",
   };
 }
 
@@ -725,6 +740,11 @@ router.post("/po/:poNumber/request-approval", async (req, res) => {
 
   if (String(po.status || "").toLowerCase() === "approved") {
     return res.status(400).json({ message: "Cannot request approval for an Approved PO" });
+  }
+
+  const supplierError = await assertSupplierApprovedForPoRequestApproval(active.id, po);
+  if (supplierError) {
+    return res.status(400).json(supplierError);
   }
 
   po.status = "Issued";

@@ -3,12 +3,12 @@ import { subscribeMasterDataChanged } from '../admin/masterDataEvents';
 import {
   createAsyncSequenceGuard,
   resolveLiveSupplier,
-  shouldResolveLiveSupplierForPoApproval,
+  shouldFetchLiveSupplierForPo,
 } from './supplierMasterSync';
 
 export function usePoReviewLiveSupplier(po) {
-  const needsLive = shouldResolveLiveSupplierForPoApproval(po);
-  const supplierId = po?.supplierId || null;
+  const supplierId = po?.supplierId || po?.supplierSnapshot?.id || null;
+  const needsLive = shouldFetchLiveSupplierForPo(po);
   const [state, setState] = useState(() => ({
     supplier: null,
     loading: needsLive && Boolean(supplierId),

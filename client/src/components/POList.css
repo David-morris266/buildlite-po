@@ -176,8 +176,12 @@
   cursor: pointer;
 }
 
-
-
+.po-list-supplier-pending-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #fbbf24;
+}
 
 
 

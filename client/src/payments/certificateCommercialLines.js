@@ -11,7 +11,10 @@ import {
   isCommercialEventCertifiable,
   CERTIFICATE_COMMERCIAL_LINE_TYPES,
 } from '../commercialEvents/commercialEventCertifiability';
-import { getCommercialEventTypeMeta } from '../commercialEvents/commercialEventTypes';
+import {
+  COMMERCIAL_EVENT_TYPES,
+  getCommercialEventTypeMeta,
+} from '../commercialEvents/commercialEventTypes';
 import { formatMoney } from '../components/poDrawerHelpers';
 import { roundMoney } from './paymentCertificateCalculations';
 import {
@@ -274,6 +277,91 @@ export function formatSignedCommercialLineTotal(value) {
   if (amount === 0) return '£0.00';
   const prefix = amount > 0 ? '+' : '-';
   return `${prefix}£${formatMoney(Math.abs(amount))}`;
+}
+
+/** Display signed CE amounts without a leading plus (selector/preview copy). */
+export function formatSignedCommercialEventAmount(value) {
+  const amount = roundMoney(toNumber(value));
+  if (amount === 0) return '£0.00';
+  const prefix = amount > 0 ? '' : '-';
+  return `${prefix}£${formatMoney(Math.abs(amount))}`;
+}
+
+export function getCommercialEventApprovedValueLabel(event) {
+  const value = toNumber(event?.value);
+  if (event?.eventType === COMMERCIAL_EVENT_TYPES.credit.key || value < 0) {
+    return 'Approved credit';
+  }
+  return 'Approved value';
+}
+
+export function buildEligibleCommercialEventValuation(
+  event,
+  orderKey,
+  certificateId = null
+) {
+  const approvedValue = toNumber(event?.value);
+  const previouslyCertified = calculateCommercialEventCertifiedToDate(
+    orderKey,
+    event?.id,
+    { excludeCertificateId: certificateId }
+  );
+  const availableThisCertificate = calculateCommercialEventRemaining(
+    approvedValue,
+    previouslyCertified,
+    0
+  );
+
+  return {
+    approvedValue,
+    previouslyCertified,
+    availableThisCertificate,
+  };
+}
+
+function truncateCommercialEventDescription(description, maxLength = 48) {
+  const text = String(description || '—').trim() || '—';
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1)}…`;
+}
+
+export function formatEligibleCommercialEventOptionLabel(
+  event,
+  orderKey,
+  certificateId = null
+) {
+  const { availableThisCertificate } = buildEligibleCommercialEventValuation(
+    event,
+    orderKey,
+    certificateId
+  );
+  const description = truncateCommercialEventDescription(event?.description);
+  const remaining = formatSignedCommercialEventAmount(availableThisCertificate);
+  return `${event?.eventNumber || '—'} — ${description} — ${remaining} remaining`;
+}
+
+export function buildSelectedCommercialEventPreview(
+  event,
+  orderKey,
+  certificateId = null
+) {
+  const valuation = buildEligibleCommercialEventValuation(
+    event,
+    orderKey,
+    certificateId
+  );
+
+  return {
+    ...valuation,
+    approvedValueLabel: getCommercialEventApprovedValueLabel(event),
+    approvedValueFormatted: formatSignedCommercialEventAmount(valuation.approvedValue),
+    previouslyCertifiedFormatted: formatSignedCommercialEventAmount(
+      valuation.previouslyCertified
+    ),
+    availableThisCertificateFormatted: formatSignedCommercialEventAmount(
+      valuation.availableThisCertificate
+    ),
+  };
 }
 
 export function listEligibleCommercialEvents(developmentId, orderKey, certificate) {
