@@ -4130,6 +4130,85 @@
   font-size: 1.05rem;
 }
 
+.po-cert-detail__commercial-events {
+  margin-bottom: 16px;
+}
+
+.po-cert-detail__commercial-events-header {
+  margin-bottom: 12px;
+}
+
+.po-cert-ce-add {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: var(--radius-sm);
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.po-cert-ce-add__label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.po-cert-ce-add__controls {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(120px, 0.75fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.po-cert-ce-add__amount {
+  min-width: 0;
+}
+
+.po-cert-ce-add__hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.po-cert-ce-table-wrap {
+  overflow-x: auto;
+}
+
+.po-cert-ce-table__money {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.po-cert-ce-table__amount-input {
+  width: 120px;
+  text-align: right;
+}
+
+.po-cert-ce-table__empty {
+  color: var(--muted);
+  text-align: center;
+}
+
+.po-cert-ce-table__row--stale td {
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.po-cert-detail__ce-preview {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.po-cert-detail__commercial-grid--preview {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.po-cert-detail__ce-preview-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
 .po-cert-grid {
   position: relative;
 }

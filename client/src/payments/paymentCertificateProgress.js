@@ -18,6 +18,11 @@ import {
   isApprovedCommercialCertificate,
   listCertificates,
 } from './paymentCertificateStore';
+import {
+  formatSignedCommercialLineTotal,
+  normalizeCertificateCommercialLines,
+  sumCommercialLinesThisCertificate,
+} from './certificateCommercialLines';
 
 export {
   normalizePct,
@@ -348,6 +353,20 @@ export function summarizeCertificateProgress(orderKey, certificateId, order = nu
     grid,
     totals,
     matrix,
+    commercialEventsPreview: buildCommercialEventsPreview(certificate),
+  };
+}
+
+export function buildCommercialEventsPreview(certificate) {
+  const lines = normalizeCertificateCommercialLines(certificate);
+  const total = sumCommercialLinesThisCertificate(lines);
+
+  return {
+    label: 'Commercial Events this certificate',
+    value: formatSignedCommercialLineTotal(total),
+    note: 'Preview only — certificate totals below remain matrix-only until BL-025.3.',
+    total,
+    lineCount: lines.length,
   };
 }
 

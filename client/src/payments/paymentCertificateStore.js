@@ -4,6 +4,14 @@
 
 import { appendPackageActivity, ensurePackageRecord } from './subcontractPackageStore';
 import { notifyCommercialChanged } from '../commercial/commercialEvents';
+import {
+  buildCommercialLineFromEvent,
+  normalizeCommercialLines,
+  validateCommercialLinesForCertificate,
+} from './certificateCommercialLines';
+import { getCommercialEventById } from '../commercialEvents/commercialEventStore';
+import { getCommercialEventCertifiabilityReason } from '../commercialEvents/commercialEventCertifiability';
+import { resolvePackageDevelopmentId } from '../commercialEvents/commercialEventPackageValue';
 
 const STORAGE_KEY = 'buildlite_subcontract_packages_v1';
 
@@ -96,6 +104,10 @@ export function normalizeCertificate(certificate) {
 
   if (next.status === 'approved') {
     next.status = 'locked';
+  }
+
+  if (!Array.isArray(next.commercialLines)) {
+    next.commercialLines = [];
   }
 
   return next;
@@ -238,6 +250,7 @@ export function createCertificate(orderKey, order = {}) {
     grossValue: null,
     netValue: null,
     progress: {},
+    commercialLines: [],
     auditHistory: [],
     createdAt: now,
     updatedAt: now,
@@ -429,4 +442,128 @@ export function updateCertificateCellProgress(
   return updateCertificateProgress(orderKey, certificateId, {
     [cellKey]: { thisCertificatePct },
   });
+}
+
+function resolveDevelopmentIdForOrderKey(orderKey, order = null) {
+  return resolvePackageDevelopmentId(order) || resolveDevelopmentIdFromOrderKey(orderKey);
+}
+
+export function updateCertificateCommercialLines(
+  orderKey,
+  certificateId,
+  commercialLines,
+  order = null
+) {
+  const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
+  const validation = validateCommercialLinesForCertificate({
+    orderKey,
+    certificateId,
+    developmentId,
+    commercialLines,
+  });
+
+  if (!validation.valid) {
+    return { ok: false, errors: validation.errors };
+  }
+
+  const result = updateCertificateRecord(orderKey, certificateId, (certificate) => {
+    if (!isCertificateEditable(certificate)) {
+      return null;
+    }
+
+    return {
+      ...certificate,
+      commercialLines: normalizeCommercialLines(validation.commercialLines),
+    };
+  });
+
+  if (result.ok) {
+    notifyCertificateWorkflowChanged(orderKey, certificateId, 'commercial-lines-updated', order);
+  }
+
+  return result;
+}
+
+export function addCommercialLineToCertificate(
+  orderKey,
+  certificateId,
+  commercialEventId,
+  amountThisCertificate,
+  order = null
+) {
+  const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
+  const certificate = getCertificate(orderKey, certificateId);
+  if (!certificate) {
+    return { ok: false, errors: ['Certificate not found.'] };
+  }
+  if (!isCertificateEditable(certificate)) {
+    return { ok: false, errors: ['Only draft certificates can edit commercial lines.'] };
+  }
+
+  const event = getCommercialEventById(developmentId, commercialEventId);
+  if (!event) {
+    return { ok: false, errors: ['Commercial event not found.'] };
+  }
+  if (event.packageId !== orderKey) {
+    return { ok: false, errors: ['Commercial event must belong to this package.'] };
+  }
+
+  const certifiabilityReason = getCommercialEventCertifiabilityReason(event);
+  if (certifiabilityReason) {
+    return { ok: false, errors: [certifiabilityReason] };
+  }
+
+  const existing = normalizeCommercialLines(certificate.commercialLines);
+  if (existing.some((line) => line.commercialEventId === commercialEventId)) {
+    return {
+      ok: false,
+      errors: ['This commercial event is already included on the certificate.'],
+    };
+  }
+
+  const nextLines = [
+    ...existing,
+    buildCommercialLineFromEvent(event, amountThisCertificate),
+  ];
+
+  return updateCertificateCommercialLines(orderKey, certificateId, nextLines, order);
+}
+
+export function updateCommercialLineAmount(
+  orderKey,
+  certificateId,
+  lineId,
+  amountThisCertificate,
+  order = null
+) {
+  const certificate = getCertificate(orderKey, certificateId);
+  if (!certificate) {
+    return { ok: false, errors: ['Certificate not found.'] };
+  }
+
+  const nextLines = normalizeCommercialLines(certificate.commercialLines).map((line) =>
+    line.id === lineId
+      ? { ...line, amountThisCertificate }
+      : line
+  );
+
+  return updateCertificateCommercialLines(orderKey, certificateId, nextLines, order);
+}
+
+export function removeCommercialLineFromCertificate(
+  orderKey,
+  certificateId,
+  lineId,
+  order = null
+) {
+  const certificate = getCertificate(orderKey, certificateId);
+  if (!certificate) {
+    return { ok: false, errors: ['Certificate not found.'] };
+  }
+
+  const nextLines = normalizeCommercialLines(certificate.commercialLines).filter(
+    (line) => line.id !== lineId
+  );
+
+  return updateCertificateCommercialLines(orderKey, certificateId, nextLines, order);
 }

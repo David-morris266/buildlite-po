@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import PaymentCertificateValuationGrid from './PaymentCertificateValuationGrid';
+import PaymentCertificateCommercialEvents from './PaymentCertificateCommercialEvents';
 import { buildCertificateDetailNavigation } from '../navigation/navigationBuilders';
 import {
   approveCertificate,
@@ -255,11 +256,32 @@ export default function PaymentCertificateDetail({
         ) : null}
       </div>
 
+      <PaymentCertificateCommercialEvents
+        orderKey={order.orderKey}
+        order={order}
+        certificate={certificate}
+        editable={editable}
+        onLinesChanged={refresh}
+      />
+
       <section
         className="po-cert-detail__sticky-summary"
         aria-label="Running commercial totals"
       >
         <h3 className="po-matrix-section__title">Commercial Summary</h3>
+        {summary?.commercialEventsPreview?.lineCount ? (
+          <div className="po-cert-detail__ce-preview">
+            <dl className="po-cert-detail__commercial-grid po-cert-detail__commercial-grid--preview">
+              <div>
+                <dt>{summary.commercialEventsPreview.label}</dt>
+                <dd>{summary.commercialEventsPreview.value}</dd>
+              </div>
+            </dl>
+            <p className="po-cert-detail__ce-preview-note">
+              {summary.commercialEventsPreview.note}
+            </p>
+          </div>
+        ) : null}
         <dl className="po-cert-detail__commercial-grid po-cert-detail__commercial-grid--sticky">
           {commercialSummary.map((item) => (
             <div key={item.label}>
