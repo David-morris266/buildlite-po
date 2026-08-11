@@ -77,7 +77,10 @@ export function calculateCommercialEventCertifiedToDate(
     )
     .reduce((sum, certificate) => {
       const line = normalizeCommercialLines(certificate.commercialLines).find(
-        (item) => item.commercialEventId === commercialEventId
+        (item) =>
+          item.commercialEventId === commercialEventId &&
+          (!item.lineType ||
+            item.lineType === CERTIFICATE_COMMERCIAL_LINE_TYPES.valueInclusion)
       );
       return sum + toNumber(line?.amountThisCertificate);
     }, 0);

@@ -187,6 +187,7 @@ export function getCommercialEventAuditActionLabel(action) {
     LINKED_RECOVERY_CREATED: 'Linked recovery created',
     LINKED_TO_ORIGIN: 'Linked to origin',
     RECOVERY_STATUS_CHANGED: 'Recovery status changed',
+    CERTIFICATE_STATUS_CHANGED: 'Certificate status changed',
     POTENTIAL_CONTRA_CHARGE_DISMISSED: 'Recovery not required',
   };
   return labels[action] || action;

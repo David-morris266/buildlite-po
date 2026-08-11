@@ -99,6 +99,8 @@ function appendAuditEntry(
     newStatus,
     priorRecoveryStatus,
     newRecoveryStatus,
+    priorCertificateStatus,
+    newCertificateStatus,
   } = {}
 ) {
   const entry = {
@@ -116,6 +118,12 @@ function appendAuditEntry(
   }
   if (newRecoveryStatus != null) {
     entry.newRecoveryStatus = newRecoveryStatus;
+  }
+  if (priorCertificateStatus != null) {
+    entry.priorCertificateStatus = priorCertificateStatus;
+  }
+  if (newCertificateStatus != null) {
+    entry.newCertificateStatus = newCertificateStatus;
   }
 
   event.auditHistory = [...(event.auditHistory || []), entry];
@@ -869,6 +877,63 @@ export function updateRecoveryStatus(
   const saved = saveEvent(developmentId, event);
   if (saved) {
     notifyCommercialChanged({ developmentId, eventId, action: 'recovery-status-changed' });
+  }
+  return saved ? { ok: true, event: saved } : { ok: false, errors: ['Save failed'] };
+}
+
+export function updateCommercialEventCertificateStatus(
+  developmentId,
+  eventId,
+  nextCertificateStatus,
+  {
+    actor = sessionActor(),
+    comment = '',
+    priorCertificateStatus = null,
+    newCertificateStatus = null,
+    certifiedAmountToDate = null,
+  } = {}
+) {
+  const event = getCommercialEventById(developmentId, eventId);
+  if (!event) {
+    return { ok: false, errors: ['Event not found'] };
+  }
+
+  if (isRecoveryRelationshipType(event.relationshipType)) {
+    return {
+      ok: false,
+      errors: ['Certificate lifecycle can only be updated on normal payable commercial events'],
+    };
+  }
+
+  const normalizedNext = normalizeCertificateStatusKey(nextCertificateStatus);
+  const priorStatus = normalizeCertificateStatusKey(
+    priorCertificateStatus ?? event.certificateStatus
+  );
+
+  if (priorStatus === normalizedNext) {
+    return { ok: true, event, unchanged: true };
+  }
+
+  event.certificateStatus = normalizedNext;
+  event.updatedAt = new Date().toISOString();
+
+  let auditComment = comment;
+  if (!auditComment && certifiedAmountToDate != null) {
+    auditComment = `Certified to date: ${certifiedAmountToDate}`;
+  }
+
+  appendAuditEntry(event, 'CERTIFICATE_STATUS_CHANGED', {
+    actor,
+    comment: auditComment,
+    priorStatus: event.status,
+    newStatus: event.status,
+    priorCertificateStatus: priorStatus,
+    newCertificateStatus: normalizedNext,
+  });
+
+  const saved = saveEvent(developmentId, event);
+  if (saved) {
+    notifyCommercialChanged({ developmentId, eventId, action: 'certificate-status-changed' });
   }
   return saved ? { ok: true, event: saved } : { ok: false, errors: ['Save failed'] };
 }

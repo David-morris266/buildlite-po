@@ -25,6 +25,7 @@ import {
 } from '../commercialEvents/commercialEventTypes';
 import { notifyCommercialChanged } from '../commercial/commercialEvents';
 import {
+  addCommercialLineToCertificate,
   approveCertificate,
   createCertificate,
   getCertificate,
@@ -298,13 +299,12 @@ describe('BL-024A.2 Certificate intelligence provider', () => {
     expect(awaiting.evidence.some((item) => item.label === 'Signed net movement')).toBe(true);
   });
 
-  it('excludes commercial events already included in a certificate', () => {
+  it('excludes commercial events already fully certified through approved certificates', () => {
     const approved = createApprovedOrigin({ value: 1800 });
-    patchCommercialEventCertificateStatus(
-      DEV_ID,
-      approved.id,
-      COMMERCIAL_EVENT_CERTIFICATE_STATUSES.fullyIncluded.key
-    );
+    const cert = createCertificate(PACKAGE_A, baseOrder).certificate;
+    addCommercialLineToCertificate(PACKAGE_A, cert.id, approved.id, 1800, baseOrder);
+    submitCertificate(PACKAGE_A, cert.id);
+    approveCertificate(PACKAGE_A, cert.id);
 
     const recommendations = buildCertificateRecommendations(assistantContext(), new Date());
     expect(

@@ -22,6 +22,7 @@ import { formatRecoveryPackageOptionLabel } from '../commercialEvents/commercial
 import { formatMoney } from './poDrawerHelpers';
 import { getLinkedEventNavigationLabel } from '../commercialEvents/commercialEventNavigation';
 import { getCommercialEventLinkBadges } from '../commercialEvents/commercialEventRegisterBadges';
+import { getCommercialEventCertificationBadges } from '../commercialEvents/commercialEventCertificateLifecycle';
 import {
   COMMERCIAL_EVENT_STATUSES,
   COMMERCIAL_EVENT_TYPES,
@@ -507,7 +508,15 @@ export default function DevelopmentCommercialEvents({
               </thead>
               <tbody>
                 {filteredRows.map((row) => {
-                  const badges = getCommercialEventLinkBadges(row.event);
+                  const certificationBadges = getCommercialEventCertificationBadges(
+                    row.event,
+                    row.event.packageId
+                  );
+                  const badges = [
+                    ...getCommercialEventLinkBadges(row.event),
+                    ...certificationBadges,
+                  ];
+                  const certification = certificationBadges[0];
                   return (
                     <tr
                       key={row.event.id}
@@ -533,7 +542,17 @@ export default function DevelopmentCommercialEvents({
                       </td>
                       <td>{getDevelopmentCommercialTypeLabel(row.event.eventType)}</td>
                       <td>
-                        <StatusBadge statusKey={row.event.status} />
+                        <div className="po-ce-register__status-cell">
+                          <StatusBadge statusKey={row.event.status} />
+                          {certification ? (
+                            <span
+                              className={`po-ce-link-badge po-ce-link-badge--${certification.modifier}`}
+                              title={certification.title || undefined}
+                            >
+                              {certification.label}
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td
                         style={{ textAlign: 'right' }}

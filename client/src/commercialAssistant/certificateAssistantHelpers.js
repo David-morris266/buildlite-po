@@ -9,10 +9,9 @@ import {
   formatSignedCommercialEventValue,
 } from '../commercialEvents/commercialEventPackageValue';
 import { isRecoveryCommercialEvent } from '../commercialEvents/commercialEventRegisterBadges';
+import { hasCommercialEventCertificationRemaining } from '../commercialEvents/commercialEventCertificateLifecycle';
 import {
-  COMMERCIAL_EVENT_CERTIFICATE_STATUSES,
   COMMERCIAL_EVENT_STATUSES,
-  normalizeCertificateStatusKey,
   PACKAGE_VALUE_STATUSES,
 } from '../commercialEvents/commercialEventTypes';
 import {
@@ -23,11 +22,6 @@ import {
   listApprovedCertificates,
   listCertificates,
 } from '../payments/paymentCertificateStore';
-
-const AWAITING_VALUATION_CERTIFICATE_STATUSES = new Set([
-  COMMERCIAL_EVENT_CERTIFICATE_STATUSES.notIncluded.key,
-  COMMERCIAL_EVENT_CERTIFICATE_STATUSES.pendingInclusion.key,
-]);
 
 function toNumber(value) {
   const parsed = Number(value);
@@ -96,19 +90,18 @@ export function getDaysSinceLastApprovedCertificate(orderKey, now = new Date()) 
   return daysBetween(anchor, now);
 }
 
-export function isCommercialEventAwaitingValuation(event) {
-  if (!event?.id) return false;
+export function isCommercialEventAwaitingValuation(event, orderKey) {
+  if (!event?.id || !orderKey) return false;
   if (!PACKAGE_VALUE_STATUSES.has(event.status)) return false;
   if (event.status !== COMMERCIAL_EVENT_STATUSES.approved.key) return false;
   if (isRecoveryCommercialEvent(event)) return false;
 
-  const certificateStatus = normalizeCertificateStatusKey(event.certificateStatus);
-  return AWAITING_VALUATION_CERTIFICATE_STATUSES.has(certificateStatus);
+  return hasCommercialEventCertificationRemaining(event, orderKey);
 }
 
 export function listApprovedEventsAwaitingValuation(developmentId, orderKey) {
-  return listCommercialEventsByPackage(developmentId, orderKey).filter(
-    isCommercialEventAwaitingValuation
+  return listCommercialEventsByPackage(developmentId, orderKey).filter((event) =>
+    isCommercialEventAwaitingValuation(event, orderKey)
   );
 }
 

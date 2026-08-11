@@ -16,6 +16,7 @@ import {
   validateRecoveryDeductionAmount,
   validateRecoveryLinesForCertificate,
 } from './certificateRecoveryLines';
+import { applyValueInclusionLifecycleOnCertificateApproval } from '../commercialEvents/commercialEventCertificateLifecycle';
 import { CERTIFICATE_COMMERCIAL_LINE_TYPES } from '../commercialEvents/commercialEventCertifiability';
 import { getCommercialEventById } from '../commercialEvents/commercialEventStore';
 import { getCommercialEventCertifiabilityReason } from '../commercialEvents/commercialEventCertifiability';
@@ -386,9 +387,16 @@ export function approveCertificate(orderKey, certificateId, totals = {}, order =
       certificate: result.certificate,
     });
 
+    applyValueInclusionLifecycleOnCertificateApproval({
+      developmentId,
+      orderKey,
+      certificate: result.certificate,
+    });
+
     updateCertificateRecord(orderKey, certificateId, (certificate) => ({
       ...certificate,
       recoveryDeductionsApplied: true,
+      valueInclusionLifecycleApplied: true,
     }));
 
     notifyCertificateWorkflowChanged(orderKey, certificateId, 'approved', order);

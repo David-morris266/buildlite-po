@@ -6,6 +6,7 @@ import { listCommercialEventsByPackage, getCommercialEventById } from '../commer
 import { buildPackageCommercialEventSummaryForPackage, formatSignedCommercialEventValue } from '../commercialEvents/commercialEventPackageValue';
 import { buildPackageRecoverySummary } from '../commercialEvents/commercialEventPackageRecoveryKpis';
 import { getCommercialEventLinkBadges } from '../commercialEvents/commercialEventRegisterBadges';
+import { getCommercialEventCertificationBadges } from '../commercialEvents/commercialEventCertificateLifecycle';
 import {
   getCommercialEventStatusMeta,
   getCommercialEventTypeMeta,
@@ -204,7 +205,15 @@ export default function PackageCommercialEvents({
               </thead>
               <tbody>
                 {events.map((event) => {
-                  const badges = getCommercialEventLinkBadges(event);
+                  const certificationBadges = getCommercialEventCertificationBadges(
+                    event,
+                    order?.orderKey
+                  );
+                  const badges = [
+                    ...getCommercialEventLinkBadges(event),
+                    ...certificationBadges,
+                  ];
+                  const certification = certificationBadges[0];
                   return (
                     <tr
                       key={event.id}
@@ -226,7 +235,17 @@ export default function PackageCommercialEvents({
                       <td>{getCommercialEventTypeMeta(event.eventType).label}</td>
                       <td className="po-ce-register__description">{event.description}</td>
                       <td>
-                        <StatusBadge statusKey={event.status} />
+                        <div className="po-ce-register__status-cell">
+                          <StatusBadge statusKey={event.status} />
+                          {certification ? (
+                            <span
+                              className={`po-ce-link-badge po-ce-link-badge--${certification.modifier}`}
+                              title={certification.title || undefined}
+                            >
+                              {certification.label}
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td
                         style={{ textAlign: 'right' }}

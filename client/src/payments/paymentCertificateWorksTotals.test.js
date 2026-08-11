@@ -317,7 +317,7 @@ describe('BL-025.3 certificate works totals', () => {
     expect(calculatePackageCertifiedGross(ORDER_KEY, baseOrder)).toBe(24000);
   });
 
-  it('19. CE certificateStatus remains unchanged after approval', () => {
+  it('19. CE certificateStatus reconciles to partiallyIncluded after approval', () => {
     const event = seedApprovedEvent({ value: 10000 });
     const cert = createCertificate(ORDER_KEY, baseOrder).certificate;
     addCommercialLineToCertificate(ORDER_KEY, cert.id, event.id, 4000, baseOrder);
@@ -327,7 +327,7 @@ describe('BL-025.3 certificate works totals', () => {
       grossThisCertificate: 24000,
       netPayment: 22800,
     });
-    expect(getCommercialEventById(DEV_ID, event.id).certificateStatus).toBe('notIncluded');
+    expect(getCommercialEventById(DEV_ID, event.id).certificateStatus).toBe('partiallyIncluded');
   });
 
   it('20. recovery fields remain unchanged', () => {
