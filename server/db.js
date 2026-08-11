@@ -231,6 +231,37 @@ async function init() {
       ON jobs (client_id);
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS developments (
+      id                TEXT PRIMARY KEY,
+      client_id         UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      job_number        TEXT NOT NULL,
+      development_name  TEXT NOT NULL,
+      status            TEXT NOT NULL DEFAULT 'planning',
+      payload           JSONB NOT NULL DEFAULT '{}'::jsonb,
+      version           INTEGER NOT NULL DEFAULT 1,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_by        TEXT,
+      updated_by        TEXT
+    );
+  `);
+
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_developments_client_job_number
+      ON developments (client_id, lower(job_number));
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_developments_client_id
+      ON developments (client_id);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_developments_client_status
+      ON developments (client_id, status);
+  `);
+
   console.log("[DB] Tables ready (production-aligned baseline)");
 }
 
