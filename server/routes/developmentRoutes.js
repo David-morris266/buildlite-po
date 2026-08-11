@@ -16,6 +16,7 @@ const {
   validateUpdateBody,
 } = require("../services/developmentValidation");
 const { isValidDevelopmentId } = require("../services/developmentConstants");
+const { listPackagesForDevelopment } = require("../services/packageRepository");
 
 const router = express.Router();
 
@@ -37,6 +38,29 @@ router.get("/", async (_req, res) => {
   } catch (err) {
     console.error("[Developments] list error:", err);
     res.status(500).json({ message: "Failed to list developments" });
+  }
+});
+
+router.get("/:id/packages", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const developmentId = String(req.params.id || "").trim();
+    const development = await findDevelopmentById(active.id, developmentId);
+    if (!development) {
+      return res.status(404).json({ message: "Development not found." });
+    }
+
+    const packages = await listPackagesForDevelopment(active.id, developmentId);
+    res.json(packages);
+  } catch (err) {
+    console.error("[Developments] package list error:", err);
+    res.status(500).json({ message: "Failed to list development packages." });
   }
 });
 

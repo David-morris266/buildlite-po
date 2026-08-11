@@ -11,6 +11,7 @@ const clientRoutes = require("./routes/clientRoutes");
 const brandRoutes = require("./routes/brandRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const developmentRoutes = require("./routes/developmentRoutes");
+const packageRoutes = require("./routes/packageRoutes");
 
 function createApp() {
   const app = express();
@@ -32,6 +33,7 @@ function createApp() {
   app.use("/api/brand", brandRoutes);
   app.use("/api/payments", paymentRoutes);
   app.use("/api/developments", developmentRoutes);
+  app.use("/api/packages", packageRoutes);
 
   if (!isProduction()) {
     const developerRoutes = require("./routes/developerRoutes");
