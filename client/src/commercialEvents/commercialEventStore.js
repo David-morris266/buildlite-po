@@ -6,6 +6,12 @@ import { generateNextCommercialEventNumber } from '../admin/numberingService';
 import { notifyCommercialChanged } from '../commercial/commercialEvents';
 import { parseSubcontractOrderKey } from '../payments/packageKeyMigration';
 import {
+  COMMERCIAL_EVENT_FINANCIAL_TREATMENTS,
+  normalizeFinancialTreatmentKey,
+  resolveContraChargeFinancialFields,
+  shouldApplyContraChargeFinancialTreatment,
+} from './commercialEventFinancialTreatment';
+import {
   COMMERCIAL_EVENT_CERTIFICATE_STATUSES,
   COMMERCIAL_EVENT_RELATIONSHIP_TYPES,
   COMMERCIAL_EVENT_RECOVERY_STATUSES,
@@ -22,6 +28,8 @@ import {
   getCommercialEventResponsibilityMeta,
   getCommercialEventTypeMeta,
   isCommercialEventEditable,
+  isDirectRecoveryCommercialEvent,
+  isLinkedRecoveryCommercialEvent,
   isOriginRelationshipType,
   isRecoveryRelationshipType,
   normalizeCertificateStatusKey,
@@ -125,6 +133,39 @@ function toRecoveredAmount(value) {
   return parsed;
 }
 
+function applyContraChargeFinancialTreatment(payload, { isCreate = false } = {}) {
+  if (!shouldApplyContraChargeFinancialTreatment(payload, { isCreate })) {
+    return payload;
+  }
+
+  const resolved = resolveContraChargeFinancialFields({
+    eventType: payload.eventType,
+    financialTreatment: payload.financialTreatment,
+    value: payload.value,
+    relationshipType: payload.relationshipType ?? null,
+    linkedEventId: payload.linkedEventId ?? null,
+    isCreate,
+  });
+
+  const next = {
+    ...payload,
+    financialTreatment: resolved.financialTreatment,
+    relationshipType: resolved.relationshipType,
+    linkedEventId: resolved.linkedEventId,
+    value: resolved.value,
+  };
+
+  if (
+    resolved.relationshipType === COMMERCIAL_EVENT_RELATIONSHIP_TYPES.recovery.key &&
+    isCreate
+  ) {
+    next.recoveredAmount = 0;
+    next.recoveryStatus = COMMERCIAL_EVENT_RECOVERY_STATUSES.notApplicable.key;
+  }
+
+  return next;
+}
+
 function normalizeEvent(event) {
   if (!event) return event;
 
@@ -137,6 +178,7 @@ function normalizeEvent(event) {
 
   return {
     ...event,
+    financialTreatment: normalizeFinancialTreatmentKey(event.financialTreatment) || null,
     value: Number(event.value) || 0,
     potentialContraCharge: toBoolean(event.potentialContraCharge, false),
     potentialContraChargeNotes: String(event.potentialContraChargeNotes || '').trim(),
@@ -248,7 +290,7 @@ function validateEventPayload(payload, { partial = false } = {}) {
 function validateRecoveryDraftPatch(event, patch) {
   const errors = [];
 
-  if (isRecoveryRelationshipType(event.relationshipType)) {
+  if (isLinkedRecoveryCommercialEvent(event)) {
     if (patch.value != null && Number(patch.value) >= 0) {
       errors.push('Recovery contra charge value must remain negative');
     }
@@ -256,6 +298,7 @@ function validateRecoveryDraftPatch(event, patch) {
     const lockedFields = [
       'linkedEventId',
       'relationshipType',
+      'financialTreatment',
       'potentialContraCharge',
       'potentialContraChargeNotes',
       'recoveryPackageId',
@@ -267,6 +310,34 @@ function validateRecoveryDraftPatch(event, patch) {
         errors.push(`${field} cannot be changed on a linked recovery event`);
       }
     }
+  }
+
+  if (isDirectRecoveryCommercialEvent(event)) {
+    const lockedFields = [
+      'linkedEventId',
+      'relationshipType',
+      'financialTreatment',
+      'potentialContraCharge',
+      'potentialContraChargeNotes',
+      'recoveryPackageId',
+      'packageId',
+      'eventType',
+    ];
+    for (const field of lockedFields) {
+      if (patch[field] != null && patch[field] !== event[field]) {
+        errors.push(`${field} cannot be changed on a direct recovery event`);
+      }
+    }
+  }
+
+  if (
+    isRecoveryRelationshipType(event.relationshipType) &&
+    !isLinkedRecoveryCommercialEvent(event) &&
+    !isDirectRecoveryCommercialEvent(event) &&
+    patch.value != null &&
+    Number(patch.value) >= 0
+  ) {
+    errors.push('Recovery contra charge value must remain negative');
   }
 
   if (
@@ -333,36 +404,39 @@ export function createCommercialEvent(developmentId, payload, actor = sessionAct
   const now = new Date().toISOString();
   const eventNumber = generateNextCommercialEventNumber(listAllEventNumbers());
 
+  const treatedPayload = applyContraChargeFinancialTreatment(payload, { isCreate: true });
+
   const event = normalizeEvent({
     id: newEventId(),
     eventNumber,
     developmentId,
-    packageId: payload.packageId,
-    poNumber: payload.poNumber || '',
-    supplierId: payload.supplierId || '',
-    costCode: payload.costCode || '',
-    eventType: payload.eventType,
-    category: payload.category,
-    subcategory: payload.subcategory || '',
-    responsibility: payload.responsibility,
-    description: String(payload.description || '').trim(),
-    value: Number(payload.value),
+    packageId: treatedPayload.packageId,
+    poNumber: treatedPayload.poNumber || '',
+    supplierId: treatedPayload.supplierId || '',
+    costCode: treatedPayload.costCode || '',
+    eventType: treatedPayload.eventType,
+    category: treatedPayload.category,
+    subcategory: treatedPayload.subcategory || '',
+    responsibility: treatedPayload.responsibility,
+    description: String(treatedPayload.description || '').trim(),
+    value: Number(treatedPayload.value),
+    financialTreatment: treatedPayload.financialTreatment || null,
     vatTreatment:
-      payload.vatTreatment || COMMERCIAL_EVENT_VAT_TREATMENTS.standard.key,
-    dateRaised: payload.dateRaised || now.slice(0, 10),
-    raisedBy: payload.raisedBy || actor,
+      treatedPayload.vatTreatment || COMMERCIAL_EVENT_VAT_TREATMENTS.standard.key,
+    dateRaised: treatedPayload.dateRaised || now.slice(0, 10),
+    raisedBy: treatedPayload.raisedBy || actor,
     status: COMMERCIAL_EVENT_STATUSES.draft.key,
-    linkedEventId: payload.linkedEventId || null,
-    recoveryPackageId: payload.recoveryPackageId || null,
-    potentialContraCharge: toBoolean(payload.potentialContraCharge, false),
-    potentialContraChargeNotes: String(payload.potentialContraChargeNotes || '').trim(),
-    relationshipType: payload.relationshipType || null,
-    recoveredAmount: toRecoveredAmount(payload.recoveredAmount),
+    linkedEventId: treatedPayload.linkedEventId || null,
+    recoveryPackageId: treatedPayload.recoveryPackageId || null,
+    potentialContraCharge: toBoolean(treatedPayload.potentialContraCharge, false),
+    potentialContraChargeNotes: String(treatedPayload.potentialContraChargeNotes || '').trim(),
+    relationshipType: treatedPayload.relationshipType || null,
+    recoveredAmount: toRecoveredAmount(treatedPayload.recoveredAmount),
     certificateStatus:
-      payload.certificateStatus ||
+      treatedPayload.certificateStatus ||
       COMMERCIAL_EVENT_CERTIFICATE_STATUSES.notIncluded.key,
     recoveryStatus:
-      payload.recoveryStatus ||
+      treatedPayload.recoveryStatus ||
       COMMERCIAL_EVENT_RECOVERY_STATUSES.notApplicable.key,
     createdAt: now,
     updatedAt: now,
@@ -416,6 +490,19 @@ export function updateCommercialEventDraft(
     return { ok: false, errors };
   }
 
+  const treatedPatch = applyContraChargeFinancialTreatment(
+    {
+      ...event,
+      ...patch,
+      eventType: patch.eventType ?? event.eventType,
+      financialTreatment: patch.financialTreatment ?? event.financialTreatment,
+      linkedEventId: patch.linkedEventId ?? event.linkedEventId,
+      relationshipType: patch.relationshipType ?? event.relationshipType,
+      value: patch.value != null ? patch.value : event.value,
+    },
+    { isCreate: false }
+  );
+
   const priorStatus = event.status;
   const updated = {
     ...event,
@@ -423,7 +510,10 @@ export function updateCommercialEventDraft(
     id: event.id,
     eventNumber: event.eventNumber,
     status: event.status,
-    value: patch.value != null ? Number(patch.value) : event.value,
+    financialTreatment: treatedPatch.financialTreatment ?? event.financialTreatment ?? null,
+    relationshipType: treatedPatch.relationshipType ?? event.relationshipType ?? null,
+    linkedEventId: treatedPatch.linkedEventId ?? event.linkedEventId ?? null,
+    value: patch.value != null ? Number(treatedPatch.value) : event.value,
     potentialContraCharge:
       patch.potentialContraCharge != null
         ? toBoolean(patch.potentialContraCharge)
@@ -638,6 +728,7 @@ export function createLinkedRecoveryFromOrigin(
     responsibility: COMMERCIAL_EVENT_RESPONSIBILITIES.subcontractor.key,
     description: origin.description,
     value: recoveryValue,
+    financialTreatment: COMMERCIAL_EVENT_FINANCIAL_TREATMENTS.recoverableDeduction.key,
     vatTreatment: origin.vatTreatment,
     dateRaised: now.slice(0, 10),
     raisedBy: actor,

@@ -103,9 +103,10 @@ function buildPotentialContraRecommendation(event, developmentId, now = new Date
     type: COMMERCIAL_EVENTS_RULE_ID.potentialContraCharge,
     category: RECOMMENDATION_CATEGORY.warning,
     priority: RECOMMENDATION_PRIORITY.medium,
-    title: 'Potential contra charge not yet raised',
-    description: `Approved commercial event ${event.eventNumber || event.id} is flagged as a potential contra charge but no linked recovery has been created.`,
-    recommendation: 'Review the origin event and create a linked contra charge recovery if recovery is still required.',
+    title: 'Recovery not yet raised against another subcontractor',
+    description: `Approved commercial event ${event.eventNumber || event.id} is flagged for recovery from another subcontractor but no linked recovery has been created.`,
+    recommendation:
+      'Review the payable event and create a linked recovery on the responsible subcontractor package if recovery is still required.',
     financialImpact: formatSignedCommercialEventValue(value),
     financialImpactValue: value,
     sourceModule: RECOMMENDATION_SOURCE_MODULE.commercialEvents,
@@ -113,7 +114,7 @@ function buildPotentialContraRecommendation(event, developmentId, now = new Date
     navigationTarget: buildNavigationTarget(event, developmentId),
     evidence: [
       { label: 'Event', value: event.eventNumber || event.id, recordRef: event.id },
-      { label: 'Potential contra value', value: formatSignedCommercialEventValue(value) },
+      { label: 'Payable value', value: formatSignedCommercialEventValue(value) },
     ],
     generatedBy: RECOMMENDATION_GENERATED_BY.rule,
     observedAt: parseWhen(event.updatedAt || event.createdAt) || now.toISOString(),

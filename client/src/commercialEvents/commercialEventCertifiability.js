@@ -22,6 +22,7 @@ export const CERTIFIABLE_COMMERCIAL_EVENT_TYPES = new Set([
 
 export const CERTIFICATE_COMMERCIAL_LINE_TYPES = {
   valueInclusion: 'valueInclusion',
+  recoveryDeduction: 'recoveryDeduction',
 };
 
 /**

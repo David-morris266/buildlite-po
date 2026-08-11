@@ -4,6 +4,7 @@
  */
 
 import { listCommercialEventsByPackage } from './commercialEventStore';
+import { isRecoveryCommercialEvent } from './commercialEventRegisterBadges';
 import {
   COMMERCIAL_EVENT_STATUSES,
   COMMERCIAL_EVENT_TYPES,
@@ -74,6 +75,13 @@ export function getApprovedCommercialEvents(events) {
   return (events || []).filter((event) => PACKAGE_VALUE_STATUSES.has(event.status));
 }
 
+/** Approved events that affect Current Contract Value (BL-026 UAT — excludes linked recoveries). */
+export function getApprovedContractValueEvents(events) {
+  return getApprovedCommercialEvents(events).filter(
+    (event) => !isRecoveryCommercialEvent(event)
+  );
+}
+
 export function getPendingCommercialEvents(events) {
   return (events || []).filter((event) =>
     PENDING_PACKAGE_VALUE_STATUSES.has(event.status)
@@ -83,22 +91,23 @@ export function getPendingCommercialEvents(events) {
 export function buildPackageCommercialEventSummary(originalOrderValue, events = []) {
   const original = toNumber(originalOrderValue);
   const approvedEvents = getApprovedCommercialEvents(events);
+  const contractValueEvents = getApprovedContractValueEvents(events);
   const pendingEvents = getPendingCommercialEvents(events);
 
   const approvedVariationValue = sumEventValues(
-    approvedEvents,
+    contractValueEvents,
     (event) => event.eventType === COMMERCIAL_EVENT_TYPES.variation.key
   );
   const approvedContraChargeValue = sumEventValues(
-    approvedEvents,
+    contractValueEvents,
     (event) => event.eventType === COMMERCIAL_EVENT_TYPES.contraCharge.key
   );
   const approvedCreditValue = sumEventValues(
-    approvedEvents,
+    contractValueEvents,
     (event) => event.eventType === COMMERCIAL_EVENT_TYPES.credit.key
   );
 
-  const netCommercialEventMovement = sumEventValues(approvedEvents, () => true);
+  const netCommercialEventMovement = sumEventValues(contractValueEvents, () => true);
   const pendingEventValue = sumEventValues(pendingEvents, () => true);
   const currentPackageValue = original + netCommercialEventMovement;
 
@@ -178,7 +187,7 @@ export function getCommercialEventAuditActionLabel(action) {
     LINKED_RECOVERY_CREATED: 'Linked recovery created',
     LINKED_TO_ORIGIN: 'Linked to origin',
     RECOVERY_STATUS_CHANGED: 'Recovery status changed',
-    POTENTIAL_CONTRA_CHARGE_DISMISSED: 'Potential contra charge dismissed',
+    POTENTIAL_CONTRA_CHARGE_DISMISSED: 'Recovery not required',
   };
   return labels[action] || action;
 }

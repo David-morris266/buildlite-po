@@ -11,6 +11,7 @@ import {
   isCommercialEventCertifiable,
   CERTIFICATE_COMMERCIAL_LINE_TYPES,
 } from '../commercialEvents/commercialEventCertifiability';
+import { validateRecoveryLinesForCertificate } from './certificateRecoveryLines';
 import {
   COMMERCIAL_EVENT_TYPES,
   getCommercialEventTypeMeta,
@@ -209,7 +210,13 @@ export function buildCertificateCommercialLineRows(
 ) {
   if (!certificate) return [];
 
-  return normalizeCommercialLines(certificate.commercialLines).map((line) =>
+  return normalizeCommercialLines(certificate.commercialLines)
+    .filter(
+      (line) =>
+        !line.lineType ||
+        line.lineType === CERTIFICATE_COMMERCIAL_LINE_TYPES.valueInclusion
+    )
+    .map((line) =>
     buildCommercialLineDisplayRow({
       line,
       orderKey,
@@ -419,10 +426,15 @@ export function validateCommercialLinesForCertificate({
   }
 
   const lines = normalizeCommercialLines(commercialLines);
+  const valueLines = lines.filter(
+    (line) =>
+      !line.lineType ||
+      line.lineType === CERTIFICATE_COMMERCIAL_LINE_TYPES.valueInclusion
+  );
   const errors = [];
   const seenEventIds = new Set();
 
-  for (const line of lines) {
+  for (const line of valueLines) {
     if (!line.commercialEventId) {
       errors.push('Each commercial line must reference a commercial event.');
       continue;
@@ -481,6 +493,17 @@ export function validateCommercialLinesForCertificate({
         `${line.sourceEventNumber || liveEvent.eventNumber} has changed since this line was added. Remove the line and add it again.`
       );
     }
+  }
+
+  const recoveryValidation = validateRecoveryLinesForCertificate({
+    orderKey,
+    certificateId,
+    developmentId,
+    commercialLines: lines,
+  });
+
+  if (!recoveryValidation.valid) {
+    errors.push(...recoveryValidation.errors);
   }
 
   return {

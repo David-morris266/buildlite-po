@@ -68,7 +68,7 @@ describe('commercialEventCertifiability', () => {
     ).toBe(false);
   });
 
-  it('allows approved potential contra charge origin events on their package', () => {
+  it('allows approved recoverable origin variation events on their package', () => {
     expect(
       isCommercialEventCertifiable(
         makeEvent({

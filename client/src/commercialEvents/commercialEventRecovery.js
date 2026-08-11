@@ -7,6 +7,7 @@ import {
   ACTIVE_RECOVERY_STATUSES,
   COMMERCIAL_EVENT_RECOVERY_STATUSES,
   COMMERCIAL_EVENT_RELATIONSHIP_TYPES,
+  COMMERCIAL_EVENT_TYPES,
   isOriginRelationshipType,
   isRecoveryRelationshipType,
   normalizeRecoveryStatusKey,
@@ -59,4 +60,12 @@ export function isPotentialContraChargePending(event) {
     !hasLinkedRecovery(event) &&
     event.relationshipType !== COMMERCIAL_EVENT_RELATIONSHIP_TYPES.recovery.key
   );
+}
+
+/** Payable origin events (Variation etc.) — not Contra Charge on the responsible package. */
+export function canFlagRecoverFromOtherSubcontractor(event) {
+  if (!event) return false;
+  if (event.eventType === COMMERCIAL_EVENT_TYPES.contraCharge.key) return false;
+  if (isRecoveryRelationshipType(event.relationshipType)) return false;
+  return true;
 }

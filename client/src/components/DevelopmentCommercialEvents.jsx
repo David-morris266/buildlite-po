@@ -51,7 +51,7 @@ function DevelopmentCommercialKpiStrip({ summary }) {
     { key: 'draftCount', label: 'Draft' },
     { key: 'submittedCount', label: 'Submitted' },
     { key: 'approvedCount', label: 'Approved' },
-    { key: 'potentialContraNotRaisedCount', label: 'Potential Contra Charges not yet raised' },
+    { key: 'potentialContraNotRaisedCount', label: 'Recoveries not yet raised' },
     {
       key: 'outstandingRecoveryAmount',
       label: 'Outstanding Recoveries',

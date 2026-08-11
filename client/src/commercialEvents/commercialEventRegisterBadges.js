@@ -5,8 +5,13 @@
 import {
   COMMERCIAL_EVENT_RELATIONSHIP_TYPES,
   COMMERCIAL_EVENT_STATUSES,
+  COMMERCIAL_EVENT_TYPES,
+  isDirectRecoveryCommercialEvent,
+  isLinkedRecoveryCommercialEvent,
 } from './commercialEventTypes';
 import { hasLinkedRecovery, isPotentialContraChargePending } from './commercialEventRecovery';
+
+export { isDirectRecoveryCommercialEvent, isLinkedRecoveryCommercialEvent };
 
 export function getCommercialEventLinkBadges(event) {
   if (!event) return [];
@@ -15,21 +20,27 @@ export function getCommercialEventLinkBadges(event) {
 
   if (isPotentialContraChargePending(event)) {
     badges.push({
-      key: 'potential-contra',
-      label: 'Potential Contra',
+      key: 'recovery-pending',
+      label: 'Recovery Pending',
       modifier: 'pending',
     });
   }
 
   if (event.relationshipType === COMMERCIAL_EVENT_RELATIONSHIP_TYPES.origin.key) {
     badges.push({
-      key: 'origin',
-      label: 'Origin',
+      key: 'recovery-linked',
+      label: 'Recovery Linked',
       modifier: 'default',
     });
   }
 
-  if (event.relationshipType === COMMERCIAL_EVENT_RELATIONSHIP_TYPES.recovery.key) {
+  if (isDirectRecoveryCommercialEvent(event)) {
+    badges.push({
+      key: 'direct-recovery',
+      label: 'Direct Recovery',
+      modifier: 'accent',
+    });
+  } else if (event.relationshipType === COMMERCIAL_EVENT_RELATIONSHIP_TYPES.recovery.key) {
     badges.push({
       key: 'recovery',
       label: 'Recovery',
@@ -62,6 +73,7 @@ export function isOriginCommercialEvent(event) {
 export function canEditPotentialContraFields(event, editable) {
   if (!editable || !event) return editable;
   if (isRecoveryCommercialEvent(event)) return false;
+  if (event.eventType === COMMERCIAL_EVENT_TYPES.contraCharge.key) return false;
   if (event.linkedEventId && event.relationshipType) return false;
   return true;
 }

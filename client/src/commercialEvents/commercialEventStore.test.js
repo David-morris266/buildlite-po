@@ -71,13 +71,14 @@ describe('commercialEventStore', () => {
       DEV_ID,
       basePayload({
         eventType: COMMERCIAL_EVENT_TYPES.contraCharge.key,
-        value: -1200,
+        value: 1200,
         description: 'Contra charge',
       })
     );
 
     expect(positive.event.value).toBe(2500);
     expect(negative.event.value).toBe(-1200);
+    expect(negative.event.relationshipType).toBe('recovery');
   });
 
   it('runs draft → submitted → approved status transitions with audit entries', () => {

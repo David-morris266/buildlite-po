@@ -255,6 +255,7 @@ describe('BL-021B.3.3 package recovery KPIs', () => {
         eventType: COMMERCIAL_EVENT_TYPES.contraCharge.key,
         value: -900,
         description: 'Legacy contra',
+        linkedEventId: 'legacy-linked-ref',
       })
     );
 
@@ -307,7 +308,7 @@ describe('BL-021B.3.3 package recovery KPIs', () => {
     const after = buildPackageCommercialDisplayFields(baseOrder);
 
     expect(after.currentPackageValue).toBe(before.currentPackageValue);
-    expect(after.currentPackageValue).toBe(36200);
+    expect(after.currentPackageValue).toBe(40000);
   });
 
   it('does not change payment certificate contract fields on the package view model', () => {
@@ -315,8 +316,8 @@ describe('BL-021B.3.3 package recovery KPIs', () => {
 
     const pkg = buildPackageViewModel(baseOrder);
     expect(pkg.adjustedContract).toBe(pkg.currentContractValue);
-    expect(pkg.currentContractValue).toBe(36200);
-    expect(pkg.approvedCommercialMovement).toBe(-3800);
+    expect(pkg.currentContractValue).toBe(40000);
+    expect(pkg.approvedCommercialMovement).toBe(0);
     expect(pkg.committedValue).toBe(40000);
   });
 
@@ -346,8 +347,9 @@ describe('BL-021B.3.3 package recovery KPIs', () => {
     const labels = findTextContent(dashboard).join(' ');
 
     expect(labels).toContain('Current contract');
-    expect(labels).toContain('£36.2k');
-    expect(labels).not.toContain('Recovery Position');
+    expect(labels).toContain('£40k');
+    expect(labels).toContain('Approved events');
+    expect(labels).toContain('£0');
   });
 });
 

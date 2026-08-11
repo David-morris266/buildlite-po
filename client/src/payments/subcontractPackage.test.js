@@ -20,6 +20,7 @@ import {
 import {
   COMMERCIAL_EVENT_TYPES,
 } from '../commercialEvents/commercialEventTypes';
+import { COMMERCIAL_EVENT_FINANCIAL_TREATMENTS } from '../commercialEvents/commercialEventFinancialTreatment';
 import { buildPackageCommercialDisplayFields } from '../commercialEvents/commercialEventPackageValue';
 import {
   SubcontractPackageDashboard,
@@ -98,11 +99,12 @@ describe('buildPackageViewModel commercial display fields', () => {
     expect(pkg.adjustedContract).toBe(14000);
   });
 
-  it('reduces current package value for an approved contra charge', () => {
+  it('reduces current package value for an approved contract amendment contra', () => {
     const draft = seedEvent({
       eventType: COMMERCIAL_EVENT_TYPES.contraCharge.key,
       value: -1500,
       description: 'Contra charge',
+      financialTreatment: COMMERCIAL_EVENT_FINANCIAL_TREATMENTS.contractAmendment.key,
     });
     submitCommercialEvent(DEV_ID, draft.id);
     approveCommercialEvent(DEV_ID, draft.id);

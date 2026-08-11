@@ -6,6 +6,7 @@ import {
   resolveCurrentPackageValue,
 } from './commercialEventPackageValue';
 import {
+  COMMERCIAL_EVENT_RELATIONSHIP_TYPES,
   COMMERCIAL_EVENT_STATUSES,
   COMMERCIAL_EVENT_TYPES,
 } from './commercialEventTypes';
@@ -128,5 +129,48 @@ describe('commercialEventPackageValue', () => {
     const linked = findLinkedCommercialEvents([rectifying, contra], 'rect-1');
     expect(linked).toHaveLength(2);
     expect(linked.map((event) => event.id).sort()).toEqual(['contra-1', 'rect-1']);
+  });
+
+  it('excludes linked recovery events from current package value (BL-026 UAT)', () => {
+    const events = [
+      makeEvent({
+        eventType: COMMERCIAL_EVENT_TYPES.contraCharge.key,
+        status: COMMERCIAL_EVENT_STATUSES.approved.key,
+        relationshipType: COMMERCIAL_EVENT_RELATIONSHIP_TYPES.recovery.key,
+        value: -7500,
+      }),
+    ];
+
+    const summary = buildPackageCommercialEventSummary(100000, events);
+    expect(summary.netCommercialEventMovement).toBe(0);
+    expect(summary.approvedContraChargeValue).toBe(0);
+    expect(summary.currentPackageValue).toBe(100000);
+  });
+
+  it('still reduces package value for manual contra without recovery relationship', () => {
+    const events = [
+      makeEvent({
+        eventType: COMMERCIAL_EVENT_TYPES.contraCharge.key,
+        status: COMMERCIAL_EVENT_STATUSES.approved.key,
+        value: -7500,
+      }),
+    ];
+
+    expect(resolveCurrentPackageValue(100000, events, PACKAGE_ID)).toBe(92500);
+  });
+
+  it('includes origin package variation in contract value normally', () => {
+    const events = [
+      makeEvent({
+        eventType: COMMERCIAL_EVENT_TYPES.variation.key,
+        status: COMMERCIAL_EVENT_STATUSES.approved.key,
+        relationshipType: COMMERCIAL_EVENT_RELATIONSHIP_TYPES.origin.key,
+        value: 7500,
+      }),
+    ];
+
+    const summary = buildPackageCommercialEventSummary(100000, events);
+    expect(summary.netCommercialEventMovement).toBe(7500);
+    expect(summary.currentPackageValue).toBe(107500);
   });
 });

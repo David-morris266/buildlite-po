@@ -92,6 +92,12 @@ export const COMMERCIAL_EVENT_RELATIONSHIP_TYPES = {
   mirror: { key: 'mirror', label: 'Mirror' },
 };
 
+/** BL-026.1 — Contra charge financial treatment (explicit user intent). */
+export const COMMERCIAL_EVENT_FINANCIAL_TREATMENTS = {
+  contractAmendment: { key: 'contractAmendment', label: 'Contract Amendment' },
+  recoverableDeduction: { key: 'recoverableDeduction', label: 'Recoverable Deduction' },
+};
+
 /** BL-021A recovery status keys mapped to BL-021B.1 canonical keys. */
 export const LEGACY_RECOVERY_STATUS_ALIASES = {
   pending: COMMERCIAL_EVENT_RECOVERY_STATUSES.outstanding.key,
@@ -323,6 +329,20 @@ export function isRecoveryRelationshipType(relationshipType) {
 
 export function isOriginRelationshipType(relationshipType) {
   return relationshipType === COMMERCIAL_EVENT_RELATIONSHIP_TYPES.origin.key;
+}
+
+export function isDirectRecoveryCommercialEvent(event) {
+  return (
+    isRecoveryRelationshipType(event?.relationshipType) &&
+    !String(event?.linkedEventId || '').trim()
+  );
+}
+
+export function isLinkedRecoveryCommercialEvent(event) {
+  return (
+    isRecoveryRelationshipType(event?.relationshipType) &&
+    Boolean(String(event?.linkedEventId || '').trim())
+  );
 }
 
 const RECOVERY_STATUS_TRANSITIONS = {

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import PaymentCertificateValuationGrid from './PaymentCertificateValuationGrid';
 import PaymentCertificateCommercialEvents from './PaymentCertificateCommercialEvents';
+import PaymentCertificateRecoveryDeductions from './PaymentCertificateRecoveryDeductions';
 import { buildCertificateDetailNavigation } from '../navigation/navigationBuilders';
 import {
   approveCertificate,
@@ -132,7 +133,7 @@ export default function PaymentCertificateDetail({
   }
 
   function handleApproveConfirm() {
-    approveCertificate(order.orderKey, certificateId, summary?.totals || {});
+    approveCertificate(order.orderKey, certificateId, summary?.totals || {}, order);
     setDialog(null);
     refresh();
   }
@@ -264,14 +265,23 @@ export default function PaymentCertificateDetail({
         onLinesChanged={refresh}
       />
 
+      <PaymentCertificateRecoveryDeductions
+        orderKey={order.orderKey}
+        order={order}
+        certificate={certificate}
+        editable={editable}
+        onLinesChanged={refresh}
+      />
+
       <section
         className="po-cert-detail__sticky-summary"
         aria-label="Running commercial totals"
       >
         <h3 className="po-matrix-section__title">Commercial Summary</h3>
         <p className="po-cert-detail__summary-lead">
-          Combined matrix valuation and commercial event lines. VAT uses the package PO rate on
-          gross works minus retention (transitional — per-line VAT treatment deferred).
+          Combined matrix valuation and commercial event lines. Recovery deductions reduce net
+          payment only (after retention). VAT uses the package PO rate on gross works minus
+          retention (transitional — per-line VAT treatment deferred).
         </p>
         <dl className="po-cert-detail__commercial-grid po-cert-detail__commercial-grid--sticky">
           {commercialSummary.map((item) => (

@@ -9,6 +9,14 @@ import {
   normalizeCommercialLines,
   validateCommercialLinesForCertificate,
 } from './certificateCommercialLines';
+import {
+  applyRecoveryDeductionsOnCertificateApproval,
+  buildRecoveryDeductionLineFromEvent,
+  getRecoveryDeductionEligibilityReason,
+  validateRecoveryDeductionAmount,
+  validateRecoveryLinesForCertificate,
+} from './certificateRecoveryLines';
+import { CERTIFICATE_COMMERCIAL_LINE_TYPES } from '../commercialEvents/commercialEventCertifiability';
 import { getCommercialEventById } from '../commercialEvents/commercialEventStore';
 import { getCommercialEventCertifiabilityReason } from '../commercialEvents/commercialEventCertifiability';
 import { resolvePackageDevelopmentId } from '../commercialEvents/commercialEventPackageValue';
@@ -326,7 +334,24 @@ export function submitCertificate(orderKey, certificateId) {
   return result;
 }
 
-export function approveCertificate(orderKey, certificateId, totals = {}) {
+export function approveCertificate(orderKey, certificateId, totals = {}, order = null) {
+  const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
+  const certificate = getCertificate(orderKey, certificateId);
+
+  if (certificate?.status === 'submitted') {
+    const recoveryValidation = validateRecoveryLinesForCertificate({
+      orderKey,
+      certificateId,
+      developmentId,
+      commercialLines: certificate.commercialLines,
+      forApproval: true,
+    });
+
+    if (!recoveryValidation.valid) {
+      return { ok: false, errors: recoveryValidation.errors };
+    }
+  }
+
   const result = updateCertificateRecord(orderKey, certificateId, (certificate) => {
     if (certificate.status !== 'submitted') {
       return null;
@@ -355,7 +380,18 @@ export function approveCertificate(orderKey, certificateId, totals = {}) {
   });
 
   if (result.ok) {
-    notifyCertificateWorkflowChanged(orderKey, certificateId, 'approved');
+    applyRecoveryDeductionsOnCertificateApproval({
+      developmentId,
+      orderKey,
+      certificate: result.certificate,
+    });
+
+    updateCertificateRecord(orderKey, certificateId, (certificate) => ({
+      ...certificate,
+      recoveryDeductionsApplied: true,
+    }));
+
+    notifyCertificateWorkflowChanged(orderKey, certificateId, 'approved', order);
   }
 
   return result;
@@ -566,6 +602,128 @@ export function removeCommercialLineFromCertificate(
 
   const nextLines = normalizeCommercialLines(certificate.commercialLines).filter(
     (line) => line.id !== lineId
+  );
+
+  return updateCertificateCommercialLines(orderKey, certificateId, nextLines, order);
+}
+
+export function addRecoveryLineToCertificate(
+  orderKey,
+  certificateId,
+  commercialEventId,
+  rawAmount,
+  order = null
+) {
+  const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
+  const certificate = getCertificate(orderKey, certificateId);
+  if (!certificate) {
+    return { ok: false, errors: ['Certificate not found.'] };
+  }
+  if (!isCertificateEditable(certificate)) {
+    return { ok: false, errors: ['Only draft certificates can edit recovery deductions.'] };
+  }
+
+  const event = getCommercialEventById(developmentId, commercialEventId);
+  if (!event) {
+    return { ok: false, errors: ['Commercial event not found.'] };
+  }
+  if (event.packageId !== orderKey) {
+    return { ok: false, errors: ['Recovery event must belong to this package.'] };
+  }
+
+  const eligibilityReason = getRecoveryDeductionEligibilityReason(event);
+  if (eligibilityReason) {
+    return { ok: false, errors: [eligibilityReason] };
+  }
+
+  const amountCheck = validateRecoveryDeductionAmount(rawAmount, event, orderKey, {
+    excludeCertificateId: certificateId,
+  });
+  if (!amountCheck.valid) {
+    return { ok: false, errors: amountCheck.errors };
+  }
+
+  const existing = normalizeCommercialLines(certificate.commercialLines);
+  if (
+    existing.some(
+      (line) =>
+        line.commercialEventId === commercialEventId &&
+        line.lineType === CERTIFICATE_COMMERCIAL_LINE_TYPES.recoveryDeduction
+    )
+  ) {
+    return {
+      ok: false,
+      errors: ['This recovery event is already included on the certificate.'],
+    };
+  }
+
+  const nextLines = [
+    ...existing,
+    buildRecoveryDeductionLineFromEvent(event, amountCheck.amount),
+  ];
+
+  return updateCertificateCommercialLines(orderKey, certificateId, nextLines, order);
+}
+
+export function updateRecoveryLineAmount(
+  orderKey,
+  certificateId,
+  lineId,
+  rawAmount,
+  order = null
+) {
+  const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
+  const certificate = getCertificate(orderKey, certificateId);
+  if (!certificate) {
+    return { ok: false, errors: ['Certificate not found.'] };
+  }
+
+  const line = normalizeCommercialLines(certificate.commercialLines).find(
+    (item) => item.id === lineId
+  );
+  if (!line || line.lineType !== CERTIFICATE_COMMERCIAL_LINE_TYPES.recoveryDeduction) {
+    return { ok: false, errors: ['Recovery line not found.'] };
+  }
+
+  const event = getCommercialEventById(developmentId, line.commercialEventId);
+  if (!event) {
+    return { ok: false, errors: ['Recovery event not found.'] };
+  }
+
+  const amountCheck = validateRecoveryDeductionAmount(rawAmount, event, orderKey, {
+    excludeCertificateId: certificateId,
+  });
+  if (!amountCheck.valid) {
+    return { ok: false, errors: amountCheck.errors };
+  }
+
+  const nextLines = normalizeCommercialLines(certificate.commercialLines).map((item) =>
+    item.id === lineId ? { ...item, amountThisCertificate: amountCheck.amount } : item
+  );
+
+  return updateCertificateCommercialLines(orderKey, certificateId, nextLines, order);
+}
+
+export function removeRecoveryLineFromCertificate(
+  orderKey,
+  certificateId,
+  lineId,
+  order = null
+) {
+  const certificate = getCertificate(orderKey, certificateId);
+  if (!certificate) {
+    return { ok: false, errors: ['Certificate not found.'] };
+  }
+
+  const line = normalizeCommercialLines(certificate.commercialLines).find(
+    (item) => item.id === lineId
+  );
+  if (!line || line.lineType !== CERTIFICATE_COMMERCIAL_LINE_TYPES.recoveryDeduction) {
+    return { ok: false, errors: ['Recovery line not found.'] };
+  }
+
+  const nextLines = normalizeCommercialLines(certificate.commercialLines).filter(
+    (item) => item.id !== lineId
   );
 
   return updateCertificateCommercialLines(orderKey, certificateId, nextLines, order);

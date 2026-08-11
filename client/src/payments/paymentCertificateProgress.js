@@ -26,6 +26,10 @@ import {
   normalizeCertificateCommercialLines,
   sumValueInclusionCommercialLines,
 } from './certificateCommercialLines';
+import {
+  sumRecoveryDeductionLines,
+  sumRecoveryDeductionMagnitudes,
+} from './certificateRecoveryLines';
 
 export {
   normalizePct,
@@ -333,7 +337,11 @@ export function buildMatrixOnlyCertificateTotals(
 }
 
 /**
- * Combined matrix + commercial-event certificate totals (BL-025.3).
+ * Combined matrix + commercial-event certificate totals (BL-025.3 / BL-026).
+ *
+ * Net payment: grossWorks - retention + recoveryDeductionSigned + VAT
+ * (recoveryDeductionSigned is negative; e.g. -3000 reduces net by £3,000).
+ * Recovery does not reduce grossWorks or retention base.
  */
 export function buildCertificateWorksTotals(
   cells,
@@ -354,6 +362,8 @@ export function buildCertificateWorksTotals(
   const grossWorksThisCertificate = roundMoney(
     matrixGrossThisCertificate + commercialEventGrossThisCertificate
   );
+  const recoveryDeductionSigned = sumRecoveryDeductionLines(commercialLines);
+  const recoveryDeductionMagnitude = sumRecoveryDeductionMagnitudes(commercialLines);
 
   const previousMatrixCertified = roundMoney(
     cells.reduce((sum, cell) => sum + cell.previousValue, 0)
@@ -364,12 +374,16 @@ export function buildCertificateWorksTotals(
   const remainingContract = roundMoney(contract - certifiedToDate);
   const retention = roundMoney(grossWorksThisCertificate * retentionRate);
   const vat = roundMoney((grossWorksThisCertificate - retention) * vatRate);
-  const netPayment = roundMoney(grossWorksThisCertificate - retention + vat);
+  const netPayment = roundMoney(
+    grossWorksThisCertificate - retention + recoveryDeductionSigned + vat
+  );
 
   return {
     matrixGrossThisCertificate,
     commercialEventGrossThisCertificate,
     grossWorksThisCertificate,
+    recoveryDeductionSigned,
+    recoveryDeductionMagnitude,
     /** @deprecated BL-025.3 alias — use grossWorksThisCertificate */
     grossThisCertificate: grossWorksThisCertificate,
     previousMatrixCertified,
@@ -499,6 +513,13 @@ export function buildCommercialSummaryItems(totals) {
     items.push({
       label: 'Commercial Events',
       value: formatSignedCommercialLineTotal(totals.commercialEventGrossThisCertificate),
+    });
+  }
+
+  if (totals.recoveryDeductionMagnitude) {
+    items.push({
+      label: 'Recovery deductions',
+      value: `−£${formatMoney(totals.recoveryDeductionMagnitude)}`,
     });
   }
 

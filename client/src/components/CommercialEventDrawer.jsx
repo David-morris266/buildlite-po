@@ -20,6 +20,7 @@ import {
   canCloseCommercialEvent,
   canRejectCommercialEvent,
   canSubmitCommercialEvent,
+  isDirectRecoveryCommercialEvent,
 } from '../commercialEvents/commercialEventTypes';
 import {
   createCommercialEvent,
@@ -36,6 +37,7 @@ import { getCommercialEventAuditActionLabel } from '../commercialEvents/commerci
 import {
   getLinkedCommercialEvent,
   hasLinkedRecovery,
+  canFlagRecoverFromOtherSubcontractor,
 } from '../commercialEvents/commercialEventRecovery';
 import { getLinkedEventNavigationLabel } from '../commercialEvents/commercialEventNavigation';
 import {
@@ -47,6 +49,12 @@ import {
   canShowPotentialContraBanner,
   isRecoveryCommercialEvent,
 } from '../commercialEvents/commercialEventRegisterBadges';
+import {
+  COMMERCIAL_EVENT_FINANCIAL_TREATMENTS,
+  formatRecoverableDeductionDisplayValue,
+  isRecoverableDeductionFinancialTreatment,
+  listCommercialEventFinancialTreatmentOptions,
+} from '../commercialEvents/commercialEventFinancialTreatment';
 
 const EMPTY_FORM = {
   eventType: COMMERCIAL_EVENT_TYPES.variation.key,
@@ -55,6 +63,7 @@ const EMPTY_FORM = {
   responsibility: 'commercial',
   description: '',
   value: '',
+  financialTreatment: COMMERCIAL_EVENT_FINANCIAL_TREATMENTS.recoverableDeduction.key,
   vatTreatment: 'standard',
   dateRaised: new Date().toISOString().slice(0, 10),
   potentialContraCharge: false,
@@ -201,10 +210,21 @@ export default function CommercialEventDrawer({
 
   const drawerEvent = liveEvent || event;
   const isRecoveryEvent = isRecoveryCommercialEvent(drawerEvent);
+  const isDirectRecoveryEvent = isDirectRecoveryCommercialEvent(drawerEvent);
+  const isContraChargeForm = form.eventType === COMMERCIAL_EVENT_TYPES.contraCharge.key;
+  const isRecoverableDeductionForm =
+    isContraChargeForm &&
+    (isRecoveryEvent ||
+      form.financialTreatment ===
+        COMMERCIAL_EVENT_FINANCIAL_TREATMENTS.recoverableDeduction.key);
   const editable =
     (isCreate || mode === 'edit') &&
     (!drawerEvent || isCommercialEventEditable(drawerEvent.status));
   const canEditPotentialContra = canEditPotentialContraFields(drawerEvent, editable);
+  const canShowRecoverFromOtherOption =
+    canEditPotentialContra &&
+    canFlagRecoverFromOtherSubcontractor({ eventType: form.eventType }) &&
+    (!drawerEvent || canFlagRecoverFromOtherSubcontractor(drawerEvent));
   const showPotentialContraBanner = canShowPotentialContraBanner(drawerEvent);
 
   const subcategoryOptions = useMemo(() => {
@@ -223,13 +243,25 @@ export default function CommercialEventDrawer({
     setSelectedRecoveryPackageId('');
 
     if (event && !isCreate) {
+      const isExistingRecovery = isRecoveryCommercialEvent(event);
+      const financialTreatment =
+        event.financialTreatment ||
+        (isExistingRecovery
+          ? COMMERCIAL_EVENT_FINANCIAL_TREATMENTS.recoverableDeduction.key
+          : event.eventType === COMMERCIAL_EVENT_TYPES.contraCharge.key
+            ? COMMERCIAL_EVENT_FINANCIAL_TREATMENTS.contractAmendment.key
+            : COMMERCIAL_EVENT_FINANCIAL_TREATMENTS.recoverableDeduction.key);
+
       setForm({
         eventType: event.eventType,
         category: event.category,
         subcategory: event.subcategory || '',
         responsibility: event.responsibility,
         description: event.description || '',
-        value: String(event.value ?? ''),
+        value: isExistingRecovery
+          ? String(formatRecoverableDeductionDisplayValue(event.value))
+          : String(event.value ?? ''),
+        financialTreatment,
         vatTreatment: event.vatTreatment || 'standard',
         dateRaised: event.dateRaised || new Date().toISOString().slice(0, 10),
         potentialContraCharge: Boolean(event.potentialContraCharge),
@@ -282,7 +314,20 @@ export default function CommercialEventDrawer({
         const category = getCommercialEventCategoryMeta(value);
         next.subcategory = category.subcategories?.[0]?.key || '';
       }
-      if (field === 'value' && isRecoveryEvent) {
+      if (field === 'eventType') {
+        if (value === COMMERCIAL_EVENT_TYPES.contraCharge.key) {
+          next.financialTreatment =
+            COMMERCIAL_EVENT_FINANCIAL_TREATMENTS.recoverableDeduction.key;
+          next.potentialContraCharge = false;
+          next.potentialContraChargeNotes = '';
+        }
+      }
+      if (
+        field === 'value' &&
+        isRecoveryEvent &&
+        !isDirectRecoveryEvent &&
+        !isRecoverableDeductionForm
+      ) {
         const numeric = Number(value);
         if (Number.isFinite(numeric) && numeric > 0) {
           next.value = String(-Math.abs(numeric));
@@ -293,7 +338,7 @@ export default function CommercialEventDrawer({
   }
 
   function buildPayload() {
-    return {
+    const payload = {
       packageId: order.orderKey,
       poNumber: order.poNumbers?.[0] || '',
       supplierId: order.supplierId || '',
@@ -306,20 +351,31 @@ export default function CommercialEventDrawer({
       value: Number(form.value),
       vatTreatment: form.vatTreatment,
       dateRaised: form.dateRaised,
-      potentialContraCharge: canEditPotentialContra
+      potentialContraCharge: canShowRecoverFromOtherOption
         ? Boolean(form.potentialContraCharge)
         : undefined,
-      potentialContraChargeNotes: canEditPotentialContra
+      potentialContraChargeNotes: canShowRecoverFromOtherOption
         ? form.potentialContraChargeNotes
         : undefined,
     };
+
+    if (form.eventType === COMMERCIAL_EVENT_TYPES.contraCharge.key) {
+      payload.financialTreatment = form.financialTreatment;
+    }
+
+    return payload;
   }
 
   function handleSaveDraft(submitEvent) {
     submitEvent.preventDefault();
     if (!order?.developmentId || !order?.orderKey) return;
 
-    if (isRecoveryEvent && Number(form.value) >= 0) {
+    if (
+      isRecoveryEvent &&
+      !isDirectRecoveryEvent &&
+      !isRecoverableDeductionForm &&
+      Number(form.value) >= 0
+    ) {
       setErrors(['Recovery contra charge value must remain negative']);
       return;
     }
@@ -486,7 +542,11 @@ export default function CommercialEventDrawer({
         {showPotentialContraBanner && !createContraStep && !dismissStep ? (
           <section className="po-ce-drawer__potential-banner" role="status">
             <div>
-              <strong>Potential Contra Charge — not yet raised</strong>
+              <strong>Recovery not yet raised against another subcontractor</strong>
+              <p className="po-ce-drawer__helper">
+                This event remains payable on this package. Create a separate recovery
+                on the responsible subcontractor&apos;s package.
+              </p>
               {liveEvent?.potentialContraChargeNotes ? (
                 <p>{liveEvent.potentialContraChargeNotes}</p>
               ) : null}
@@ -497,7 +557,7 @@ export default function CommercialEventDrawer({
                 className="po-btn-primary"
                 onClick={handleCreateContraCharge}
               >
-                Create Contra Charge
+                Create Recovery on Responsible Package
               </button>
               <button
                 type="button"
@@ -512,10 +572,9 @@ export default function CommercialEventDrawer({
 
         {dismissStep ? (
           <section className="po-ce-drawer__workflow">
-            <h3>Mark potential contra charge not required</h3>
+            <h3>Mark recovery not required</h3>
             <p className="po-ce-drawer__helper">
-              Confirm that no contra charge will be raised against another contractor
-              for this event.
+              Confirm that this cost will not be recovered from another subcontractor.
             </p>
             <label className="po-ce-drawer__field po-ce-drawer__field--wide">
               <span>Comment (optional)</span>
@@ -546,10 +605,11 @@ export default function CommercialEventDrawer({
 
         {createContraStep === 'picker' ? (
           <section className="po-ce-drawer__workflow">
-            <h3>Create Contra Charge</h3>
+            <h3>Create recovery on responsible package</h3>
             <p className="po-ce-drawer__helper">
-              Select the responsible subcontract package. A draft contra charge will
-              be created on that package and can be edited before submission.
+              Select the subcontractor package that should bear this recovery. A draft
+              recovery event will be created on that package and can be edited before
+              submission. It does not change that package&apos;s Current Contract Value.
             </p>
 
             {loadingPackages ? (
@@ -589,9 +649,9 @@ export default function CommercialEventDrawer({
 
             {selectedPackage ? (
               <p className="po-ce-drawer__helper">
-                Draft contra charge value will start at −£
+                Draft recovery value will start at £
                 {formatMoney(Math.abs(Number(liveEvent?.value) || 0))} based on the
-                approved origin event.
+                approved payable event on this package.
               </p>
             ) : null}
 
@@ -618,7 +678,7 @@ export default function CommercialEventDrawer({
                 disabled={!selectedRecoveryPackageId || loadingPackages}
                 onClick={handleConfirmCreateContraCharge}
               >
-                Create draft contra charge
+                Create draft recovery
               </button>
             </div>
           </section>
@@ -627,7 +687,7 @@ export default function CommercialEventDrawer({
         {liveEvent && hasLinkedRecovery(liveEvent) && !createContraStep && !dismissStep ? (
           <DrawerSection
             title={
-              isRecoveryEvent ? 'Related Origin Event' : 'Related Recovery Event'
+              isRecoveryEvent ? 'Related Payable Event' : 'Related Recovery Event'
             }
             tone="relationship"
           >
@@ -728,18 +788,60 @@ export default function CommercialEventDrawer({
 
             <DrawerSection title="Financial details">
               <div className="po-ce-drawer__grid">
+                {isContraChargeForm && editable && !isRecoveryEvent ? (
+                  <fieldset className="po-ce-drawer__field po-ce-drawer__field--wide">
+                    <legend>Contra Charge Treatment</legend>
+                    <p className="po-ce-drawer__helper">
+                      Use Direct Recovery when money is owed by this subcontractor but
+                      there is no payable origin event on another package. Use Contract
+                      Amendment when this subcontract&apos;s contractual value should change.
+                    </p>
+                    <div className="po-ce-drawer__treatment-options">
+                      {listCommercialEventFinancialTreatmentOptions().map((option) => (
+                        <label
+                          key={option.key}
+                          className={`po-ce-drawer__treatment-option${
+                            form.financialTreatment === option.key
+                              ? ' po-ce-drawer__treatment-option--selected'
+                              : ''
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="financialTreatment"
+                            value={option.key}
+                            checked={form.financialTreatment === option.key}
+                            onChange={() => updateField('financialTreatment', option.key)}
+                          />
+                          <span className="po-ce-drawer__treatment-option-body">
+                            <strong>{option.label}</strong>
+                            <span>{option.description}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                ) : null}
+
                 <label className="po-ce-drawer__field">
-                  <span>Value (£)</span>
+                  <span>
+                    {isRecoverableDeductionForm
+                      ? 'Contra / Recovery Value (£)'
+                      : 'Value (£)'}
+                  </span>
                   <input
                     type="number"
                     step="0.01"
+                    min={isRecoverableDeductionForm ? '0' : undefined}
                     value={form.value}
                     disabled={!editable}
                     onChange={(e) => updateField('value', e.target.value)}
                     placeholder={
-                      isRecoveryEvent
-                        ? 'Must remain negative'
-                        : 'Positive = increase, negative = reduction'
+                      isRecoverableDeductionForm
+                        ? 'Enter recovery amount, e.g. 2500'
+                        : isRecoveryEvent
+                          ? 'Must remain negative'
+                          : 'Positive = increase, negative = reduction'
                     }
                     required
                   />
@@ -770,10 +872,10 @@ export default function CommercialEventDrawer({
                   />
                 </label>
 
-                {canEditPotentialContra ? (
+                {canShowRecoverFromOtherOption ? (
                   <>
                     <div className="po-ce-drawer__field po-ce-drawer__field--wide">
-                      <span>Potential Contra Charge</span>
+                      <span>Recovery from another subcontractor</span>
                       <label className="po-ce-drawer__checkbox">
                         <input
                           type="checkbox"
@@ -783,31 +885,32 @@ export default function CommercialEventDrawer({
                           }
                         />
                         <span>
-                          Mark this where some or all of the cost may be recovered from
-                          another contractor after the event is approved.
+                          Recover this cost from another subcontractor. This event
+                          remains payable on this package; a separate recovery can be
+                          raised against the responsible subcontractor after approval.
                         </span>
                       </label>
                     </div>
 
                     {form.potentialContraCharge ? (
                       <label className="po-ce-drawer__field po-ce-drawer__field--wide">
-                        <span>Potential Contra Charge Notes</span>
+                        <span>Recovery notes (optional)</span>
                         <textarea
                           rows={2}
                           value={form.potentialContraChargeNotes}
                           onChange={(e) =>
                             updateField('potentialContraChargeNotes', e.target.value)
                           }
-                          placeholder="Optional notes for the commercial team"
+                          placeholder="Optional notes, e.g. responsible subcontractor or scope"
                         />
                       </label>
                     ) : null}
                   </>
                 ) : null}
 
-                {!canEditPotentialContra && liveEvent?.potentialContraCharge ? (
+                {!canShowRecoverFromOtherOption && liveEvent?.potentialContraCharge ? (
                   <div className="po-ce-drawer__field po-ce-drawer__field--wide">
-                    <span>Potential Contra Charge Notes</span>
+                    <span>Recovery notes</span>
                     <p className="po-ce-drawer__helper">
                       {liveEvent.potentialContraChargeNotes || '—'}
                     </p>
@@ -861,10 +964,29 @@ export default function CommercialEventDrawer({
 
             <DrawerSection title="Financial details">
               <dl className="po-ce-drawer__facts-grid">
+                {drawerEvent.eventType === COMMERCIAL_EVENT_TYPES.contraCharge.key &&
+                drawerEvent.financialTreatment ? (
+                  <div>
+                    <dt>Financial treatment</dt>
+                    <dd>
+                      {
+                        listCommercialEventFinancialTreatmentOptions().find(
+                          (option) => option.key === drawerEvent.financialTreatment
+                        )?.label
+                      }
+                    </dd>
+                  </div>
+                ) : null}
                 <div>
-                  <dt>Value</dt>
-                  <dd className={Number(liveEvent.value) < 0 ? 'po-ce-value--negative' : ''}>
-                    £{formatMoney(liveEvent.value)}
+                  <dt>
+                    {isRecoverableDeductionFinancialTreatment(drawerEvent)
+                      ? 'Contra / Recovery Value'
+                      : 'Value'}
+                  </dt>
+                  <dd className={Number(drawerEvent.value) < 0 ? 'po-ce-value--negative' : ''}>
+                    {isRecoverableDeductionFinancialTreatment(drawerEvent)
+                      ? `£${formatMoney(formatRecoverableDeductionDisplayValue(drawerEvent.value))}`
+                      : `£${formatMoney(drawerEvent.value)}`}
                   </dd>
                 </div>
                 <div>
