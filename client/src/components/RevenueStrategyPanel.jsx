@@ -116,8 +116,8 @@ export default function RevenueStrategyPanel({
 
     await runAction('save-strategy', {
       progressLabel: 'Updating Revenue Strategy...',
-      execute: () => {
-        const result = runSaveStrategyApplyWorkflow(developmentId, draft);
+      execute: async () => {
+        const result = await runSaveStrategyApplyWorkflow(developmentId, draft);
         if (!result.ok) throw new Error(result.errors?.[0] || 'Could not save revenue strategy.');
         return result;
       },

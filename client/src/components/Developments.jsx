@@ -3,7 +3,11 @@ import DevelopmentList from './DevelopmentList';
 import DevelopmentForm from './DevelopmentForm';
 import DevelopmentWorkspace from './DevelopmentWorkspace';
 import { StandardWorkspace } from './layout/WorkspaceShell';
-import { getDevelopment } from '../developments/developmentStore';
+import {
+  ensureDevelopmentsReady,
+  getDevelopment,
+  refreshDevelopment,
+} from '../developments/developmentStore';
 
 export default function Developments({
   initialDevelopmentId = null,
@@ -18,6 +22,28 @@ export default function Developments({
   const [workspaceTab, setWorkspaceTab] = useState(null);
   const [cvrPeriodKey, setCvrPeriodKey] = useState(null);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    ensureDevelopmentsReady()
+      .then(() => {
+        if (!cancelled) {
+          setReady(true);
+          setLoadError('');
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setReady(false);
+          setLoadError(error.message || 'Could not load developments from the server.');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshToken]);
 
   useEffect(() => {
     if (!initialDevelopmentId) return;
@@ -43,6 +69,37 @@ export default function Developments({
     setView('list');
     setActiveDevelopmentId(null);
     setRefreshToken((value) => value + 1);
+  }
+
+  async function handleDevelopmentChanged() {
+    if (activeDevelopmentId) {
+      try {
+        await refreshDevelopment(activeDevelopmentId);
+      } catch {
+        // Workspace refresh token still updates cached view when available.
+      }
+    }
+    setRefreshToken((value) => value + 1);
+  }
+
+  if (!ready && !loadError) {
+    return (
+      <StandardWorkspace>
+        <div className="po-module-card">
+          <p>Loading developments…</p>
+        </div>
+      </StandardWorkspace>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <StandardWorkspace>
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          {loadError}
+        </div>
+      </StandardWorkspace>
+    );
   }
 
   if (view === 'new') {
@@ -74,7 +131,7 @@ export default function Developments({
         onPlotsChanged={() => setRefreshToken((value) => value + 1)}
         onLedgerChanged={() => setRefreshToken((value) => value + 1)}
         onCvrChanged={() => setRefreshToken((value) => value + 1)}
-        onDevelopmentChanged={() => setRefreshToken((value) => value + 1)}
+        onDevelopmentChanged={handleDevelopmentChanged}
         onOpenPackage={onOpenPackage}
       />
     );

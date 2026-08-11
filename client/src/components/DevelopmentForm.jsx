@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import POPageHeader from './POPageHeader';
 import { buildDevelopmentFormNavigation } from '../navigation/navigationBuilders';
 import {
   DEVELOPMENT_STATUSES,
   createDevelopment,
+  ensureDevelopmentsReady,
 } from '../developments/developmentStore';
 import { generateNextDevelopmentNumber } from '../admin/numberingService';
 
@@ -20,18 +21,37 @@ const EMPTY_FORM = {
 };
 
 export default function DevelopmentForm({ onCancel, onCreated }) {
-  const [form, setForm] = useState(() => ({
-    ...EMPTY_FORM,
-    jobNumber: generateNextDevelopmentNumber(),
-  }));
+  const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    ensureDevelopmentsReady()
+      .then(() => {
+        if (!cancelled) {
+          setForm((prev) => ({
+            ...prev,
+            jobNumber: prev.jobNumber || generateNextDevelopmentNumber(),
+          }));
+        }
+      })
+      .catch((loadError) => {
+        if (!cancelled) {
+          setError(loadError.message || 'Could not load developments from the server.');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function updateField(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
     setError('');
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
 
     if (!form.jobNumber.trim()) {
@@ -51,8 +71,16 @@ export default function DevelopmentForm({ onCancel, onCreated }) {
       return;
     }
 
-    const development = createDevelopment(form);
-    onCreated?.(development.id);
+    setSubmitting(true);
+    setError('');
+    try {
+      const development = await createDevelopment(form);
+      onCreated?.(development.id);
+    } catch (submitError) {
+      setError(submitError.message || 'Could not create development.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   const navigation = buildDevelopmentFormNavigation({ onCancel });
@@ -191,8 +219,8 @@ export default function DevelopmentForm({ onCancel, onCreated }) {
         </section>
 
         <footer className="dev-form__footer">
-          <button type="submit" className="po-btn-primary">
-            Create Development
+          <button type="submit" className="po-btn-primary" disabled={submitting}>
+            {submitting ? 'Creating…' : 'Create Development'}
           </button>
           <button
             type="button"

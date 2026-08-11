@@ -203,7 +203,7 @@ export default function SetupAssistant({
     goToStep(7);
   }
 
-  function handleDevelopmentContinue() {
+  async function handleDevelopmentContinue() {
     const development = {
       ...draft.development,
       developmentCode: String(draft.development.developmentCode || '').trim()
@@ -212,16 +212,22 @@ export default function SetupAssistant({
     const validation = validateDevelopmentStep(development);
     setErrors(validation);
     if (Object.keys(validation).length) return;
-    const result = commitDevelopmentSection(development);
-    if (!result?.ok) return;
-    if (result.development?.id) {
-      persist({
-        ...draft,
-        development: { ...development, developmentId: result.development.id },
-        step: 8,
+    try {
+      const result = await commitDevelopmentSection(development);
+      if (!result?.ok) return;
+      if (result.development?.id) {
+        persist({
+          ...draft,
+          development: { ...development, developmentId: result.development.id },
+          step: 8,
+        });
+      } else {
+        goToStep(8);
+      }
+    } catch (error) {
+      setErrors({
+        developmentName: error.message || 'Could not create development on the server.',
       });
-    } else {
-      goToStep(8);
     }
   }
 

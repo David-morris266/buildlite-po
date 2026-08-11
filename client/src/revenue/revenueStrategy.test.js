@@ -9,8 +9,11 @@ vi.stubGlobal('localStorage', {
   clear: () => storage.clear(),
 });
 
-import { createDevelopment, getDevelopment } from '../developments/developmentStore';
+vi.mock('../api/developments', () => import('../test/mockDevelopmentApi'));
+
+import { createDevelopment, getDevelopment, __resetDevelopmentsStoreForTests } from '../developments/developmentStore';
 import { addPlot } from '../developments/plotMaster';
+import { resetDevelopmentApiStore } from '../test/mockDevelopmentApi';
 import {
   applyStrategyToPlots,
   buildHouseTypePricingRows,
@@ -157,10 +160,14 @@ describe('revenueStrategyCalculations', () => {
 });
 
 describe('revenueStrategy store', () => {
-  beforeEach(() => storage.clear());
+  beforeEach(() => {
+    storage.clear();
+    resetDevelopmentApiStore();
+    __resetDevelopmentsStoreForTests();
+  });
 
-  it('persists development strategy defaults', () => {
-    const development = createDevelopment({
+  it('persists development strategy defaults', async () => {
+    const development = await createDevelopment({
       jobNumber: 'BL019C',
       developmentName: 'Strategy Test',
     });
@@ -174,15 +181,15 @@ describe('revenueStrategy store', () => {
     expect(getRevenueStrategy(development.id).openMarket.ratePerFt2).toBe(360);
   });
 
-  it('builds pricing context from plots and strategy', () => {
-    const development = createDevelopment({
+  it('builds pricing context from plots and strategy', async () => {
+    const development = await createDevelopment({
       jobNumber: 'CTX-1',
       developmentName: 'Context Test',
     });
 
     saveRevenueStrategy(development.id, emptyRevenueStrategy());
 
-    addPlot(development.id, {
+    await addPlot(development.id, {
       plotNumber: '10',
       houseType: 'Ash',
       niaFt2: 950,
@@ -190,28 +197,28 @@ describe('revenueStrategy store', () => {
       revenueSource: 'House Type',
     });
 
-    const context = getRevenuePricingContext(development.id);
+    const context = await getRevenuePricingContext(development.id);
     expect(context.pricedPlots).toHaveLength(1);
     expect(context.pricedPlots[0].effectivePrice).toBe(332500);
     expect(context.strategyMetrics.autoPricedPlotCount).toBe(1);
   });
 
-  it('defaults imported plots with engine forecasts to House Type pricing', () => {
-    const development = createDevelopment({
+  it('defaults imported plots with engine forecasts to House Type pricing', async () => {
+    const development = await createDevelopment({
       jobNumber: 'MIG-1',
       developmentName: 'Migration Test',
     });
 
     saveRevenueStrategy(development.id, emptyRevenueStrategy());
 
-    addPlot(development.id, {
+    await addPlot(development.id, {
       plotNumber: '5',
       houseType: 'Beech',
       niaFt2: 1000,
       forecastSellingPrice: 275000,
     });
 
-    const context = getRevenuePricingContext(development.id);
+    const context = await getRevenuePricingContext(development.id);
     const refreshed = getDevelopment(development.id);
     const plot = refreshed.plotMaster.plots[0];
 
@@ -221,15 +228,15 @@ describe('revenueStrategy store', () => {
     expect(context.pricedPlots[0].isManualOverride).toBe(false);
   });
 
-  it('preserves explicit legacy manual overrides during migration', () => {
-    const development = createDevelopment({
+  it('preserves explicit legacy manual overrides during migration', async () => {
+    const development = await createDevelopment({
       jobNumber: 'MIG-2',
       developmentName: 'Manual Legacy Test',
     });
 
     saveRevenueStrategy(development.id, emptyRevenueStrategy());
 
-    addPlot(development.id, {
+    await addPlot(development.id, {
       plotNumber: '8',
       houseType: 'Ash',
       niaFt2: 950,
@@ -238,7 +245,7 @@ describe('revenueStrategy store', () => {
       pricingMigrated: false,
     });
 
-    getRevenuePricingContext(development.id);
+    await getRevenuePricingContext(development.id);
     const refreshed = getDevelopment(development.id);
     const plot = refreshed.plotMaster.plots[0];
 
@@ -248,15 +255,15 @@ describe('revenueStrategy store', () => {
     expect(plot.pricingMigrated).toBe(true);
   });
 
-  it('repairs misclassified manual plots created by old migration logic', () => {
-    const development = createDevelopment({
+  it('repairs misclassified manual plots created by old migration logic', async () => {
+    const development = await createDevelopment({
       jobNumber: 'MIG-3',
       developmentName: 'Repair Test',
     });
 
     saveRevenueStrategy(development.id, emptyRevenueStrategy());
 
-    addPlot(development.id, {
+    await addPlot(development.id, {
       plotNumber: '12',
       houseType: 'Oak',
       niaFt2: 1180,
@@ -266,7 +273,7 @@ describe('revenueStrategy store', () => {
       pricingMigrated: true,
     });
 
-    getRevenuePricingContext(development.id);
+    await getRevenuePricingContext(development.id);
     const refreshed = getDevelopment(development.id);
     const plot = refreshed.plotMaster.plots[0];
 

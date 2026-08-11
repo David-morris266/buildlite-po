@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import { listPOs } from '../api';
-import { updateDevelopment } from '../developments/developmentStore';
+import { updateDevelopment, VERSION_CONFLICT_MESSAGE } from '../developments/developmentStore';
 import { buildDevelopmentWorkspaceNavigation } from '../navigation/navigationBuilders';
 import {
   CommercialWorkspace,
@@ -230,18 +230,27 @@ export default function DevelopmentWorkspace({
     onCvrChanged?.();
   }
 
-  function saveProgrammeDates(nextStart, nextTarget) {
+  async function saveProgrammeDates(nextStart, nextTarget) {
     if (nextStart && nextTarget && nextTarget < nextStart) {
       setDateError('Target completion must be on or after the start date.');
       return;
     }
 
     setDateError('');
-    updateDevelopment(development.id, {
-      startDate: nextStart,
-      targetCompletion: nextTarget,
-    });
-    onDevelopmentChanged?.();
+    try {
+      await updateDevelopment(development.id, {
+        startDate: nextStart,
+        targetCompletion: nextTarget,
+        version: development.version,
+      });
+      onDevelopmentChanged?.();
+    } catch (error) {
+      setDateError(
+        error.code === 'VERSION_CONFLICT'
+          ? VERSION_CONFLICT_MESSAGE
+          : error.message || 'Could not save programme dates.'
+      );
+    }
   }
 
   function handleStartDateChange(value) {

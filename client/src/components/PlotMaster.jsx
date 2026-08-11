@@ -117,30 +117,42 @@ export default function PlotMaster({
   }
 
   function handleSave(formData) {
-    const result = editingPlot
+    const action = editingPlot
       ? updatePlot(developmentId, editingPlot.id, formData)
       : addPlot(developmentId, formData);
 
-    if (!result.ok) {
-      setSaveErrors(result.errors || ['Could not save plot.']);
-      return;
-    }
+    action.then((result) => {
+      if (!result.ok) {
+        setSaveErrors(result.errors || ['Could not save plot.']);
+        return;
+      }
 
-    closeDrawer();
-    onPlotsChanged?.();
+      closeDrawer();
+      onPlotsChanged?.();
+    });
   }
 
   function handleDeleteConfirm() {
     if (!deleteTarget) return;
-    deletePlot(developmentId, deleteTarget.id);
-    setDeleteTarget(null);
-    onPlotsChanged?.();
+    deletePlot(developmentId, deleteTarget.id).then((result) => {
+      if (!result.ok) {
+        window.alert(result.errors?.[0] || 'Could not delete plot.');
+        return;
+      }
+      setDeleteTarget(null);
+      onPlotsChanged?.();
+    });
   }
 
   function handleImport(result) {
-    replacePlotMaster(developmentId, result.plots);
-    setImportOpen(false);
-    onPlotsChanged?.();
+    replacePlotMaster(developmentId, result.plots).then((saveResult) => {
+      if (!saveResult.ok) {
+        window.alert(saveResult.errors?.[0] || 'Could not import plot schedule.');
+        return;
+      }
+      setImportOpen(false);
+      onPlotsChanged?.();
+    });
   }
 
   if (importOpen) {

@@ -165,7 +165,7 @@ export function commitApprovalSection(approval = EMPTY_APPROVAL) {
   return { ok: true };
 }
 
-export function commitDevelopmentSection(development = EMPTY_DEVELOPMENT) {
+export async function commitDevelopmentSection(development = EMPTY_DEVELOPMENT) {
   const clientName = String(development.client || '').trim();
   if (clientName) {
     const existingClients = listClients();
@@ -184,7 +184,7 @@ export function commitDevelopmentSection(development = EMPTY_DEVELOPMENT) {
   if (development.developmentId) {
     savedDevelopment = { id: development.developmentId };
   } else {
-    savedDevelopment = createDevelopment({
+    savedDevelopment = await createDevelopment({
       developmentName: development.developmentName,
       jobNumber: developmentCode,
       client: clientName,

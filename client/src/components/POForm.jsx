@@ -7,6 +7,7 @@ import DevelopmentSelect, {
 } from './DevelopmentSelect';
 import DevelopmentSummaryCard from './DevelopmentSummaryCard';
 import {
+  ensureDevelopmentsReady,
   listDevelopments,
 } from '../developments/developmentStore';
 import {
@@ -94,8 +95,31 @@ export default function POForm({
 
   // Development selection (BL-009A.03)
   const [developmentId, setDevelopmentId] = useState('');
+  const [developments, setDevelopments] = useState([]);
+  const [developmentsLoadError, setDevelopmentsLoadError] = useState('');
 
-  const developments = listDevelopments();
+  useEffect(() => {
+    let cancelled = false;
+    ensureDevelopmentsReady()
+      .then(() => {
+        if (!cancelled) {
+          setDevelopments(listDevelopments());
+          setDevelopmentsLoadError('');
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setDevelopments([]);
+          setDevelopmentsLoadError(
+            error.message || 'Could not load developments from the server.'
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const hasDevelopments = developments.length > 0;
   const selectedDevelopment =
     developments.find((item) => item.id === developmentId) || null;
@@ -730,8 +754,14 @@ export default function POForm({
           </div>
         ) : null}
 
-        {!hasDevelopments ? (
+        {!hasDevelopments && !developmentsLoadError ? (
           <DevelopmentSelectEmptyState onCreateDevelopment={onCreateDevelopment} />
+        ) : null}
+
+        {developmentsLoadError ? (
+          <div className="po-form-banner po-form-banner--error" role="alert">
+            {developmentsLoadError}
+          </div>
         ) : null}
 
         <fieldset className="po-form-sections" disabled={formDisabled}>

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { AdminKpiGrid } from './admin/adminUi';
 
@@ -243,19 +243,25 @@ export default function RevenueWorkspace({
 
 
 
-  const pricingContext = useMemo(() => {
+  const [pricingContext, setPricingContext] = useState(null);
 
-    void refreshToken;
-
-    void localRefresh;
-
-    return getRevenuePricingContext(developmentId);
-
+  useEffect(() => {
+    let cancelled = false;
+    getRevenuePricingContext(developmentId)
+      .then((context) => {
+        if (!cancelled) setPricingContext(context);
+      })
+      .catch(() => {
+        if (!cancelled) setPricingContext(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [developmentId, refreshToken, localRefresh]);
 
-
-
-  const { plots, strategy, houseTypePricing } = pricingContext;
+  const plots = pricingContext?.plots || [];
+  const strategy = pricingContext?.strategy || null;
+  const houseTypePricing = pricingContext?.houseTypePricing || {};
 
 
 
@@ -489,11 +495,11 @@ export default function RevenueWorkspace({
 
 
 
-  function handlePlotSave(formData) {
+  async function handlePlotSave(formData) {
 
     if (!drawerPlotId) return;
 
-    const result = updatePlot(developmentId, drawerPlotId, formData);
+    const result = await updatePlot(developmentId, drawerPlotId, formData);
 
     if (!result.ok) {
 
@@ -540,6 +546,22 @@ export default function RevenueWorkspace({
   const statusCounts = summary.statusCounts || {};
 
   const hasCommercialActions = exceptions.length > 0 || actionableInsights.length > 0;
+
+
+
+  if (!pricingContext) {
+
+    return (
+
+      <div className="revenue-workspace revenue-workspace--loading">
+
+        <p className="revenue-workspace__lead">Loading revenue data…</p>
+
+      </div>
+
+    );
+
+  }
 
 
 

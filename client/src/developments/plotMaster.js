@@ -1,8 +1,12 @@
 /**
- * BL-009A.02 — Plot Master persistence inside Development records (Doc 34).
+ * BL-009A.02 / BL-027A.2 — Plot Master persistence inside server-backed Development records.
  */
 
-import { getDevelopment, updateDevelopment } from './developmentStore';
+import {
+  getDevelopment,
+  updateDevelopment,
+  VERSION_CONFLICT_MESSAGE,
+} from './developmentStore';
 import { normalizePlotCommercialFields } from './plotCommercial';
 
 export const PLOT_DEFAULT_STATUS = 'Active';
@@ -124,18 +128,39 @@ export function validatePlot(plot, plots, excludeId = null) {
   return errors;
 }
 
-function persistPlots(developmentId, plots) {
+async function persistPlots(developmentId, plots) {
   const now = new Date().toISOString();
-  return updateDevelopment(developmentId, {
-    plotMaster: {
-      plots,
-      updatedAt: now,
-    },
-    plotCount: plots.length,
-  });
+  const existing = getDevelopment(developmentId);
+  if (!existing) {
+    return { ok: false, errors: ['Development not found.'] };
+  }
+
+  try {
+    const saved = await updateDevelopment(developmentId, {
+      plotMaster: {
+        plots,
+        updatedAt: now,
+      },
+      plotCount: plots.length,
+      version: existing.version,
+    });
+    return { ok: true, development: saved };
+  } catch (error) {
+    if (error.code === 'VERSION_CONFLICT') {
+      return {
+        ok: false,
+        errors: [VERSION_CONFLICT_MESSAGE],
+        code: 'VERSION_CONFLICT',
+      };
+    }
+    return {
+      ok: false,
+      errors: [error.message || 'Could not save plot changes.'],
+    };
+  }
 }
 
-export function addPlot(developmentId, input) {
+export async function addPlot(developmentId, input) {
   const development = normalizePlotMaster(getDevelopment(developmentId));
   if (!development) return { ok: false, errors: ['Development not found.'] };
 
@@ -145,11 +170,11 @@ export function addPlot(developmentId, input) {
   if (errors.length) return { ok: false, errors };
 
   plots.push(plot);
-  const saved = persistPlots(developmentId, plots);
-  return { ok: true, plot, development: saved };
+  const saved = await persistPlots(developmentId, plots);
+  return saved.ok ? { ok: true, plot, development: saved.development } : saved;
 }
 
-export function updatePlot(developmentId, plotId, input) {
+export async function updatePlot(developmentId, plotId, input) {
   const development = normalizePlotMaster(getDevelopment(developmentId));
   if (!development) return { ok: false, errors: ['Development not found.'] };
 
@@ -162,22 +187,21 @@ export function updatePlot(developmentId, plotId, input) {
   if (errors.length) return { ok: false, errors };
 
   plots[index] = plot;
-  const saved = persistPlots(developmentId, plots);
-  return { ok: true, plot, development: saved };
+  const saved = await persistPlots(developmentId, plots);
+  return saved.ok ? { ok: true, plot, development: saved.development } : saved;
 }
 
-export function deletePlot(developmentId, plotId) {
+export async function deletePlot(developmentId, plotId) {
   const development = normalizePlotMaster(getDevelopment(developmentId));
   if (!development) return { ok: false, errors: ['Development not found.'] };
 
   const plots = (development.plotMaster?.plots || []).filter(
     (row) => row.id !== plotId
   );
-  const saved = persistPlots(developmentId, plots);
-  return { ok: true, development: saved };
+  return persistPlots(developmentId, plots);
 }
 
-export function replacePlotMaster(developmentId, plots) {
+export async function replacePlotMaster(developmentId, plots) {
   const normalized = plots.map((plot) =>
     normalizePlotInput({
       ...plot,
@@ -207,11 +231,13 @@ export function replacePlotMaster(developmentId, plots) {
     })
   );
 
-  const saved = persistPlots(developmentId, normalized);
-  return { ok: true, development: saved, plots: normalized };
+  const saved = await persistPlots(developmentId, normalized);
+  return saved.ok
+    ? { ok: true, development: saved.development, plots: normalized }
+    : saved;
 }
 
-export function bulkUpdatePlots(developmentId, plotUpdates = []) {
+export async function bulkUpdatePlots(developmentId, plotUpdates = []) {
   const development = normalizePlotMaster(getDevelopment(developmentId));
   if (!development) return { ok: false, errors: ['Development not found.'] };
 
@@ -225,8 +251,10 @@ export function bulkUpdatePlots(developmentId, plotUpdates = []) {
     byId.set(patch.id, next);
   }
 
-  const saved = persistPlots(developmentId, [...byId.values()]);
-  return { ok: true, development: saved, plots: [...byId.values()] };
+  const saved = await persistPlots(developmentId, [...byId.values()]);
+  return saved.ok
+    ? { ok: true, development: saved.development, plots: [...byId.values()] }
+    : saved;
 }
 
 export function formatPlotGia(value) {

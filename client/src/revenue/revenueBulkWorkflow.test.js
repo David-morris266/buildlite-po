@@ -9,8 +9,12 @@ vi.stubGlobal('localStorage', {
   clear: () => storage.clear(),
 });
 
+vi.mock('../api/developments', () => import('../test/mockDevelopmentApi'));
+
 import { createDevelopment } from '../developments/developmentStore';
 import { addPlot } from '../developments/plotMaster';
+import { resetDevelopmentApiStore } from '../test/mockDevelopmentApi';
+import { __resetDevelopmentsStoreForTests } from '../developments/developmentStore';
 import {
   REVENUE_BULK_ACTIONS,
   buildSaveStrategySummary,
@@ -27,7 +31,11 @@ import {
 } from './revenueStrategy';
 
 describe('revenueBulkWorkflow', () => {
-  beforeEach(() => storage.clear());
+  beforeEach(() => {
+    storage.clear();
+    resetDevelopmentApiStore();
+    __resetDevelopmentsStoreForTests();
+  });
 
   it('exposes renamed bulk action labels', () => {
     expect(REVENUE_BULK_ACTIONS.map((action) => action.label)).toEqual([
@@ -50,8 +58,8 @@ describe('revenueBulkWorkflow', () => {
     );
   });
 
-  it('saves strategy without applying when requested', () => {
-    const development = createDevelopment({
+  it('saves strategy without applying when requested', async () => {
+    const development = await createDevelopment({
       jobNumber: 'WF-1',
       developmentName: 'Workflow Test',
     });
@@ -60,22 +68,22 @@ describe('revenueBulkWorkflow', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('runs save-and-apply workflow and preserves manual overrides', () => {
-    const development = createDevelopment({
+  it('runs save-and-apply workflow and preserves manual overrides', async () => {
+    const development = await createDevelopment({
       jobNumber: 'WF-2',
       developmentName: 'Apply Test',
     });
 
     saveRevenueStrategy(development.id, emptyRevenueStrategy());
 
-    addPlot(development.id, {
+    await addPlot(development.id, {
       plotNumber: '1',
       houseType: 'Ash',
       niaFt2: 950,
       revenueSource: 'House Type',
     });
 
-    addPlot(development.id, {
+    await addPlot(development.id, {
       plotNumber: '2',
       houseType: 'Oak',
       niaFt2: 1000,
@@ -87,7 +95,7 @@ describe('revenueBulkWorkflow', () => {
 
     expect(countManualOverrides(development.id)).toBe(1);
 
-    const result = runSaveStrategyApplyWorkflow(development.id, emptyRevenueStrategy());
+    const result = await runSaveStrategyApplyWorkflow(development.id, emptyRevenueStrategy());
     const summary = buildSaveStrategySummary(result);
 
     expect(result.ok).toBe(true);
@@ -96,15 +104,15 @@ describe('revenueBulkWorkflow', () => {
     expect(summary).toContain('Manual Override');
   });
 
-  it('explains when bulk actions have no eligible plots', () => {
-    const development = createDevelopment({
+  it('explains when bulk actions have no eligible plots', async () => {
+    const development = await createDevelopment({
       jobNumber: 'WF-3',
       developmentName: 'Empty Bulk Test',
     });
 
     saveRevenueStrategy(development.id, emptyRevenueStrategy());
 
-    addPlot(development.id, {
+    await addPlot(development.id, {
       plotNumber: '1',
       houseType: 'Ash',
       niaFt2: 950,
@@ -115,19 +123,19 @@ describe('revenueBulkWorkflow', () => {
     });
 
     const applyAction = REVENUE_BULK_ACTIONS.find((action) => action.key === 'apply-strategy');
-    const applyResult = bulkApplyDevelopmentStrategy(development.id);
+    const applyResult = await bulkApplyDevelopmentStrategy(development.id);
     expect(applyAction.buildToast(applyResult)).toBe(
       'All plots are manual overrides or plot overrides — nothing to update.'
     );
 
     const clearAction = REVENUE_BULK_ACTIONS.find((action) => action.key === 'clear-manual');
-    const clearResult = bulkClearManualOverrides(development.id);
+    const clearResult = await bulkClearManualOverrides(development.id);
     expect(clearAction.buildToast({ ...clearResult, removedCount: clearResult.updatedCount })).toContain(
       'manual override'
     );
 
     const premiumAction = REVENUE_BULK_ACTIONS.find((action) => action.key === 'reset-premiums');
-    const premiumResult = bulkResetPlotPremiums(development.id);
+    const premiumResult = await bulkResetPlotPremiums(development.id);
     expect(premiumAction.buildToast(premiumResult)).toBe('No plot premiums to clear.');
   });
 });

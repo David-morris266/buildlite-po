@@ -3,6 +3,11 @@
  * Central registry for demo data keys. Add future buildlite_* keys here only.
  */
 
+import {
+  importLocalDevelopments,
+  loadDevelopments,
+} from '../developments/developmentStore';
+
 export const BUILDLITE_VERSION = '0.12.0-dev';
 
 /** Injected at build time from git branch; falls back for local dev. */
@@ -115,6 +120,15 @@ function collectKeysToRemove(storage) {
     ...KNOWN_BUILDLITE_DEMO_KEYS.filter((key) => storage.getItem(key) !== null),
   ]);
   return [...keys];
+}
+
+/**
+ * One-time import of local buildlite_developments_v1 records into Postgres.
+ * Preserves exact dev-* ids. Does not delete localStorage rollback copy.
+ */
+export async function importLocalDevelopmentsFromBackup(options = {}) {
+  await loadDevelopments();
+  return importLocalDevelopments(options);
 }
 
 export function verifyBuildLiteDemoDataCleared() {

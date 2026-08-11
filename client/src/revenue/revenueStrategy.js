@@ -2,7 +2,7 @@
  * BL-019C — Revenue strategy persistence and bulk actions.
  */
 
-import { getPlots, updatePlot } from '../developments/plotMaster';
+import { getPlots, bulkUpdatePlots } from '../developments/plotMaster';
 import { roundPlotMoney } from '../developments/plotCommercial';
 import {
   applyStrategyToPlots,
@@ -153,29 +153,32 @@ export function migratePlotPricingFromLegacy(plots = []) {
   return plots.map((plot) => migrateSinglePlotPricing(plot));
 }
 
-export function syncPlotForecastPrices(developmentId, { onlyAuto = true } = {}) {
+export async function syncPlotForecastPrices(developmentId, { onlyAuto = true } = {}) {
   const plots = getPlots(developmentId);
   const strategy = getRevenueStrategy(developmentId);
   const houseTypePricing = ensureHouseTypePricingFromPlots(developmentId);
-  const updates = [];
+  const plotUpdates = [];
 
   for (const plot of plots) {
     if (onlyAuto && isProtectedPlot(plot)) continue;
     const forecast = resolvePlotForecastPrice(plot, strategy, houseTypePricing, plots);
     if (roundPlotMoney(plot.forecastSellingPrice) === forecast) continue;
-    updates.push(
-      updatePlot(developmentId, plot.id, {
-        ...plot,
-        forecastSellingPrice: forecast,
-        pricingMigrated: true,
-      })
-    );
+    plotUpdates.push({
+      id: plot.id,
+      ...plot,
+      forecastSellingPrice: forecast,
+      pricingMigrated: true,
+    });
   }
 
-  return { ok: true, updatedCount: updates.length };
+  if (plotUpdates.length) {
+    await bulkUpdatePlots(developmentId, plotUpdates);
+  }
+
+  return { ok: true, updatedCount: plotUpdates.length };
 }
 
-export function bulkApplyDevelopmentStrategy(developmentId) {
+export async function bulkApplyDevelopmentStrategy(developmentId) {
   const plots = getPlots(developmentId);
   const strategy = getRevenueStrategy(developmentId);
   const houseTypePricing = ensureHouseTypePricingFromPlots(developmentId);
@@ -187,29 +190,32 @@ export function bulkApplyDevelopmentStrategy(developmentId) {
   const eligible = plots.filter(isAutoPricedPlot);
   const skippedCount = plots.length - eligible.length;
 
-  let updatedCount = 0;
+  const plotUpdates = [];
   for (const plot of nextPlots) {
     const existing = plots.find((row) => row.id === plot.id);
     if (!existing || isProtectedPlot(existing)) continue;
-    updatePlot(developmentId, plot.id, plot);
-    updatedCount += 1;
+    plotUpdates.push(plot);
+  }
+
+  if (plotUpdates.length) {
+    await bulkUpdatePlots(developmentId, plotUpdates);
   }
 
   return {
     ok: true,
-    updatedCount,
+    updatedCount: plotUpdates.length,
     eligibleCount: eligible.length,
     skippedCount,
     skipReason:
-      updatedCount === 0 && eligible.length === 0
+      plotUpdates.length === 0 && eligible.length === 0
         ? 'All plots are manual overrides or plot overrides — nothing to update.'
-        : updatedCount === 0 && eligible.length > 0
+        : plotUpdates.length === 0 && eligible.length > 0
           ? 'All eligible plots already use Development Strategy pricing.'
           : null,
   };
 }
 
-export function bulkRecalculateHouseTypeValues(developmentId) {
+export async function bulkRecalculateHouseTypeValues(developmentId) {
   const plots = getPlots(developmentId);
   const strategy = getRevenueStrategy(developmentId);
   const houseTypePricing = recalculateHouseTypePricing(
@@ -222,40 +228,44 @@ export function bulkRecalculateHouseTypeValues(developmentId) {
   const eligible = plots.filter(isAutoPricedPlot);
   const skippedCount = plots.length - eligible.length;
 
-  let updatedCount = 0;
+  const plotUpdates = [];
   for (const plot of plots) {
     if (isProtectedPlot(plot)) continue;
     const forecast = resolvePlotForecastPrice(plot, strategy, houseTypePricing, plots);
     if (roundPlotMoney(plot.forecastSellingPrice) !== forecast) {
-      updatePlot(developmentId, plot.id, {
+      plotUpdates.push({
+        id: plot.id,
         ...plot,
         forecastSellingPrice: forecast,
         pricingMigrated: true,
       });
-      updatedCount += 1;
     }
+  }
+
+  if (plotUpdates.length) {
+    await bulkUpdatePlots(developmentId, plotUpdates);
   }
 
   return {
     ok: true,
-    updatedCount,
+    updatedCount: plotUpdates.length,
     eligibleCount: eligible.length,
     skippedCount,
     skipReason:
-      updatedCount === 0 && eligible.length === 0
+      plotUpdates.length === 0 && eligible.length === 0
         ? 'All plots are manual overrides or plot overrides — nothing to recalculate.'
-        : updatedCount === 0 && eligible.length > 0
+        : plotUpdates.length === 0 && eligible.length > 0
           ? 'All eligible plot forecasts are already up to date.'
           : null,
   };
 }
 
-export function bulkClearManualOverrides(developmentId) {
+export async function bulkClearManualOverrides(developmentId) {
   const plots = getPlots(developmentId);
   const strategy = getRevenueStrategy(developmentId);
   const houseTypePricing = getHouseTypePricing(developmentId);
   const eligible = plots.filter((plot) => plot.revenueSource === 'Manual Value');
-  let updatedCount = 0;
+  const plotUpdates = [];
 
   for (const plot of eligible) {
     const forecast = resolvePlotForecastPrice(
@@ -264,7 +274,8 @@ export function bulkClearManualOverrides(developmentId) {
       houseTypePricing,
       plots
     );
-    updatePlot(developmentId, plot.id, {
+    plotUpdates.push({
+      id: plot.id,
       ...plot,
       revenueSource: DEFAULT_REVENUE_SOURCE,
       manualForecastValue: 0,
@@ -272,42 +283,49 @@ export function bulkClearManualOverrides(developmentId) {
       forecastSellingPrice: forecast,
       pricingMigrated: true,
     });
-    updatedCount += 1;
+  }
+
+  if (plotUpdates.length) {
+    await bulkUpdatePlots(developmentId, plotUpdates);
   }
 
   return {
     ok: true,
-    updatedCount,
+    updatedCount: plotUpdates.length,
     eligibleCount: eligible.length,
     skippedCount: plots.length - eligible.length,
-    skipReason: updatedCount === 0 ? 'No manual overrides to remove.' : null,
+    skipReason: plotUpdates.length === 0 ? 'No manual overrides to remove.' : null,
   };
 }
 
-export function bulkResetPlotPremiums(developmentId) {
+export async function bulkResetPlotPremiums(developmentId) {
   const plots = getPlots(developmentId);
   const strategy = getRevenueStrategy(developmentId);
   const houseTypePricing = getHouseTypePricing(developmentId);
   const eligible = plots.filter((plot) => plot.plotPremium || plot.plotPremiumReason);
-  let updatedCount = 0;
+  const plotUpdates = [];
 
   for (const plot of eligible) {
     const cleared = { ...plot, plotPremium: 0, plotPremiumReason: '' };
     const forecast = resolvePlotForecastPrice(cleared, strategy, houseTypePricing, plots);
-    updatePlot(developmentId, plot.id, {
+    plotUpdates.push({
+      id: cleared.id,
       ...cleared,
       forecastSellingPrice: forecast,
       pricingMigrated: true,
     });
-    updatedCount += 1;
+  }
+
+  if (plotUpdates.length) {
+    await bulkUpdatePlots(developmentId, plotUpdates);
   }
 
   return {
     ok: true,
-    updatedCount,
+    updatedCount: plotUpdates.length,
     eligibleCount: eligible.length,
     skippedCount: plots.length - eligible.length,
-    skipReason: updatedCount === 0 ? 'No plot premiums to clear.' : null,
+    skipReason: plotUpdates.length === 0 ? 'No plot premiums to clear.' : null,
   };
 }
 
@@ -319,14 +337,14 @@ export function getPricedPlots(developmentId) {
   return enrichPlotsWithPricing(plots, strategy, mergedHouseTypes);
 }
 
-export function migrateLegacyPlotsIfNeeded(developmentId) {
+export async function migrateLegacyPlotsIfNeeded(developmentId) {
   const plots = getPlots(developmentId);
   const pending = plots.filter(
     (plot) => !plot.pricingMigrated || isMisclassifiedManualPlot(plot)
   );
   if (!pending.length) return { migrated: 0 };
 
-  let migrated = 0;
+  const plotUpdates = [];
   for (const plot of pending) {
     const next = migrateSinglePlotPricing(plot);
     const changed =
@@ -336,15 +354,19 @@ export function migrateLegacyPlotsIfNeeded(developmentId) {
       Boolean(next.manualOverrideExplicit) !== Boolean(plot.manualOverrideExplicit);
 
     if (changed) {
-      updatePlot(developmentId, plot.id, next);
-      migrated += 1;
+      plotUpdates.push({ id: plot.id, ...next });
     }
   }
-  return { migrated };
+
+  if (plotUpdates.length) {
+    await bulkUpdatePlots(developmentId, plotUpdates);
+  }
+
+  return { migrated: plotUpdates.length };
 }
 
-export function getRevenuePricingContext(developmentId) {
-  migrateLegacyPlotsIfNeeded(developmentId);
+export async function getRevenuePricingContext(developmentId) {
+  await migrateLegacyPlotsIfNeeded(developmentId);
   const plots = getPlots(developmentId);
   const strategy = getRevenueStrategy(developmentId);
   const houseTypePricing = getHouseTypePricing(developmentId);

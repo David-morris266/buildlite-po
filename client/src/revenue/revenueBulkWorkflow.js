@@ -32,9 +32,9 @@ export const REVENUE_BULK_ACTIONS = [
     message:
       'Auto-priced plots will switch to Development Strategy pricing. Manual overrides will not be changed.',
     progressLabel: 'Updating all plot prices…',
-    run(developmentId) {
+    async run(developmentId) {
       const manualPreserved = countManualOverrides(developmentId);
-      const result = bulkApplyDevelopmentStrategy(developmentId);
+      const result = await bulkApplyDevelopmentStrategy(developmentId);
       return { ...result, manualPreserved };
     },
     buildToast(result) {
@@ -52,9 +52,9 @@ export const REVENUE_BULK_ACTIONS = [
     title: 'Recalculate house types?',
     message: 'House type NIA and auto forecast values will refresh from Plot Master and strategy defaults.',
     progressLabel: 'Recalculating house types…',
-    run(developmentId) {
+    async run(developmentId) {
       const manualPreserved = countManualOverrides(developmentId);
-      const result = bulkRecalculateHouseTypeValues(developmentId);
+      const result = await bulkRecalculateHouseTypeValues(developmentId);
       const houseTypeCount = Object.keys(getHouseTypePricing(developmentId)).length;
       return { ...result, manualPreserved, houseTypeCount };
     },
@@ -78,8 +78,8 @@ export const REVENUE_BULK_ACTIONS = [
     title: 'Remove all plot overrides?',
     message: 'Every manually priced plot will revert to House Type pricing.',
     progressLabel: 'Removing plot overrides…',
-    run(developmentId) {
-      const result = bulkClearManualOverrides(developmentId);
+    async run(developmentId) {
+      const result = await bulkClearManualOverrides(developmentId);
       return { ...result, removedCount: result.updatedCount };
     },
     buildToast(result) {
@@ -94,9 +94,9 @@ export const REVENUE_BULK_ACTIONS = [
     title: 'Clear all plot premiums?',
     message: 'Plot premium amounts and reasons will be cleared across the development.',
     progressLabel: 'Clearing plot premiums…',
-    run(developmentId) {
+    async run(developmentId) {
       const manualPreserved = countManualOverrides(developmentId);
-      const result = bulkResetPlotPremiums(developmentId);
+      const result = await bulkResetPlotPremiums(developmentId);
       return { ...result, manualPreserved };
     },
     buildToast(result) {
@@ -115,7 +115,7 @@ export const REVENUE_BULK_ACTIONS = [
 
 export async function runBulkActionWorkflow(developmentId, action) {
   await yieldToUi();
-  const result = action.run(developmentId);
+  const result = await action.run(developmentId);
   await yieldToUi();
   return result;
 }
@@ -124,15 +124,15 @@ export function saveRevenueStrategyOnly(developmentId, draft) {
   return saveRevenueStrategy(developmentId, draft);
 }
 
-export function runSaveStrategyApplyWorkflow(developmentId, draft) {
+export async function runSaveStrategyApplyWorkflow(developmentId, draft) {
   const manualPreserved = countManualOverrides(developmentId);
   const saveResult = saveRevenueStrategy(developmentId, draft);
   if (!saveResult.ok) {
     return { ok: false, errors: saveResult.errors || ['Could not save revenue strategy.'] };
   }
 
-  bulkRecalculateHouseTypeValues(developmentId);
-  const syncResult = syncPlotForecastPrices(developmentId);
+  await bulkRecalculateHouseTypeValues(developmentId);
+  const syncResult = await syncPlotForecastPrices(developmentId);
   const houseTypeCount = Object.keys(getHouseTypePricing(developmentId)).length;
   const plotsRecalculated = syncResult.updatedCount;
 

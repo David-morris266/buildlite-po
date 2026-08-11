@@ -46,9 +46,9 @@ export default function HouseTypeRevenueTable({
   async function handleSave() {
     await runAction('save-house-types', {
       progressLabel: 'Saving House Type Pricing...',
-      execute: () => {
+      execute: async () => {
         saveHouseTypePricing(developmentId, draft);
-        const syncResult = syncPlotForecastPrices(developmentId);
+        const syncResult = await syncPlotForecastPrices(developmentId);
         return {
           ok: true,
           houseTypeCount: Object.keys(draft).length,

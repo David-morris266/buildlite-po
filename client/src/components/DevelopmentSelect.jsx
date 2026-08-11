@@ -1,9 +1,12 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   formatDevelopmentSelectorOption,
   UNKNOWN_DEVELOPMENT_LABEL,
 } from '../developments/developmentPoHelpers';
-import { listDevelopments } from '../developments/developmentStore';
+import {
+  ensureDevelopmentsReady,
+  listDevelopments,
+} from '../developments/developmentStore';
 
 export default function DevelopmentSelect({
   value,
@@ -11,12 +14,42 @@ export default function DevelopmentSelect({
   disabled = false,
   showLabel = true,
 }) {
-  const developments = useMemo(() => listDevelopments(), []);
+  const [developments, setDevelopments] = useState([]);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    ensureDevelopmentsReady()
+      .then(() => {
+        if (!cancelled) {
+          setDevelopments(listDevelopments());
+          setLoadError('');
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setDevelopments([]);
+          setLoadError(error.message || 'Could not load developments from the server.');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const options = useMemo(
     () => developments.map(formatDevelopmentSelectorOption),
     [developments]
   );
+
+  if (loadError) {
+    return (
+      <div className="dev-po-select dev-po-select--empty">
+        {showLabel ? <span className="dev-form__label">Development</span> : null}
+        <p className="dev-po-select__empty-message">{loadError}</p>
+      </div>
+    );
+  }
 
   if (!developments.length) {
     return (
@@ -84,8 +117,27 @@ export function DevelopmentSelectEmptyState({ onCreateDevelopment }) {
 }
 
 export function useDevelopmentRecord(developmentId) {
-  return useMemo(() => {
-    if (!developmentId) return null;
-    return listDevelopments().find((item) => item.id === developmentId) || null;
+  const [record, setRecord] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    ensureDevelopmentsReady()
+      .then(() => {
+        if (!cancelled) {
+          setRecord(
+            developmentId
+              ? listDevelopments().find((item) => item.id === developmentId) || null
+              : null
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setRecord(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [developmentId]);
+
+  return record;
 }

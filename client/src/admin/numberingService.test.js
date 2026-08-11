@@ -10,7 +10,10 @@ vi.stubGlobal('localStorage', {
 });
 
 import { saveCompanySettings } from './companyStore';
-import { createDevelopment } from '../developments/developmentStore';
+import {
+  __resetDevelopmentsStoreForTests,
+  __setDevelopmentsCacheForTests,
+} from '../developments/developmentStore';
 import {
   generateNextDevelopmentNumber,
   generateNextNumber,
@@ -21,7 +24,10 @@ import {
 } from './numberingService';
 
 describe('numberingService', () => {
-  beforeEach(() => storage.clear());
+  beforeEach(() => {
+    storage.clear();
+    __resetDevelopmentsStoreForTests();
+  });
 
   it('generates dashed development numbers from company settings', () => {
     saveCompanySettings({
@@ -29,7 +35,14 @@ describe('numberingService', () => {
     });
 
     expect(generateNextDevelopmentNumber()).toBe('DEV-001');
-    createDevelopment({ jobNumber: 'DEV-001', developmentName: 'Alpha' });
+    __setDevelopmentsCacheForTests([
+      {
+        id: 'dev-test-1',
+        jobNumber: 'DEV-001',
+        developmentName: 'Alpha',
+        version: 1,
+      },
+    ]);
     expect(generateNextDevelopmentNumber()).toBe('DEV-002');
   });
 
@@ -39,7 +52,14 @@ describe('numberingService', () => {
     });
 
     expect(generateNextDevelopmentNumber()).toBe('DEV001');
-    createDevelopment({ jobNumber: 'DEV001', developmentName: 'Alpha' });
+    __setDevelopmentsCacheForTests([
+      {
+        id: 'dev-test-2',
+        jobNumber: 'DEV001',
+        developmentName: 'Alpha',
+        version: 1,
+      },
+    ]);
     expect(generateNextDevelopmentNumber()).toBe('DEV002');
   });
 

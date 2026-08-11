@@ -4,6 +4,7 @@ import SectionHeading from './layout/SectionHeading';
 import { buildCvrPortfolioNavigation } from '../navigation/navigationBuilders';
 import { listPOs } from '../api';
 import { buildCvrPortfolioModel } from '../cvr/cvrPeriodHelpers';
+import { ensureDevelopmentsReady } from '../developments/developmentStore';
 import {
   approveCvrPeriod,
   rejectCvrPeriod,
@@ -86,6 +87,21 @@ export default function CVRPortfolio({
   const [pos, setPos] = useState([]);
   const [localRefresh, setLocalRefresh] = useState(0);
   const [rejectTarget, setRejectTarget] = useState(null);
+  const [developmentsReady, setDevelopmentsReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    ensureDevelopmentsReady()
+      .then(() => {
+        if (!cancelled) setDevelopmentsReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setDevelopmentsReady(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshToken, localRefresh]);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,8 +120,9 @@ export default function CVRPortfolio({
   const portfolio = useMemo(() => {
     void refreshToken;
     void localRefresh;
+    if (!developmentsReady) return null;
     return buildCvrPortfolioModel(pos);
-  }, [pos, refreshToken, localRefresh]);
+  }, [pos, refreshToken, localRefresh, developmentsReady]);
 
   function refresh() {
     setLocalRefresh((value) => value + 1);

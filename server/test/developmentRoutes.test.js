@@ -87,7 +87,9 @@ if (!isDbConfigured()) {
   });
 
   test("POST preserves supplied existing dev-* id exactly", async () => {
-    const id = "dev-1785599776666-zck5pl";
+    // Use a run-unique dev-* id so this test does not collide with UAT/import
+    // fixtures (e.g. Test Site 1 dev-1785599776666-zck5pl) in shared dev Postgres.
+    const id = `dev-import-preserve-${Date.now()}`;
     const jobNumber = `DEV-IMPORT-${Date.now()}`;
     const res = await request(app)
       .post("/api/developments")

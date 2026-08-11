@@ -12,8 +12,11 @@ vi.stubGlobal('localStorage', {
   clear: () => storage.clear(),
 });
 
-import { createDevelopment } from '../developments/developmentStore';
+vi.mock('../api/developments', () => import('../test/mockDevelopmentApi'));
+
+import { createDevelopment, __resetDevelopmentsStoreForTests } from '../developments/developmentStore';
 import { addPlot } from '../developments/plotMaster';
+import { resetDevelopmentApiStore } from '../test/mockDevelopmentApi';
 import { saveRevenueStrategy, getRevenuePricingContext } from '../revenue/revenueStrategy';
 import { buildRevenuePricingModel } from '../revenue/revenuePricingModel';
 import { buildRevenueSummary, calculateRevenueSplitFromPlots } from '../revenue/revenueCalculations';
@@ -47,28 +50,33 @@ function tracePlot(rawPlot, enrichedPlot, registerRow) {
 }
 
 function runPipeline(developmentId) {
-  const context = getRevenuePricingContext(developmentId);
-  const model = buildRevenuePricingModel({
-    plots: context.plots,
-    strategy: context.strategy,
-    houseTypePricing: context.houseTypePricing,
+  return getRevenuePricingContext(developmentId).then((context) => {
+    const model = buildRevenuePricingModel({
+      plots: context.plots,
+      strategy: context.strategy,
+      houseTypePricing: context.houseTypePricing,
+    });
+    const displayPricedPlots = model.pricedPlots;
+    const registerRows = buildPlotRevenueRegisterRows(displayPricedPlots);
+    const split = calculateRevenueSplitFromPlots(displayPricedPlots);
+    const summary = buildRevenueSummary({
+      plots: context.plots,
+      pricedPlots: displayPricedPlots,
+      strategyMetrics: model.strategyMetrics,
+    });
+    return { context, model, displayPricedPlots, registerRows, split, summary };
   });
-  const displayPricedPlots = model.pricedPlots;
-  const registerRows = buildPlotRevenueRegisterRows(displayPricedPlots);
-  const split = calculateRevenueSplitFromPlots(displayPricedPlots);
-  const summary = buildRevenueSummary({
-    plots: context.plots,
-    pricedPlots: displayPricedPlots,
-    strategyMetrics: model.strategyMetrics,
-  });
-  return { context, model, displayPricedPlots, registerRows, split, summary };
 }
 
 describe('BL-019C.5.5 revenue pipeline trace', () => {
-  beforeEach(() => storage.clear());
+  beforeEach(() => {
+    storage.clear();
+    resetDevelopmentApiStore();
+    __resetDevelopmentsStoreForTests();
+  });
 
-  it('traces Shared Ownership vs Affordable Rent through the full runtime pipeline', () => {
-    const development = createDevelopment({
+  it('traces Shared Ownership vs Affordable Rent through the full runtime pipeline', async () => {
+    const development = await createDevelopment({
       jobNumber: 'TRACE-1',
       developmentName: 'Pipeline Trace Dev',
     });
@@ -79,7 +87,7 @@ describe('BL-019C.5.5 revenue pipeline trace', () => {
 
     // ~£166,402 discounted each at 58% (nia 820 ft²)
     for (let i = 1; i <= 4; i += 1) {
-      addPlot(development.id, {
+      await addPlot(development.id, {
         plotNumber: String(i),
         houseType: 'AR Type',
         niaFt2: 820,
@@ -91,7 +99,7 @@ describe('BL-019C.5.5 revenue pipeline trace', () => {
 
     // ~£241,080 discounted each at 72% (nia 950 ft²)
     for (let i = 5; i <= 11; i += 1) {
-      addPlot(development.id, {
+      await addPlot(development.id, {
         plotNumber: String(i),
         houseType: 'SO Type',
         niaFt2: 950,
@@ -101,7 +109,7 @@ describe('BL-019C.5.5 revenue pipeline trace', () => {
       });
     }
 
-    const { context, displayPricedPlots, registerRows, split } = runPipeline(
+    const { context, displayPricedPlots, registerRows, split } = await runPipeline(
       development.id
     );
 
@@ -141,14 +149,14 @@ describe('BL-019C.5.5 revenue pipeline trace', () => {
     expect(split.affordableHousingRevenue).toBeGreaterThan(arBucketSum);
   });
 
-  it('identifies when register forecast display diverges from split effectivePrice', () => {
-    const development = createDevelopment({
+  it('identifies when register forecast display diverges from split effectivePrice', async () => {
+    const development = await createDevelopment({
       jobNumber: 'TRACE-2',
       developmentName: 'Zero effectivePrice edge',
     });
     saveRevenueStrategy(development.id, emptyRevenueStrategy());
 
-    addPlot(development.id, {
+    await addPlot(development.id, {
       plotNumber: 'SO-1',
       houseType: 'SO Type',
       niaFt2: 950,
@@ -157,7 +165,7 @@ describe('BL-019C.5.5 revenue pipeline trace', () => {
       revenueSource: 'House Type',
     });
 
-    const { context, displayPricedPlots, registerRows } = runPipeline(development.id);
+    const { context, displayPricedPlots, registerRows } = await runPipeline(development.id);
     const enriched = displayPricedPlots[0];
     const registerRow = registerRows[0];
 
@@ -174,8 +182,8 @@ describe('BL-019C.5.5 revenue pipeline trace', () => {
     expect(registerRow.forecastSellingPrice).toBeGreaterThan(0);
   });
 
-  it('traces tenure label vs bucket when raw tenure is non-canonical but display-normalized', () => {
-    const development = createDevelopment({
+  it('traces tenure label vs bucket when raw tenure is non-canonical but display-normalized', async () => {
+    const development = await createDevelopment({
       jobNumber: 'TRACE-3',
       developmentName: 'Alias tenure',
     });
@@ -184,7 +192,7 @@ describe('BL-019C.5.5 revenue pipeline trace', () => {
       openMarket: { ratePerFt2: 350, effectiveDate: '' },
     });
 
-    addPlot(development.id, {
+    await addPlot(development.id, {
       plotNumber: 'DMS-1',
       houseType: 'Type A',
       niaFt2: 900,
@@ -193,7 +201,9 @@ describe('BL-019C.5.5 revenue pipeline trace', () => {
       revenueSource: 'House Type',
     });
 
-    const { context, displayPricedPlots, registerRows, split } = runPipeline(development.id);
+    const { context, displayPricedPlots, registerRows, split } = await runPipeline(
+      development.id
+    );
     const trace = tracePlot(context.plots[0], displayPricedPlots[0], registerRows[0]);
 
     expect(trace.registerTenure).toBe('Discount Market Sale');
