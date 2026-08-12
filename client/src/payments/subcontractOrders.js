@@ -198,10 +198,6 @@ export function buildSubcontractOrdersFromPos(pos) {
     matrixRowCount: loadOrderMatrix(order.orderKey)?.rows?.length ?? 0,
   }));
 
-  for (const order of orders) {
-    ensurePackageRecord(order.orderKey, order);
-  }
-
   return orders.sort((a, b) =>
     a.projectLabel.localeCompare(b.projectLabel, undefined, {
       sensitivity: 'base',

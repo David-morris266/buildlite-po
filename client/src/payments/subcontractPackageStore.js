@@ -1,6 +1,6 @@
 /**
- * BL-011C.01 — Subcontract Package metadata (localStorage until server model exists).
- * BL-009A.03A — Development-scoped package records.
+ * BL-011C.01 — Subcontract Package local container (certificates/activity only).
+ * BL-027B.2 — Package identity authority moved to Postgres; this key is transitional.
  */
 
 const STORAGE_KEY = 'buildlite_subcontract_packages_v1';

@@ -6,6 +6,7 @@ import {
   buildSubcontractOrdersFromPos,
   getPoOrderScopeId,
 } from '../payments/subcontractOrders';
+import { mergeServerPackagesWithPoOrders } from '../payments/packageIdentityMerge';
 import {
   isApprovedCommercialCertificate,
   listCertificates,
@@ -21,10 +22,16 @@ function getCertifiedTotalForOrder(orderKey) {
     );
 }
 
-export function buildDevelopmentPackageSnapshot(developmentId, pos = []) {
-  const orders = buildSubcontractOrdersFromPos(pos).filter(
+export function buildDevelopmentPackageSnapshot(developmentId, pos = [], options = {}) {
+  const { serverPackages = null } = options;
+
+  const poOrders = buildSubcontractOrdersFromPos(pos).filter(
     (order) => order.developmentId === developmentId
   );
+
+  const orders = Array.isArray(serverPackages)
+    ? mergeServerPackagesWithPoOrders(serverPackages, poOrders)
+    : [];
 
   let certificateCount = 0;
   let certifiedToDate = 0;
@@ -77,7 +84,8 @@ export function buildDevelopmentWorkspaceModel(development, options = {}) {
 
   const snapshot = buildDevelopmentPackageSnapshot(
     development.id,
-    options.pos || []
+    options.pos || [],
+    { serverPackages: options.serverPackages ?? null }
   );
 
   const packageCount = snapshot.packageCount;

@@ -36,7 +36,11 @@ function buildOpenPackageLabel(pkg) {
   return `Open package for ${supplier}, cost code ${costCode}`;
 }
 
-export function PackageTable({ packages, onOpenPackage, packageError = null }) {
+export function PackageTable({ packages, onOpenPackage, packageError = null, loading = false }) {
+  if (loading) {
+    return <p className="dev-workspace__section-lead">Loading packages…</p>;
+  }
+
   if (!packages?.length) {
     return (
       <>
@@ -166,7 +170,7 @@ export function PackageTable({ packages, onOpenPackage, packageError = null }) {
   );
 }
 
-export default function DevelopmentOverview({ model, onOpenPackage, packageError = null }) {
+export default function DevelopmentOverview({ model, onOpenPackage, packageError = null, packagesLoading = false }) {
   if (!model) return null;
 
   const setupItems = [
@@ -227,6 +231,7 @@ export default function DevelopmentOverview({ model, onOpenPackage, packageError
             packages={model.packages}
             onOpenPackage={onOpenPackage}
             packageError={packageError}
+            loading={packagesLoading}
           />
         </section>
       </div>
@@ -238,6 +243,7 @@ export function DevelopmentPackagesTab({
   model,
   onOpenPackage,
   packageError = null,
+  packagesLoading = false,
 }) {
   return (
     <section className="po-module-card dev-workspace__section">
@@ -246,6 +252,7 @@ export function DevelopmentPackagesTab({
         packages={model?.packages}
         onOpenPackage={onOpenPackage}
         packageError={packageError}
+        loading={packagesLoading}
       />
     </section>
   );

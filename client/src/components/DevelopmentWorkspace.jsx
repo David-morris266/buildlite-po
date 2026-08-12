@@ -9,6 +9,9 @@ import {
 } from './layout/WorkspaceShell';
 import { subscribeCommercialChanged } from '../commercial/commercialEvents';
 import { buildDevelopmentWorkspaceModel } from '../developments/developmentHelpers';
+import {
+  ensurePackagesReadyForDevelopment,
+} from '../payments/packageStore';
 import DevelopmentCommercialEvents from './DevelopmentCommercialEvents';
 import DevelopmentOverview, {
   DevelopmentPackagesTab,
@@ -79,6 +82,9 @@ export default function DevelopmentWorkspace({
   const [focusPlotId, setFocusPlotId] = useState(null);
   const [cvrRegisterAction, setCvrRegisterAction] = useState(null);
   const [pos, setPos] = useState([]);
+  const [serverPackages, setServerPackages] = useState(null);
+  const [packagesLoadState, setPackagesLoadState] = useState('idle');
+  const [packagesLoadError, setPackagesLoadError] = useState('');
   const [packageLaunch, setPackageLaunch] = useState(null);
   const [packageLaunchError, setPackageLaunchError] = useState('');
   const [commercialNavigationStack, setCommercialNavigationStack] = useState([]);
@@ -104,6 +110,9 @@ export default function DevelopmentWorkspace({
     setFocusPlotId(null);
     setPackageLaunch(null);
     setPackageLaunchError('');
+    setServerPackages(null);
+    setPackagesLoadState('idle');
+    setPackagesLoadError('');
     setCommercialNavigationStack([]);
     setDevelopmentCommercialTarget(null);
     setCommercialRegisterError('');
@@ -137,6 +146,34 @@ export default function DevelopmentWorkspace({
   }, [development.id, commercialRefresh, ledgerRefresh, cvrRefresh]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setPackagesLoadState('loading');
+      setPackagesLoadError('');
+      setServerPackages(null);
+
+      try {
+        const packages = await ensurePackagesReadyForDevelopment(development.id, { pos });
+        if (cancelled) return;
+        setServerPackages(packages);
+        setPackagesLoadState('loaded');
+      } catch (error) {
+        if (cancelled) return;
+        setServerPackages(null);
+        setPackagesLoadState('error');
+        setPackagesLoadError(
+          error?.message || 'Failed to load packages from the server.'
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [development.id, pos, commercialRefresh]);
+
+  useEffect(() => {
     function refreshCommercial() {
       setCommercialRefresh((value) => value + 1);
     }
@@ -162,9 +199,25 @@ export default function DevelopmentWorkspace({
   }, [activeTab]);
 
   const model = useMemo(
-    () => buildDevelopmentWorkspaceModel(development, { pos }),
-    [development, pos, plotRefresh, ledgerRefresh, cvrRefresh, commercialRefresh]
+    () =>
+      buildDevelopmentWorkspaceModel(development, {
+        pos,
+        serverPackages: packagesLoadState === 'loaded' ? serverPackages || [] : null,
+      }),
+    [
+      development,
+      pos,
+      serverPackages,
+      packagesLoadState,
+      plotRefresh,
+      ledgerRefresh,
+      cvrRefresh,
+      commercialRefresh,
+    ]
   );
+
+  const packageIdentityError =
+    packagesLoadState === 'error' ? packagesLoadError : packageLaunchError;
 
   const handleAssistantNavigation = useCallback((resolution) => {
     if (!resolution?.launch) return;
@@ -575,7 +628,8 @@ export default function DevelopmentWorkspace({
           <DevelopmentOverview
             model={model}
             onOpenPackage={handleOpenPackageFromDevelopment}
-            packageError={packageLaunchError}
+            packageError={packageIdentityError}
+            packagesLoading={packagesLoadState === 'loading'}
           />
         ) : null}
 
@@ -594,7 +648,8 @@ export default function DevelopmentWorkspace({
           <DevelopmentPackagesTab
             model={model}
             onOpenPackage={handleOpenPackageFromDevelopment}
-            packageError={packageLaunchError}
+            packageError={packageIdentityError}
+            packagesLoading={packagesLoadState === 'loading'}
           />
         ) : null}
 

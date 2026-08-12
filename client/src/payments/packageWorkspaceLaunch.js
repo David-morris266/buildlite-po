@@ -37,6 +37,7 @@ export function buildPackageWorkspaceLaunchContext({
   });
 
   return {
+    packageId: packageRow?.packageId || packageRow?.id || null,
     orderKey: resolvedOrderKey,
     developmentId: resolvedDevelopmentId,
     supplierId,
