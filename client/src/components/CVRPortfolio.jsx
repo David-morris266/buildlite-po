@@ -88,15 +88,28 @@ export default function CVRPortfolio({
   const [localRefresh, setLocalRefresh] = useState(0);
   const [rejectTarget, setRejectTarget] = useState(null);
   const [developmentsReady, setDevelopmentsReady] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
+    setDevelopmentsReady(false);
+    setLoadError('');
+
     ensureDevelopmentsReady()
       .then(() => {
-        if (!cancelled) setDevelopmentsReady(true);
+        if (!cancelled) {
+          setDevelopmentsReady(true);
+          setLoadError('');
+        }
       })
-      .catch(() => {
-        if (!cancelled) setDevelopmentsReady(false);
+      .catch((error) => {
+        if (!cancelled) {
+          setDevelopmentsReady(false);
+          setLoadError(
+            error?.message ||
+              'Unable to load Developments for the CVR. Please refresh and try again.'
+          );
+        }
       });
     return () => {
       cancelled = true;
@@ -154,14 +167,40 @@ export default function CVRPortfolio({
 
   const pageNavigation = buildCvrPortfolioNavigation();
 
+  const pageHeader = (
+    <POPageHeader
+      breadcrumbs={pageNavigation.breadcrumbs}
+      title={pageNavigation.title}
+      lead="Monthly commercial position and approval workflow across all developments."
+      showBack={false}
+    />
+  );
+
+  if (loadError) {
+    return (
+      <div className="dev-cvr-portfolio dev-cvr-workspace">
+        {pageHeader}
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          {loadError}
+        </div>
+      </div>
+    );
+  }
+
+  if (!developmentsReady || !portfolio) {
+    return (
+      <div className="dev-cvr-portfolio dev-cvr-workspace">
+        {pageHeader}
+        <div className="po-module-card">
+          <p>Loading CVR portfolio…</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="dev-cvr-portfolio dev-cvr-workspace">
-      <POPageHeader
-        breadcrumbs={pageNavigation.breadcrumbs}
-        title={pageNavigation.title}
-        lead="Monthly commercial position and approval workflow across all developments."
-        showBack={false}
-      />
+      {pageHeader}
 
       <PortfolioSummary cards={portfolio.summaryCards} />
 
