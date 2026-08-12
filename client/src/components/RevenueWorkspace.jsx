@@ -59,7 +59,7 @@ import { buildRevenueHouseTypeSummary } from '../revenue/revenueHouseTypeSummary
 
 import { buildStrategyInsights } from '../revenue/revenueStrategyCalculations';
 
-import { getRevenuePricingContext } from '../revenue/revenueStrategy';
+import { getRevenuePricingContext, emptyRevenueStrategy } from '../revenue/revenueStrategy';
 
 import { REVENUE_STREAMS } from '../revenue/revenueTypes';
 
@@ -244,15 +244,31 @@ export default function RevenueWorkspace({
 
 
   const [pricingContext, setPricingContext] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setLoadError('');
+    setPricingContext(null);
+
     getRevenuePricingContext(developmentId)
       .then((context) => {
-        if (!cancelled) setPricingContext(context);
+        if (!cancelled) {
+          setPricingContext(context);
+          setLoadError('');
+          setLoading(false);
+        }
       })
-      .catch(() => {
-        if (!cancelled) setPricingContext(null);
+      .catch((error) => {
+        if (!cancelled) {
+          setPricingContext(null);
+          setLoadError(
+            error?.message || 'Unable to load Revenue data. Please try again.'
+          );
+          setLoading(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -260,7 +276,7 @@ export default function RevenueWorkspace({
   }, [developmentId, refreshToken, localRefresh]);
 
   const plots = pricingContext?.plots || [];
-  const strategy = pricingContext?.strategy || null;
+  const strategy = pricingContext?.strategy || emptyRevenueStrategy();
   const houseTypePricing = pricingContext?.houseTypePricing || {};
 
 
@@ -549,18 +565,22 @@ export default function RevenueWorkspace({
 
 
 
-  if (!pricingContext) {
-
+  if (loadError) {
     return (
-
-      <div className="revenue-workspace revenue-workspace--loading">
-
-        <p className="revenue-workspace__lead">Loading revenue data…</p>
-
+      <div className="revenue-workspace revenue-workspace--error">
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          {loadError}
+        </div>
       </div>
-
     );
+  }
 
+  if (loading || !pricingContext) {
+    return (
+      <div className="revenue-workspace revenue-workspace--loading">
+        <p className="revenue-workspace__lead">Loading revenue data…</p>
+      </div>
+    );
   }
 
 

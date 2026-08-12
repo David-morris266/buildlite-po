@@ -24,6 +24,7 @@ export default function Developments({
   const [refreshToken, setRefreshToken] = useState(0);
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [workspaceResolveError, setWorkspaceResolveError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -60,7 +61,36 @@ export default function Developments({
     return getDevelopment(activeDevelopmentId);
   }, [activeDevelopmentId, refreshToken]);
 
+  useEffect(() => {
+    if (view !== 'workspace' || !activeDevelopmentId || activeDevelopment) {
+      setWorkspaceResolveError('');
+      return undefined;
+    }
+
+    let cancelled = false;
+    setWorkspaceResolveError('');
+
+    refreshDevelopment(activeDevelopmentId)
+      .then(() => {
+        if (!cancelled) {
+          setRefreshToken((value) => value + 1);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setWorkspaceResolveError(
+            error?.message || 'This development could not be loaded from the server.'
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [view, activeDevelopmentId, activeDevelopment]);
+
   function openWorkspace(developmentId) {
+    setWorkspaceResolveError('');
     setActiveDevelopmentId(developmentId);
     setView('workspace');
   }
@@ -68,6 +98,7 @@ export default function Developments({
   function returnToList() {
     setView('list');
     setActiveDevelopmentId(null);
+    setWorkspaceResolveError('');
     setRefreshToken((value) => value + 1);
   }
 
@@ -118,7 +149,35 @@ export default function Developments({
 
   if (view === 'workspace') {
     if (!activeDevelopment) {
-      return null;
+      if (workspaceResolveError) {
+        return (
+          <StandardWorkspace>
+            <div className="po-module-card">
+              <div
+                className="po-list-feedback po-list-feedback--error"
+                role="alert"
+              >
+                {workspaceResolveError}
+              </div>
+              <button
+                type="button"
+                className="po-list-btn-secondary"
+                onClick={returnToList}
+              >
+                Back to Developments
+              </button>
+            </div>
+          </StandardWorkspace>
+        );
+      }
+
+      return (
+        <StandardWorkspace>
+          <div className="po-module-card">
+            <p>Resolving development…</p>
+          </div>
+        </StandardWorkspace>
+      );
     }
 
     return (

@@ -43,4 +43,10 @@ describe('DevelopmentWorkspace package-open render path', () => {
     expect(resolveWorkspaceShell('revenue')).toBe(CommercialWorkspace);
     expect(resolveWorkspaceShell('cvr')).toBe(CommercialWorkspace);
   });
+
+  it('routes workspace tab clicks through handleSelectWorkspaceTab', () => {
+    expect(workspaceSource).toContain('function handleSelectWorkspaceTab(tabId)');
+    expect(workspaceSource).toContain('onClick={() => handleSelectWorkspaceTab(tab.id)}');
+    expect(workspaceSource).toContain('onSelectTab: handleSelectWorkspaceTab');
+  });
 });

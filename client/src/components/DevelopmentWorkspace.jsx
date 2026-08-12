@@ -38,16 +38,12 @@ import {
   getPackageLaunchErrorMessage,
   resolvePackageOrderFromList,
 } from '../payments/packageWorkspaceLaunch';
+import {
+  applyDevelopmentWorkspaceTabSelection,
+  DEVELOPMENT_WORKSPACE_TABS,
+} from '../developments/developmentWorkspaceTabNavigation';
 
-const TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'plot-master', label: 'Plot Master' },
-  { id: 'packages', label: 'Packages' },
-  { id: 'commercial', label: 'Commercial Events' },
-  { id: 'ledger', label: 'Ledger' },
-  { id: 'revenue', label: 'Revenue' },
-  { id: 'cvr', label: 'CVR' },
-];
+const TABS = DEVELOPMENT_WORKSPACE_TABS;
 
 function StatusBadge({ status }) {
   return (
@@ -258,7 +254,35 @@ export default function DevelopmentWorkspace({
     setCommercialNavigationStack([]);
   }, [development?.id]);
 
-  if (!model) return null;
+  function handleSelectWorkspaceTab(tabId) {
+    const next = applyDevelopmentWorkspaceTabSelection(tabId);
+    if (!next) return;
+
+    setPackageLaunch(next.packageLaunch);
+    setPackageLaunchError(next.packageLaunchError);
+    setCommercialNavigationStack(next.commercialNavigationStack);
+    setActiveTab(next.activeTab);
+  }
+
+  if (!model) {
+    return (
+      <StandardWorkspace>
+        <div className="po-module-card po-empty-state">
+          <p className="po-empty-state__message">
+            Development workspace data is unavailable. Return to the development
+            list and try again.
+          </p>
+          <button
+            type="button"
+            className="po-list-btn-secondary"
+            onClick={onBackToList}
+          >
+            Back to Developments
+          </button>
+        </div>
+      </StandardWorkspace>
+    );
+  }
 
   function handlePlotsChanged() {
     setPlotRefresh((value) => value + 1);
@@ -525,7 +549,7 @@ export default function DevelopmentWorkspace({
     periodKey: cvrPeriodKey,
     origin: navigationOrigin,
     onBackToList,
-    onSelectTab: setActiveTab,
+    onSelectTab: handleSelectWorkspaceTab,
     onBackToCvrRegister: resetCvrToRegister,
     onBackToCvrSummary: () => {
       setCvrView('summary');
@@ -615,7 +639,7 @@ export default function DevelopmentWorkspace({
             className={`po-package-tabs__tab${
               activeTab === tab.id ? ' po-package-tabs__tab--active' : ''
             }`}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => handleSelectWorkspaceTab(tab.id)}
             aria-current={activeTab === tab.id ? 'page' : undefined}
           >
             {tab.label}

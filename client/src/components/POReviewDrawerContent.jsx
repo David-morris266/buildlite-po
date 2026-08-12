@@ -182,11 +182,6 @@ export default function POReviewDrawerContent({
   const timeline = getApprovalTimelineEntries(po);
   const headerMeta = getDrawerHeaderMeta(po);
   const showApproverActions = canReviewAndApprovePo(po);
-  const showSendForApproval =
-    canSendPoForApproval(po) &&
-    !supplierPendingApproval &&
-    !supplierApprovalLoading &&
-    !supplierLookupFailed;
   const {
     supplierPendingApproval,
     supplierApprovalLoading,
@@ -197,6 +192,11 @@ export default function POReviewDrawerContent({
     loading: liveSupplierState.loading,
     error: liveSupplierState.error,
   });
+  const showSendForApproval =
+    canSendPoForApproval(po) &&
+    !supplierPendingApproval &&
+    !supplierApprovalLoading &&
+    !supplierLookupFailed;
 
   const supplierName =
     po.supplierSnapshot?.name ||
