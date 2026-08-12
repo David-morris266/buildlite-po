@@ -12,6 +12,7 @@ const brandRoutes = require("./routes/brandRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const developmentRoutes = require("./routes/developmentRoutes");
 const packageRoutes = require("./routes/packageRoutes");
+const commercialEventRoutes = require("./routes/commercialEventRoutes");
 
 function createApp() {
   const app = express();
@@ -34,6 +35,7 @@ function createApp() {
   app.use("/api/payments", paymentRoutes);
   app.use("/api/developments", developmentRoutes);
   app.use("/api/packages", packageRoutes);
+  app.use("/api/commercial-events", commercialEventRoutes);
 
   if (!isProduction()) {
     const developerRoutes = require("./routes/developerRoutes");
