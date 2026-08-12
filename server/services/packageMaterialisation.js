@@ -20,8 +20,16 @@ const {
   upsertPackageWithMembership,
 } = require("./packageRepository");
 
-async function listPurchaseOrdersForClient(clientId) {
-  const { rows } = await query(
+async function runQuery(dbClient, text, params) {
+  if (dbClient) {
+    return dbClient.query(text, params);
+  }
+  return query(text, params);
+}
+
+async function listPurchaseOrdersForClient(clientId, dbClient = null) {
+  const { rows } = await runQuery(
+    dbClient,
     `
       SELECT payload
       FROM purchase_orders
@@ -32,7 +40,7 @@ async function listPurchaseOrdersForClient(clientId) {
   return rows.map((row) => row.payload);
 }
 
-async function resolveDevelopmentForPo(clientId, po, caches = null) {
+async function resolveDevelopmentForPo(clientId, po, caches = null, dbClient = null) {
   const store = caches || { developments: new Map(), jobNumbers: new Map() };
 
   const direct = getPoDevelopmentIdFromPayload(po);
@@ -40,7 +48,7 @@ async function resolveDevelopmentForPo(clientId, po, caches = null) {
     if (store.developments.has(direct)) {
       return { developmentId: direct, developmentRow: store.developments.get(direct) };
     }
-    const row = await findDevelopmentRowForPo(clientId, direct);
+    const row = await findDevelopmentRowForPo(clientId, direct, dbClient);
     if (row) {
       store.developments.set(direct, row);
       return { developmentId: direct, developmentRow: row };
@@ -64,7 +72,7 @@ async function resolveDevelopmentForPo(clientId, po, caches = null) {
     };
   }
 
-  const row = await findDevelopmentByJobNumber(clientId, jobNumber);
+  const row = await findDevelopmentByJobNumber(clientId, jobNumber, dbClient);
   if (!row) {
     store.jobNumbers.set(jobNumber, null);
     return { developmentId: null, developmentRow: null, reason: "development-not-found" };
@@ -75,7 +83,7 @@ async function resolveDevelopmentForPo(clientId, po, caches = null) {
   return { developmentId: row.id, developmentRow: row };
 }
 
-async function buildEligiblePoRecord(clientId, po, caches) {
+async function buildEligiblePoRecord(clientId, po, caches, dbClient = null) {
   if (!isApprovedSubcontractPo(po)) {
     return {
       ok: false,
@@ -93,7 +101,7 @@ async function buildEligiblePoRecord(clientId, po, caches) {
     };
   }
 
-  const development = await resolveDevelopmentForPo(clientId, po, caches);
+  const development = await resolveDevelopmentForPo(clientId, po, caches, dbClient);
   if (!development.developmentId || !development.developmentRow) {
     return {
       ok: false,
@@ -153,7 +161,7 @@ function groupEligiblePos(eligiblePos) {
   return groups;
 }
 
-async function upsertGroupedPackages(clientId, groups, { actor = null } = {}) {
+async function upsertGroupedPackages(clientId, groups, { actor = null, dbClient = null } = {}) {
   let created = 0;
   let updated = 0;
   const packages = [];
@@ -167,7 +175,7 @@ async function upsertGroupedPackages(clientId, groups, { actor = null } = {}) {
           materialisationSource: "approved-pos",
         },
       },
-      { actor }
+      { actor, dbClient }
     );
 
     if (result.created) created += 1;
@@ -224,7 +232,10 @@ async function materialisePackagesFromApprovedPos(clientId, options = {}) {
 }
 
 async function materialisePackageFromPoNumber(clientId, poNumber, options = {}) {
-  const { rows } = await query(
+  const { actor = null, dbClient = null, requirePackage = false } = options;
+
+  const { rows } = await runQuery(
+    dbClient,
     `
       SELECT payload
       FROM purchase_orders
@@ -248,21 +259,30 @@ async function materialisePackageFromPoNumber(clientId, poNumber, options = {}) 
     jobNumbers: new Map(),
   };
 
-  const seed = await buildEligiblePoRecord(clientId, po, caches);
+  const seed = await buildEligiblePoRecord(clientId, po, caches, dbClient);
   if (!seed.ok) {
+    const message = `PO is not eligible for package materialisation (${seed.reason}).`;
+    if (requirePackage) {
+      return {
+        ok: false,
+        status: 400,
+        message,
+        reason: seed.reason,
+      };
+    }
     return {
       ok: false,
       status: 400,
-      message: `PO is not eligible for package materialisation (${seed.reason}).`,
+      message,
       reason: seed.reason,
     };
   }
 
-  const pos = await listPurchaseOrdersForClient(clientId);
+  const pos = await listPurchaseOrdersForClient(clientId, dbClient);
   const eligible = [];
 
   for (const candidate of pos) {
-    const record = await buildEligiblePoRecord(clientId, candidate, caches);
+    const record = await buildEligiblePoRecord(clientId, candidate, caches, dbClient);
     if (!record.ok) continue;
     if (record.orderKey !== seed.orderKey) continue;
     eligible.push(record);
@@ -271,15 +291,18 @@ async function materialisePackageFromPoNumber(clientId, poNumber, options = {}) 
   const groups = groupEligiblePos(eligible);
   const group = groups.get(seed.orderKey);
   if (!group) {
+    const message = "Could not build package group for PO.";
     return {
       ok: false,
       status: 400,
-      message: "Could not build package group for PO.",
+      message,
+      reason: "package-group-not-built",
     };
   }
 
   const upsertResult = await upsertGroupedPackages(clientId, new Map([[seed.orderKey, group]]), {
-    actor: options.actor || null,
+    actor,
+    dbClient,
   });
 
   const pkg = upsertResult.packages[0] || null;

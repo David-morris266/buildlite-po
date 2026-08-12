@@ -5,6 +5,13 @@
 const { pool, query } = require("../db");
 const { rowToDocument } = require("./packageMapper");
 
+async function runQuery(dbClient, text, params) {
+  if (dbClient) {
+    return dbClient.query(text, params);
+  }
+  return query(text, params);
+}
+
 async function loadPoNumbersForPackages(clientId, packageIds = []) {
   if (!packageIds.length) return new Map();
 
@@ -99,8 +106,9 @@ async function developmentExistsForClient(clientId, developmentId) {
   return rows.length > 0;
 }
 
-async function findDevelopmentRowForPo(clientId, developmentId) {
-  const { rows } = await query(
+async function findDevelopmentRowForPo(clientId, developmentId, dbClient = null) {
+  const { rows } = await runQuery(
+    dbClient,
     `
       SELECT id, job_number, development_name
       FROM developments
@@ -112,9 +120,10 @@ async function findDevelopmentRowForPo(clientId, developmentId) {
   return rows[0] || null;
 }
 
-async function findDevelopmentByJobNumber(clientId, jobNumber) {
+async function findDevelopmentByJobNumber(clientId, jobNumber, dbClient = null) {
   if (!jobNumber) return null;
-  const { rows } = await query(
+  const { rows } = await runQuery(
+    dbClient,
     `
       SELECT id, job_number, development_name
       FROM developments
@@ -126,14 +135,15 @@ async function findDevelopmentByJobNumber(clientId, jobNumber) {
   return rows[0] || null;
 }
 
-async function upsertPackageWithMembership(client, group, { actor = null } = {}) {
+async function upsertPackageWithMembership(client, group, { actor = null, dbClient = null } = {}) {
   const clientId = client.id;
-  const dbClient = await pool.connect();
+  const ownsTransaction = !dbClient;
+  const db = dbClient || (await pool.connect());
 
   try {
-    await dbClient.query("BEGIN");
+    if (ownsTransaction) await db.query("BEGIN");
 
-    const existingLookup = await dbClient.query(
+    const existingLookup = await db.query(
       `
         SELECT id
         FROM packages
@@ -144,7 +154,7 @@ async function upsertPackageWithMembership(client, group, { actor = null } = {})
     );
     const existed = existingLookup.rows.length > 0;
 
-    const upsert = await dbClient.query(
+    const upsert = await db.query(
       `
         INSERT INTO packages (
           client_id,
@@ -190,7 +200,7 @@ async function upsertPackageWithMembership(client, group, { actor = null } = {})
     const packageRow = upsert.rows[0];
     const created = !existed;
 
-    await dbClient.query(
+    await db.query(
       `
         DELETE FROM package_purchase_orders
         WHERE package_id = $1 AND client_id = $2
@@ -199,7 +209,7 @@ async function upsertPackageWithMembership(client, group, { actor = null } = {})
     );
 
     for (const poNumber of group.poNumbers) {
-      await dbClient.query(
+      await db.query(
         `
           INSERT INTO package_purchase_orders (package_id, client_id, po_number)
           VALUES ($1, $2, $3)
@@ -209,7 +219,7 @@ async function upsertPackageWithMembership(client, group, { actor = null } = {})
       );
     }
 
-    await dbClient.query("COMMIT");
+    if (ownsTransaction) await db.query("COMMIT");
 
     return {
       ok: true,
@@ -217,10 +227,10 @@ async function upsertPackageWithMembership(client, group, { actor = null } = {})
       package: rowToDocument(packageRow, group.poNumbers),
     };
   } catch (err) {
-    await dbClient.query("ROLLBACK");
+    if (ownsTransaction) await db.query("ROLLBACK");
     throw err;
   } finally {
-    dbClient.release();
+    if (ownsTransaction) db.release();
   }
 }
 

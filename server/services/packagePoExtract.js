@@ -15,6 +15,11 @@ function isApprovedSubcontractPo(po) {
   return approval === "approved" || status === "approved";
 }
 
+function isSubcontractPoType(po) {
+  if (!po || po.archived === true) return false;
+  return String(po.type || "").toUpperCase() === "S";
+}
+
 function getPoCostCode(po) {
   const code = po?.costRef?.costCode || po?.items?.[0]?.costCode;
   const value = String(code || "general").trim();
@@ -116,6 +121,7 @@ function extractEligiblePoForPackage(po, context = {}) {
 
 module.exports = {
   isApprovedSubcontractPo,
+  isSubcontractPoType,
   getPoCostCode,
   getPoDevelopmentIdFromPayload,
   getPoJobNumber,

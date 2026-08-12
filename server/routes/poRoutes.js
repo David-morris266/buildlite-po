@@ -3,6 +3,10 @@ const express = require("express");
 const { pool } = require("../db"); // keep pool for consistency with your existing DB helper style
 const { getActiveClient } = require("../services/activeClient");
 const {
+  materialisePackageFromPoNumber,
+} = require("../services/packageMaterialisation");
+const { isSubcontractPoType } = require("../services/packagePoExtract");
+const {
   getBrandProfileForClient,
   mapBrandToPdfContext,
 } = require("../services/brandProfile");
@@ -188,6 +192,18 @@ async function dbGetPO(clientId, poNumber) {
 
 async function dbSavePO(clientId, po) {
   await pool.query(
+    `
+    INSERT INTO purchase_orders (po_number, payload, client_id)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (po_number)
+    DO UPDATE SET payload = EXCLUDED.payload, client_id = EXCLUDED.client_id
+    `,
+    [po.poNumber, po, clientId]
+  );
+}
+
+async function dbSavePOWithClient(dbClient, clientId, po) {
+  await dbClient.query(
     `
     INSERT INTO purchase_orders (po_number, payload, client_id)
     VALUES ($1, $2, $3)
@@ -796,8 +812,41 @@ router.post("/po/:poNumber/approve", async (req, res) => {
   pushHistory(po, norm === "approved" ? "APPROVED" : "REJECTED", approver, note);
   po.updatedAt = now;
 
-  await dbSavePO(active.id, po);
-  res.json(po);
+  const requiresPackageMaterialisation = norm === "approved" && isSubcontractPoType(po);
+
+  if (!requiresPackageMaterialisation) {
+    await dbSavePO(active.id, po);
+    return res.json(po);
+  }
+
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query("BEGIN");
+    await dbSavePOWithClient(dbClient, active.id, po);
+
+    const materialiseResult = await materialisePackageFromPoNumber(active.id, po.poNumber, {
+      dbClient,
+      actor: approver || null,
+      requirePackage: true,
+    });
+
+    if (!materialiseResult.ok) {
+      await dbClient.query("ROLLBACK");
+      return res.status(materialiseResult.status || 400).json({
+        message: materialiseResult.message,
+        reason: materialiseResult.reason || null,
+      });
+    }
+
+    await dbClient.query("COMMIT");
+    res.json(po);
+  } catch (err) {
+    await dbClient.query("ROLLBACK");
+    console.error("[PO] approve + package materialisation error:", err);
+    res.status(500).json({ message: "Failed to approve PO and materialise package." });
+  } finally {
+    dbClient.release();
+  }
 });
 
 /* =========================================
