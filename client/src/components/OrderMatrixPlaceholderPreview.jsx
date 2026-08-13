@@ -62,7 +62,9 @@ export default function OrderMatrixPlaceholderPreview({
   embedded = false,
 }) {
   const [importOpen, setImportOpen] = useState(false);
-  const matrix = hasMatrix ? loadOrderMatrix(order.orderKey) : null;
+  const matrixExistsForOrder = hasOrderMatrix(order.orderKey);
+  const showImportedMatrix = hasMatrix || matrixExistsForOrder;
+  const matrix = showImportedMatrix ? loadOrderMatrix(order.orderKey) : null;
 
   function handleImportComplete(payload) {
     if (payload?.layout !== 'plot-stage') return;
@@ -99,7 +101,7 @@ export default function OrderMatrixPlaceholderPreview({
 
   return (
     <div className={`po-matrix-page${embedded ? ' po-matrix-page--embedded' : ''}`}>
-      {!hasMatrix ? (
+      {!showImportedMatrix ? (
         <section className="po-module-card po-matrix-empty po-matrix-empty--housebuilder">
           <h2 className="po-matrix-section__title">Import your valuation matrix</h2>
           <p className="po-matrix-empty__lead">

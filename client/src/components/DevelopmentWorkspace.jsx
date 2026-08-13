@@ -83,6 +83,7 @@ export default function DevelopmentWorkspace({
   const [packagesLoadError, setPackagesLoadError] = useState('');
   const [packageLaunch, setPackageLaunch] = useState(null);
   const [packageLaunchError, setPackageLaunchError] = useState('');
+  const [stablePackageWorkspaceOrder, setStablePackageWorkspaceOrder] = useState(null);
   const [commercialNavigationStack, setCommercialNavigationStack] = useState([]);
   const [developmentCommercialTarget, setDevelopmentCommercialTarget] = useState(null);
   const [commercialRegisterError, setCommercialRegisterError] = useState('');
@@ -280,6 +281,35 @@ export default function DevelopmentWorkspace({
     }
     return null;
   }, [packageLaunch, packageLaunchError, packageWorkspaceResolution]);
+
+  useEffect(() => {
+    if (packageWorkspaceResolution?.status === 'ready') {
+      setStablePackageWorkspaceOrder(packageWorkspaceResolution.order);
+    }
+  }, [packageWorkspaceResolution]);
+
+  useEffect(() => {
+    if (!packageLaunch) {
+      setStablePackageWorkspaceOrder(null);
+    }
+  }, [packageLaunch]);
+
+  const activePackageWorkspaceOrder = useMemo(() => {
+    if (packageWorkspaceResolution?.status === 'ready') {
+      return packageWorkspaceResolution.order;
+    }
+    if (
+      packageWorkspaceResolution?.status === 'loading' &&
+      stablePackageWorkspaceOrder?.orderKey === packageLaunch?.orderKey
+    ) {
+      return stablePackageWorkspaceOrder;
+    }
+    return null;
+  }, [
+    packageWorkspaceResolution,
+    stablePackageWorkspaceOrder,
+    packageLaunch?.orderKey,
+  ]);
 
   useEffect(() => {
     setActiveTab('overview');
@@ -553,8 +583,9 @@ export default function DevelopmentWorkspace({
     }
 
     if (
-      !packageWorkspaceResolution ||
-      packageWorkspaceResolution.status === 'loading'
+      !activePackageWorkspaceOrder &&
+      (!packageWorkspaceResolution ||
+        packageWorkspaceResolution.status === 'loading')
     ) {
       return (
         <WorkspaceShell>
@@ -577,7 +608,7 @@ export default function DevelopmentWorkspace({
     return (
       <WorkspaceShell>
         <SubcontractPackageWorkspace
-          order={packageWorkspaceResolution.order}
+          order={activePackageWorkspaceOrder}
           initialTab={packageLaunch.initialTab}
           navigationContext={packageLaunch}
           commercialEventTarget={packageLaunch.commercialEventTarget}
