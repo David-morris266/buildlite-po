@@ -91,6 +91,26 @@ describe('packageIdentityMerge', () => {
     expect(merged[0].orderKey).toBe(SPARK_ORDER_KEY);
     expect(merged[0].committedValue).toBe(100000);
     expect(merged[0].supplierLabel).toBe('Sparktastic Live');
+    expect(merged[0].commercialContextReady).toBe(true);
+  });
+
+  it('marks server-only fallback rows as not commercially ready when POs are unresolved', () => {
+    const serverPackages = [
+      {
+        id: 'pkg-bricks-uuid',
+        orderKey: buildSubcontractOrderKey(TEST_SITE_ID, MUCKY_SUPPLIER, '2300'),
+        developmentId: TEST_SITE_ID,
+        supplierId: MUCKY_SUPPLIER,
+        costCode: '2300',
+        poNumbers: ['S0011'],
+      },
+    ];
+
+    const merged = mergeServerPackagesWithPoOrders(serverPackages, []);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].committedValue).toBe(0);
+    expect(merged[0].pos).toEqual([]);
+    expect(merged[0].commercialContextReady).toBe(false);
   });
 
   it('two approved POs with same business key still build one commercial view model', () => {

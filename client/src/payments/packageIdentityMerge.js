@@ -51,6 +51,7 @@ export function mergeServerPackagesWithPoOrders(serverPackages = [], poOrders = 
       const defaults = defaultCommercialFields(serverPkg);
 
       if (!poOrder) {
+        const poNumbers = serverPkg.poNumbers || [];
         return {
           ...defaults,
           packageId: serverPkg.id,
@@ -61,7 +62,8 @@ export function mergeServerPackagesWithPoOrders(serverPackages = [], poOrders = 
           supplierLabel: serverPkg.supplierLabel || '—',
           developmentNumber: serverPkg.developmentNumber || '',
           developmentName: serverPkg.developmentName || '',
-          poNumbers: serverPkg.poNumbers || [],
+          poNumbers,
+          commercialContextReady: poNumbers.length === 0,
         };
       }
 
@@ -78,6 +80,7 @@ export function mergeServerPackagesWithPoOrders(serverPackages = [], poOrders = 
         developmentName: poOrder.developmentName || serverPkg.developmentName || '',
         projectLabel: poOrder.projectLabel || serverPkg.developmentName || '—',
         poNumbers: serverPkg.poNumbers?.length ? serverPkg.poNumbers : poOrder.poNumbers,
+        commercialContextReady: true,
       };
     })
     .sort((a, b) =>

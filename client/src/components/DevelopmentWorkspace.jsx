@@ -29,15 +29,14 @@ import CVRWorkspace from './CVRWorkspace';
 import RevenueWorkspace from './RevenueWorkspace';
 import SubcontractPackageWorkspace from './SubcontractPackageWorkspace';
 import PackageWorkspaceNotFound from './PackageWorkspaceNotFound';
+import POLoading from './POLoading';
 import {
   createCommercialEventNavigationSnapshot,
   resolveLinkedCommercialEventNavigation,
 } from '../commercialEvents/commercialEventNavigation';
 import { useCommercialAssistantScope } from '../commercialAssistant/CommercialAssistantContext';
-import {
-  getPackageLaunchErrorMessage,
-  resolvePackageOrderFromList,
-} from '../payments/packageWorkspaceLaunch';
+import { buildPoOrdersForDevelopment } from '../payments/packageIdentityMerge';
+import { resolvePackageWorkspaceOrder } from '../payments/packageWorkspaceOrderResolver';
 import {
   applyDevelopmentWorkspaceTabSelection,
   DEVELOPMENT_WORKSPACE_TABS,
@@ -78,6 +77,7 @@ export default function DevelopmentWorkspace({
   const [focusPlotId, setFocusPlotId] = useState(null);
   const [cvrRegisterAction, setCvrRegisterAction] = useState(null);
   const [pos, setPos] = useState([]);
+  const [posLoadState, setPosLoadState] = useState('loading');
   const [serverPackages, setServerPackages] = useState(null);
   const [packagesLoadState, setPackagesLoadState] = useState('idle');
   const [packagesLoadError, setPackagesLoadError] = useState('');
@@ -104,6 +104,8 @@ export default function DevelopmentWorkspace({
     setCvrFocusCostCodeKey(null);
     setCvrHeadFilter(null);
     setFocusPlotId(null);
+    setPos([]);
+    setPosLoadState('loading');
     setPackageLaunch(null);
     setPackageLaunchError('');
     setServerPackages(null);
@@ -126,6 +128,7 @@ export default function DevelopmentWorkspace({
   useEffect(() => {
     let cancelled = false;
 
+    setPosLoadState('loading');
     listPOs()
       .then((data) => {
         if (cancelled) return;
@@ -134,6 +137,9 @@ export default function DevelopmentWorkspace({
       })
       .catch(() => {
         if (!cancelled) setPos([]);
+      })
+      .finally(() => {
+        if (!cancelled) setPosLoadState('loaded');
       });
 
     return () => {
@@ -242,10 +248,38 @@ export default function DevelopmentWorkspace({
     { enabled: !packageLaunch }
   );
 
-  const activePackageOrder = useMemo(
-    () => resolvePackageOrderFromList(model?.packages, packageLaunch?.orderKey),
-    [model?.packages, packageLaunch?.orderKey]
+  const poOrders = useMemo(
+    () => buildPoOrdersForDevelopment(development.id, pos),
+    [development.id, pos]
   );
+
+  const packageWorkspaceResolution = useMemo(() => {
+    if (!packageLaunch?.orderKey || packageLaunch?.identityError) return null;
+    return resolvePackageWorkspaceOrder({
+      orderKey: packageLaunch.orderKey,
+      serverPackages: packagesLoadState === 'loaded' ? serverPackages || [] : [],
+      poOrders,
+      poLoading: posLoadState === 'loading',
+      packagesLoading: packagesLoadState === 'loading',
+    });
+  }, [
+    packageLaunch?.orderKey,
+    packageLaunch?.identityError,
+    serverPackages,
+    poOrders,
+    posLoadState,
+    packagesLoadState,
+  ]);
+
+  const packageLaunchErrorMessage = useMemo(() => {
+    if (!packageLaunch) return packageLaunchError;
+    if (packageLaunch.identityError) return packageLaunch.identityError;
+    if (packageLaunchError) return packageLaunchError;
+    if (packageWorkspaceResolution?.status === 'incomplete') {
+      return packageWorkspaceResolution.message;
+    }
+    return null;
+  }, [packageLaunch, packageLaunchError, packageWorkspaceResolution]);
 
   useEffect(() => {
     setActiveTab('overview');
@@ -493,10 +527,6 @@ export default function DevelopmentWorkspace({
     setPackageLaunch(navigation.launch);
   }
 
-  const packageLaunchErrorMessage = packageLaunch
-    ? getPackageLaunchErrorMessage(packageLaunch, activePackageOrder)
-    : packageLaunchError;
-
   const isCvrPeriodOpen =
     activeTab === 'cvr' && Boolean(cvrPeriodKey) && cvrView !== 'register';
   const WorkspaceShell =
@@ -522,10 +552,32 @@ export default function DevelopmentWorkspace({
       );
     }
 
+    if (
+      !packageWorkspaceResolution ||
+      packageWorkspaceResolution.status === 'loading'
+    ) {
+      return (
+        <WorkspaceShell>
+          <div className="po-module-card">
+            <POLoading message="Loading package commercial data…" />
+            <div className="po-empty-state__actions">
+              <button
+                type="button"
+                className="po-list-btn-secondary"
+                onClick={handleBackToDevelopmentPackages}
+              >
+                Back to Packages
+              </button>
+            </div>
+          </div>
+        </WorkspaceShell>
+      );
+    }
+
     return (
       <WorkspaceShell>
         <SubcontractPackageWorkspace
-          order={activePackageOrder}
+          order={packageWorkspaceResolution.order}
           initialTab={packageLaunch.initialTab}
           navigationContext={packageLaunch}
           commercialEventTarget={packageLaunch.commercialEventTarget}

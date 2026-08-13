@@ -8,9 +8,9 @@ import { buildAssistantPackagesForDevelopment } from '../commercialAssistant/com
 import { buildSubcontractOrdersFromPos } from '../payments/subcontractOrders';
 import {
   buildPackageWorkspaceLaunchContext,
-  getPackageLaunchErrorMessage,
   PACKAGE_OPENED_FROM,
 } from '../payments/packageWorkspaceLaunch';
+import { resolvePackageWorkspaceOrderFromPoList } from '../payments/packageWorkspaceOrderResolver';
 
 export default function PaymentCertificates({
   initialOrderKey = null,
@@ -66,18 +66,37 @@ export default function PaymentCertificates({
     return buildAssistantPackagesForDevelopment(activeOrder.developmentId, orders);
   }, [activeOrder?.developmentId, orders]);
 
+  const packageResolution = useMemo(
+    () =>
+      resolvePackageWorkspaceOrderFromPoList({
+        orderKey: activeOrderKey,
+        poOrders: orders,
+        poLoading: loadingOrder,
+      }),
+    [activeOrderKey, orders, loadingOrder]
+  );
+
   const navigationContext = useMemo(() => {
     if (!activeOrderKey) return null;
+    const resolvedOrder =
+      packageResolution.status === 'ready' ? packageResolution.order : activeOrder;
     return buildPackageWorkspaceLaunchContext({
       orderKey: activeOrderKey,
-      packageRow: activeOrder,
+      packageRow: resolvedOrder,
       openedFrom: PACKAGE_OPENED_FROM.PaymentCertificates,
       initialTab: activeTab,
-      developmentId: activeOrder?.developmentId || null,
+      developmentId: resolvedOrder?.developmentId || null,
       commercialEventTarget,
       certificateTarget,
     });
-  }, [activeOrderKey, activeOrder, activeTab, commercialEventTarget, certificateTarget]);
+  }, [
+    activeOrderKey,
+    activeOrder,
+    activeTab,
+    commercialEventTarget,
+    certificateTarget,
+    packageResolution,
+  ]);
 
   const handleAssistantNavigation = useCallback(
     (resolution) => {
@@ -119,15 +138,23 @@ export default function PaymentCertificates({
   }
 
   if (view === 'package') {
-    if (loadingOrder) {
+    if (
+      loadingOrder ||
+      packageResolution.status === 'loading' ||
+      !packageResolution
+    ) {
       return <POLoading message="Loading Subcontract Package…" />;
     }
 
-    const launchError = getPackageLaunchErrorMessage(navigationContext, activeOrder);
-    if (launchError) {
+    if (
+      navigationContext?.identityError ||
+      packageResolution.status === 'incomplete'
+    ) {
       return (
         <PackageWorkspaceNotFound
-          message={launchError}
+          message={
+            navigationContext?.identityError || packageResolution.message
+          }
           onBack={() => returnToList()}
           breadcrumbs={[{ label: 'Certificates' }]}
           title="Package unavailable"
@@ -137,7 +164,7 @@ export default function PaymentCertificates({
 
     return (
       <SubcontractPackageWorkspace
-        order={activeOrder}
+        order={packageResolution.order}
         initialTab={activeTab}
         navigationContext={navigationContext}
         commercialEventTarget={commercialEventTarget}
