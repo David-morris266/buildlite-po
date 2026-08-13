@@ -216,11 +216,18 @@ export function SubcontractPackageTabPlaceholder({ title, lead, points = [] }) {
   );
 }
 
-export function SubcontractPackageDashboard({ pkg, compact = false, commercialEventsLoading = false }) {
+export function SubcontractPackageDashboard({
+  pkg,
+  compact = false,
+  commercialEventsLoading = false,
+  commercialEventsReady = true,
+}) {
   if (!pkg) return null;
 
   const commercialValuesPending =
-    commercialEventsLoading || pkg.commercialEventsReady === false;
+    commercialEventsLoading ||
+    commercialEventsReady === false ||
+    pkg.commercialEventsReady === false;
 
   const formatCommercialMoney = (value, signed = false) => {
     if (commercialValuesPending) return 'Loading commercial data…';
@@ -254,7 +261,9 @@ export function SubcontractPackageDashboard({ pkg, compact = false, commercialEv
         },
         {
           label: 'Remaining',
-          value: formatDisplayMoney(Math.max(0, pkg.remainingContractValue ?? 0)),
+          value: commercialValuesPending
+            ? 'Loading commercial data…'
+            : formatDisplayMoney(Math.max(0, pkg.remainingContractValue ?? 0)),
           modifier: pkg.isOverCertified ? 'accent' : 'default',
         },
       ]
@@ -286,7 +295,9 @@ export function SubcontractPackageDashboard({ pkg, compact = false, commercialEv
         },
         {
           label: 'Remaining',
-          value: formatDisplayMoney(Math.max(0, pkg.remainingContractValue ?? 0)),
+          value: commercialValuesPending
+            ? 'Loading commercial data…'
+            : formatDisplayMoney(Math.max(0, pkg.remainingContractValue ?? 0)),
           modifier: pkg.isOverCertified ? 'accent' : 'default',
         },
       ];

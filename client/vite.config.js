@@ -20,6 +20,9 @@ export default defineConfig({
     include: ['src/**/*.test.js', 'src/**/*.test.jsx'],
     environmentMatchGlobs: [['src/**/*.test.jsx', 'jsdom']],
     testTimeout: 15_000,
+    env: {
+      VITE_CE_SERVER_AUTHORITY: 'false',
+    },
   },
   server: {
     proxy: {

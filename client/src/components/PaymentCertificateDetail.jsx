@@ -94,6 +94,7 @@ export default function PaymentCertificateDetail({
   const [dialog, setDialog] = useState(null);
   const [rejectComment, setRejectComment] = useState('');
   const [draftSavedAt, setDraftSavedAt] = useState(null);
+  const [workflowFeedback, setWorkflowFeedback] = useState(null);
 
   const summary = useMemo(() => {
     void refreshToken;
@@ -127,13 +128,37 @@ export default function PaymentCertificateDetail({
   }
 
   function handleSubmitConfirm() {
-    submitCertificate(order.orderKey, certificateId);
+    const result = submitCertificate(order.orderKey, certificateId);
+    if (!result.ok) {
+      setWorkflowFeedback({
+        type: 'error',
+        message: result.errors?.[0] || 'Could not submit certificate.',
+      });
+      return;
+    }
+
+    setWorkflowFeedback(null);
     setDialog(null);
     refresh();
   }
 
   function handleApproveConfirm() {
-    approveCertificate(order.orderKey, certificateId, summary?.totals || {}, order);
+    const result = approveCertificate(
+      order.orderKey,
+      certificateId,
+      summary?.totals || {},
+      order
+    );
+
+    if (!result.ok) {
+      setWorkflowFeedback({
+        type: 'error',
+        message: result.errors?.[0] || 'Could not approve certificate.',
+      });
+      return;
+    }
+
+    setWorkflowFeedback(null);
     setDialog(null);
     refresh();
   }
@@ -211,7 +236,10 @@ export default function PaymentCertificateDetail({
             <button
               type="button"
               className="po-btn-primary"
-              onClick={() => setDialog('submit')}
+              onClick={() => {
+                setWorkflowFeedback(null);
+                setDialog('submit');
+              }}
             >
               Submit for Approval
             </button>
@@ -233,7 +261,10 @@ export default function PaymentCertificateDetail({
             <button
               type="button"
               className="po-btn-primary"
-              onClick={() => setDialog('approve')}
+              onClick={() => {
+                setWorkflowFeedback(null);
+                setDialog('approve');
+              }}
             >
               Approve &amp; Lock
             </button>
@@ -324,9 +355,17 @@ export default function PaymentCertificateDetail({
         <CertificateDialog
           title={`Submit Certificate No. ${certificate.certificateNumber} for approval?`}
           confirmLabel="Submit for Approval"
-          onCancel={() => setDialog(null)}
+          onCancel={() => {
+            setWorkflowFeedback(null);
+            setDialog(null);
+          }}
           onConfirm={handleSubmitConfirm}
         >
+          {workflowFeedback?.type === 'error' ? (
+            <div className="po-list-feedback po-list-feedback--error" role="alert">
+              {workflowFeedback.message}
+            </div>
+          ) : null}
           <p>
             Once submitted, this certificate becomes read-only until it is approved or
             returned to draft.
@@ -338,9 +377,17 @@ export default function PaymentCertificateDetail({
         <CertificateDialog
           title={`Approve & lock Certificate No. ${certificate.certificateNumber}?`}
           confirmLabel="Approve & Lock"
-          onCancel={() => setDialog(null)}
+          onCancel={() => {
+            setWorkflowFeedback(null);
+            setDialog(null);
+          }}
           onConfirm={handleApproveConfirm}
         >
+          {workflowFeedback?.type === 'error' ? (
+            <div className="po-list-feedback po-list-feedback--error" role="alert">
+              {workflowFeedback.message}
+            </div>
+          ) : null}
           <p>
             This is the point of no return. The valuation will become the permanent
             commercial record for future certificates.

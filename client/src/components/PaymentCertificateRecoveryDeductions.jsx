@@ -36,6 +36,8 @@ export default function PaymentCertificateRecoveryDeductions({
     [orderKey, certificate, developmentId]
   );
 
+  const staleRows = useMemo(() => rows.filter((row) => row.stale), [rows]);
+
   const eligibleEvents = useMemo(
     () => listEligibleRecoveryEvents(developmentId, orderKey, certificate),
     [developmentId, orderKey, certificate]
@@ -167,6 +169,16 @@ export default function PaymentCertificateRecoveryDeductions({
         </div>
       ) : null}
 
+      {editable && staleRows.length ? (
+        <div className="po-list-feedback po-list-feedback--warning" role="status">
+          {staleRows.map((row) => (
+            <p key={row.id} className="po-cert-ce-stale-warning">
+              {row.staleReason}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
       {editable && eligibleEvents.length ? (
         <div className="po-cert-ce-add">
           <label className="po-cert-ce-add__label" htmlFor="po-cert-recovery-select">
@@ -255,7 +267,12 @@ export default function PaymentCertificateRecoveryDeductions({
             {rows.length ? (
               rows.map((row) => (
                 <tr key={row.id} className={row.stale ? 'po-cert-ce-table__row--stale' : ''}>
-                  <td>{row.eventNumber || '—'}</td>
+                  <td>
+                    {row.eventNumber || '—'}
+                    {row.stale ? (
+                      <div className="po-cert-ce-table__stale-note">Stale — remove before approval</div>
+                    ) : null}
+                  </td>
                   <td>{row.description || '—'}</td>
                   <td className="po-cert-ce-table__money">{formatMagnitude(row.recoveryValue)}</td>
                   <td className="po-cert-ce-table__money">

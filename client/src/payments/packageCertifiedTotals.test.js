@@ -96,6 +96,10 @@ describe('BL-025.1 packageCertifiedTotals', () => {
     expect(calculateRemainingContractValue(110000, 40000)).toBe(70000);
   });
 
+  it('returns null remaining when current contract is unavailable', () => {
+    expect(calculateRemainingContractValue(null, 30000)).toBeNull();
+  });
+
   it('calculates commercial progress from gross certified and current contract', () => {
     expect(calculateCommercialProgressPct(40000, 110000)).toBe(36);
   });

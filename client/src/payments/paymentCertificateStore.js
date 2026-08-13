@@ -495,26 +495,44 @@ function resolveDevelopmentIdForOrderKey(orderKey, order = null) {
   return resolvePackageDevelopmentId(order) || resolveDevelopmentIdFromOrderKey(orderKey);
 }
 
+/**
+ * Atomically read-modify-write certificate commercialLines.
+ * `lineUpdater` receives the latest persisted lines inside updateCertificateRecord
+ * so unrelated lines cannot be restored from an older UI snapshot.
+ */
 export function updateCertificateCommercialLines(
   orderKey,
   certificateId,
-  commercialLines,
+  lineUpdater,
   order = null
 ) {
-  const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
-  const validation = validateCommercialLinesForCertificate({
-    orderKey,
-    certificateId,
-    developmentId,
-    commercialLines,
-  });
-
-  if (!validation.valid) {
-    return { ok: false, errors: validation.errors };
+  if (typeof lineUpdater !== 'function') {
+    return {
+      ok: false,
+      errors: ['Certificate commercial line update requires a line updater function.'],
+    };
   }
+
+  const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
+  let validationErrors = null;
 
   const result = updateCertificateRecord(orderKey, certificateId, (certificate) => {
     if (!isCertificateEditable(certificate)) {
+      return null;
+    }
+
+    const currentLines = normalizeCommercialLines(certificate.commercialLines);
+    const proposedLines = normalizeCommercialLines(lineUpdater(currentLines));
+
+    const validation = validateCommercialLinesForCertificate({
+      orderKey,
+      certificateId,
+      developmentId,
+      commercialLines: proposedLines,
+    });
+
+    if (!validation.valid) {
+      validationErrors = validation.errors;
       return null;
     }
 
@@ -524,9 +542,18 @@ export function updateCertificateCommercialLines(
     };
   });
 
-  if (result.ok) {
-    notifyCertificateWorkflowChanged(orderKey, certificateId, 'commercial-lines-updated', order);
+  if (validationErrors) {
+    return { ok: false, errors: validationErrors };
   }
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      errors: result.errors || ['Certificate update failed.'],
+    };
+  }
+
+  notifyCertificateWorkflowChanged(orderKey, certificateId, 'commercial-lines-updated', order);
 
   return result;
 }
@@ -560,20 +587,33 @@ export function addCommercialLineToCertificate(
     return { ok: false, errors: [certifiabilityReason] };
   }
 
-  const existing = normalizeCommercialLines(certificate.commercialLines);
-  if (existing.some((line) => line.commercialEventId === commercialEventId)) {
+  let duplicateDetected = false;
+
+  const result = updateCertificateCommercialLines(
+    orderKey,
+    certificateId,
+    (currentLines) => {
+      if (currentLines.some((line) => line.commercialEventId === commercialEventId)) {
+        duplicateDetected = true;
+        return currentLines;
+      }
+
+      return [
+        ...currentLines,
+        buildCommercialLineFromEvent(event, amountThisCertificate),
+      ];
+    },
+    order
+  );
+
+  if (duplicateDetected) {
     return {
       ok: false,
       errors: ['This commercial event is already included on the certificate.'],
     };
   }
 
-  const nextLines = [
-    ...existing,
-    buildCommercialLineFromEvent(event, amountThisCertificate),
-  ];
-
-  return updateCertificateCommercialLines(orderKey, certificateId, nextLines, order);
+  return result;
 }
 
 export function updateCommercialLineAmount(
@@ -588,13 +628,18 @@ export function updateCommercialLineAmount(
     return { ok: false, errors: ['Certificate not found.'] };
   }
 
-  const nextLines = normalizeCommercialLines(certificate.commercialLines).map((line) =>
-    line.id === lineId
-      ? { ...line, amountThisCertificate }
-      : line
+  const line = normalizeCommercialLines(certificate.commercialLines).find(
+    (item) => item.id === lineId
   );
+  if (!line) {
+    return { ok: false, errors: ['Commercial line not found.'] };
+  }
 
-  return updateCertificateCommercialLines(orderKey, certificateId, nextLines, order);
+  return updateCertificateCommercialLines(orderKey, certificateId, (currentLines) =>
+    currentLines.map((item) =>
+      item.id === lineId ? { ...item, amountThisCertificate } : item
+    )
+  , order);
 }
 
 export function removeCommercialLineFromCertificate(
@@ -608,11 +653,16 @@ export function removeCommercialLineFromCertificate(
     return { ok: false, errors: ['Certificate not found.'] };
   }
 
-  const nextLines = normalizeCommercialLines(certificate.commercialLines).filter(
-    (line) => line.id !== lineId
+  const line = normalizeCommercialLines(certificate.commercialLines).find(
+    (item) => item.id === lineId
   );
+  if (!line) {
+    return { ok: false, errors: ['Commercial line not found.'] };
+  }
 
-  return updateCertificateCommercialLines(orderKey, certificateId, nextLines, order);
+  return updateCertificateCommercialLines(orderKey, certificateId, (currentLines) =>
+    currentLines.filter((item) => item.id !== lineId)
+  , order);
 }
 
 export function addRecoveryLineToCertificate(
@@ -651,26 +701,39 @@ export function addRecoveryLineToCertificate(
     return { ok: false, errors: amountCheck.errors };
   }
 
-  const existing = normalizeCommercialLines(certificate.commercialLines);
-  if (
-    existing.some(
-      (line) =>
-        line.commercialEventId === commercialEventId &&
-        line.lineType === CERTIFICATE_COMMERCIAL_LINE_TYPES.recoveryDeduction
-    )
-  ) {
+  let duplicateDetected = false;
+
+  const result = updateCertificateCommercialLines(
+    orderKey,
+    certificateId,
+    (currentLines) => {
+      if (
+        currentLines.some(
+          (line) =>
+            line.commercialEventId === commercialEventId &&
+            line.lineType === CERTIFICATE_COMMERCIAL_LINE_TYPES.recoveryDeduction
+        )
+      ) {
+        duplicateDetected = true;
+        return currentLines;
+      }
+
+      return [
+        ...currentLines,
+        buildRecoveryDeductionLineFromEvent(event, amountCheck.amount),
+      ];
+    },
+    order
+  );
+
+  if (duplicateDetected) {
     return {
       ok: false,
       errors: ['This recovery event is already included on the certificate.'],
     };
   }
 
-  const nextLines = [
-    ...existing,
-    buildRecoveryDeductionLineFromEvent(event, amountCheck.amount),
-  ];
-
-  return updateCertificateCommercialLines(orderKey, certificateId, nextLines, order);
+  return result;
 }
 
 export function updateRecoveryLineAmount(
@@ -705,11 +768,17 @@ export function updateRecoveryLineAmount(
     return { ok: false, errors: amountCheck.errors };
   }
 
-  const nextLines = normalizeCommercialLines(certificate.commercialLines).map((item) =>
-    item.id === lineId ? { ...item, amountThisCertificate: amountCheck.amount } : item
+  return updateCertificateCommercialLines(
+    orderKey,
+    certificateId,
+    (currentLines) =>
+      currentLines.map((item) =>
+        item.id === lineId
+          ? { ...item, amountThisCertificate: amountCheck.amount }
+          : item
+      ),
+    order
   );
-
-  return updateCertificateCommercialLines(orderKey, certificateId, nextLines, order);
 }
 
 export function removeRecoveryLineFromCertificate(
@@ -730,9 +799,10 @@ export function removeRecoveryLineFromCertificate(
     return { ok: false, errors: ['Recovery line not found.'] };
   }
 
-  const nextLines = normalizeCommercialLines(certificate.commercialLines).filter(
-    (item) => item.id !== lineId
+  return updateCertificateCommercialLines(
+    orderKey,
+    certificateId,
+    (currentLines) => currentLines.filter((item) => item.id !== lineId),
+    order
   );
-
-  return updateCertificateCommercialLines(orderKey, certificateId, nextLines, order);
 }

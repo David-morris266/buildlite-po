@@ -5,6 +5,23 @@
 import { generateNextCommercialEventNumber } from '../admin/numberingService';
 import { notifyCommercialChanged } from '../commercial/commercialEvents';
 import { parseSubcontractOrderKey } from '../payments/packageKeyMigration';
+import { isCommercialEventServerAuthorityEnabled } from './commercialEventAuthority';
+import {
+  getCachedCommercialEventById,
+  listCachedCommercialEventsByDevelopment,
+  listCachedCommercialEventsByPackage,
+} from './commercialEventServerCache';
+import {
+  approveCommercialEventOnServer,
+  closeCommercialEventOnServer,
+  createCommercialEventOnServer,
+  createLinkedRecoveryFromOriginOnServer,
+  markPotentialContraChargeNotRequiredOnServer,
+  rejectCommercialEventOnServer,
+  submitCommercialEventOnServer,
+  updateCommercialEventDraftOnServer,
+  updateRecoveryStatusOnServer,
+} from './commercialEventServerMutations';
 import {
   COMMERCIAL_EVENT_FINANCIAL_TREATMENTS,
   normalizeFinancialTreatmentKey,
@@ -50,6 +67,9 @@ function readAll() {
 }
 
 function writeAll(data) {
+  if (isCommercialEventServerAuthorityEnabled()) {
+    return;
+  }
   localStorage.setItem(COMMERCIAL_EVENTS_STORAGE_KEY, JSON.stringify(data));
 }
 
@@ -383,23 +403,36 @@ function saveEvent(developmentId, event) {
 
 export function listCommercialEventsByDevelopment(developmentId) {
   if (!developmentId) return [];
+  if (isCommercialEventServerAuthorityEnabled()) {
+    return listCachedCommercialEventsByDevelopment(developmentId);
+  }
   const bucket = readAll()[developmentId];
   return (bucket?.events || []).map(normalizeEvent);
 }
 
 export function listCommercialEventsByPackage(developmentId, packageId) {
+  if (isCommercialEventServerAuthorityEnabled()) {
+    return listCachedCommercialEventsByPackage(developmentId, packageId);
+  }
   return listCommercialEventsByDevelopment(developmentId).filter(
     (event) => event.packageId === packageId
   );
 }
 
 export function getCommercialEventById(developmentId, eventId) {
+  if (isCommercialEventServerAuthorityEnabled()) {
+    return getCachedCommercialEventById(developmentId, eventId);
+  }
   const { bucket, index } = findEventIndex(developmentId, eventId);
   if (!bucket || index === -1) return null;
   return normalizeEvent(bucket.events[index]);
 }
 
 export function createCommercialEvent(developmentId, payload, actor = sessionActor()) {
+  if (isCommercialEventServerAuthorityEnabled()) {
+    return createCommercialEventOnServer(developmentId, payload, actor);
+  }
+
   const errors = validateEventPayload(payload);
   if (errors.length) {
     return { ok: false, errors };
@@ -476,6 +509,14 @@ export function updateCommercialEventDraft(
   patch,
   actor = sessionActor()
 ) {
+  if (isCommercialEventServerAuthorityEnabled()) {
+    const event = getCommercialEventById(developmentId, eventId);
+    if (!event) {
+      return Promise.resolve({ ok: false, errors: ['Event not found'] });
+    }
+    return updateCommercialEventDraftOnServer(developmentId, event, patch, actor);
+  }
+
   const event = getCommercialEventById(developmentId, eventId);
   if (!event) {
     return { ok: false, errors: ['Event not found'] };
@@ -556,6 +597,10 @@ export function submitCommercialEvent(
   eventId,
   { actor = sessionActor(), comment = '' } = {}
 ) {
+  if (isCommercialEventServerAuthorityEnabled()) {
+    return submitCommercialEventOnServer(developmentId, eventId, { actor, comment });
+  }
+
   const event = getCommercialEventById(developmentId, eventId);
   if (!event) return { ok: false, errors: ['Event not found'] };
   if (!canSubmitCommercialEvent(event.status)) {
@@ -584,6 +629,10 @@ export function approveCommercialEvent(
   eventId,
   { actor = sessionActor(), comment = '' } = {}
 ) {
+  if (isCommercialEventServerAuthorityEnabled()) {
+    return approveCommercialEventOnServer(developmentId, eventId, { actor, comment });
+  }
+
   const event = getCommercialEventById(developmentId, eventId);
   if (!event) return { ok: false, errors: ['Event not found'] };
   if (!canApproveCommercialEvent(event.status)) {
@@ -626,6 +675,10 @@ export function rejectCommercialEvent(
   eventId,
   { actor = sessionActor(), comment = '' } = {}
 ) {
+  if (isCommercialEventServerAuthorityEnabled()) {
+    return rejectCommercialEventOnServer(developmentId, eventId, { actor, comment });
+  }
+
   const event = getCommercialEventById(developmentId, eventId);
   if (!event) return { ok: false, errors: ['Event not found'] };
   if (!canRejectCommercialEvent(event.status)) {
@@ -654,6 +707,10 @@ export function closeCommercialEvent(
   eventId,
   { actor = sessionActor(), comment = '' } = {}
 ) {
+  if (isCommercialEventServerAuthorityEnabled()) {
+    return closeCommercialEventOnServer(developmentId, eventId, { actor, comment });
+  }
+
   const event = getCommercialEventById(developmentId, eventId);
   if (!event) return { ok: false, errors: ['Event not found'] };
   if (!canCloseCommercialEvent(event.status)) {
@@ -682,6 +739,14 @@ export function createLinkedRecoveryFromOrigin(
   originEventId,
   { recoveryPackageId, actor = sessionActor(), comment = '' } = {}
 ) {
+  if (isCommercialEventServerAuthorityEnabled()) {
+    return createLinkedRecoveryFromOriginOnServer(developmentId, originEventId, {
+      recoveryPackageId,
+      actor,
+      comment,
+    });
+  }
+
   const origin = getCommercialEventById(developmentId, originEventId);
   if (!origin) {
     return { ok: false, errors: ['Origin event not found'] };
@@ -824,7 +889,17 @@ export function updateRecoveryStatus(
 ) {
   const event = getCommercialEventById(developmentId, eventId);
   if (!event) {
-    return { ok: false, errors: ['Event not found'] };
+    return isCommercialEventServerAuthorityEnabled()
+      ? Promise.resolve({ ok: false, errors: ['Event not found'] })
+      : { ok: false, errors: ['Event not found'] };
+  }
+
+  if (isCommercialEventServerAuthorityEnabled()) {
+    return updateRecoveryStatusOnServer(developmentId, event, nextRecoveryStatus, {
+      actor,
+      comment,
+      recoveredAmount,
+    });
   }
 
   if (!isRecoveryRelationshipType(event.relationshipType)) {
@@ -893,6 +968,16 @@ export function updateCommercialEventCertificateStatus(
     certifiedAmountToDate = null,
   } = {}
 ) {
+  if (isCommercialEventServerAuthorityEnabled()) {
+    const event = getCommercialEventById(developmentId, eventId);
+    return {
+      ok: true,
+      event,
+      skipped: true,
+      reason: 'server-ce-authority',
+    };
+  }
+
   const event = getCommercialEventById(developmentId, eventId);
   if (!event) {
     return { ok: false, errors: ['Event not found'] };
@@ -943,6 +1028,13 @@ export function markPotentialContraChargeNotRequired(
   eventId,
   { actor = sessionActor(), comment = '' } = {}
 ) {
+  if (isCommercialEventServerAuthorityEnabled()) {
+    return markPotentialContraChargeNotRequiredOnServer(developmentId, eventId, {
+      actor,
+      comment,
+    });
+  }
+
   const event = getCommercialEventById(developmentId, eventId);
   if (!event) {
     return { ok: false, errors: ['Event not found'] };

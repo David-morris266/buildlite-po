@@ -11,6 +11,7 @@ import {
   isCommercialEventCertifiable,
   CERTIFICATE_COMMERCIAL_LINE_TYPES,
 } from '../commercialEvents/commercialEventCertifiability';
+import { isCommercialEventFinancialDataReady } from '../commercialEvents/commercialEventPackageValue';
 import { validateRecoveryLinesForCertificate } from './certificateRecoveryLines';
 import {
   COMMERCIAL_EVENT_TYPES,
@@ -188,6 +189,9 @@ export function buildCommercialLineDisplayRow({
   );
   const maxAmount = getMaxAmountThisCertificate(sourceEventValue, previouslyCertified);
   const typeMeta = getCommercialEventTypeMeta(line.sourceEventType);
+  const financialDataReady = developmentId
+    ? isCommercialEventFinancialDataReady(developmentId)
+    : true;
 
   return {
     ...line,
@@ -199,10 +203,13 @@ export function buildCommercialLineDisplayRow({
     remaining,
     maxAmount,
     liveEvent,
+    pendingResolution: !liveEvent && !financialDataReady,
     stale: Boolean(
-      liveEvent &&
+      financialDataReady &&
+        liveEvent &&
         (liveEvent.packageId !== orderKey || !isCommercialEventCertifiable(liveEvent))
     ),
+    missing: Boolean(financialDataReady && !liveEvent),
   };
 }
 
@@ -436,6 +443,9 @@ export function validateCommercialLinesForCertificate({
   );
   const errors = [];
   const seenEventIds = new Set();
+  const financialDataReady = developmentId
+    ? isCommercialEventFinancialDataReady(developmentId)
+    : true;
 
   for (const line of valueLines) {
     if (!line.commercialEventId) {
@@ -452,6 +462,9 @@ export function validateCommercialLinesForCertificate({
 
     const liveEvent = getCommercialEventById(developmentId, line.commercialEventId);
     if (!liveEvent) {
+      if (!financialDataReady) {
+        continue;
+      }
       errors.push(
         `Commercial event ${line.sourceEventNumber || line.commercialEventId} no longer exists. Re-open the certificate and remove stale lines.`
       );

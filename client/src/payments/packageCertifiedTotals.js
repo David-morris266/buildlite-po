@@ -72,14 +72,16 @@ export function calculatePackageCertifiedNet(orderKey, order = null) {
 }
 
 export function calculateCommercialProgressPct(grossCertified, currentContractValue) {
-  const contract = roundMoney(currentContractValue) ?? 0;
+  if (currentContractValue == null) return null;
+  const contract = roundMoney(currentContractValue);
   const gross = roundMoney(grossCertified) ?? 0;
   if (contract <= 0) return 0;
   return Math.round((gross / contract) * 100);
 }
 
 export function calculateRemainingContractValue(currentContractValue, certifiedGrossToDate) {
-  const contract = roundMoney(currentContractValue) ?? 0;
+  if (currentContractValue == null) return null;
+  const contract = roundMoney(currentContractValue);
   const gross = roundMoney(certifiedGrossToDate) ?? 0;
-  return roundMoney(contract - gross) ?? 0;
+  return roundMoney(contract - gross);
 }

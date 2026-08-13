@@ -366,7 +366,7 @@ export default function CommercialEventDrawer({
     return payload;
   }
 
-  function handleSaveDraft(submitEvent) {
+  async function handleSaveDraft(submitEvent) {
     submitEvent.preventDefault();
     if (!order?.developmentId || !order?.orderKey) return;
 
@@ -385,9 +385,11 @@ export default function CommercialEventDrawer({
       Object.entries(payload).filter(([, value]) => value !== undefined)
     );
 
-    const result = isCreate
-      ? createCommercialEvent(order.developmentId, cleanedPayload)
-      : updateCommercialEventDraft(order.developmentId, event.id, cleanedPayload);
+    const result = await Promise.resolve(
+      isCreate
+        ? createCommercialEvent(order.developmentId, cleanedPayload)
+        : updateCommercialEventDraft(order.developmentId, event.id, cleanedPayload)
+    );
 
     if (!result.ok) {
       setErrors(result.errors || ['Unable to save event']);
@@ -398,7 +400,7 @@ export default function CommercialEventDrawer({
     onClose?.();
   }
 
-  function runWorkflow(action) {
+  async function runWorkflow(action) {
     if (!event || !order?.developmentId) return;
     const options = { comment: workflowComment };
 
@@ -409,7 +411,7 @@ export default function CommercialEventDrawer({
       close: () => closeCommercialEvent(order.developmentId, event.id, options),
     };
 
-    const result = handlers[action]?.();
+    const result = await Promise.resolve(handlers[action]?.());
     if (!result?.ok) {
       setErrors(result?.errors || ['Workflow action failed']);
       return;
@@ -424,7 +426,7 @@ export default function CommercialEventDrawer({
     setCreateContraStep('picker');
   }
 
-  function handleConfirmCreateContraCharge() {
+  async function handleConfirmCreateContraCharge() {
     if (!liveEvent || !order?.developmentId) return;
 
     if (!selectedRecoveryPackageId) {
@@ -432,13 +434,11 @@ export default function CommercialEventDrawer({
       return;
     }
 
-    const result = createLinkedRecoveryFromOrigin(
-      order.developmentId,
-      liveEvent.id,
-      {
+    const result = await Promise.resolve(
+      createLinkedRecoveryFromOrigin(order.developmentId, liveEvent.id, {
         recoveryPackageId: selectedRecoveryPackageId,
         comment: createContraComment,
-      }
+      })
     );
 
     if (!result.ok) {
@@ -452,13 +452,13 @@ export default function CommercialEventDrawer({
     onClose?.();
   }
 
-  function handleDismissPotentialContra() {
+  async function handleDismissPotentialContra() {
     if (!liveEvent || !order?.developmentId) return;
 
-    const result = markPotentialContraChargeNotRequired(
-      order.developmentId,
-      liveEvent.id,
-      { comment: dismissComment }
+    const result = await Promise.resolve(
+      markPotentialContraChargeNotRequired(order.developmentId, liveEvent.id, {
+        comment: dismissComment,
+      })
     );
 
     if (!result.ok) {

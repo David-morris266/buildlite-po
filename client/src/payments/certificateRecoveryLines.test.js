@@ -13,6 +13,7 @@ import { saveCompanySettings } from '../admin/companyStore';
 import {
   approveCommercialEvent,
   clearCommercialEventsStore,
+  closeCommercialEvent,
   createCommercialEvent,
   createLinkedRecoveryFromOrigin,
   getCommercialEventById,
@@ -27,6 +28,7 @@ import { summarizeCertificateProgress } from './paymentCertificateProgress';
 import {
   COMMERCIAL_EVENT_RECOVERY_STATUSES,
   COMMERCIAL_EVENT_RELATIONSHIP_TYPES,
+  COMMERCIAL_EVENT_STATUSES,
   COMMERCIAL_EVENT_TYPES,
 } from '../commercialEvents/commercialEventTypes';
 import { calculatePackageCertifiedValue } from '../cvr/cvrCertifiedValue';
@@ -38,20 +40,30 @@ import {
   createCertificate,
   getCertificate,
   rejectCertificate,
+  removeCommercialLineFromCertificate,
   removeRecoveryLineFromCertificate,
   submitCertificate,
   updateCertificateCellProgress,
+  updateCommercialLineAmount,
   updateRecoveryLineAmount,
 } from './paymentCertificateStore';
 import {
   applyRecoveryDeductionsOnCertificateApproval,
+  buildCertificateRecoveryLineRows,
   buildRecoveryDeductionLineFromEvent,
   calculateRecoveryPreviouslyRecovered,
+  getStaleDraftRecoveryLineApprovalMessage,
+  getStaleDraftRecoveryLineMessage,
+  getRecoveryDeductionEligibilityReason,
   isRecoveryEligibleForCertificate,
+  isRecoveryLineUnchanged,
+  isStaleDraftRecoveryLine,
   listEligibleRecoveryEvents,
   normalizeRecoveryDeductionAmount,
   validateRecoveryDeductionAmount,
+  validateRecoveryLinesForCertificate,
 } from './certificateRecoveryLines';
+import * as commercialEventStore from '../commercialEvents/commercialEventStore';
 import { buildCertificateWorksTotals } from './paymentCertificateProgress';
 import { calculatePackageCertifiedGross } from './packageCertifiedTotals';
 import { ensurePackageRecord } from './subcontractPackageStore';
@@ -810,5 +822,248 @@ describe('BL-026 recovery line editing', () => {
     expect(validateRecoveryDeductionAmount(0, recovery, ORDER_KEY).valid).toBe(false);
     expect(validateRecoveryDeductionAmount(6000, recovery, ORDER_KEY).valid).toBe(false);
     expect(validateRecoveryDeductionAmount(3000, recovery, ORDER_KEY).valid).toBe(true);
+  });
+});
+
+describe('BL-028B.3 stale draft recovery lines', () => {
+  beforeEach(() => {
+    storage.clear();
+    clearCommercialEventsStore();
+    saveCompanySettings({ numberingPrefixes: { commercialEvent: 'CE-' } });
+    localStorage.setItem('userName', 'Test QS');
+    ensurePackageRecord(ORDER_KEY, baseOrder);
+    ensurePackageRecord(ORIGIN_PACKAGE, originPackageOrder);
+    seedMatrix();
+  });
+
+  function seedDraftWithStaleClosedRecovery({ recoveryAmount = 1500, variationValue = 10000 } = {}) {
+    const recovery = seedApprovedRecovery(undefined, {
+      originValue: 7500,
+      description: 'Repair works after electrical correction',
+    });
+    const variation = seedApprovedVariation({
+      description: 'Customer electrical extras',
+      value: variationValue,
+      eventType: COMMERCIAL_EVENT_TYPES.salesUpgrade.key,
+    });
+    const certificate = createDraftCertificate();
+    const recoveryAdd = addRecoveryLineToCertificate(
+      ORDER_KEY,
+      certificate.id,
+      recovery.id,
+      recoveryAmount,
+      baseOrder
+    );
+    expect(recoveryAdd.ok).toBe(true);
+
+    const closed = closeCommercialEvent(DEV_ID, recovery.id);
+    expect(closed.ok).toBe(true);
+    expect(getCommercialEventById(DEV_ID, recovery.id).status).toBe(
+      COMMERCIAL_EVENT_STATUSES.closed.key
+    );
+
+    return { recovery, variation, certificate };
+  }
+
+  it('marks an existing draft recovery line stale after the live CE is closed', () => {
+    const { recovery, certificate } = seedDraftWithStaleClosedRecovery();
+    const rows = buildCertificateRecoveryLineRows(ORDER_KEY, getCertificate(ORDER_KEY, certificate.id), DEV_ID);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].stale).toBe(true);
+    expect(rows[0].staleReason).toMatch(/is now Closed/i);
+    expect(isStaleDraftRecoveryLine(getCommercialEventById(DEV_ID, recovery.id), ORDER_KEY)).toBe(true);
+  });
+
+  it('does not block adding a valid valueInclusion while an unchanged stale recovery line remains', () => {
+    const { variation, certificate } = seedDraftWithStaleClosedRecovery();
+    const result = addCommercialLineToCertificate(
+      ORDER_KEY,
+      certificate.id,
+      variation.id,
+      6000,
+      baseOrder
+    );
+
+    expect(result.ok).toBe(true);
+    expect(getCertificate(ORDER_KEY, certificate.id).commercialLines).toHaveLength(2);
+  });
+
+  it('does not block editing or removing another valid valueInclusion while stale recovery remains', () => {
+    const { variation, certificate } = seedDraftWithStaleClosedRecovery();
+    const added = addCommercialLineToCertificate(
+      ORDER_KEY,
+      certificate.id,
+      variation.id,
+      6000,
+      baseOrder
+    );
+    expect(added.ok).toBe(true);
+
+    const valueLine = getCertificate(ORDER_KEY, certificate.id).commercialLines.find(
+      (line) => line.lineType === 'valueInclusion'
+    );
+
+    const edit = updateCommercialLineAmount(
+      ORDER_KEY,
+      certificate.id,
+      valueLine.id,
+      5000,
+      baseOrder
+    );
+    expect(edit.ok).toBe(true);
+
+    const removed = removeCommercialLineFromCertificate(
+      ORDER_KEY,
+      certificate.id,
+      valueLine.id,
+      baseOrder
+    );
+    expect(removed.ok).toBe(true);
+    expect(getCertificate(ORDER_KEY, certificate.id).commercialLines).toHaveLength(1);
+  });
+
+  it('allows removing a stale recovery line even after the live CE is closed', () => {
+    const { recovery, certificate } = seedDraftWithStaleClosedRecovery();
+    const line = getCertificate(ORDER_KEY, certificate.id).commercialLines[0];
+    const removed = removeRecoveryLineFromCertificate(
+      ORDER_KEY,
+      certificate.id,
+      line.id,
+      baseOrder
+    );
+
+    expect(removed.ok).toBe(true);
+    expect(getCertificate(ORDER_KEY, certificate.id).commercialLines).toHaveLength(0);
+    expect(listEligibleRecoveryEvents(DEV_ID, ORDER_KEY, getCertificate(ORDER_KEY, certificate.id))).toHaveLength(0);
+  });
+
+  it('blocks approval while a stale recovery line remains with a closed-specific message', () => {
+    const { certificate } = seedDraftWithStaleClosedRecovery();
+    updateCertificateCellProgress(ORDER_KEY, certificate.id, '0::0', 20);
+    submitCertificate(ORDER_KEY, certificate.id);
+
+    const approval = approveCertificate(
+      ORDER_KEY,
+      certificate.id,
+      summarizeCertificateProgress(ORDER_KEY, certificate.id, baseOrder).totals,
+      baseOrder
+    );
+
+    expect(approval.ok).toBe(false);
+    expect(approval.errors.join(' ')).toMatch(/Closed and can no longer be deducted/i);
+  });
+
+  it('allows approval after the stale recovery line is removed', () => {
+    const { variation, certificate } = seedDraftWithStaleClosedRecovery();
+    const recoveryLine = getCertificate(ORDER_KEY, certificate.id).commercialLines[0];
+    removeRecoveryLineFromCertificate(ORDER_KEY, certificate.id, recoveryLine.id, baseOrder);
+    addCommercialLineToCertificate(ORDER_KEY, certificate.id, variation.id, 6000, baseOrder);
+    updateCertificateCellProgress(ORDER_KEY, certificate.id, '0::0', 20);
+
+    submitCertificate(ORDER_KEY, certificate.id);
+    const totals = summarizeCertificateProgress(ORDER_KEY, certificate.id, baseOrder).totals;
+    const approval = approveCertificate(ORDER_KEY, certificate.id, totals, baseOrder);
+
+    expect(approval.ok).toBe(true);
+    expect(getCertificate(ORDER_KEY, certificate.id).status).toBe('locked');
+  });
+
+  it('excludes closed recoveries from new recovery deduction selection', () => {
+    const { recovery, certificate } = seedDraftWithStaleClosedRecovery();
+    expect(listEligibleRecoveryEvents(DEV_ID, ORDER_KEY, certificate)).toHaveLength(0);
+    expect(isRecoveryEligibleForCertificate(getCommercialEventById(DEV_ID, recovery.id), ORDER_KEY)).toBe(
+      false
+    );
+
+    const recoveryLine = getCertificate(ORDER_KEY, certificate.id).commercialLines[0];
+    removeRecoveryLineFromCertificate(ORDER_KEY, certificate.id, recoveryLine.id, baseOrder);
+
+    const blocked = addRecoveryLineToCertificate(
+      ORDER_KEY,
+      certificate.id,
+      recovery.id,
+      1500,
+      baseOrder
+    );
+    expect(blocked.ok).toBe(false);
+    expect(blocked.errors.join(' ')).toMatch(/Closed commercial events cannot be added/i);
+  });
+
+  it('preserves draft totals including stale deduction until the line is removed', () => {
+    const { certificate } = seedDraftWithStaleClosedRecovery({ recoveryAmount: 1500 });
+    updateCertificateCellProgress(ORDER_KEY, certificate.id, '0::0', 20);
+
+    const withStale = summarizeCertificateProgress(ORDER_KEY, certificate.id, baseOrder);
+    expect(withStale.totals.recoveryDeductionMagnitude).toBe(1500);
+
+    const recoveryLine = getCertificate(ORDER_KEY, certificate.id).commercialLines[0];
+    removeRecoveryLineFromCertificate(ORDER_KEY, certificate.id, recoveryLine.id, baseOrder);
+
+    const afterRemove = summarizeCertificateProgress(ORDER_KEY, certificate.id, baseOrder);
+    expect(afterRemove.totals.recoveryDeductionMagnitude).toBe(0);
+  });
+
+  it('does not retrospectively invalidate an already-approved certificate when the CE is later closed', () => {
+    const recovery = seedApprovedRecovery(undefined, { originValue: 5000 });
+    const certificate = createDraftCertificate();
+    addRecoveryLineToCertificate(ORDER_KEY, certificate.id, recovery.id, 2000, baseOrder);
+    updateCertificateCellProgress(ORDER_KEY, certificate.id, '0::0', 10);
+    submitCertificate(ORDER_KEY, certificate.id);
+    const totals = summarizeCertificateProgress(ORDER_KEY, certificate.id, baseOrder).totals;
+    approveCertificate(ORDER_KEY, certificate.id, totals, baseOrder);
+
+    closeCommercialEvent(DEV_ID, recovery.id);
+
+    const locked = getCertificate(ORDER_KEY, certificate.id);
+    expect(locked.status).toBe('locked');
+    expect(locked.commercialLines.filter((line) => line.lineType === 'recoveryDeduction')).toHaveLength(1);
+    expect(getCommercialEventById(DEV_ID, recovery.id).status).toBe(
+      COMMERCIAL_EVENT_STATUSES.closed.key
+    );
+  });
+
+  it('uses authority-aware getCommercialEventById during draft validation', () => {
+    const { certificate } = seedDraftWithStaleClosedRecovery();
+    const spy = vi.spyOn(commercialEventStore, 'getCommercialEventById');
+
+    validateRecoveryLinesForCertificate({
+      orderKey: ORDER_KEY,
+      certificateId: certificate.id,
+      developmentId: DEV_ID,
+      commercialLines: getCertificate(ORDER_KEY, certificate.id).commercialLines,
+    });
+
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('recognises unchanged persisted stale lines via isRecoveryLineUnchanged', () => {
+    const { certificate } = seedDraftWithStaleClosedRecovery();
+    const persisted = getCertificate(ORDER_KEY, certificate.id).commercialLines[0];
+    const liveEvent = getCommercialEventById(DEV_ID, persisted.commercialEventId);
+
+    expect(isRecoveryLineUnchanged(persisted, { ...persisted })).toBe(true);
+    expect(getStaleDraftRecoveryLineMessage(persisted, liveEvent)).toMatch(/is now Closed/i);
+    expect(getStaleDraftRecoveryLineApprovalMessage(persisted, liveEvent)).toMatch(
+      /Remove this recovery line before approving/i
+    );
+  });
+
+  it('distinguishes workflow closed from recovery lifecycle closed in eligibility messaging', () => {
+    const recovery = seedApprovedRecovery(undefined, { originValue: 5000 });
+    closeCommercialEvent(DEV_ID, recovery.id);
+    expect(getRecoveryDeductionEligibilityReason(getCommercialEventById(DEV_ID, recovery.id))).toMatch(
+      /Closed commercial events cannot be added/i
+    );
+
+    const lifecycleClosed = {
+      ...recovery,
+      status: COMMERCIAL_EVENT_STATUSES.approved.key,
+      recoveryStatus: COMMERCIAL_EVENT_RECOVERY_STATUSES.closed.key,
+    };
+    expect(getRecoveryDeductionEligibilityReason(lifecycleClosed)).toMatch(
+      /recovery lifecycle is closed/i
+    );
   });
 });

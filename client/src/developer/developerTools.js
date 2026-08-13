@@ -3,11 +3,6 @@
  * Central registry for demo data keys. Add future buildlite_* keys here only.
  */
 
-import {
-  importLocalDevelopments,
-  loadDevelopments,
-} from '../developments/developmentStore';
-
 export const BUILDLITE_VERSION = '0.12.0-dev';
 
 /** Injected at build time from git branch; falls back for local dev. */
@@ -121,6 +116,11 @@ function collectKeysToRemove(storage) {
   ]);
   return [...keys];
 }
+
+export {
+  exportTestSite1CommercialEventsFromLocalStorage,
+  downloadTestSite1CommercialEventsExport,
+} from '../commercialEvents/commercialEventExportImport';
 
 /**
  * One-time import of local buildlite_developments_v1 records into Postgres.

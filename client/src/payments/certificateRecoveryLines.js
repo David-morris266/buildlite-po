@@ -23,9 +23,11 @@ import {
   normalizeRecoveryStatusKey,
 } from '../commercialEvents/commercialEventTypes';
 import { CERTIFICATE_COMMERCIAL_LINE_TYPES } from '../commercialEvents/commercialEventCertifiability';
+import { isCommercialEventFinancialDataReady } from '../commercialEvents/commercialEventPackageValue';
 import { formatMoney } from '../components/poDrawerHelpers';
 import { roundMoney } from './paymentCertificateCalculations';
 import {
+  getCertificate,
   isApprovedCommercialCertificate,
   isCertificateEditable,
   listCertificates,
@@ -153,12 +155,47 @@ export function isRecoveryEligibleForCertificate(event, orderKey = null) {
   return isActiveRecovery(event);
 }
 
+function formatRecoveryEventNumber(line, liveEvent) {
+  return line?.sourceEventNumber || liveEvent?.eventNumber || line?.commercialEventId || 'Recovery event';
+}
+
+export function isRecoveryLineUnchanged(persistedLine, candidateLine) {
+  if (!persistedLine || !candidateLine) return false;
+  if (persistedLine.commercialEventId !== candidateLine.commercialEventId) {
+    return false;
+  }
+  if (
+    roundMoney(persistedLine.amountThisCertificate) !==
+    roundMoney(candidateLine.amountThisCertificate)
+  ) {
+    return false;
+  }
+  if (
+    persistedLine.sourceEventValue != null &&
+    roundMoney(persistedLine.sourceEventValue) !==
+      roundMoney(candidateLine.sourceEventValue ?? persistedLine.sourceEventValue)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Live CE is no longer eligible for a new recovery deduction on this package. */
+export function isStaleDraftRecoveryLine(liveEvent, orderKey) {
+  if (!liveEvent) return true;
+  if (liveEvent.packageId !== orderKey) return true;
+  return Boolean(getRecoveryDeductionEligibilityReason(liveEvent));
+}
+
 export function getRecoveryDeductionEligibilityReason(event) {
   if (!event?.id) return 'Commercial event not found.';
   if (!isRecoveryCommercialEvent(event)) {
     return 'Only approved recovery events (linked or direct) can be deducted on a payment certificate.';
   }
   if (event.status !== COMMERCIAL_EVENT_STATUSES.approved.key) {
+    if (event.status === COMMERCIAL_EVENT_STATUSES.closed.key) {
+      return 'Closed commercial events cannot be added as recovery deductions.';
+    }
     return 'Only approved recovery events can be deducted on a payment certificate.';
   }
 
@@ -167,7 +204,7 @@ export function getRecoveryDeductionEligibilityReason(event) {
     return 'This recovery has already been fully recovered.';
   }
   if (recoveryStatus === COMMERCIAL_EVENT_RECOVERY_STATUSES.closed.key) {
-    return 'Closed recovery events cannot be deducted.';
+    return 'This recovery lifecycle is closed and cannot be deducted.';
   }
   if (recoveryStatus === COMMERCIAL_EVENT_RECOVERY_STATUSES.writtenOff.key) {
     return 'Written-off recovery events cannot be deducted.';
@@ -176,6 +213,53 @@ export function getRecoveryDeductionEligibilityReason(event) {
     return 'This recovery is not active for certificate deduction.';
   }
   return null;
+}
+
+export function getStaleDraftRecoveryLineMessage(line, liveEvent) {
+  const eventNumber = formatRecoveryEventNumber(line, liveEvent);
+
+  if (!liveEvent) {
+    return `${eventNumber} no longer exists. This recovery was added while the event was eligible, but it can no longer be deducted. Remove it before approving this certificate.`;
+  }
+
+  if (liveEvent.status === COMMERCIAL_EVENT_STATUSES.closed.key) {
+    return `${eventNumber} is now Closed. This recovery was added while the event was eligible, but it can no longer be deducted. Remove it before approving this certificate.`;
+  }
+
+  const eligibilityReason = getRecoveryDeductionEligibilityReason(liveEvent);
+  if (eligibilityReason) {
+    return `${eventNumber} is no longer eligible for deduction (${eligibilityReason}) Remove it before approving this certificate.`;
+  }
+
+  return null;
+}
+
+export function getStaleDraftRecoveryLineApprovalMessage(line, liveEvent) {
+  const eventNumber = formatRecoveryEventNumber(line, liveEvent);
+
+  if (!liveEvent) {
+    return `${eventNumber} no longer exists. Remove this recovery line before approving the certificate.`;
+  }
+
+  if (liveEvent.status === COMMERCIAL_EVENT_STATUSES.closed.key) {
+    return `${eventNumber} is now Closed and can no longer be deducted. Remove this recovery line before approving the certificate.`;
+  }
+
+  const eligibilityReason = getRecoveryDeductionEligibilityReason(liveEvent);
+  if (eligibilityReason) {
+    return `${eventNumber} is no longer eligible for deduction. Remove this recovery line before approving the certificate.`;
+  }
+
+  return `${eventNumber} is no longer eligible for deduction. Remove this recovery line before approving the certificate.`;
+}
+
+function getPersistedRecoveryLines(orderKey, certificateId) {
+  const certificate = getCertificate(orderKey, certificateId);
+  if (!certificate) return [];
+
+  return normalizeCommercialLines(certificate.commercialLines).filter(
+    (line) => line.lineType === CERTIFICATE_COMMERCIAL_LINE_TYPES.recoveryDeduction
+  );
 }
 
 export function validateRecoveryDeductionAmount(
@@ -259,6 +343,8 @@ export function buildRecoveryDeductionDisplayRow({
     recoveryMagnitude - previouslyRecovered - currentMagnitude
   );
 
+  const stale = isStaleDraftRecoveryLine(liveEvent, orderKey);
+
   return {
     ...line,
     eventNumber: line.sourceEventNumber,
@@ -269,12 +355,8 @@ export function buildRecoveryDeductionDisplayRow({
     remainingRecovery,
     maxMagnitude: roundMoney(recoveryMagnitude - previouslyRecovered),
     liveEvent,
-    stale: Boolean(
-      liveEvent &&
-        (liveEvent.packageId !== orderKey ||
-          !isRecoveryEligibleForCertificate(liveEvent) ||
-          getRecoveryDeductionEligibilityReason(liveEvent))
-    ),
+    stale,
+    staleReason: stale ? getStaleDraftRecoveryLineMessage(line, liveEvent) : null,
   };
 }
 
@@ -400,8 +482,12 @@ export function validateRecoveryLinesForCertificate({
   const lines = normalizeCommercialLines(commercialLines).filter(
     (line) => line.lineType === CERTIFICATE_COMMERCIAL_LINE_TYPES.recoveryDeduction
   );
+  const persistedRecoveryLines = getPersistedRecoveryLines(orderKey, certificateId);
   const errors = [];
   const seenEventIds = new Set();
+  const financialDataReady = developmentId
+    ? isCommercialEventFinancialDataReady(developmentId)
+    : true;
 
   for (const line of lines) {
     if (!line.commercialEventId) {
@@ -417,10 +503,34 @@ export function validateRecoveryLinesForCertificate({
     seenEventIds.add(line.commercialEventId);
 
     const liveEvent = getCommercialEventById(developmentId, line.commercialEventId);
+    const persistedLine = persistedRecoveryLines.find((item) => item.id === line.id);
+    const unchangedStale =
+      !forApproval &&
+      persistedLine &&
+      isRecoveryLineUnchanged(persistedLine, line) &&
+      isStaleDraftRecoveryLine(liveEvent, orderKey);
+
+    if (unchangedStale) {
+      continue;
+    }
+
     if (!liveEvent) {
+      if (!financialDataReady) {
+        if (forApproval) {
+          errors.push(
+            `Commercial event data is still loading for ${line.sourceEventNumber || line.commercialEventId}. Try again shortly.`
+          );
+        }
+        continue;
+      }
       errors.push(
         `Recovery event ${line.sourceEventNumber || line.commercialEventId} no longer exists. Re-open the certificate and remove stale lines.`
       );
+      continue;
+    }
+
+    if (forApproval && isStaleDraftRecoveryLine(liveEvent, orderKey)) {
+      errors.push(getStaleDraftRecoveryLineApprovalMessage(line, liveEvent));
       continue;
     }
 
@@ -464,6 +574,10 @@ export function validateRecoveryLinesForCertificate({
     valid: errors.length === 0,
     errors,
     recoveryLines: lines,
+    staleRecoveryLines: lines.filter((line) => {
+      const liveEvent = getCommercialEventById(developmentId, line.commercialEventId);
+      return isStaleDraftRecoveryLine(liveEvent, orderKey);
+    }),
   };
 }
 

@@ -370,8 +370,10 @@ export function buildCertificateWorksTotals(
   );
   const previousCertified = roundMoney(previousGrossWorks);
   const certifiedToDate = roundMoney(previousCertified + grossWorksThisCertificate);
-  const contract = roundMoney(currentContractValue);
-  const remainingContract = roundMoney(contract - certifiedToDate);
+  const contract =
+    currentContractValue == null ? null : roundMoney(currentContractValue);
+  const remainingContract =
+    contract == null ? null : roundMoney(contract - certifiedToDate);
   const retention = roundMoney(grossWorksThisCertificate * retentionRate);
   const vat = roundMoney((grossWorksThisCertificate - retention) * vatRate);
   const netPayment = roundMoney(
@@ -395,8 +397,9 @@ export function buildCertificateWorksTotals(
     retention,
     vat,
     netPayment,
-    overCertified: certifiedToDate > contract + Number.EPSILON,
+    overCertified: contract != null && certifiedToDate > contract + Number.EPSILON,
     contractTotal: contract,
+    contractValueUnavailable: contract == null,
   };
 }
 
@@ -421,6 +424,7 @@ export function summarizeCertificateProgress(orderKey, certificateId, order = nu
 
   const currentContractValue =
     buildPackageCommercialDisplayFields(order || { orderKey }).currentPackageValue;
+  const contractValueUnavailable = currentContractValue == null;
   const previousGrossWorks = calculatePreviousApprovedGrossWorks(orderKey, certificate);
   const previousCommercialEventCertified =
     calculatePreviousApprovedCommercialEventGross(orderKey, certificate);
@@ -440,7 +444,8 @@ export function summarizeCertificateProgress(orderKey, certificateId, order = nu
   if (
     isApprovedCommercialCertificate(certificate) &&
     certificate.grossValue != null &&
-    certificate.netValue != null
+    certificate.netValue != null &&
+    !contractValueUnavailable
   ) {
     totals = {
       ...totals,

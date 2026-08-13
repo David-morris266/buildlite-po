@@ -4236,6 +4236,21 @@
   background: rgba(251, 191, 36, 0.08);
 }
 
+.po-cert-ce-table__stale-note {
+  margin-top: 4px;
+  color: #b45309;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.po-cert-ce-stale-warning {
+  margin: 0;
+}
+
+.po-cert-ce-stale-warning + .po-cert-ce-stale-warning {
+  margin-top: 6px;
+}
+
 .po-cert-detail__ce-preview {
   margin-bottom: 12px;
   padding-bottom: 12px;

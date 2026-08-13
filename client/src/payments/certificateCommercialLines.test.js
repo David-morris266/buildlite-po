@@ -277,7 +277,12 @@ describe('certificateCommercialLines BL-025.2', () => {
     const result = updateCertificateCommercialLines(
       ORDER_KEY,
       certificate.id,
-      [{ id: 'x', commercialEventId: event.id, amountThisCertificate: 2000 }],
+      (currentLines) =>
+        currentLines.map((line) =>
+          line.commercialEventId === event.id
+            ? { ...line, amountThisCertificate: 2000 }
+            : line
+        ),
       baseOrder
     );
     expect(result.ok).toBe(false);

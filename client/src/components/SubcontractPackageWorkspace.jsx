@@ -70,7 +70,14 @@ export default function SubcontractPackageWorkspace({
     void certRefresh;
     void commercialEventRefresh;
     return buildPackageViewModel(order);
-  }, [order, matrixRefresh, certRefresh, commercialEventRefresh]);
+  }, [
+    order,
+    matrixRefresh,
+    certRefresh,
+    commercialEventRefresh,
+    commercialEventsLoading,
+    commercialEventsReady,
+  ]);
 
   const packageTitle = `${order.supplierLabel} – ${order.projectLabel}`;
   const pageNavigation = buildPackageWorkspaceNavigation({
@@ -107,6 +114,7 @@ export default function SubcontractPackageWorkspace({
         pkg={pkg}
         compact={activeTab === 'variations'}
         commercialEventsLoading={commercialEventsLoading}
+        commercialEventsReady={commercialEventsReady}
       />
       {activeTab !== 'variations' ? (
         <SubcontractPackageSummary

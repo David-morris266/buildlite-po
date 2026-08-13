@@ -11,6 +11,8 @@ import {
   PACKAGE_OPENED_FROM,
 } from '../payments/packageWorkspaceLaunch';
 import { resolvePackageWorkspaceOrderFromPoList } from '../payments/packageWorkspaceOrderResolver';
+import { resolvePackageDevelopmentId } from '../commercialEvents/commercialEventPackageValue';
+import { useCommercialEventServerHydration } from '../commercialEvents/useCommercialEventServerHydration';
 
 export default function PaymentCertificates({
   initialOrderKey = null,
@@ -75,6 +77,17 @@ export default function PaymentCertificates({
       }),
     [activeOrderKey, orders, loadingOrder]
   );
+
+  const developmentId =
+    packageResolution.status === 'ready'
+      ? resolvePackageDevelopmentId(packageResolution.order)
+      : null;
+
+  const {
+    commercialEventsLoading,
+    commercialEventsReady,
+    commercialEventsError,
+  } = useCommercialEventServerHydration(developmentId);
 
   const navigationContext = useMemo(() => {
     if (!activeOrderKey) return null;
@@ -172,6 +185,9 @@ export default function PaymentCertificates({
         assistantDevelopmentPackages={assistantDevelopmentPackages}
         onAssistantNavigate={handleAssistantNavigation}
         onBackToList={() => returnToList()}
+        commercialEventsLoading={commercialEventsLoading}
+        commercialEventsReady={commercialEventsReady}
+        commercialEventsError={commercialEventsError}
       />
     );
   }

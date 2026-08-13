@@ -320,9 +320,9 @@ describe('BL-028B.2 certification & recovery overlay', () => {
     });
 
     it('15. server recoveredAmount does not double count when authority ON', () => {
-      authorityEnabled.value = true;
       const local = seedApprovedRecovery();
       approveCertWithRecoveryLine(local.id, 3000);
+      authorityEnabled.value = true;
       const serverEvent = asServerEvent(local, { recoveredAmount: 7500 });
       const presentation = getCommercialEventRecoveryPresentation(serverEvent, ORDER_KEY);
       expect(presentation.recoveredToDate).toBe(3000);
@@ -330,8 +330,8 @@ describe('BL-028B.2 certification & recovery overlay', () => {
     });
 
     it('16. server partiallyRecovered does not override local certificate evidence', () => {
-      authorityEnabled.value = true;
       const local = seedApprovedRecovery();
+      authorityEnabled.value = true;
       const serverEvent = asServerEvent(local, {
         recoveryStatus: COMMERCIAL_EVENT_RECOVERY_STATUSES.partiallyRecovered.key,
         recoveredAmount: 5000,
@@ -456,9 +456,9 @@ describe('BL-028B.2 certification & recovery overlay', () => {
     });
 
     it('24. server authority ON fixture parity for presentation', () => {
-      authorityEnabled.value = true;
       const local = seedApprovedEvent();
       approveCertWithValueLine(local.id, 4000);
+      authorityEnabled.value = true;
       const serverEvent = asServerEvent(local, {
         certificateStatus: COMMERCIAL_EVENT_CERTIFICATE_STATUSES.notIncluded.key,
       });
@@ -473,9 +473,9 @@ describe('BL-028B.2 certification & recovery overlay', () => {
     });
 
     it('25. certificate approval creates no CE server mutation when authority ON', () => {
-      authorityEnabled.value = true;
       const event = seedApprovedEvent();
       const cert = approveCertWithValueLine(event.id, 4000);
+      authorityEnabled.value = true;
       const result = applyValueInclusionLifecycleOnCertificateApproval({
         developmentId: DEV_ID,
         orderKey: ORDER_KEY,
@@ -486,9 +486,9 @@ describe('BL-028B.2 certification & recovery overlay', () => {
     });
 
     it('26. recovery certificate approval creates no CE mutation when authority ON', () => {
-      authorityEnabled.value = true;
       const event = seedApprovedRecovery();
       const cert = approveCertWithRecoveryLine(event.id, 3000);
+      authorityEnabled.value = true;
       const result = applyRecoveryDeductionsOnCertificateApproval({
         developmentId: DEV_ID,
         orderKey: ORDER_KEY,
