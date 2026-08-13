@@ -36,7 +36,14 @@ function buildOpenPackageLabel(pkg) {
   return `Open package for ${supplier}, cost code ${costCode}`;
 }
 
-export function PackageTable({ packages, onOpenPackage, packageError = null, loading = false }) {
+export function PackageTable({
+  packages,
+  onOpenPackage,
+  packageError = null,
+  loading = false,
+  commercialEventsLoading = false,
+  commercialEventsError = '',
+}) {
   if (loading) {
     return <p className="dev-workspace__section-lead">Loading packages…</p>;
   }
@@ -74,6 +81,11 @@ export function PackageTable({ packages, onOpenPackage, packageError = null, loa
           {packageError}
         </div>
       ) : null}
+      {commercialEventsError ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          {commercialEventsError}
+        </div>
+      ) : null}
       <div className="po-table-wrap dev-workspace__packages-wrap">
         <table className="po-data-table dev-workspace__packages-table">
           <colgroup>
@@ -101,6 +113,8 @@ export function PackageTable({ packages, onOpenPackage, packageError = null, loa
           <tbody>
             {packages.map((pkg) => {
               const commercialDisplay = buildPackageCommercialDisplayFields(pkg);
+              const commercialValuesPending =
+                commercialEventsLoading || commercialDisplay.commercialEventsReady === false;
               const supplier = buildPackageTableSupplierDisplay(pkg.supplierLabel);
               const costCode = buildPackageTableCostCodeDisplay(pkg);
               const secondaryTooltip = buildPackageTableSecondaryTooltip(
@@ -136,14 +150,18 @@ export function PackageTable({ packages, onOpenPackage, packageError = null, loa
                 </td>
                 <td className="dev-workspace__packages-num">
                   <span className="dev-workspace__packages-money">
-                    {formatSignedDisplayMoney(
-                      commercialDisplay.approvedCommercialEventMovement
-                    )}
+                    {commercialValuesPending
+                      ? 'Loading commercial data…'
+                      : formatSignedDisplayMoney(
+                          commercialDisplay.approvedCommercialEventMovement
+                        )}
                   </span>
                 </td>
                 <td className="dev-workspace__packages-num">
                   <span className="dev-workspace__packages-money">
-                    {formatDisplayMoney(commercialDisplay.currentPackageValue)}
+                    {commercialValuesPending
+                      ? 'Loading commercial data…'
+                      : formatDisplayMoney(commercialDisplay.currentPackageValue)}
                   </span>
                 </td>
                 <td className="dev-workspace__packages-action">
@@ -170,7 +188,14 @@ export function PackageTable({ packages, onOpenPackage, packageError = null, loa
   );
 }
 
-export default function DevelopmentOverview({ model, onOpenPackage, packageError = null, packagesLoading = false }) {
+export default function DevelopmentOverview({
+  model,
+  onOpenPackage,
+  packageError = null,
+  packagesLoading = false,
+  commercialEventsLoading = false,
+  commercialEventsError = '',
+}) {
   if (!model) return null;
 
   const setupItems = [
@@ -232,6 +257,8 @@ export default function DevelopmentOverview({ model, onOpenPackage, packageError
             onOpenPackage={onOpenPackage}
             packageError={packageError}
             loading={packagesLoading}
+            commercialEventsLoading={commercialEventsLoading}
+            commercialEventsError={commercialEventsError}
           />
         </section>
       </div>
@@ -244,6 +271,8 @@ export function DevelopmentPackagesTab({
   onOpenPackage,
   packageError = null,
   packagesLoading = false,
+  commercialEventsLoading = false,
+  commercialEventsError = '',
 }) {
   return (
     <section className="po-module-card dev-workspace__section">
@@ -253,6 +282,8 @@ export function DevelopmentPackagesTab({
         onOpenPackage={onOpenPackage}
         packageError={packageError}
         loading={packagesLoading}
+        commercialEventsLoading={commercialEventsLoading}
+        commercialEventsError={commercialEventsError}
       />
     </section>
   );

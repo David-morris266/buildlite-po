@@ -72,6 +72,8 @@ export function buildPackageViewModel(order) {
     approvedCommercialMovement,
     pendingCommercialMovement,
     currentContractValue,
+    commercialEventsReady: commercialDisplay.commercialEventsReady !== false,
+    commercialEventsLoadState: commercialDisplay.commercialEventsLoadState || null,
     certifiedGrossToDate,
     certifiedNetPaymentToDate,
     remainingContractValue,

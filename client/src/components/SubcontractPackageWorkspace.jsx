@@ -31,6 +31,9 @@ export default function SubcontractPackageWorkspace({
   onBackToDevelopmentList = null,
   onNavigateToLinkedCommercialEvent = null,
   packageLaunchError = '',
+  commercialEventsLoading = false,
+  commercialEventsError = '',
+  commercialEventsReady = true,
   assistantDevelopmentPackages = null,
   onAssistantNavigate = null,
 }) {
@@ -94,8 +97,24 @@ export default function SubcontractPackageWorkspace({
         </div>
       ) : null}
 
-      <SubcontractPackageDashboard pkg={pkg} compact={activeTab === 'variations'} />
-      {activeTab !== 'variations' ? <SubcontractPackageSummary pkg={pkg} compact /> : null}
+      {commercialEventsError ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          {commercialEventsError}
+        </div>
+      ) : null}
+
+      <SubcontractPackageDashboard
+        pkg={pkg}
+        compact={activeTab === 'variations'}
+        commercialEventsLoading={commercialEventsLoading}
+      />
+      {activeTab !== 'variations' ? (
+        <SubcontractPackageSummary
+          pkg={pkg}
+          compact
+          commercialEventsLoading={commercialEventsLoading}
+        />
+      ) : null}
 
       <nav className="po-package-tabs" aria-label="Package sections">
         {TABS.map((tab) => (
@@ -146,6 +165,8 @@ export default function SubcontractPackageWorkspace({
             order={order}
             refreshToken={commercialEventRefresh}
             commercialEventTarget={commercialEventTarget}
+            commercialEventsLoading={commercialEventsLoading}
+            commercialEventsReady={commercialEventsReady}
             onCommercialEventsChanged={() =>
               setCommercialEventRefresh((value) => value + 1)
             }

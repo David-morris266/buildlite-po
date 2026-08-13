@@ -44,17 +44,24 @@ function PackageCommercialEventRecoveryNote({ summary }) {
   );
 }
 
-function PackageCommercialEventKpiStrip({ summary }) {
+function PackageCommercialEventKpiStrip({ summary, loading = false }) {
+  const formatValue = (value, signed = false) => {
+    if (loading) return 'Loading commercial data…';
+    return signed
+      ? formatSignedCommercialEventValue(value)
+      : String(value ?? 0);
+  };
+
   return (
     <section className="po-ce-kpi po-ce-kpi--events" aria-label="Commercial events on this package">
       <div className="po-ce-kpi__card po-ce-kpi__card--default">
         <span className="po-ce-kpi__label">Commercial events</span>
-        <strong className="po-ce-kpi__value">{summary.totalEventCount}</strong>
+        <strong className="po-ce-kpi__value">{formatValue(summary.totalEventCount)}</strong>
       </div>
       <div className="po-ce-kpi__card po-ce-kpi__card--muted">
         <span className="po-ce-kpi__label">Pending value</span>
         <strong className="po-ce-kpi__value">
-          {formatSignedCommercialEventValue(summary.pendingEventValue)}
+          {formatValue(summary.pendingEventValue, true)}
         </strong>
       </div>
       <div
@@ -64,12 +71,12 @@ function PackageCommercialEventKpiStrip({ summary }) {
       >
         <span className="po-ce-kpi__label">Approved movement</span>
         <strong className="po-ce-kpi__value">
-          {formatSignedCommercialEventValue(summary.netCommercialEventMovement)}
+          {formatValue(summary.netCommercialEventMovement, true)}
         </strong>
       </div>
       <div className="po-ce-kpi__card po-ce-kpi__card--muted">
         <span className="po-ce-kpi__label">Approved events</span>
-        <strong className="po-ce-kpi__value">{summary.approvedEventCount}</strong>
+        <strong className="po-ce-kpi__value">{formatValue(summary.approvedEventCount)}</strong>
       </div>
     </section>
   );
@@ -81,6 +88,8 @@ export default function PackageCommercialEvents({
   commercialEventTarget = null,
   onCommercialEventsChanged = null,
   onNavigateToLinkedCommercialEvent = null,
+  commercialEventsLoading = false,
+  commercialEventsReady = true,
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState('create');
@@ -167,9 +176,11 @@ export default function PackageCommercialEvents({
     onNavigateToLinkedCommercialEvent(sourceEvent);
   }
 
+  const commercialValuesPending = commercialEventsLoading || commercialEventsReady === false;
+
   return (
     <div className="po-ce-workspace">
-      <PackageCommercialEventKpiStrip summary={summary} />
+      <PackageCommercialEventKpiStrip summary={summary} loading={commercialValuesPending} />
       <PackageCommercialEventRecoveryNote summary={recoverySummary} />
 
       <section className="po-module-card po-ce-register">
@@ -186,7 +197,9 @@ export default function PackageCommercialEvents({
           </button>
         </div>
 
-        {events.length === 0 ? (
+        {commercialValuesPending ? (
+          <p className="po-ce-register__empty">Loading commercial data…</p>
+        ) : events.length === 0 ? (
           <p className="po-ce-register__empty">
             No commercial events recorded yet.
           </p>

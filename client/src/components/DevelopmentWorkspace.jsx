@@ -12,6 +12,12 @@ import { buildDevelopmentWorkspaceModel } from '../developments/developmentHelpe
 import {
   ensurePackagesReadyForDevelopment,
 } from '../payments/packageStore';
+import {
+  ensureCommercialEventsReadyForDevelopment,
+  getCommercialEventsLoadState,
+  getCommercialEventsLoadError,
+} from '../commercialEvents/commercialEventServerCache';
+import { isCommercialEventServerAuthorityEnabled } from '../commercialEvents/commercialEventAuthority';
 import DevelopmentCommercialEvents from './DevelopmentCommercialEvents';
 import DevelopmentOverview, {
   DevelopmentPackagesTab,
@@ -81,6 +87,8 @@ export default function DevelopmentWorkspace({
   const [serverPackages, setServerPackages] = useState(null);
   const [packagesLoadState, setPackagesLoadState] = useState('idle');
   const [packagesLoadError, setPackagesLoadError] = useState('');
+  const [commercialEventsLoadState, setCommercialEventsLoadState] = useState('idle');
+  const [commercialEventsLoadError, setCommercialEventsLoadError] = useState('');
   const [packageLaunch, setPackageLaunch] = useState(null);
   const [packageLaunchError, setPackageLaunchError] = useState('');
   const [stablePackageWorkspaceOrder, setStablePackageWorkspaceOrder] = useState(null);
@@ -112,6 +120,8 @@ export default function DevelopmentWorkspace({
     setServerPackages(null);
     setPackagesLoadState('idle');
     setPackagesLoadError('');
+    setCommercialEventsLoadState('idle');
+    setCommercialEventsLoadError('');
     setCommercialNavigationStack([]);
     setDevelopmentCommercialTarget(null);
     setCommercialRegisterError('');
@@ -155,12 +165,27 @@ export default function DevelopmentWorkspace({
       setPackagesLoadState('loading');
       setPackagesLoadError('');
       setServerPackages(null);
+      setCommercialEventsLoadState('loading');
+      setCommercialEventsLoadError('');
 
       try {
-        const packages = await ensurePackagesReadyForDevelopment(development.id, { pos });
+        const [packages] = await Promise.all([
+          ensurePackagesReadyForDevelopment(development.id, { pos }),
+          ensureCommercialEventsReadyForDevelopment(development.id).catch(() => []),
+        ]);
+
         if (cancelled) return;
         setServerPackages(packages);
         setPackagesLoadState('loaded');
+
+        const ceState = getCommercialEventsLoadState(development.id);
+        setCommercialEventsLoadState(ceState);
+        if (ceState === 'error' && isCommercialEventServerAuthorityEnabled()) {
+          const ceError = getCommercialEventsLoadError(development.id);
+          setCommercialEventsLoadError(
+            ceError?.message || 'Unable to load Commercial Events. Please try again.'
+          );
+        }
       } catch (error) {
         if (cancelled) return;
         setServerPackages(null);
@@ -168,6 +193,16 @@ export default function DevelopmentWorkspace({
         setPackagesLoadError(
           error?.message || 'Failed to load packages from the server.'
         );
+        setCommercialEventsLoadState(getCommercialEventsLoadState(development.id));
+        if (
+          isCommercialEventServerAuthorityEnabled() &&
+          getCommercialEventsLoadState(development.id) === 'error'
+        ) {
+          const ceError = getCommercialEventsLoadError(development.id);
+          setCommercialEventsLoadError(
+            ceError?.message || 'Unable to load Commercial Events. Please try again.'
+          );
+        }
       }
     })();
 
@@ -218,6 +253,16 @@ export default function DevelopmentWorkspace({
       commercialRefresh,
     ]
   );
+
+  const commercialEventsAuthorityEnabled = isCommercialEventServerAuthorityEnabled();
+  const commercialEventsLoading =
+    commercialEventsAuthorityEnabled && commercialEventsLoadState === 'loading';
+  const commercialEventsReady =
+    !commercialEventsAuthorityEnabled || commercialEventsLoadState === 'loaded';
+  const commercialEventsErrorMessage =
+    commercialEventsAuthorityEnabled && commercialEventsLoadState === 'error'
+      ? commercialEventsLoadError
+      : '';
 
   const packageIdentityError =
     packagesLoadState === 'error' ? packagesLoadError : packageLaunchError;
@@ -618,6 +663,9 @@ export default function DevelopmentWorkspace({
           onBackToList={handlePackageWorkspaceBack}
           onNavigateToLinkedCommercialEvent={handleNavigateToLinkedCommercialEvent}
           packageLaunchError={packageLaunchError}
+          commercialEventsLoading={commercialEventsLoading}
+          commercialEventsError={commercialEventsErrorMessage}
+          commercialEventsReady={commercialEventsReady}
           assistantDevelopmentPackages={model?.packages || []}
           onAssistantNavigate={handleAssistantNavigation}
         />
@@ -737,6 +785,8 @@ export default function DevelopmentWorkspace({
             onOpenPackage={handleOpenPackageFromDevelopment}
             packageError={packageIdentityError}
             packagesLoading={packagesLoadState === 'loading'}
+            commercialEventsLoading={commercialEventsLoading}
+            commercialEventsError={commercialEventsErrorMessage}
           />
         ) : null}
 
@@ -757,6 +807,8 @@ export default function DevelopmentWorkspace({
             onOpenPackage={handleOpenPackageFromDevelopment}
             packageError={packageIdentityError}
             packagesLoading={packagesLoadState === 'loading'}
+            commercialEventsLoading={commercialEventsLoading}
+            commercialEventsError={commercialEventsErrorMessage}
           />
         ) : null}
 
@@ -769,6 +821,9 @@ export default function DevelopmentWorkspace({
             onNavigateToLinkedCrossPackage={handleNavigateToLinkedFromCommercialRegister}
             registerError={commercialRegisterError}
             onRegisterError={setCommercialRegisterError}
+            commercialEventsLoading={commercialEventsLoading}
+            commercialEventsError={commercialEventsErrorMessage}
+            commercialEventsReady={commercialEventsReady}
           />
         ) : null}
 

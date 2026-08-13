@@ -216,8 +216,16 @@ export function SubcontractPackageTabPlaceholder({ title, lead, points = [] }) {
   );
 }
 
-export function SubcontractPackageDashboard({ pkg, compact = false }) {
+export function SubcontractPackageDashboard({ pkg, compact = false, commercialEventsLoading = false }) {
   if (!pkg) return null;
+
+  const commercialValuesPending =
+    commercialEventsLoading || pkg.commercialEventsReady === false;
+
+  const formatCommercialMoney = (value, signed = false) => {
+    if (commercialValuesPending) return 'Loading commercial data…';
+    return signed ? formatSignedDisplayMoney(value) : formatDisplayMoney(value);
+  };
 
   const progressTitle =
     'Gross certified ÷ current contract. Approved commercial events increase contract value but are not yet certifiable on certificates until BL-025.2+.';
@@ -231,12 +239,12 @@ export function SubcontractPackageDashboard({ pkg, compact = false }) {
         },
         {
           label: 'Approved events',
-          value: formatSignedDisplayMoney(pkg.approvedCommercialMovement),
+          value: formatCommercialMoney(pkg.approvedCommercialMovement, true),
           modifier: pkg.approvedCommercialMovement >= 0 ? 'default' : 'accent',
         },
         {
           label: 'Current contract',
-          value: formatDisplayMoney(pkg.currentContractValue),
+          value: formatCommercialMoney(pkg.currentContractValue),
           modifier: 'accent',
         },
         {
@@ -258,17 +266,17 @@ export function SubcontractPackageDashboard({ pkg, compact = false }) {
         },
         {
           label: 'Approved events',
-          value: formatSignedDisplayMoney(pkg.approvedCommercialMovement),
+          value: formatCommercialMoney(pkg.approvedCommercialMovement, true),
           modifier: pkg.approvedCommercialMovement >= 0 ? 'default' : 'accent',
         },
         {
           label: 'Current contract',
-          value: formatDisplayMoney(pkg.currentContractValue),
+          value: formatCommercialMoney(pkg.currentContractValue),
           modifier: 'accent',
         },
         {
           label: 'Pending events',
-          value: formatDisplayMoney(pkg.pendingCommercialMovement),
+          value: formatCommercialMoney(pkg.pendingCommercialMovement),
           modifier: 'muted',
         },
         {
@@ -304,7 +312,8 @@ export function SubcontractPackageDashboard({ pkg, compact = false }) {
       ) : null}
       {pkg.commercialProgressPct > 0 || pkg.certifiedGrossToDate > 0 ? (
         <p className="po-package-dashboard__progress-note">
-          <abbr title={progressTitle}>Commercial progress</abbr>: {pkg.commercialProgressPct}%
+          <abbr title={progressTitle}>Commercial progress</abbr>:{' '}
+          {commercialValuesPending ? 'Loading commercial data…' : `${pkg.commercialProgressPct}%`}
         </p>
       ) : null}
       {pkg.isOverCertified ? (

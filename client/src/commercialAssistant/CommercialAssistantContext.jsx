@@ -16,6 +16,8 @@ import {
 } from './recommendationDispositionStore';
 import { buildAssistantRecommendationSnapshot } from './recommendationEngine';
 import { ensureCommercialAssistantProvidersRegistered } from './registerCommercialAssistantProviders';
+import { isCommercialEventServerAuthorityEnabled } from '../commercialEvents/commercialEventAuthority';
+import { getCommercialEventFinancialReadiness } from '../commercialEvents/commercialEventServerCache';
 import {
   isEmptyScope,
   normalizeScope,
@@ -65,10 +67,28 @@ export function CommercialAssistantProvider({ children }) {
 
   const snapshot = useMemo(() => {
     void refreshToken;
-    return buildAssistantRecommendationSnapshot({
-      developmentId: scope.developmentId,
-      packages: scope.packages,
-    });
+
+    if (
+      isCommercialEventServerAuthorityEnabled() &&
+      scope.developmentId &&
+      !getCommercialEventFinancialReadiness(scope.developmentId).ready
+    ) {
+      return {
+        derived: [],
+        merged: [],
+        visible: [],
+        badgeCounts: { actionRequired: 0, warnings: 0, info: 0 },
+        commercialEventsPending: true,
+      };
+    }
+
+    return {
+      ...buildAssistantRecommendationSnapshot({
+        developmentId: scope.developmentId,
+        packages: scope.packages,
+      }),
+      commercialEventsPending: false,
+    };
   }, [scope.developmentId, scope.packages, refreshToken]);
 
   const setAssistantScope = useCallback((nextScope) => {
@@ -144,6 +164,7 @@ export function CommercialAssistantProvider({ children }) {
       clearAssistantScope,
       recommendations: snapshot.visible,
       badgeCounts: snapshot.badgeCounts,
+      commercialEventsPending: snapshot.commercialEventsPending,
       drawerOpen,
       openDrawer,
       closeDrawer,
@@ -159,6 +180,7 @@ export function CommercialAssistantProvider({ children }) {
       clearAssistantScope,
       snapshot.visible,
       snapshot.badgeCounts,
+      snapshot.commercialEventsPending,
       drawerOpen,
       openDrawer,
       closeDrawer,

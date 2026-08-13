@@ -46,7 +46,7 @@ function LinkBadge({ badge }) {
   );
 }
 
-function DevelopmentCommercialKpiStrip({ summary }) {
+function DevelopmentCommercialKpiStrip({ summary, loading = false }) {
   const cards = [
     { key: 'totalEvents', label: 'Total Commercial Events' },
     { key: 'draftCount', label: 'Draft' },
@@ -69,9 +69,11 @@ function DevelopmentCommercialKpiStrip({ summary }) {
     <section className="po-ce-kpi po-ce-kpi--development" aria-label="Development commercial event summary">
       {cards.map((card) => {
         const raw = summary[card.key];
-        const value = card.signed
-          ? formatSignedCommercialEventValue(raw)
-          : String(raw ?? 0);
+        const value = loading
+          ? 'Loading commercial data…'
+          : card.signed
+            ? formatSignedCommercialEventValue(raw)
+            : String(raw ?? 0);
         const modifier =
           card.signed && Number(raw) < 0
             ? 'accent'
@@ -117,6 +119,9 @@ export default function DevelopmentCommercialEvents({
   onNavigateToLinkedCrossPackage = null,
   registerError = '',
   onRegisterError = null,
+  commercialEventsLoading = false,
+  commercialEventsError = '',
+  commercialEventsReady = true,
 }) {
   const [localRefresh, setLocalRefresh] = useState(0);
   const [filters, setFilters] = useState(EMPTY_DEVELOPMENT_COMMERCIAL_FILTERS);
@@ -316,10 +321,17 @@ export default function DevelopmentCommercialEvents({
   if (!model) return null;
 
   const filtersActive = hasActiveDevelopmentCommercialFilters(filters);
+  const commercialValuesPending = commercialEventsLoading || commercialEventsReady === false;
 
   return (
     <div className="po-ce-dev-register">
-      <DevelopmentCommercialKpiStrip summary={summary} />
+      {commercialEventsError ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          {commercialEventsError}
+        </div>
+      ) : null}
+
+      <DevelopmentCommercialKpiStrip summary={summary} loading={commercialValuesPending} />
 
       <section className="po-module-card po-ce-register">
         <div className="po-ce-register__header">

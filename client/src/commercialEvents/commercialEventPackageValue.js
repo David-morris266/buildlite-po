@@ -4,6 +4,11 @@
  */
 
 import { listCommercialEventsByPackage } from './commercialEventStore';
+import { isCommercialEventServerAuthorityEnabled } from './commercialEventAuthority';
+import {
+  getCommercialEventFinancialReadiness,
+  listCachedCommercialEventsByPackage,
+} from './commercialEventServerCache';
 import { isRecoveryCommercialEvent } from './commercialEventRegisterBadges';
 import {
   COMMERCIAL_EVENT_STATUSES,
@@ -34,6 +39,48 @@ export function resolvePackageDevelopmentId(order) {
 }
 
 /**
+ * Resolve CE list for financial/display helpers.
+ * When server authority is enabled, reads hydrated server cache only.
+ */
+export function resolveCommercialEventsForPackage(developmentId, orderKey) {
+  if (!developmentId || !orderKey) {
+    return { ready: true, events: [], loadState: 'loaded' };
+  }
+
+  if (!isCommercialEventServerAuthorityEnabled()) {
+    return {
+      ready: true,
+      events: listCommercialEventsByPackage(developmentId, orderKey),
+      loadState: 'local',
+    };
+  }
+
+  const readiness = getCommercialEventFinancialReadiness(developmentId);
+  if (!readiness.ready) {
+    return {
+      ready: false,
+      events: [],
+      loadState: readiness.loadState,
+      reason: readiness.reason,
+      error: readiness.error,
+    };
+  }
+
+  return {
+    ready: true,
+    events: listCachedCommercialEventsByPackage(developmentId, orderKey),
+    loadState: 'loaded',
+  };
+}
+
+export function isCommercialEventFinancialDataReady(developmentId) {
+  if (!isCommercialEventServerAuthorityEnabled()) {
+    return true;
+  }
+  return getCommercialEventFinancialReadiness(developmentId).ready;
+}
+
+/**
  * Display-only commercial event fields for package screens (BL-021A.5).
  * Does not mutate PO commitment or certificate contract values.
  */
@@ -48,13 +95,25 @@ export function buildPackageCommercialDisplayFields(order) {
       approvedCommercialEventMovement: 0,
       currentPackageValue: originalPoCommitment,
       pendingCommercialEventValue: 0,
+      commercialEventsReady: true,
     };
   }
 
-  const events = listCommercialEventsByPackage(developmentId, orderKey);
+  const resolved = resolveCommercialEventsForPackage(developmentId, orderKey);
+  if (!resolved.ready) {
+    return {
+      originalPoCommitment,
+      approvedCommercialEventMovement: null,
+      currentPackageValue: null,
+      pendingCommercialEventValue: null,
+      commercialEventsReady: false,
+      commercialEventsLoadState: resolved.loadState,
+    };
+  }
+
   const summary = buildPackageCommercialEventSummaryForPackage(
     originalPoCommitment,
-    events,
+    resolved.events,
     orderKey
   );
 
@@ -63,6 +122,7 @@ export function buildPackageCommercialDisplayFields(order) {
     approvedCommercialEventMovement: summary.netCommercialEventMovement,
     currentPackageValue: summary.currentPackageValue,
     pendingCommercialEventValue: summary.pendingEventValue,
+    commercialEventsReady: true,
   };
 }
 
