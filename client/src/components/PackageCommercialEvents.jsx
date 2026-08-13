@@ -6,7 +6,7 @@ import { listCommercialEventsByPackage, getCommercialEventById } from '../commer
 import { buildPackageCommercialEventSummaryForPackage, formatSignedCommercialEventValue } from '../commercialEvents/commercialEventPackageValue';
 import { buildPackageRecoverySummary } from '../commercialEvents/commercialEventPackageRecoveryKpis';
 import { getCommercialEventLinkBadges } from '../commercialEvents/commercialEventRegisterBadges';
-import { getCommercialEventCertificationBadges } from '../commercialEvents/commercialEventCertificateLifecycle';
+import { getCommercialEventCertificationBadges } from '../commercialEvents/commercialEventCertificationOverlay';
 import {
   getCommercialEventStatusMeta,
   getCommercialEventTypeMeta,

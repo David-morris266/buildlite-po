@@ -15,6 +15,7 @@ import {
   isPackageInDevelopment,
   listApprovedEventsAwaitingValuation,
 } from './certificateAssistantHelpers';
+import { getCommercialEventRecoveryPresentation } from '../commercialEvents/commercialEventRecoveryOverlay';
 import { buildRecommendationFingerprint } from './recommendationFingerprint';
 import {
   COMMERCIAL_ASSISTANT_NAVIGATION_KIND,
@@ -211,8 +212,14 @@ function buildApprovedEventsAwaitingValuationRecommendation(
 }
 
 function buildOutstandingRecoveryRecommendation(event, developmentId, now = new Date()) {
-  const outstanding = getOutstandingRecoveryAmount(event);
+  const orderKey = event.packageId || null;
+  const outstanding = getOutstandingRecoveryAmount(event, orderKey);
   if (outstanding <= 0) return null;
+
+  const presentation = orderKey
+    ? getCommercialEventRecoveryPresentation(event, orderKey)
+    : null;
+  const recoveredToDate = toNumber(presentation?.recoveredToDate ?? event.recoveredAmount);
 
   return {
     fingerprint: buildRecommendationFingerprint(
@@ -235,7 +242,7 @@ function buildOutstandingRecoveryRecommendation(event, developmentId, now = new 
     evidence: [
       { label: 'Event', value: event.eventNumber || event.id, recordRef: event.id },
       { label: 'Outstanding', value: formatSignedCommercialEventValue(-outstanding) },
-      { label: 'Recovered to date', value: formatSignedCommercialEventValue(toNumber(event.recoveredAmount)) },
+      { label: 'Recovered to date', value: formatSignedCommercialEventValue(recoveredToDate) },
     ],
     generatedBy: RECOMMENDATION_GENERATED_BY.rule,
     observedAt: parseWhen(event.updatedAt || event.createdAt) || now.toISOString(),

@@ -2,6 +2,7 @@
  * BL-024A.1 — Commercial Events recommendation provider (thin adapter).
  */
 
+import { getCommercialEventRecoveryPresentation } from '../commercialEvents/commercialEventRecoveryOverlay';
 import { listCommercialEventsByDevelopment } from '../commercialEvents/commercialEventStore';
 import { isActiveRecovery } from '../commercialEvents/commercialEventRecovery';
 import { formatSignedCommercialEventValue } from '../commercialEvents/commercialEventPackageValue';
@@ -57,9 +58,15 @@ function buildNavigationTarget(event, developmentId) {
 }
 
 function buildOutstandingRecoveryRecommendation(event, developmentId, now = new Date()) {
+  const orderKey = event.packageId || null;
+  const presentation = orderKey
+    ? getCommercialEventRecoveryPresentation(event, orderKey)
+    : null;
   const absoluteValue = Math.abs(toNumber(event.value));
-  const recovered = toNumber(event.recoveredAmount);
-  const outstanding = Math.max(0, absoluteValue - recovered);
+  const recovered = toNumber(presentation?.recoveredToDate ?? event.recoveredAmount);
+  const outstanding = presentation?.remainingRecovery ?? Math.max(0, absoluteValue - recovered);
+
+  if (outstanding <= 0) return null;
 
   return {
     fingerprint: buildRecommendationFingerprint(

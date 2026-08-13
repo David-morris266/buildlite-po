@@ -9,7 +9,8 @@ import {
   formatSignedCommercialEventValue,
 } from '../commercialEvents/commercialEventPackageValue';
 import { isRecoveryCommercialEvent } from '../commercialEvents/commercialEventRegisterBadges';
-import { hasCommercialEventCertificationRemaining } from '../commercialEvents/commercialEventCertificateLifecycle';
+import { hasCommercialEventCertificationRemaining } from '../commercialEvents/commercialEventCertificationOverlay';
+import { getCommercialEventRecoveryPresentation } from '../commercialEvents/commercialEventRecoveryOverlay';
 import {
   COMMERCIAL_EVENT_STATUSES,
   PACKAGE_VALUE_STATUSES,
@@ -105,9 +106,19 @@ export function listApprovedEventsAwaitingValuation(developmentId, orderKey) {
   );
 }
 
-export function getOutstandingRecoveryAmount(event) {
+export function getOutstandingRecoveryAmount(event, orderKey = null) {
   if (!event || !isRecoveryCommercialEvent(event)) return 0;
   if (!PACKAGE_VALUE_STATUSES.has(event.status)) return 0;
+
+  const resolvedOrderKey = orderKey || event.packageId || null;
+  if (resolvedOrderKey) {
+    const presentation = getCommercialEventRecoveryPresentation(event, resolvedOrderKey);
+    if (presentation) {
+      if (!presentation.isActiveForRecovery) return 0;
+      return presentation.remainingRecovery;
+    }
+  }
+
   if (!isActiveRecovery(event)) return 0;
 
   const absoluteValue = Math.abs(toNumber(event.value));

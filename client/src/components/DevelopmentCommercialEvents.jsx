@@ -22,7 +22,7 @@ import { formatRecoveryPackageOptionLabel } from '../commercialEvents/commercial
 import { formatMoney } from './poDrawerHelpers';
 import { getLinkedEventNavigationLabel } from '../commercialEvents/commercialEventNavigation';
 import { getCommercialEventLinkBadges } from '../commercialEvents/commercialEventRegisterBadges';
-import { getCommercialEventCertificationBadges } from '../commercialEvents/commercialEventCertificateLifecycle';
+import { getCommercialEventCertificationBadges } from '../commercialEvents/commercialEventCertificationOverlay';
 import {
   COMMERCIAL_EVENT_STATUSES,
   COMMERCIAL_EVENT_TYPES,

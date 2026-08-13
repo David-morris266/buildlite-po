@@ -3,6 +3,7 @@
  */
 
 import { listCommercialEventsByDevelopment } from './commercialEventStore';
+import { getCommercialEventRecoveryPresentation } from './commercialEventRecoveryOverlay';
 import {
   getLinkedCommercialEvent,
   isActiveRecovery,
@@ -137,11 +138,14 @@ export function countPotentialContraChargesNotRaised(events) {
 export function sumOutstandingRecoveryAmount(events) {
   return (events || []).reduce((total, event) => {
     if (!isRecoveryCommercialEvent(event)) return total;
-    if (!isActiveRecovery(event)) return total;
 
-    const absoluteValue = Math.abs(toNumber(event.value));
-    const recovered = toNumber(event.recoveredAmount);
-    return total + Math.max(0, absoluteValue - recovered);
+    const orderKey = event.packageId || null;
+    if (!orderKey) return total;
+
+    const presentation = getCommercialEventRecoveryPresentation(event, orderKey);
+    if (!presentation?.isActiveForRecovery) return total;
+
+    return total + presentation.remainingRecovery;
   }, 0);
 }
 

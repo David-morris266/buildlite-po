@@ -2,13 +2,15 @@
  * BL-025.4 — Certificate lifecycle reconciliation for normal valueInclusion CEs.
  *
  * Approved/locked certificate commercialLines remain the financial source of truth.
- * CE certificateStatus is derived and reconciled on certificate approval only.
+ * CE certificateStatus is derived from certificate history for presentation.
+ * Legacy localStorage writes on approval occur only while local CE authority is active.
  */
 
 import {
   getCommercialEventById,
   updateCommercialEventCertificateStatus,
 } from './commercialEventStore';
+import { shouldPersistCertificateDrivenCeState } from './commercialEventRecoveryOverlay';
 import {
   isCommercialEventCertifiable,
   CERTIFICATE_COMMERCIAL_LINE_TYPES,
@@ -218,6 +220,15 @@ export function applyValueInclusionLifecycleOnCertificateApproval({
 }) {
   if (!developmentId || !certificate || !isApprovedCommercialCertificate(certificate)) {
     return { ok: true, applied: [], skipped: true };
+  }
+
+  if (!shouldPersistCertificateDrivenCeState()) {
+    return {
+      ok: true,
+      applied: [],
+      skipped: true,
+      reason: 'server-ce-authority',
+    };
   }
 
   if (certificate.valueInclusionLifecycleApplied) {

@@ -2,7 +2,7 @@
  * BL-026 — Certificate recovery / contra deduction helpers.
  *
  * Source of truth for draft availability: approved certificate recoveryDeduction lines.
- * event.recoveredAmount is updated on certificate approval only.
+ * Legacy localStorage recoveredAmount writes occur only while local CE authority is active.
  */
 
 import {
@@ -10,6 +10,11 @@ import {
   listCommercialEventsByPackage,
   updateRecoveryStatus,
 } from '../commercialEvents/commercialEventStore';
+import {
+  calculateCertificateDerivedRecoveredAmount,
+  resolveCertificateDerivedRecoveredAmount,
+  shouldPersistCertificateDrivenCeState,
+} from '../commercialEvents/commercialEventRecoveryOverlay';
 import { isRecoveryCommercialEvent } from '../commercialEvents/commercialEventRegisterBadges';
 import { isActiveRecovery } from '../commercialEvents/commercialEventRecovery';
 import {
@@ -77,25 +82,12 @@ export function sumRecoveryDeductionMagnitudes(commercialLines) {
 export function calculateRecoveryPreviouslyRecovered(
   orderKey,
   commercialEventId,
-  { excludeCertificateId = null } = {}
+  options = {}
 ) {
-  if (!orderKey || !commercialEventId) return 0;
-
-  return roundMoney(
-    listCertificates(orderKey)
-      .filter(
-        (certificate) =>
-          isApprovedCommercialCertificate(certificate) &&
-          certificate.id !== excludeCertificateId
-      )
-      .reduce((sum, certificate) => {
-        const line = normalizeCommercialLines(certificate.commercialLines).find(
-          (item) =>
-            item.commercialEventId === commercialEventId &&
-            item.lineType === CERTIFICATE_COMMERCIAL_LINE_TYPES.recoveryDeduction
-        );
-        return sum + Math.abs(toNumber(line?.amountThisCertificate));
-      }, 0)
+  return calculateCertificateDerivedRecoveredAmount(
+    orderKey,
+    commercialEventId,
+    options
   );
 }
 
@@ -105,13 +97,7 @@ export function resolvePreviouslyRecoveredAmount(
   commercialEventId,
   options = {}
 ) {
-  const fromCertificates = calculateRecoveryPreviouslyRecovered(
-    orderKey,
-    commercialEventId,
-    options
-  );
-  const fromEvent = roundMoney(toNumber(event?.recoveredAmount));
-  return roundMoney(Math.max(fromCertificates, fromEvent));
+  return resolveCertificateDerivedRecoveredAmount(event, orderKey, options);
 }
 
 export function calculateRecoveryRemaining(
@@ -141,19 +127,26 @@ export function getMaxRecoveryDeductionThisCertificate(
   return calculateRecoveryRemaining(event, orderKey, { excludeCertificateId });
 }
 
-export function isRecoveryEligibleForCertificate(event) {
+export function isRecoveryEligibleForCertificate(event, orderKey = null) {
   if (!event?.id) return false;
   if (!isRecoveryCommercialEvent(event)) return false;
   if (event.status !== COMMERCIAL_EVENT_STATUSES.approved.key) return false;
 
   const recoveryStatus = normalizeRecoveryStatusKey(event.recoveryStatus);
-  if (recoveryStatus === COMMERCIAL_EVENT_RECOVERY_STATUSES.fullyRecovered.key) {
-    return false;
-  }
   if (recoveryStatus === COMMERCIAL_EVENT_RECOVERY_STATUSES.closed.key) {
     return false;
   }
   if (recoveryStatus === COMMERCIAL_EVENT_RECOVERY_STATUSES.writtenOff.key) {
+    return false;
+  }
+
+  const resolvedOrderKey = orderKey || event.packageId || null;
+  if (resolvedOrderKey) {
+    const recovered = resolveCertificateDerivedRecoveredAmount(event, resolvedOrderKey);
+    if (recovered >= getRecoveryMagnitude(event) - Number.EPSILON) {
+      return false;
+    }
+  } else if (recoveryStatus === COMMERCIAL_EVENT_RECOVERY_STATUSES.fullyRecovered.key) {
     return false;
   }
 
@@ -374,7 +367,7 @@ export function listEligibleRecoveryEvents(developmentId, orderKey, certificate)
   const events = listCommercialEventsByPackage(developmentId, orderKey);
 
   return events.filter((event) => {
-    if (!isRecoveryEligibleForCertificate(event)) return false;
+    if (!isRecoveryEligibleForCertificate(event, orderKey)) return false;
     if (event.packageId !== orderKey) return false;
     if (existingIds.has(event.id)) return false;
 
@@ -497,6 +490,15 @@ export function applyRecoveryDeductionsOnCertificateApproval({
     return { ok: true, applied: [], skipped: true };
   }
 
+  if (!shouldPersistCertificateDrivenCeState()) {
+    return {
+      ok: true,
+      applied: [],
+      skipped: true,
+      reason: 'server-ce-authority',
+    };
+  }
+
   if (certificate.recoveryDeductionsApplied) {
     return { ok: true, applied: [], skipped: true };
   }
@@ -514,8 +516,8 @@ export function applyRecoveryDeductionsOnCertificateApproval({
     const deductionMagnitude = Math.abs(toNumber(line.amountThisCertificate));
     if (deductionMagnitude <= 0) continue;
 
+    const newRecovered = calculateCertificateDerivedRecoveredAmount(orderKey, event.id);
     const priorRecovered = roundMoney(toNumber(event.recoveredAmount));
-    const newRecovered = roundMoney(priorRecovered + deductionMagnitude);
     const priorStatus = normalizeRecoveryStatusKey(event.recoveryStatus);
     const nextStatus = deriveRecoveryStatusAfterDeduction(event, newRecovered);
 
