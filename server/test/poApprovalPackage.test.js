@@ -8,7 +8,8 @@ const fs = require("fs");
 const path = require("path");
 const request = require("supertest");
 const createApp = require("../app");
-const { pool, init, isDbConfigured } = require("../db");
+const { pool, isDbConfigured } = require("../db");
+const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { buildSubcontractOrderKey } = require("../services/packageKey");
 
 const app = createApp();
@@ -194,12 +195,12 @@ async function countPackages(clientId) {
 }
 
 if (!isDbConfigured()) {
-  test("po approval package tests skipped — DATABASE_URL not configured", () => {
+  test("po approval package tests skipped — TEST_DATABASE_URL not configured", () => {
     assert.ok(true);
   });
 } else {
   test("PO approval package hook", { concurrency: false }, async (t) => {
-    await init();
+    await prepareIntegrationTestDatabase(pool);
     await ensureSchema();
 
     t.after(async () => {

@@ -1,5 +1,5 @@
 /**
- * BL-027A.1 — Development API integration tests (requires DATABASE_URL).
+ * BL-027A.1 — Development API integration tests (requires TEST_DATABASE_URL).
  */
 
 const test = require("node:test");
@@ -8,7 +8,8 @@ const fs = require("fs");
 const path = require("path");
 const request = require("supertest");
 const createApp = require("../app");
-const { pool, init, isDbConfigured } = require("../db");
+const { pool, isDbConfigured } = require("../db");
+const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { DEVELOPMENT_ID_PATTERN } = require("../services/developmentConstants");
 
 const app = createApp();
@@ -54,12 +55,12 @@ async function createSecondTenant() {
 }
 
 if (!isDbConfigured()) {
-  test("development routes skipped — DATABASE_URL not configured", () => {
+  test("development routes skipped — TEST_DATABASE_URL not configured", () => {
     assert.ok(true);
   });
 } else {
   test.before(async () => {
-    await init();
+    await prepareIntegrationTestDatabase(pool);
     await ensureDevelopmentsTable();
   });
 

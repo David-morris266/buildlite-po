@@ -1,5 +1,5 @@
 /**
- * BL-028A — Commercial Event API integration tests (requires DATABASE_URL).
+ * BL-028A — Commercial Event API integration tests (requires TEST_DATABASE_URL).
  */
 
 const test = require("node:test");
@@ -8,7 +8,8 @@ const fs = require("fs");
 const path = require("path");
 const request = require("supertest");
 const createApp = require("../app");
-const { pool, init, isDbConfigured } = require("../db");
+const { pool, isDbConfigured } = require("../db");
+const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { buildSubcontractOrderKey } = require("../services/packageKey");
 const { COMMERCIAL_EVENT_ID_PATTERN } = require("../services/commercialEventConstants");
 
@@ -211,12 +212,12 @@ async function workflowToApproved(eventId) {
 }
 
 if (!isDbConfigured()) {
-  test("commercial event routes skipped — DATABASE_URL not configured", () => {
+  test("commercial event routes skipped — TEST_DATABASE_URL not configured", () => {
     assert.ok(true);
   });
 } else {
   test.before(async () => {
-    await init();
+    await prepareIntegrationTestDatabase(pool);
     await ensureSchema();
   });
 

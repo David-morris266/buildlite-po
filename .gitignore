@@ -20,6 +20,7 @@ server/.cache/
 .DS_Store
 .env
 server/.env
+server/.env.test.local
 .continue/
 *.code-workspace
 

@@ -2,13 +2,29 @@
 require("dotenv").config();
 
 const { Pool } = require("pg");
-const { isDbConfigured } = require("./utils/env");
+const {
+  isDbConfigured,
+  isServerTestMode,
+  getConnectionString,
+} = require("./utils/env");
+const { assertTestDatabaseIsolation } = require("./utils/testDatabaseGuard");
+const { parseDatabaseUrl } = require("./utils/databaseUrl");
 
-const connectionString = process.env.DATABASE_URL;
+if (isServerTestMode()) {
+  assertTestDatabaseIsolation();
+}
+
+const connectionString = getConnectionString();
 
 if (!isDbConfigured()) {
+  const missingVar = isServerTestMode() ? "TEST_DATABASE_URL" : "DATABASE_URL";
   console.warn(
-    "[DB] DATABASE_URL not set. The API will not be able to persist data."
+    `[DB] ${missingVar} not set. The API will not be able to persist data.`
+  );
+} else if (isServerTestMode()) {
+  const target = parseDatabaseUrl(connectionString);
+  console.log(
+    `[DB] Server test mode using database: ${target.host}:${target.port}/${target.database}`
   );
 }
 
@@ -31,7 +47,8 @@ function query(text, params) {
  */
 async function init() {
   if (!isDbConfigured()) {
-    console.warn("[DB] Skipping init because DATABASE_URL is missing.");
+    const missingVar = isServerTestMode() ? "TEST_DATABASE_URL" : "DATABASE_URL";
+    console.warn(`[DB] Skipping init because ${missingVar} is missing.`);
     return;
   }
 

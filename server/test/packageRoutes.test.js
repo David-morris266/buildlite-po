@@ -1,5 +1,5 @@
 /**
- * BL-027B.1 — Package API + materialisation integration tests (requires DATABASE_URL).
+ * BL-027B.1 — Package API + materialisation integration tests (requires TEST_DATABASE_URL).
  */
 
 const test = require("node:test");
@@ -8,7 +8,8 @@ const fs = require("fs");
 const path = require("path");
 const request = require("supertest");
 const createApp = require("../app");
-const { pool, init, isDbConfigured } = require("../db");
+const { pool, isDbConfigured } = require("../db");
+const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { buildSubcontractOrderKey } = require("../services/packageKey");
 
 const app = createApp();
@@ -29,6 +30,21 @@ function trackPo(poNumber) {
   if (poNumber) testPoNumbers.push(poNumber);
 }
 
+function shouldTrackPackage(pkg) {
+  if (!pkg?.id) return false;
+  if (pkg.developmentId && testDevelopmentIds.includes(pkg.developmentId)) {
+    return true;
+  }
+  const poNumbers = pkg.poNumbers || [];
+  return poNumbers.some((poNumber) => testPoNumbers.includes(poNumber));
+}
+
+function trackPackage(pkg) {
+  if (shouldTrackPackage(pkg) && !testPackageIds.includes(pkg.id)) {
+    testPackageIds.push(pkg.id);
+  }
+}
+
 async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_004, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_005, "utf8"));
@@ -36,6 +52,18 @@ async function ensureSchema() {
 
 async function cleanup() {
   if (testPackageIds.length) {
+    await pool.query(
+      `
+        DELETE FROM commercial_event_audit
+        WHERE commercial_event_id IN (
+          SELECT id FROM commercial_events WHERE package_id = ANY($1::uuid[])
+        )
+      `,
+      [testPackageIds]
+    );
+    await pool.query("DELETE FROM commercial_events WHERE package_id = ANY($1::uuid[])", [
+      testPackageIds,
+    ]);
     await pool.query("DELETE FROM packages WHERE id = ANY($1::uuid[])", [testPackageIds]);
   }
   if (testPoNumbers.length) {
@@ -145,18 +173,18 @@ async function materialise(active, developmentId = null) {
   const res = await request(app).post("/api/packages/materialise").send(body);
   assert.equal(res.status, 200);
   for (const pkg of res.body.packages || []) {
-    if (pkg.id) testPackageIds.push(pkg.id);
+    trackPackage(pkg);
   }
   return res.body;
 }
 
 if (!isDbConfigured()) {
-  test("package routes skipped — DATABASE_URL not configured", () => {
+  test("package routes skipped — TEST_DATABASE_URL not configured", () => {
     assert.ok(true);
   });
 } else {
   test.before(async () => {
-    await init();
+    await prepareIntegrationTestDatabase(pool);
     await ensureSchema();
   });
 
@@ -488,7 +516,7 @@ if (!isDbConfigured()) {
     assert.equal(res.status, 201);
     assert.match(res.body.package.id, /^[0-9a-f-]{36}$/i);
     assert.deepEqual(res.body.package.poNumbers.sort(), [po1, po2].sort());
-    testPackageIds.push(res.body.package.id);
+    trackPackage(res.body.package);
   });
 
   test("Test Site 1 style orderKey is preserved exactly when using dev-* development id", async () => {
