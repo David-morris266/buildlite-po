@@ -21,13 +21,15 @@ async function main() {
       WHERE id LIKE 'dev-pkg-%'
          OR id LIKE 'dev-ce-%'
          OR id LIKE 'dev-poappr-%'
+         OR id LIKE 'dev-mx-%'
          OR id LIKE 'DEV-T-%'
          OR development_name IN (
            'Package Test Dev',
            'Dev A',
            'Dev B',
            'PO Approval Dev',
-           'Server Created Development'
+           'Server Created Development',
+           'Matrix Test Dev'
          )
       ORDER BY id
     `
@@ -40,6 +42,7 @@ async function main() {
          OR po_number LIKE 'S-CE-%'
          OR po_number LIKE 'S-APPR-%'
          OR po_number LIKE 'S-DRAFT-%'
+         OR po_number LIKE 'S-MX-%'
       ORDER BY po_number
     `
   );
@@ -55,6 +58,7 @@ async function main() {
           packages: await count("packages"),
           commercial_events: await count("commercial_events"),
           commercial_event_audit: await count("commercial_event_audit"),
+          package_order_matrices: await count("package_order_matrices"),
         },
         residualFixtureDevelopments: residualDevs.rows,
         residualFixturePos: residualPos.rows,

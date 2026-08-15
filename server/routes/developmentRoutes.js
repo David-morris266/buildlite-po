@@ -17,6 +17,9 @@ const {
 } = require("../services/developmentValidation");
 const { isValidDevelopmentId } = require("../services/developmentConstants");
 const { listPackagesForDevelopment } = require("../services/packageRepository");
+const {
+  listMatricesForDevelopmentOr404,
+} = require("../services/orderMatrixRepository");
 
 const router = express.Router();
 
@@ -38,6 +41,28 @@ router.get("/", async (_req, res) => {
   } catch (err) {
     console.error("[Developments] list error:", err);
     res.status(500).json({ message: "Failed to list developments" });
+  }
+});
+
+router.get("/:id/matrices", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const developmentId = String(req.params.id || "").trim();
+    const result = await listMatricesForDevelopmentOr404(active.id, developmentId);
+    if (!result.ok) {
+      return res.status(result.status).json({ message: result.message });
+    }
+
+    res.json(result.matrices);
+  } catch (err) {
+    console.error("[Developments] matrix list error:", err);
+    res.status(500).json({ message: "Failed to list development matrices." });
   }
 });
 

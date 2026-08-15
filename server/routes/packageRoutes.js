@@ -13,12 +13,91 @@ const {
   materialisePackagesFromApprovedPos,
   materialisePackageFromPoNumber,
 } = require("../services/packageMaterialisation");
+const {
+  getMatrixForPackage,
+  getMatrixForOrderKey,
+  upsertMatrixForPackage,
+} = require("../services/orderMatrixRepository");
 
 const router = express.Router();
 
 function provisionalActor(body = {}) {
   return body.updatedBy || body.createdBy || body.actor || null;
 }
+
+router.get("/by-order-key/:orderKey/matrix", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const orderKey = decodeURIComponent(req.params.orderKey || "");
+    const result = await getMatrixForOrderKey(active.id, orderKey);
+    if (!result.ok) {
+      return res.status(result.status).json({ message: result.message });
+    }
+
+    res.json(result.matrix);
+  } catch (err) {
+    console.error("[Packages] get matrix by orderKey error:", err);
+    res.status(500).json({ message: "Failed to load order matrix." });
+  }
+});
+
+router.get("/:packageId/matrix", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const result = await getMatrixForPackage(active.id, req.params.packageId);
+    if (!result.ok) {
+      return res.status(result.status).json({ message: result.message });
+    }
+
+    res.json(result.matrix);
+  } catch (err) {
+    console.error("[Packages] get matrix error:", err);
+    res.status(500).json({ message: "Failed to load order matrix." });
+  }
+});
+
+router.put("/:packageId/matrix", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const body = req.body || {};
+    const result = await upsertMatrixForPackage(
+      active.id,
+      req.params.packageId,
+      body,
+      body.version,
+      { actor: provisionalActor(body) }
+    );
+
+    if (!result.ok) {
+      const payload = { message: result.message };
+      if (result.matrix) payload.matrix = result.matrix;
+      return res.status(result.status).json(payload);
+    }
+
+    res.status(result.status).json(result.matrix);
+  } catch (err) {
+    console.error("[Packages] put matrix error:", err);
+    res.status(500).json({ message: "Failed to save order matrix." });
+  }
+});
 
 router.get("/by-order-key/:orderKey", async (req, res) => {
   try {

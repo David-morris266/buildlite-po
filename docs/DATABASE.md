@@ -2,7 +2,7 @@
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
 **Last product slice:** BL-028B.3 Commercial Event server authority.  
-**NEXT:** BL-029 Order Matrix Persistence.
+**NEXT:** BL-029 Order Matrix Persistence (BL-029A schema/API only; client still localStorage).
 
 ---
 
@@ -16,10 +16,11 @@ Postgres is already the authority for:
 | `004_developments.sql` | `developments` | BL-027A |
 | `005_packages.sql` | `packages`, `package_purchase_orders` | BL-027B |
 | `006_commercial_events.sql` | `commercial_events`, `commercial_event_audit` | BL-028 |
+| `007_package_order_matrices.sql` | `package_order_matrices` | BL-029A schema/API only |
 
-Still **browser/localStorage** (not yet Postgres):
+Still **browser/localStorage** (not yet Postgres authority):
 
-- Order matrices — **BL-029**
+- Order matrices — live client still uses localStorage; BL-029A added server persistence/API only. Do not treat BL-029 as complete.
 - BuildLite V1 payment certificates (matrix progress, commercial lines, recovery deductions, frozen totals) — **BL-030**
 - CVR periods/cost centres and purchase ledger — **BL-031**
 
@@ -43,12 +44,12 @@ The remainder of this file is the Phase 0 / BL-006 production schema reference. 
 
 BuildLite uses a single Postgres database (`buildlite_po_db` on Render). Schema is managed via:
 
-- Versioned SQL migrations in `server/migrations/` (`001`–`006`; `001`–`003` are the BL-006 production baseline)
+- Versioned SQL migrations in `server/migrations/` (`001`–`007`; `001`–`003` are the BL-006 production baseline)
 - `schema_migrations` tracking table
 - `npm run migrate` and `npm run seed` scripts
 - `db.js` init aligned with production plus later Doc 67 tables (fallback when migrations have not run)
 
-**Production database was the source of truth for BL-006.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files. Later Doc 67 migrations (`004`–`006`) are additive and must also not be rewritten after apply.
+**Production database was the source of truth for BL-006.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files. Later Doc 67 migrations (`004`–`007`) are additive and must also not be rewritten after apply.
 
 ---
 
@@ -218,6 +219,7 @@ Production authority for certificate numbering is **`legacy_cert_no`**, enforced
 | `004_developments.sql` | BL-027A: server-backed developments |
 | `005_packages.sql` | BL-027B: packages + package PO membership |
 | `006_commercial_events.sql` | BL-028A: commercial events + CE audit |
+| `007_package_order_matrices.sql` | BL-029A: plot-stage order matrix schema/API (client still localStorage) |
 
 ---
 
@@ -226,7 +228,7 @@ Production authority for certificate numbering is **`legacy_cert_no`**, enforced
 From `server/`:
 
 ```bash
-npm run migrate    # apply pending SQL (001 → … → 006)
+npm run migrate    # apply pending SQL (001 → … → 007)
 npm run seed       # default client, cost codes, brand profile, client_id backfill
 npm start          # start API (calls db.init as fallback)
 ```
