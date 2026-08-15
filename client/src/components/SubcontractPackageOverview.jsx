@@ -14,6 +14,26 @@ export default function SubcontractPackageOverview({
 }) {
   if (!pkg) return null;
 
+  if (pkg.matrixReady === false) {
+    return (
+      <div className="po-package-overview">
+        <section className="po-module-card po-package-next" role="status">
+          <h2 className="po-matrix-section__title">
+            {pkg.matrixLoadState === 'error'
+              ? 'Unable to load order matrix'
+              : 'Loading matrix data…'}
+          </h2>
+          <p className="po-package-next__lead">
+            {pkg.matrixLoadState === 'error'
+              ? pkg.matrixError?.message ||
+                'Order matrix data could not be loaded. Please try again.'
+              : 'Loading matrix data…'}
+          </p>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="po-package-overview">
       {!pkg.matrixExists ? (

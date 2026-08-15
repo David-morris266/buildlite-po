@@ -1,5 +1,6 @@
 /**
  * @vitest-environment jsdom
+ * BL-029B — Development workspace Order Matrix hydration.
  */
 import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
@@ -13,8 +14,8 @@ const getCommercialEventsLoadError = vi.hoisted(() => vi.fn());
 const ensureMatricesReadyForDevelopment = vi.hoisted(() => vi.fn());
 const getOrderMatricesLoadState = vi.hoisted(() => vi.fn());
 const getOrderMatricesLoadError = vi.hoisted(() => vi.fn());
-const authorityEnabled = vi.hoisted(() => ({ value: false }));
 const buildDevelopmentWorkspaceModel = vi.hoisted(() => vi.fn());
+const matrixAuthorityEnabled = vi.hoisted(() => ({ value: false }));
 
 vi.mock('../api', () => ({
   listPOs,
@@ -37,7 +38,11 @@ vi.mock('../payments/orderMatrixServerCache', () => ({
 }));
 
 vi.mock('../commercialEvents/commercialEventAuthority', () => ({
-  isCommercialEventServerAuthorityEnabled: () => authorityEnabled.value,
+  isCommercialEventServerAuthorityEnabled: () => false,
+}));
+
+vi.mock('../payments/orderMatrixAuthority', () => ({
+  isOrderMatrixServerAuthorityEnabled: () => matrixAuthorityEnabled.value,
 }));
 
 vi.mock('../developments/developmentHelpers', () => ({
@@ -49,17 +54,29 @@ vi.mock('../commercialAssistant/CommercialAssistantContext', () => ({
 }));
 
 vi.mock('./DevelopmentOverview', () => ({
-  default: ({ commercialEventsLoading, commercialEventsError }) => (
+  default: ({ matricesLoading, matricesError, onOpenPackage }) => (
     <div data-testid="overview-panel">
-      {commercialEventsLoading ? <span>Loading commercial data…</span> : null}
-      {commercialEventsError ? <span role="alert">{commercialEventsError}</span> : null}
+      {matricesLoading ? <span>Loading matrix data…</span> : null}
+      {matricesError ? <span role="alert">{matricesError}</span> : null}
       <span>Overview panel</span>
+      <button
+        type="button"
+        onClick={() =>
+          onOpenPackage?.('dev-matrix-1::sup-1::0120', {
+            orderKey: 'dev-matrix-1::sup-1::0120',
+            openedFrom: 'DevelopmentPackages',
+            initialTab: 'overview',
+          })
+        }
+      >
+        Open package
+      </button>
     </div>
   ),
-  DevelopmentPackagesTab: ({ commercialEventsLoading, commercialEventsError }) => (
+  DevelopmentPackagesTab: ({ matricesLoading, matricesError }) => (
     <div data-testid="packages-panel">
-      {commercialEventsLoading ? <span>Loading commercial data…</span> : null}
-      {commercialEventsError ? <span role="alert">{commercialEventsError}</span> : null}
+      {matricesLoading ? <span>Loading matrix data…</span> : null}
+      {matricesError ? <span role="alert">{matricesError}</span> : null}
       <span>Packages panel</span>
     </div>
   ),
@@ -68,13 +85,7 @@ vi.mock('./DevelopmentOverview', () => ({
 
 vi.mock('./PlotMaster', () => ({ default: () => <div>Plot Master panel</div> }));
 vi.mock('./DevelopmentCommercialEvents', () => ({
-  default: ({ commercialEventsLoading, commercialEventsError }) => (
-    <div data-testid="commercial-register">
-      {commercialEventsLoading ? <span>Loading commercial data…</span> : null}
-      {commercialEventsError ? <span role="alert">{commercialEventsError}</span> : null}
-      <span>Commercial Events panel</span>
-    </div>
-  ),
+  default: () => <div>Commercial Events panel</div>,
 }));
 vi.mock('./PurchaseLedger', () => ({ default: () => <div>Ledger panel</div> }));
 vi.mock('./RevenueWorkspace', () => ({
@@ -84,10 +95,11 @@ vi.mock('./CVRRegister', () => ({ default: () => <div data-testid="cvr-panel">CV
 vi.mock('./CVRSummaryPage', () => ({ default: () => null }));
 vi.mock('./CVRWorkspace', () => ({ default: () => null }));
 vi.mock('./SubcontractPackageWorkspace', () => ({
-  default: ({ commercialEventsLoading, commercialEventsError }) => (
+  default: ({ matricesLoading, matricesError, matricesReady }) => (
     <div data-testid="package-workspace">
-      {commercialEventsLoading ? <span>Loading commercial data…</span> : null}
-      {commercialEventsError ? <span role="alert">{commercialEventsError}</span> : null}
+      {matricesLoading ? <span>Loading matrix data…</span> : null}
+      {matricesError ? <span role="alert">{matricesError}</span> : null}
+      {matricesReady ? <span>Matrix cache ready</span> : null}
       Package workspace
     </div>
   ),
@@ -102,7 +114,7 @@ vi.mock('./layout/ApplicationPageHeader', () => ({
 import DevelopmentWorkspace from './DevelopmentWorkspace';
 
 const sampleDevelopment = {
-  id: 'dev-ce-1',
+  id: 'dev-matrix-1',
   developmentName: 'Test Site 1',
   jobNumber: 'TS1',
   status: 'live',
@@ -110,30 +122,29 @@ const sampleDevelopment = {
 };
 
 const sampleModel = {
-  id: 'dev-ce-1',
+  id: 'dev-matrix-1',
   developmentName: 'Test Site 1',
   jobNumber: 'TS1',
   statusMeta: { label: 'Live', modifier: 'live' },
   summaryCards: [],
   packages: [
     {
-      orderKey: 'order-key-1',
-      developmentId: 'dev-ce-1',
+      orderKey: 'dev-matrix-1::sup-1::0120',
+      developmentId: 'dev-matrix-1',
       supplierLabel: 'Sparktastic',
       projectLabel: 'Drylining',
-      committedValue: 100000,
     },
   ],
 };
 
-describe('DevelopmentWorkspace commercial event hydration (BL-028B.1)', () => {
+describe('DevelopmentWorkspace order matrix hydration (BL-029B)', () => {
   let container;
   let root;
-  let ceResolve;
-  let cePromise;
+  let matrixResolve;
+  let matrixPromise;
 
   beforeEach(() => {
-    authorityEnabled.value = false;
+    matrixAuthorityEnabled.value = false;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -141,14 +152,14 @@ describe('DevelopmentWorkspace commercial event hydration (BL-028B.1)', () => {
     listPOs.mockResolvedValue({ items: [] });
     ensurePackagesReadyForDevelopment.mockResolvedValue(sampleModel.packages);
     buildDevelopmentWorkspaceModel.mockReturnValue(sampleModel);
-
-    cePromise = new Promise((resolve) => {
-      ceResolve = resolve;
-    });
-    ensureCommercialEventsReadyForDevelopment.mockReturnValue(cePromise);
+    ensureCommercialEventsReadyForDevelopment.mockResolvedValue([]);
     getCommercialEventsLoadState.mockReturnValue('loaded');
     getCommercialEventsLoadError.mockReturnValue(null);
-    ensureMatricesReadyForDevelopment.mockResolvedValue([]);
+
+    matrixPromise = new Promise((resolve) => {
+      matrixResolve = resolve;
+    });
+    ensureMatricesReadyForDevelopment.mockReturnValue(matrixPromise);
     getOrderMatricesLoadState.mockReturnValue('loaded');
     getOrderMatricesLoadError.mockReturnValue(null);
   });
@@ -173,30 +184,22 @@ describe('DevelopmentWorkspace commercial event hydration (BL-028B.1)', () => {
     });
   }
 
-  function clickTab(label) {
-    const tab = Array.from(document.querySelectorAll('.po-package-tabs__tab')).find(
-      (button) => button.textContent === label
-    );
-    act(() => {
-      tab?.click();
-    });
-  }
-
-  it('begins CE hydration in parallel with package hydration', async () => {
+  it('begins matrix hydration in parallel with package hydration', async () => {
     renderWorkspace();
 
-    expect(ensureCommercialEventsReadyForDevelopment).toHaveBeenCalledWith('dev-ce-1');
+    expect(ensureMatricesReadyForDevelopment).toHaveBeenCalledWith('dev-matrix-1');
     expect(ensurePackagesReadyForDevelopment).toHaveBeenCalled();
+    expect(ensureCommercialEventsReadyForDevelopment).toHaveBeenCalledWith('dev-matrix-1');
 
     await act(async () => {
-      ceResolve([]);
-      await cePromise;
+      matrixResolve([]);
+      await matrixPromise;
     });
   });
 
-  it('shows loading commercial data when server authority is enabled during hydration', async () => {
-    authorityEnabled.value = true;
-    getCommercialEventsLoadState.mockReturnValue('loading');
+  it('shows loading matrix data when server authority is enabled during hydration', async () => {
+    matrixAuthorityEnabled.value = true;
+    getOrderMatricesLoadState.mockReturnValue('loading');
 
     renderWorkspace();
 
@@ -204,15 +207,42 @@ describe('DevelopmentWorkspace commercial event hydration (BL-028B.1)', () => {
       await Promise.resolve();
     });
 
-    expect(document.body.textContent).toContain('Loading commercial data…');
+    expect(document.body.textContent).toContain('Loading matrix data…');
   });
 
-  it('shows CE error when server authority is enabled and hydration fails', async () => {
-    authorityEnabled.value = true;
-    const ceError = new Error('Unable to load Commercial Events. Please try again.');
-    ensureCommercialEventsReadyForDevelopment.mockRejectedValue(ceError);
-    getCommercialEventsLoadState.mockReturnValue('error');
-    getCommercialEventsLoadError.mockReturnValue(ceError);
+  it('shows loaded matrix readiness on the package workspace after hydration', async () => {
+    matrixAuthorityEnabled.value = true;
+    getOrderMatricesLoadState.mockReturnValue('loading');
+
+    renderWorkspace();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    getOrderMatricesLoadState.mockReturnValue('loaded');
+    await act(async () => {
+      matrixResolve([{ orderKey: 'dev-matrix-1::sup-1::0120' }]);
+      await matrixPromise;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      Array.from(document.querySelectorAll('button'))
+        .find((button) => button.textContent === 'Open package')
+        ?.click();
+    });
+
+    expect(document.body.textContent).toContain('Matrix cache ready');
+    expect(document.body.textContent).not.toContain('Loading matrix data…');
+  });
+
+  it('shows matrix error when server authority is enabled and hydration fails', async () => {
+    matrixAuthorityEnabled.value = true;
+    const matrixError = new Error('Unable to load order matrix data. Please try again.');
+    ensureMatricesReadyForDevelopment.mockRejectedValue(matrixError);
+    getOrderMatricesLoadState.mockReturnValue('error');
+    getOrderMatricesLoadError.mockReturnValue(matrixError);
 
     renderWorkspace();
 
@@ -223,13 +253,13 @@ describe('DevelopmentWorkspace commercial event hydration (BL-028B.1)', () => {
     });
 
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-      'Unable to load Commercial Events. Please try again.'
+      'Unable to load order matrix data. Please try again.'
     );
   });
 
-  it('does not show CE loading placeholders when authority remains local', async () => {
-    authorityEnabled.value = false;
-    getCommercialEventsLoadState.mockReturnValue('loading');
+  it('does not show matrix loading placeholders when authority remains local', async () => {
+    matrixAuthorityEnabled.value = false;
+    getOrderMatricesLoadState.mockReturnValue('loading');
 
     renderWorkspace();
 
@@ -237,40 +267,7 @@ describe('DevelopmentWorkspace commercial event hydration (BL-028B.1)', () => {
       await Promise.resolve();
     });
 
-    expect(document.body.textContent).not.toContain('Loading commercial data…');
+    expect(document.body.textContent).not.toContain('Loading matrix data…');
     expect(document.body.textContent).toContain('Overview panel');
-  });
-
-  it('does not blank the workspace when unmounting during hydration', async () => {
-    renderWorkspace();
-
-    act(() => {
-      root.unmount();
-    });
-
-    await act(async () => {
-      ceResolve([]);
-      await cePromise;
-    });
-
-    expect(container.textContent).toBe('');
-  });
-
-  it('passes CE readiness to commercial register tab without blank render', async () => {
-    authorityEnabled.value = true;
-    getCommercialEventsLoadState.mockReturnValue('loading');
-
-    renderWorkspace();
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    clickTab('Commercial Events');
-
-    const register = document.querySelector('[data-testid="commercial-register"]');
-    expect(register).not.toBeNull();
-    expect(register.textContent).toContain('Loading commercial data…');
-    expect(register.textContent).toContain('Commercial Events panel');
   });
 });

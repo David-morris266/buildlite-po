@@ -34,6 +34,9 @@ export default function SubcontractPackageWorkspace({
   commercialEventsLoading = false,
   commercialEventsError = '',
   commercialEventsReady = true,
+  matricesLoading = false,
+  matricesError = '',
+  matricesReady = true,
   assistantDevelopmentPackages = null,
   onAssistantNavigate = null,
 }) {
@@ -77,6 +80,8 @@ export default function SubcontractPackageWorkspace({
     commercialEventRefresh,
     commercialEventsLoading,
     commercialEventsReady,
+    matricesLoading,
+    matricesReady,
   ]);
 
   const packageTitle = `${order.supplierLabel} – ${order.projectLabel}`;
@@ -107,6 +112,12 @@ export default function SubcontractPackageWorkspace({
       {commercialEventsError ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">
           {commercialEventsError}
+        </div>
+      ) : null}
+
+      {matricesError ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          {matricesError}
         </div>
       ) : null}
 

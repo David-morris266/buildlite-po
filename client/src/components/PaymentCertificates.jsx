@@ -13,6 +13,7 @@ import {
 import { resolvePackageWorkspaceOrderFromPoList } from '../payments/packageWorkspaceOrderResolver';
 import { resolvePackageDevelopmentId } from '../commercialEvents/commercialEventPackageValue';
 import { useCommercialEventServerHydration } from '../commercialEvents/useCommercialEventServerHydration';
+import { useOrderMatrixServerHydration } from '../payments/useOrderMatrixServerHydration';
 
 export default function PaymentCertificates({
   initialOrderKey = null,
@@ -88,6 +89,12 @@ export default function PaymentCertificates({
     commercialEventsReady,
     commercialEventsError,
   } = useCommercialEventServerHydration(developmentId);
+
+  const {
+    matricesLoading,
+    matricesReady,
+    matricesError,
+  } = useOrderMatrixServerHydration(developmentId);
 
   const navigationContext = useMemo(() => {
     if (!activeOrderKey) return null;
@@ -188,6 +195,9 @@ export default function PaymentCertificates({
         commercialEventsLoading={commercialEventsLoading}
         commercialEventsReady={commercialEventsReady}
         commercialEventsError={commercialEventsError}
+        matricesLoading={matricesLoading}
+        matricesReady={matricesReady}
+        matricesError={matricesError}
       />
     );
   }

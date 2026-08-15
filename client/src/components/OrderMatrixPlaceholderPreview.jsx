@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import OrderMatrixImportWizard from './OrderMatrixImportWizard';
 import { formatMoney, formatPoDate } from './poDrawerHelpers';
-import { hasOrderMatrix, loadOrderMatrix, saveOrderMatrix } from '../payments/orderMatrixStore';
+import { hasOrderMatrix, loadOrderMatrix, saveOrderMatrix, resolveOrderMatrixForPackage } from '../payments/orderMatrixStore';
+import { isOrderMatrixServerAuthorityEnabled } from '../payments/orderMatrixAuthority';
 import { recordMatrixSaved } from '../payments/subcontractPackageStore';
 
 function ImportedMatrixTable({ matrix }) {
@@ -62,9 +63,17 @@ export default function OrderMatrixPlaceholderPreview({
   embedded = false,
 }) {
   const [importOpen, setImportOpen] = useState(false);
-  const matrixExistsForOrder = hasOrderMatrix(order.orderKey);
+  const authorityEnabled = isOrderMatrixServerAuthorityEnabled();
+  const matrixResolution = resolveOrderMatrixForPackage(order);
+  const matrixExistsForOrder = authorityEnabled
+    ? matrixResolution.ready && matrixResolution.present
+    : hasOrderMatrix(order.orderKey);
   const showImportedMatrix = hasMatrix || matrixExistsForOrder;
-  const matrix = showImportedMatrix ? loadOrderMatrix(order.orderKey) : null;
+  const matrix = showImportedMatrix
+    ? authorityEnabled
+      ? matrixResolution.matrix
+      : loadOrderMatrix(order.orderKey)
+    : null;
 
   function handleImportComplete(payload) {
     if (payload?.layout !== 'plot-stage') return;
@@ -96,6 +105,32 @@ export default function OrderMatrixPlaceholderPreview({
         onCancel={() => setImportOpen(false)}
         onImport={handleImportComplete}
       />
+    );
+  }
+
+  if (authorityEnabled && !matrixResolution.ready) {
+    const isError = matrixResolution.loadState === 'error';
+    return (
+      <div className={`po-matrix-page${embedded ? ' po-matrix-page--embedded' : ''}`}>
+        <section className="po-module-card po-matrix-empty">
+          <h2 className="po-matrix-section__title">
+            {isError ? 'Unable to load order matrix' : 'Loading matrix data…'}
+          </h2>
+          <p className="po-matrix-empty__support" role={isError ? 'alert' : 'status'}>
+            {isError
+              ? matrixResolution.error?.message ||
+                'Order matrix data could not be loaded. Please try again.'
+              : 'Loading matrix data…'}
+          </p>
+        </section>
+        {embedded ? (
+          <footer className="po-matrix-footer">
+            <button type="button" className="po-matrix-footer__back" onClick={onCancel}>
+              Back to Overview
+            </button>
+          </footer>
+        ) : null}
+      </div>
     );
   }
 

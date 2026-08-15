@@ -43,6 +43,7 @@ export function PackageTable({
   loading = false,
   commercialEventsLoading = false,
   commercialEventsError = '',
+  matricesError = '',
 }) {
   if (loading) {
     return <p className="dev-workspace__section-lead">Loading packages…</p>;
@@ -84,6 +85,11 @@ export function PackageTable({
       {commercialEventsError ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">
           {commercialEventsError}
+        </div>
+      ) : null}
+      {matricesError ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          {matricesError}
         </div>
       ) : null}
       <div className="po-table-wrap dev-workspace__packages-wrap">
@@ -195,6 +201,8 @@ export default function DevelopmentOverview({
   packagesLoading = false,
   commercialEventsLoading = false,
   commercialEventsError = '',
+  matricesLoading = false,
+  matricesError = '',
 }) {
   if (!model) return null;
 
@@ -259,6 +267,8 @@ export default function DevelopmentOverview({
             loading={packagesLoading}
             commercialEventsLoading={commercialEventsLoading}
             commercialEventsError={commercialEventsError}
+            matricesLoading={matricesLoading}
+            matricesError={matricesError}
           />
         </section>
       </div>
@@ -273,6 +283,8 @@ export function DevelopmentPackagesTab({
   packagesLoading = false,
   commercialEventsLoading = false,
   commercialEventsError = '',
+  matricesLoading = false,
+  matricesError = '',
 }) {
   return (
     <section className="po-module-card dev-workspace__section">
@@ -284,6 +296,8 @@ export function DevelopmentPackagesTab({
         loading={packagesLoading}
         commercialEventsLoading={commercialEventsLoading}
         commercialEventsError={commercialEventsError}
+        matricesLoading={matricesLoading}
+        matricesError={matricesError}
       />
     </section>
   );

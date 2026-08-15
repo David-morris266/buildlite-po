@@ -380,6 +380,9 @@ export default function PaymentCertificateValuationGrid({
   developmentId,
   editable = true,
   auditItems = [],
+  matrixReady = true,
+  matrixLoadState = 'loaded',
+  matrixError = null,
   onProgressChange,
 }) {
   const [selectedKeys, setSelectedKeys] = useState(new Set());
@@ -512,6 +515,16 @@ export default function PaymentCertificateValuationGrid({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [grid, selectedKeys, anchorKey, isPanelOpen]);
+
+  if (!matrixReady) {
+    return (
+      <p className="po-cert-detail__matrix-lead" role="status">
+        {matrixLoadState === 'error'
+          ? matrixError?.message || 'Unable to load order matrix data. Please try again.'
+          : 'Loading matrix data…'}
+      </p>
+    );
+  }
 
   if (!grid) {
     return (

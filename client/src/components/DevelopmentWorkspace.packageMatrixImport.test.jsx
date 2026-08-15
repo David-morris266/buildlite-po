@@ -12,6 +12,9 @@ const ensurePackagesReadyForDevelopment = vi.hoisted(() => vi.fn());
 const ensureCommercialEventsReadyForDevelopment = vi.hoisted(() => vi.fn());
 const getCommercialEventsLoadState = vi.hoisted(() => vi.fn());
 const getCommercialEventsLoadError = vi.hoisted(() => vi.fn());
+const ensureMatricesReadyForDevelopment = vi.hoisted(() => vi.fn());
+const getOrderMatricesLoadState = vi.hoisted(() => vi.fn());
+const getOrderMatricesLoadError = vi.hoisted(() => vi.fn());
 const workspaceMountCount = vi.hoisted(() => ({ value: 0 }));
 
 const TEST_SITE_ID = 'dev-1785599776666-zck5pl';
@@ -35,6 +38,12 @@ vi.mock('../commercialEvents/commercialEventServerCache', () => ({
   ensureCommercialEventsReadyForDevelopment,
   getCommercialEventsLoadState,
   getCommercialEventsLoadError,
+}));
+
+vi.mock('../payments/orderMatrixServerCache', () => ({
+  ensureMatricesReadyForDevelopment,
+  getOrderMatricesLoadState,
+  getOrderMatricesLoadError,
 }));
 
 vi.mock('../commercialEvents/commercialEventAuthority', () => ({
@@ -160,6 +169,9 @@ describe('DevelopmentWorkspace package matrix import stability', () => {
     ensureCommercialEventsReadyForDevelopment.mockResolvedValue([]);
     getCommercialEventsLoadState.mockReturnValue('loaded');
     getCommercialEventsLoadError.mockReturnValue(null);
+    ensureMatricesReadyForDevelopment.mockResolvedValue([]);
+    getOrderMatricesLoadState.mockReturnValue('loaded');
+    getOrderMatricesLoadError.mockReturnValue(null);
     ensurePackagesReadyForDevelopment.mockResolvedValue([wipeServerPackage()]);
 
     listPOs.mockImplementation(() => {

@@ -5,7 +5,7 @@
 import { formatMoney } from '../components/poDrawerHelpers';
 import { buildPackageCommercialDisplayFields } from '../commercialEvents/commercialEventPackageValue';
 import { getPlots } from '../developments/plotMaster';
-import { loadOrderMatrix } from './orderMatrixStore';
+import { resolveOrderMatrixForPackage } from './orderMatrixStore';
 import {
   calculateCertificateCellValues,
   normalizePct,
@@ -416,7 +416,48 @@ export function summarizeCertificateProgress(orderKey, certificateId, order = nu
   const certificate = getCertificate(orderKey, certificateId);
   if (!certificate) return null;
 
-  const matrix = loadOrderMatrix(orderKey);
+  const matrixResolution = resolveOrderMatrixForPackage(order || orderKey, order?.developmentId);
+  const matrixReady = matrixResolution.ready;
+  const matrix = matrixReady ? matrixResolution.matrix : null;
+
+  if (!matrixReady) {
+    if (
+      isApprovedCommercialCertificate(certificate) &&
+      certificate.grossValue != null &&
+      certificate.netValue != null
+    ) {
+      const previousGrossWorks = calculatePreviousApprovedGrossWorks(orderKey, certificate);
+      return {
+        certificate,
+        grid: null,
+        totals: {
+          matrixGrossThisCertificate: roundMoney(certificate.grossValue),
+          grossWorksThisCertificate: roundMoney(certificate.grossValue),
+          grossThisCertificate: roundMoney(certificate.grossValue),
+          netPayment: roundMoney(certificate.netValue),
+          previousCertified: previousGrossWorks,
+          certifiedToDate: roundMoney(previousGrossWorks + roundMoney(certificate.grossValue)),
+          remainingContract: null,
+        },
+        matrix: null,
+        matrixReady: false,
+        matrixLoadState: matrixResolution.loadState,
+        matrixError: matrixResolution.error || null,
+        frozenTotals: true,
+      };
+    }
+
+    return {
+      certificate,
+      grid: null,
+      totals: null,
+      matrix: null,
+      matrixReady: false,
+      matrixLoadState: matrixResolution.loadState,
+      matrixError: matrixResolution.error || null,
+    };
+  }
+
   const grid = buildCertificateValuationGrid(orderKey, certificate, matrix, new Set(), {
     developmentId: order?.developmentId,
   });
@@ -468,6 +509,9 @@ export function summarizeCertificateProgress(orderKey, certificateId, order = nu
     grid,
     totals,
     matrix,
+    matrixReady: true,
+    matrixLoadState: 'loaded',
+    matrixError: null,
   };
 }
 
@@ -493,7 +537,20 @@ export function formatMoneyLabel(value) {
   return `£${formatMoney(value)}`;
 }
 
-export function buildCommercialSummaryItems(totals) {
+export function buildCommercialSummaryItems(totals, { matrixReady = true } = {}) {
+  if (!matrixReady && !totals) {
+    return [
+      { label: 'Matrix valuation', value: 'Loading matrix data…' },
+      { label: 'Gross this certificate', value: 'Loading matrix data…' },
+      { label: 'Previous certified', value: '—' },
+      { label: 'Certified to date', value: '—' },
+      { label: 'Remaining contract', value: '—' },
+      { label: 'Retention', value: '—' },
+      { label: 'VAT', value: '—' },
+      { label: 'Net payment', value: '—' },
+    ];
+  }
+
   if (!totals) {
     return [
       { label: 'Matrix valuation', value: '—' },

@@ -1,7 +1,17 @@
 /**
- * BL-011B.01 — Order Matrix persistence (localStorage until server model exists).
- * No database schema changes.
+ * BL-011B.01 / BL-029B — Order Matrix persistence facade.
+ *
+ * Runtime authority remains localStorage while VITE_MATRIX_SERVER_AUTHORITY is OFF.
+ * When ON (tests / later cutover), reads resolve from the server cache with no
+ * localStorage fallback. Writes stay localStorage until BL-029D.
  */
+
+import { parseSubcontractOrderKey } from './packageKeyMigration';
+import { isOrderMatrixServerAuthorityEnabled } from './orderMatrixAuthority';
+import {
+  getCachedOrderMatrixByOrderKey,
+  getOrderMatrixFinancialReadiness,
+} from './orderMatrixServerCache';
 
 const STORAGE_KEY = 'buildlite_order_matrices_v1';
 
@@ -20,12 +30,94 @@ function writeAll(data) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
+export function resolveMatrixDevelopmentId(orderOrKey, developmentId = null) {
+  if (developmentId) return developmentId;
+  if (orderOrKey && typeof orderOrKey === 'object') {
+    return (
+      orderOrKey.developmentId ||
+      orderOrKey.scopeId ||
+      orderOrKey.jobId ||
+      parseSubcontractOrderKey(orderOrKey.orderKey)?.developmentId ||
+      null
+    );
+  }
+  return parseSubcontractOrderKey(orderOrKey)?.developmentId || null;
+}
+
+/**
+ * Distinguish idle/loading/error from genuine matrix absence.
+ *
+ * @returns {{
+ *   ready: boolean,
+ *   present: boolean,
+ *   matrix: object|null,
+ *   loadState: string,
+ *   error: Error|null,
+ *   reason?: string
+ * }}
+ */
+export function resolveOrderMatrixForPackage(orderOrKey, developmentId = null) {
+  const orderKey =
+    typeof orderOrKey === 'string' ? orderOrKey : orderOrKey?.orderKey || null;
+
+  if (!isOrderMatrixServerAuthorityEnabled()) {
+    const matrix = orderKey ? readAll()[orderKey] || null : null;
+    return {
+      ready: true,
+      present: Boolean(matrix),
+      matrix,
+      loadState: 'local',
+      error: null,
+    };
+  }
+
+  const resolvedDevelopmentId = resolveMatrixDevelopmentId(orderOrKey, developmentId);
+  if (!orderKey || !resolvedDevelopmentId) {
+    return {
+      ready: false,
+      present: false,
+      matrix: null,
+      loadState: 'idle',
+      error: null,
+      reason: 'idle',
+    };
+  }
+
+  const readiness = getOrderMatrixFinancialReadiness(resolvedDevelopmentId);
+  if (!readiness.ready) {
+    return {
+      ready: false,
+      present: false,
+      matrix: null,
+      loadState: readiness.loadState,
+      error: readiness.error || null,
+      reason: readiness.reason,
+    };
+  }
+
+  const matrix = getCachedOrderMatrixByOrderKey(resolvedDevelopmentId, orderKey);
+  return {
+    ready: true,
+    present: Boolean(matrix),
+    matrix,
+    loadState: 'loaded',
+    error: null,
+  };
+}
+
 export function hasOrderMatrix(orderKey) {
-  return Boolean(readAll()[orderKey]);
+  if (!isOrderMatrixServerAuthorityEnabled()) {
+    return Boolean(readAll()[orderKey]);
+  }
+  const resolved = resolveOrderMatrixForPackage(orderKey);
+  return resolved.ready && resolved.present;
 }
 
 export function loadOrderMatrix(orderKey) {
-  return readAll()[orderKey] || null;
+  if (!isOrderMatrixServerAuthorityEnabled()) {
+    return readAll()[orderKey] || null;
+  }
+  return resolveOrderMatrixForPackage(orderKey).matrix;
 }
 
 export function saveOrderMatrix(orderKey, matrix) {
@@ -46,5 +138,8 @@ export function deleteOrderMatrix(orderKey) {
 }
 
 export function listOrderMatrixKeys() {
-  return Object.keys(readAll());
+  if (!isOrderMatrixServerAuthorityEnabled()) {
+    return Object.keys(readAll());
+  }
+  return [];
 }

@@ -103,4 +103,39 @@ describe('OrderMatrixPlaceholderPreview matrix visibility', () => {
     expect(document.body.textContent).not.toContain('Import your valuation matrix');
     expect(document.body.textContent).toContain('Plot 1');
   });
+
+  it('keeps the import wizard mounted across parent re-renders while authority is OFF', () => {
+    renderPreview();
+
+    act(() => {
+      document.querySelector('.po-btn-primary')?.click();
+    });
+
+    expect(document.querySelector('[data-testid="mock-import"]')).not.toBeNull();
+
+    renderPreview({ hasMatrix: false });
+
+    expect(document.querySelector('[data-testid="mock-import"]')).not.toBeNull();
+    expect(document.body.textContent).not.toContain('Import your valuation matrix');
+  });
+
+  it('keeps a just-saved local matrix visible after a parent re-render with hasMatrix still false', async () => {
+    renderPreview();
+
+    act(() => {
+      document.querySelector('.po-btn-primary')?.click();
+    });
+
+    await act(async () => {
+      document.querySelector('[data-testid="mock-import"]')?.click();
+      await Promise.resolve();
+    });
+
+    renderPreview({ hasMatrix: false });
+
+    expect(hasOrderMatrix(ORDER_KEY)).toBe(true);
+    expect(document.body.textContent).toContain('Order Matrix');
+    expect(document.body.textContent).toContain('Plot 1');
+    expect(document.body.textContent).not.toContain('Import your valuation matrix');
+  });
 });

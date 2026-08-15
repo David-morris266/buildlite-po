@@ -7,6 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listPOs = vi.hoisted(() => vi.fn());
 const ensurePackagesReadyForDevelopment = vi.hoisted(() => vi.fn());
+const ensureCommercialEventsReadyForDevelopment = vi.hoisted(() => vi.fn());
+const getCommercialEventsLoadState = vi.hoisted(() => vi.fn());
+const getCommercialEventsLoadError = vi.hoisted(() => vi.fn());
+const ensureMatricesReadyForDevelopment = vi.hoisted(() => vi.fn());
+const getOrderMatricesLoadState = vi.hoisted(() => vi.fn());
+const getOrderMatricesLoadError = vi.hoisted(() => vi.fn());
 const buildDevelopmentWorkspaceModel = vi.hoisted(() => vi.fn());
 
 vi.mock('../api', () => ({
@@ -15,6 +21,18 @@ vi.mock('../api', () => ({
 
 vi.mock('../payments/packageStore', () => ({
   ensurePackagesReadyForDevelopment,
+}));
+
+vi.mock('../commercialEvents/commercialEventServerCache', () => ({
+  ensureCommercialEventsReadyForDevelopment,
+  getCommercialEventsLoadState,
+  getCommercialEventsLoadError,
+}));
+
+vi.mock('../payments/orderMatrixServerCache', () => ({
+  ensureMatricesReadyForDevelopment,
+  getOrderMatricesLoadState,
+  getOrderMatricesLoadError,
 }));
 
 vi.mock('../developments/developmentHelpers', () => ({
@@ -104,6 +122,12 @@ describe('DevelopmentWorkspace stability guards', () => {
     root = createRoot(container);
     listPOs.mockResolvedValue({ items: [] });
     ensurePackagesReadyForDevelopment.mockResolvedValue(sampleModel.packages);
+    ensureCommercialEventsReadyForDevelopment.mockResolvedValue([]);
+    getCommercialEventsLoadState.mockReturnValue('loaded');
+    getCommercialEventsLoadError.mockReturnValue(null);
+    ensureMatricesReadyForDevelopment.mockResolvedValue([]);
+    getOrderMatricesLoadState.mockReturnValue('loaded');
+    getOrderMatricesLoadError.mockReturnValue(null);
     buildDevelopmentWorkspaceModel.mockReturnValue(sampleModel);
   });
 

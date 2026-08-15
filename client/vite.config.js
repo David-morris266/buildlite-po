@@ -22,6 +22,7 @@ export default defineConfig({
     testTimeout: 15_000,
     env: {
       VITE_CE_SERVER_AUTHORITY: 'false',
+      VITE_MATRIX_SERVER_AUTHORITY: 'false',
     },
   },
   server: {

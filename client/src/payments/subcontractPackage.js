@@ -2,7 +2,7 @@
  * BL-011C.01 / BL-025.1 — Subcontract Package view model (Doc 29–32, Doc 64 / Doc 65).
  */
 
-import { hasOrderMatrix, loadOrderMatrix } from './orderMatrixStore';
+import { resolveOrderMatrixForPackage } from './orderMatrixStore';
 import {
   ensurePackageRecord,
   getPackageRecord,
@@ -23,8 +23,10 @@ export function buildPackageViewModel(order) {
 
   ensurePackageRecord(order.orderKey, order);
   const packageRecord = getPackageRecord(order.orderKey);
-  const matrix = loadOrderMatrix(order.orderKey);
-  const matrixExists = hasOrderMatrix(order.orderKey);
+  const matrixResolution = resolveOrderMatrixForPackage(order);
+  const matrixReady = matrixResolution.ready;
+  const matrix = matrixReady ? matrixResolution.matrix : null;
+  const matrixExists = matrixReady && matrixResolution.present;
 
   const committedValue = Number(order.committedValue) || 0;
   const commercialDisplay = buildPackageCommercialDisplayFields(order);
@@ -92,12 +94,21 @@ export function buildPackageViewModel(order) {
     certificateCount,
     status,
     matrixExists,
+    matrixReady,
+    matrixLoadState: matrixResolution.loadState,
+    matrixError: matrixResolution.error || null,
     matrixRowCount: matrix?.rows?.length ?? 0,
     createdAt: packageRecord?.createdAt || null,
     updatedAt: matrix?.updatedAt || packageRecord?.updatedAt || null,
     activity: buildPackageActivity(order, packageRecord, matrix),
-    nextStep: matrixExists ? 'certificates' : 'matrix',
-    matrixStatusLabel: matrixExists ? 'Imported' : 'Awaiting import',
+    nextStep: !matrixReady ? 'matrix' : matrixExists ? 'certificates' : 'matrix',
+    matrixStatusLabel: !matrixReady
+      ? matrixResolution.loadState === 'error'
+        ? 'Unable to load matrix'
+        : 'Loading matrix data…'
+      : matrixExists
+        ? 'Imported'
+        : 'Awaiting import',
     matrixPlotCount:
       matrix?.layout === 'plot-stage' ? matrix.plots?.length ?? 0 : null,
   };

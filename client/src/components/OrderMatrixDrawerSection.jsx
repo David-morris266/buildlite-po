@@ -72,6 +72,8 @@ export default function OrderMatrixDrawerSection({
         <p className="po-package-drawer__lead">
           {summary.hasMatrix
             ? 'Your plot × stage valuation matrix is linked to this package. Open the workspace to review progress.'
+            : summary.matrixReady === false
+              ? 'Loading matrix data…'
             : 'Import your plot × stage valuation matrix to begin certifying against this approved subcontract.'}
         </p>
 

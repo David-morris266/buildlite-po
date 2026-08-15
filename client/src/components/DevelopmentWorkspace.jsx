@@ -18,6 +18,12 @@ import {
   getCommercialEventsLoadError,
 } from '../commercialEvents/commercialEventServerCache';
 import { isCommercialEventServerAuthorityEnabled } from '../commercialEvents/commercialEventAuthority';
+import {
+  ensureMatricesReadyForDevelopment,
+  getOrderMatricesLoadState,
+  getOrderMatricesLoadError,
+} from '../payments/orderMatrixServerCache';
+import { isOrderMatrixServerAuthorityEnabled } from '../payments/orderMatrixAuthority';
 import DevelopmentCommercialEvents from './DevelopmentCommercialEvents';
 import DevelopmentOverview, {
   DevelopmentPackagesTab,
@@ -89,6 +95,8 @@ export default function DevelopmentWorkspace({
   const [packagesLoadError, setPackagesLoadError] = useState('');
   const [commercialEventsLoadState, setCommercialEventsLoadState] = useState('idle');
   const [commercialEventsLoadError, setCommercialEventsLoadError] = useState('');
+  const [matricesLoadState, setMatricesLoadState] = useState('idle');
+  const [matricesLoadError, setMatricesLoadError] = useState('');
   const [packageLaunch, setPackageLaunch] = useState(null);
   const [packageLaunchError, setPackageLaunchError] = useState('');
   const [stablePackageWorkspaceOrder, setStablePackageWorkspaceOrder] = useState(null);
@@ -122,6 +130,8 @@ export default function DevelopmentWorkspace({
     setPackagesLoadError('');
     setCommercialEventsLoadState('idle');
     setCommercialEventsLoadError('');
+    setMatricesLoadState('idle');
+    setMatricesLoadError('');
     setCommercialNavigationStack([]);
     setDevelopmentCommercialTarget(null);
     setCommercialRegisterError('');
@@ -167,11 +177,16 @@ export default function DevelopmentWorkspace({
       setServerPackages(null);
       setCommercialEventsLoadState('loading');
       setCommercialEventsLoadError('');
+      if (getOrderMatricesLoadState(development.id) !== 'loaded') {
+        setMatricesLoadState('loading');
+        setMatricesLoadError('');
+      }
 
       try {
         const [packages] = await Promise.all([
           ensurePackagesReadyForDevelopment(development.id, { pos }),
           ensureCommercialEventsReadyForDevelopment(development.id).catch(() => []),
+          ensureMatricesReadyForDevelopment(development.id).catch(() => []),
         ]);
 
         if (cancelled) return;
@@ -184,6 +199,15 @@ export default function DevelopmentWorkspace({
           const ceError = getCommercialEventsLoadError(development.id);
           setCommercialEventsLoadError(
             ceError?.message || 'Unable to load Commercial Events. Please try again.'
+          );
+        }
+
+        const matrixState = getOrderMatricesLoadState(development.id);
+        setMatricesLoadState(matrixState);
+        if (matrixState === 'error' && isOrderMatrixServerAuthorityEnabled()) {
+          const matrixError = getOrderMatricesLoadError(development.id);
+          setMatricesLoadError(
+            matrixError?.message || 'Unable to load order matrix data. Please try again.'
           );
         }
       } catch (error) {
@@ -201,6 +225,16 @@ export default function DevelopmentWorkspace({
           const ceError = getCommercialEventsLoadError(development.id);
           setCommercialEventsLoadError(
             ceError?.message || 'Unable to load Commercial Events. Please try again.'
+          );
+        }
+        setMatricesLoadState(getOrderMatricesLoadState(development.id));
+        if (
+          isOrderMatrixServerAuthorityEnabled() &&
+          getOrderMatricesLoadState(development.id) === 'error'
+        ) {
+          const matrixError = getOrderMatricesLoadError(development.id);
+          setMatricesLoadError(
+            matrixError?.message || 'Unable to load order matrix data. Please try again.'
           );
         }
       }
@@ -263,6 +297,14 @@ export default function DevelopmentWorkspace({
     commercialEventsAuthorityEnabled && commercialEventsLoadState === 'error'
       ? commercialEventsLoadError
       : '';
+
+  const matricesAuthorityEnabled = isOrderMatrixServerAuthorityEnabled();
+  const matricesLoading =
+    matricesAuthorityEnabled &&
+    (matricesLoadState === 'loading' || matricesLoadState === 'idle');
+  const matricesReady = !matricesAuthorityEnabled || matricesLoadState === 'loaded';
+  const matricesErrorMessage =
+    matricesAuthorityEnabled && matricesLoadState === 'error' ? matricesLoadError : '';
 
   const packageIdentityError =
     packagesLoadState === 'error' ? packagesLoadError : packageLaunchError;
@@ -666,6 +708,9 @@ export default function DevelopmentWorkspace({
           commercialEventsLoading={commercialEventsLoading}
           commercialEventsError={commercialEventsErrorMessage}
           commercialEventsReady={commercialEventsReady}
+          matricesLoading={matricesLoading}
+          matricesError={matricesErrorMessage}
+          matricesReady={matricesReady}
           assistantDevelopmentPackages={model?.packages || []}
           onAssistantNavigate={handleAssistantNavigation}
         />
@@ -787,6 +832,8 @@ export default function DevelopmentWorkspace({
             packagesLoading={packagesLoadState === 'loading'}
             commercialEventsLoading={commercialEventsLoading}
             commercialEventsError={commercialEventsErrorMessage}
+            matricesLoading={matricesLoading}
+            matricesError={matricesErrorMessage}
           />
         ) : null}
 
@@ -809,6 +856,8 @@ export default function DevelopmentWorkspace({
             packagesLoading={packagesLoadState === 'loading'}
             commercialEventsLoading={commercialEventsLoading}
             commercialEventsError={commercialEventsErrorMessage}
+            matricesLoading={matricesLoading}
+            matricesError={matricesErrorMessage}
           />
         ) : null}
 

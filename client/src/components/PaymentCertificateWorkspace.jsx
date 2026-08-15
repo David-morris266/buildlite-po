@@ -110,6 +110,7 @@ export default function PaymentCertificateWorkspace({
   if (!workspace) return null;
 
   function handleCreateCertificate() {
+    if (pkg?.matrixReady === false) return;
     if (!createState.ok) return;
     const result = createCertificate(order.orderKey, order);
     if (!result.ok || !result.certificate) return;
@@ -177,7 +178,7 @@ export default function PaymentCertificateWorkspace({
               type="button"
               className="po-btn-primary"
               onClick={handleCreateCertificate}
-              disabled={!createState.ok}
+              disabled={!createState.ok || pkg?.matrixReady === false}
             >
               {createState.label}
             </button>
@@ -201,6 +202,7 @@ export default function PaymentCertificateWorkspace({
             type="button"
             className="po-btn-primary"
             onClick={handleCreateCertificate}
+            disabled={pkg?.matrixReady === false}
           >
             Create Certificate No. 1
           </button>

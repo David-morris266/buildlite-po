@@ -99,12 +99,15 @@ export default function PaymentCertificateDetail({
   const summary = useMemo(() => {
     void refreshToken;
     return summarizeCertificateProgress(order.orderKey, certificateId, order);
-  }, [order.orderKey, certificateId, refreshToken]);
+  }, [order, certificateId, refreshToken, pkg?.matrixLoadState, pkg?.matrixReady]);
 
   const certificate = summary?.certificate || getCertificate(order.orderKey, certificateId);
   const status = getCertificateStatusMeta(certificate?.status);
-  const commercialSummary = buildCommercialSummaryItems(summary?.totals);
-  const editable = isCertificateEditable(certificate);
+  const commercialSummary = buildCommercialSummaryItems(summary?.totals, {
+    matrixReady: summary?.matrixReady !== false,
+  });
+  const matrixReady = summary?.matrixReady !== false;
+  const editable = isCertificateEditable(certificate) && matrixReady;
   const submitted = isCertificateSubmitted(certificate);
   const auditItems = buildCertificateAuditItems(certificate);
   const headerMeta = buildCertificateHeaderMeta(certificate);
@@ -265,6 +268,7 @@ export default function PaymentCertificateDetail({
                 setWorkflowFeedback(null);
                 setDialog('approve');
               }}
+              disabled={summary?.matrixReady === false}
             >
               Approve &amp; Lock
             </button>
@@ -345,8 +349,11 @@ export default function PaymentCertificateDetail({
           certificate={certificate}
           matrix={summary?.matrix}
           developmentId={order.developmentId}
-          editable={editable}
+          editable={editable && summary?.matrixReady !== false}
           auditItems={auditItems}
+          matrixReady={summary?.matrixReady !== false}
+          matrixLoadState={summary?.matrixLoadState || 'loaded'}
+          matrixError={summary?.matrixError || null}
           onProgressChange={handleProgressChange}
         />
       </section>

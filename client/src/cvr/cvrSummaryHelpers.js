@@ -439,6 +439,9 @@ export function buildPackageAttentionList(developmentId, pos = [], limit = 5) {
 
   for (const order of orders) {
     const reasons = [];
+    if (order.matrixReady === false) {
+      continue;
+    }
     if (!order.hasMatrix) {
       reasons.push('Approved subcontract PO — order matrix not imported');
     }

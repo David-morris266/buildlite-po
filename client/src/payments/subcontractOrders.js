@@ -10,7 +10,7 @@ import {
   mapJobToDevelopment,
   resolvePoDevelopment,
 } from '../developments/developmentPoHelpers';
-import { hasOrderMatrix, loadOrderMatrix } from './orderMatrixStore';
+import { loadOrderMatrix, resolveOrderMatrixForPackage } from './orderMatrixStore';
 import {
   buildSubcontractOrderKey,
   parseSubcontractOrderKey,
@@ -189,14 +189,19 @@ export function buildSubcontractOrdersFromPos(pos) {
     groups.set(orderKey, existing);
   }
 
-  const orders = Array.from(groups.values()).map((order) => ({
-    ...order,
-    remaining: Math.max(0, order.committedValue - order.certifiedToDate),
-    certificateCount: getCertificateCount(order.orderKey),
-    status: getSubcontractOrderStatus(order),
-    hasMatrix: hasOrderMatrix(order.orderKey),
-    matrixRowCount: loadOrderMatrix(order.orderKey)?.rows?.length ?? 0,
-  }));
+  const orders = Array.from(groups.values()).map((order) => {
+    const matrixResolution = resolveOrderMatrixForPackage(order);
+    return {
+      ...order,
+      remaining: Math.max(0, order.committedValue - order.certifiedToDate),
+      certificateCount: getCertificateCount(order.orderKey),
+      status: getSubcontractOrderStatus(order),
+      hasMatrix: matrixResolution.present,
+      matrixReady: matrixResolution.ready,
+      matrixLoadState: matrixResolution.loadState,
+      matrixRowCount: matrixResolution.matrix?.rows?.length ?? 0,
+    };
+  });
 
   return orders.sort((a, b) =>
     a.projectLabel.localeCompare(b.projectLabel, undefined, {
@@ -206,7 +211,18 @@ export function buildSubcontractOrdersFromPos(pos) {
 }
 
 export function getSubcontractOrderStatus(order) {
-  const hasMatrix = hasOrderMatrix(order.orderKey);
+  const matrixResolution = resolveOrderMatrixForPackage(order);
+  if (!matrixResolution.ready) {
+    return {
+      label:
+        matrixResolution.loadState === 'error'
+          ? 'Unable to load matrix'
+          : 'Loading matrix data…',
+      modifier: 'matrix-loading',
+    };
+  }
+
+  const hasMatrix = matrixResolution.present;
   const committed =
     Number(order.currentContractValue ?? order.committedValue) || 0;
   const certified =
@@ -278,10 +294,25 @@ export function getMatrixAllocationSummary(rows, committedValue) {
 }
 
 export function getOrderMatrixSummary(orderKey, committedValue) {
-  const matrix = loadOrderMatrix(orderKey);
+  const matrixResolution = resolveOrderMatrixForPackage(orderKey);
+  if (!matrixResolution.ready) {
+    return {
+      hasMatrix: false,
+      matrixReady: false,
+      matrixLoadState: matrixResolution.loadState,
+      rowCount: null,
+      committed: committedValue,
+      certified: null,
+      remaining: null,
+    };
+  }
+
+  const matrix = matrixResolution.matrix;
   if (!matrix) {
     return {
       hasMatrix: false,
+      matrixReady: true,
+      matrixLoadState: 'loaded',
       rowCount: 0,
       committed: committedValue,
       certified: 0,
@@ -293,6 +324,8 @@ export function getOrderMatrixSummary(orderKey, committedValue) {
   const certified = 0;
   return {
     hasMatrix: true,
+    matrixReady: true,
+    matrixLoadState: 'loaded',
     rowCount: matrix.rows?.length ?? 0,
     committed,
     certified,
