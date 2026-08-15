@@ -88,13 +88,15 @@ Management Reporting
 
 ## Current Development Priority
 
-1. Stabilise existing PO system
-2. Assess current functionality
-3. Build Variations Module
-4. Build Measurement Schedules
-5. Build Certificates
-6. Build Contract Administration
-7. Build CVR Engine
+Doc 67 persistence migration on branch `buildlite-V1-1`.
+
+Complete: BL-027A Developments, BL-027B Packages, BL-028 Commercial Events (including BL-028B.3 server-authority cutover).
+
+1. **BL-029** — Order Matrix Persistence (**NEXT**)
+2. **BL-030** — Payment Certificate persistence and atomic approval
+3. **BL-031** — CVR and Ledger persistence
+
+Do not start BL-030 before BL-029. Do not redesign working modules. See `CURRENT_STATE.md`.
 
 ---
 

@@ -9,6 +9,9 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 | `001_baseline.sql` | Phase 0 additive baseline (frozen) |
 | `002_tenant_keys.sql` | Tenant-scoped unique indexes + `jobs.client_id` — **run only after collision checks** (frozen) |
 | `003_reconcile_production.sql` | BL-006: align schema with Render production (additive only) |
+| `004_developments.sql` | BL-027A: developments (Doc 67) |
+| `005_packages.sql` | BL-027B: packages + package_purchase_orders (Doc 67) |
+| `006_commercial_events.sql` | BL-028A: commercial_events + commercial_event_audit (Doc 67) |
 
 ## Before applying to production
 

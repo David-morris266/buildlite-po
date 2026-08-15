@@ -2,7 +2,11 @@
 
 Purchase order platform — React (Vite) frontend + Express/Postgres API.
 
-**Phase 0 complete in codebase** — migrations, seed, schema alignment. Deploy to staging/production requires commercial pre-flight (backup + verification) before running migrations.
+**Current position:** branch `buildlite-V1-1`, Doc 67 persistence programme. Developments, packages and Commercial Events are server-authoritative. **NEXT is BL-029 Order Matrix Persistence.** See `CURRENT_STATE.md` and `docs/test-data/README.md`.
+
+Server automated tests must use isolated `TEST_DATABASE_URL` / `buildlite_test` (`npm run test:ensure-db` from `server/`). Do not run them against `buildlite_clone`.
+
+**Phase 0** (migrations, seed, schema alignment) remains in the codebase as a historic baseline. Deploy to staging/production still requires commercial pre-flight (backup + verification) before running migrations.
 
 ---
 

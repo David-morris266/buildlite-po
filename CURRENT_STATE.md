@@ -1,122 +1,140 @@
-# BuildLite Current State Assessment
+# BuildLite Current State
 
 ## Purpose
 
-This document records the actual status of the BuildLite platform after Phase 0 implementation and **BL-006 Production Schema Reconciliation** (code ready for review; production deploy pending commercial sign-off).
+This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-028B.3** (Commercial Event server-authority cutover) and the **BL-ASUS-001** development-machine checkpoint.
+
+Historic Phase 0 / BL-006 schema notes remain in `docs/DATABASE.md` and `docs/phase0/`. Do not treat those files as the current programme.
+
+Authoritative persistence architecture: **Doc 67** in BuildLite Master Documentation.
 
 ---
 
-## Repository
+## Repository / programme
 
 | Item | Value |
 |------|-------|
 | Branch | `buildlite-V1-1` |
-| Repository | `buildlite-po` / `dmcc-cvr-system` |
+| Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
+| Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
+| Last completed product slice | BL-028B.3 Commercial Event server-authority cutover |
+| Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
+| Housekeeping checkpoint | BL-ASUS-001 (this document) |
+| **NEXT** | **BL-029 Order Matrix Persistence** |
 
 ---
 
-## Release track (approved)
+## Persistence programme (Doc 67 §25)
 
-Phases 0 → 1 → 2 → 3A (Track A — JSON purchase orders retained).
+| ID | Domain | Status |
+|----|--------|--------|
+| BL-027A | Developments → Postgres | **Complete** — server authority |
+| BL-027B | Packages → Postgres | **Complete** — server authority; materialised on subcontract PO approval |
+| BL-028 | Commercial Events → Postgres | **Complete** — schema/API (BL-028A), cache/overlays (BL-028B.1–2), **server-authority cutover (BL-028B.3)** |
+| BL-028B.3a | Isolated server test database | **Complete** — `TEST_DATABASE_URL` / `buildlite_test`; must not use `buildlite_clone` |
+| **BL-029** | Order Matrix Persistence | **NEXT** |
+| BL-030 | Payment Certificate persistence & atomic approval | After BL-029 |
+| BL-031 | CVR & Ledger persistence | After BL-030 |
 
-**Phase 0:** Implemented in codebase — **not yet deployed to production** until backup + verification (P0-0) and staging tests pass.
-
-**BL-006:** Production schema reconciliation complete in codebase — validated locally against `buildlite_local` and production clone (`buildlite_clone`).
-
----
-
-## Module status
-
-| Module | Status | Notes |
-|--------|--------|-------|
-| Purchase Orders | Working | JSON in `purchase_orders.payload`; full UI (Form, List, Archive) |
-| Suppliers | Working | JSON payload; client-scoped |
-| Cost Codes | Working | DB table + seed from `server/data/cost_codes.json` |
-| Jobs | Working | Shared DB pool; client-scoped via `jobs.client_id` |
-| Clients / Brand | Working | Active client resolution; flat-column brand profiles |
-| User Login | Mock only | `localStorage` identity — **Phase 1 (out of scope for BL-006)** |
-| Payment Certificates | Backend only | Routes use `legacy_cert_no`; no UI |
-| Variations | Not built | Planned |
-| CVR Dashboard | Not built | Planned |
-| Administration | Partial | No master-data admin UI — **Phase 2** |
+Do not start BL-030 or BL-031 before BL-029. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
 ---
 
-## Database
+## Current persistence boundary
 
-| Item | Status |
+### Postgres / server authority
+
+- Clients, brand profiles, jobs
+- Cost codes, suppliers, purchase orders (`payload` JSONB)
+- **Developments** (`004_developments.sql`)
+- **Packages** + PO membership (`005_packages.sql`)
+- **Commercial Events** + CE audit (`006_commercial_events.sql`)
+- Local client uses `VITE_CE_SERVER_AUTHORITY` for CE cutover (see `client/.env.example`)
+
+### Browser / localStorage authority (not yet migrated)
+
+- Order matrices (`buildlite_order_matrices_v1`) — **BL-029**
+- V1 payment certificates, matrix progress, commercial lines, recovery deductions (`buildlite_subcontract_packages_v1`) — **BL-030**
+- CVR periods / cost centres (`buildlite_cvr_v1`) and purchase ledger (`buildlite_purchase_ledgers_v1`) — **BL-031**
+- Also still local: revenue, administration master data, setup drafts, Commercial Assistant dispositions
+
+The legacy Postgres `payment_certificates` table is **not** the BuildLite V1 certificate engine (Doc 67 §21). Do not merge those models during persistence work.
+
+---
+
+## UAT / test data
+
+See `docs/test-data/README.md`.
+
+| Pack | Role |
+|------|------|
+| **Hawthorn Gardens** (`docs/test-data/Hawthorn Gardens UAT/`) | Intended **clean fictional known-answer** end-to-end UAT development. Permanent regression/UAT material. Not yet the imported live UAT model; import is a later task, not BL-ASUS-001. |
+| **Test Site 1** (`docs/test-data/Test Site 1/`) | **Legacy / current historical test evidence.** Keep. Do not treat as the new clean commercial test model. |
+
+---
+
+## ASUS development-machine checkpoint (BL-ASUS-001)
+
+Verified on the new ASUS PC after migration from the previous Windows laptop:
+
+- PostgreSQL 18.6 installed
+- Local `buildlite_clone` restored from the previous machine (UAT/dev data — **do not run automated tests against it**)
+- Isolated `buildlite_test` created and initialised
+- Server automated tests: **93 tests, 0 failures** (isolated to `TEST_DATABASE_URL`)
+- Local server ran on `localhost:3001`
+- Vite client ran on `localhost:5173`
+
+---
+
+## Working commercial chain (implemented)
+
+Development → Purchase Order → Subcontract Package → Commercial Events → Current Contract Value → Payment Certificate (matrix valuation, CE value inclusions, recovery deductions) → Certificate approval
+
+Purchase Orders remain the foundation. Commercial Events record why a package value changed; they are not additional POs.
+
+Login remains mock (`localStorage` identity). No production-grade authentication.
+
+---
+
+## Module snapshot (high level)
+
+| Area | Status |
 |------|--------|
-| Migration framework | `server/migrations/`, `npm run migrate` |
-| Baseline migration | `001_baseline.sql` (frozen) |
-| Tenant keys migration | `002_tenant_keys.sql` (frozen) |
-| Reconciliation migration | `003_reconcile_production.sql` (BL-006) |
-| Seed script | `npm run seed` — default client, brand profile row, cost codes, `client_id` backfill |
-| `db.js` init | Aligned with Render production schema (post-003) |
-| Single connection pool | `jobRoutes.js` uses `../db` |
-| Schema reference | `docs/DATABASE.md` |
-
-Production has 8 tables including legacy `payment_certificate_lines`. Fresh deploy does not auto-create `payment_certificate_lines`.
-
-**BL-006 changes:** Codebase now matches production for `client_brand_profiles` (flat columns), `payment_certificates` (`legacy_cert_no`), seed compatibility, and job tenant scoping.
+| Purchase Orders | Working — Postgres JSON payload |
+| Developments / Plot Master | Working — developments are server-backed |
+| Packages / order matrices | Working — package **identity** server-backed; **matrices still localStorage** |
+| Commercial Events | Working — **server authority** after BL-028B.3 |
+| V1 Payment Certificates | Working in UI — **localStorage authority** until BL-030 |
+| CVR / ledger / revenue | Working in UI — **localStorage authority** until BL-031 (revenue not in Doc 67 persistence sequence) |
+| Administration / Setup Assistant | Working — largely localStorage master data |
+| Commercial Assistant | Working foundation — local dispositions |
+| User login / RBAC | Mock only |
+| Payment notices / Pay Less | Not built |
 
 ---
 
-## API (Phase 0 + BL-006)
+## Non-blocking technical debt (recorded only — do not fix in persistence housekeeping)
 
-| Endpoint / area | Change |
-|-----------------|--------|
-| `GET /health` | DB ping, required tables, pending migrations |
-| `GET /api/po/_debug` | 404 when `NODE_ENV=production` |
-| `GET /api/payments/_debug` | 404 when `NODE_ENV=production` |
-| Payment certificate routes | Read/write `legacy_cert_no`; API aliases preserved |
-| Job routes | Scoped to active `client_id`; new jobs set `client_id` |
-
-No new business endpoints. No authentication middleware.
-
----
-
-## Frontend (Phase 0)
-
-| Change | Detail |
-|--------|--------|
-| `client/src/api.js` | Uses `VITE_API_URL` (fallback `http://localhost:3001`) |
-
-PO UI unchanged. Role toggle and mock login unchanged.
+| Item | Note |
+|------|------|
+| `GET /health` | `server/services/health.js` exists; route is not mounted in `app.js`. README historically documented it. |
+| Missing `docs/uat/` export | CE import scripts default to `docs/uat/test-site-1-commercial-events-export.json`; that path does not exist. |
+| `server/routes/supplierRoutes.js` | Unmounted orphan; file content is not a live Express router. |
+| Stale historic documents | `docs/phase0/migration-run-log.md` is an empty template; Master Documentation index and Doc 49 predate BL-028. Preserve as historic. |
+| Dual persistence | Expected until BL-029–031 complete: two browsers can still diverge on matrices, certificates, CVR, and ledger. |
+| Mock authentication | Actor fields are not proof of identity (Doc 67 §26). Dedicated auth programme later; do not block persistence. |
+| Root `package-lock.json` `name` | npm infers folder name because root `package.json` has no `name`. Reverted at BL-ASUS-001; a root `npm install` may rewrite it. Install from `client/` and `server/` to avoid churn. |
 
 ---
 
-## Technical debt (remaining)
+## Next action
 
-| Item | Phase |
-|------|-------|
-| Real authentication | Phase 1 |
-| RBAC; remove role toggle | Phase 3A |
-| Master-data admin CRUD | Phase 2 |
-| Unauthenticated DELETE/approve on POs | Phase 1+ |
-| Global `po_number` PK (composite unique in `002`) | Monitor at multi-tenant |
-| `server/routes/supplierRoutes.js` orphan | Later cleanup |
-| PDF brand still hardcoded in `pdf.js` | Future — DB brand profile unused in PDFs |
+**BL-029 — Order Matrix Persistence.**
+
+Make each package valuation matrix server-authoritative. Do not change matrix calculation behaviour. Do not start BL-030 in the same slice.
 
 ---
 
-## Repo hygiene (Phase 0)
+## Historic pointer (Phase 0 / BL-006)
 
-Removed: `Replacement filed/` (obsolete PO backup).
-
----
-
-## Next actions (before production deploy)
-
-1. Commercial manager: backup + Doc 20 §8 verification (P0-0).
-2. Developer: apply migrations + seed on **staging**; run test plan (T8–T27).
-3. Record results in `docs/phase0/migration-run-log.md`.
-4. Production deploy after staging sign-off (T28–T31).
-5. **Phase 1** starts only after Phase 0 commercial sign-off.
-
----
-
-## Documentation
-
-- `docs/DATABASE.md` — production schema, indexes, verification SQL, rollback
-- `docs/phase0/migration-run-log.md` — deploy evidence template
-- `server/migrations/README.md` — migration ordering
+Phase 0 migration framework, seed, and production schema reconciliation (migrations `001`–`003`) remain in the codebase. That work is complete as a baseline, not the current development programme. See `docs/DATABASE.md` (BL-006 catalogue preserved below the current persistence section) and `docs/phase0/`.

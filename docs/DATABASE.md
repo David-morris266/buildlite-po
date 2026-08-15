@@ -1,8 +1,41 @@
 # BuildLite Database Reference
 
-**Last updated:** BL-006 Production Schema Reconciliation  
+**Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
+**Last product slice:** BL-028B.3 Commercial Event server authority.  
+**NEXT:** BL-029 Order Matrix Persistence.
+
+---
+
+## Current persistence boundary (Doc 67)
+
+Postgres is already the authority for:
+
+| Migration | Tables | Sprint |
+|-----------|--------|--------|
+| `001`–`003` | clients, brand, jobs, cost_codes, suppliers, purchase_orders, legacy payment_certificates | Phase 0 / BL-006 |
+| `004_developments.sql` | `developments` | BL-027A |
+| `005_packages.sql` | `packages`, `package_purchase_orders` | BL-027B |
+| `006_commercial_events.sql` | `commercial_events`, `commercial_event_audit` | BL-028 |
+
+Still **browser/localStorage** (not yet Postgres):
+
+- Order matrices — **BL-029**
+- BuildLite V1 payment certificates (matrix progress, commercial lines, recovery deductions, frozen totals) — **BL-030**
+- CVR periods/cost centres and purchase ledger — **BL-031**
+
+The legacy `payment_certificates` / `payment_certificate_lines` tables below are **not** the V1 React certificate engine. Do not merge those models merely because a certificate table already exists (Doc 67 §21).
+
+Automated server tests must use isolated `TEST_DATABASE_URL` / `buildlite_test`. Do not run them against `buildlite_clone`.
+
+---
+
+## BL-006 historical catalogue (preserved)
+
+**Last updated (this section):** BL-006 Production Schema Reconciliation  
 **Authority:** Render production clone inspection (Jun 2026)  
 **Track:** A — JSON purchase orders retained (Phase 3A); Doc 22 relational PO model deferred
+
+The remainder of this file is the Phase 0 / BL-006 production schema reference. It remains valid as the baseline for the original eight production tables. It does not describe developments, packages, or commercial events.
 
 ---
 
@@ -10,12 +43,12 @@
 
 BuildLite uses a single Postgres database (`buildlite_po_db` on Render). Schema is managed via:
 
-- Versioned SQL migrations in `server/migrations/` (`001`, `002`, `003`)
+- Versioned SQL migrations in `server/migrations/` (`001`–`006`; `001`–`003` are the BL-006 production baseline)
 - `schema_migrations` tracking table
 - `npm run migrate` and `npm run seed` scripts
-- `db.js` init aligned with production (fallback when migrations have not run)
+- `db.js` init aligned with production plus later Doc 67 tables (fallback when migrations have not run)
 
-**Production database is the source of truth.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files.
+**Production database was the source of truth for BL-006.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files. Later Doc 67 migrations (`004`–`006`) are additive and must also not be rewritten after apply.
 
 ---
 
@@ -182,6 +215,9 @@ Production authority for certificate numbering is **`legacy_cert_no`**, enforced
 | `001_baseline.sql` | Phase 0 additive baseline (frozen) |
 | `002_tenant_keys.sql` | Tenant keys + `jobs.client_id` (frozen) |
 | `003_reconcile_production.sql` | BL-006: align with Render production schema |
+| `004_developments.sql` | BL-027A: server-backed developments |
+| `005_packages.sql` | BL-027B: packages + package PO membership |
+| `006_commercial_events.sql` | BL-028A: commercial events + CE audit |
 
 ---
 
@@ -190,7 +226,7 @@ Production authority for certificate numbering is **`legacy_cert_no`**, enforced
 From `server/`:
 
 ```bash
-npm run migrate    # apply pending SQL (001 → 002 → 003)
+npm run migrate    # apply pending SQL (001 → … → 006)
 npm run seed       # default client, cost codes, brand profile, client_id backfill
 npm start          # start API (calls db.init as fallback)
 ```
