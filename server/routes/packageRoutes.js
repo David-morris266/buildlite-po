@@ -18,6 +18,17 @@ const {
   getMatrixForOrderKey,
   upsertMatrixForPackage,
 } = require("../services/orderMatrixRepository");
+const {
+  provisionalActor: certificateActor,
+  listCertificatesForPackage,
+  getCertificateForPackage,
+  createCertificateForPackage,
+  patchCertificateForPackage,
+  submitCertificateForPackage,
+  approveCertificateForPackage,
+  rejectCertificateForPackage,
+  deleteCertificateForPackage,
+} = require("../services/paymentCertificateRepository");
 
 const router = express.Router();
 
@@ -96,6 +107,199 @@ router.put("/:packageId/matrix", async (req, res) => {
   } catch (err) {
     console.error("[Packages] put matrix error:", err);
     res.status(500).json({ message: "Failed to save order matrix." });
+  }
+});
+
+function sendCertificateError(res, result) {
+  const payload = { message: result.message };
+  if (result.errors) payload.errors = result.errors;
+  if (result.certificate) payload.certificate = result.certificate;
+  return res.status(result.status).json(payload);
+}
+
+router.get("/:packageId/certificates", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const result = await listCertificatesForPackage(active.id, req.params.packageId);
+    if (!result.ok) return sendCertificateError(res, result);
+    res.json({ certificates: result.certificates });
+  } catch (err) {
+    console.error("[Packages] list certificates error:", err);
+    res.status(500).json({ message: "Failed to load payment certificates." });
+  }
+});
+
+router.post("/:packageId/certificates", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const body = req.body || {};
+    const result = await createCertificateForPackage(active.id, req.params.packageId, body, {
+      actor: certificateActor(body),
+    });
+    if (!result.ok) return sendCertificateError(res, result);
+    res.status(result.status || 201).json(result.certificate);
+  } catch (err) {
+    console.error("[Packages] create certificate error:", err);
+    res.status(500).json({ message: "Failed to create payment certificate." });
+  }
+});
+
+router.get("/:packageId/certificates/:certificateId", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const result = await getCertificateForPackage(
+      active.id,
+      req.params.packageId,
+      req.params.certificateId
+    );
+    if (!result.ok) return sendCertificateError(res, result);
+    res.json(result.certificate);
+  } catch (err) {
+    console.error("[Packages] get certificate error:", err);
+    res.status(500).json({ message: "Failed to load payment certificate." });
+  }
+});
+
+router.patch("/:packageId/certificates/:certificateId", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const body = req.body || {};
+    const result = await patchCertificateForPackage(
+      active.id,
+      req.params.packageId,
+      req.params.certificateId,
+      body,
+      { actor: certificateActor(body) }
+    );
+    if (!result.ok) return sendCertificateError(res, result);
+    res.json(result.certificate);
+  } catch (err) {
+    console.error("[Packages] patch certificate error:", err);
+    res.status(500).json({ message: "Failed to update payment certificate." });
+  }
+});
+
+router.post("/:packageId/certificates/:certificateId/submit", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const body = req.body || {};
+    const result = await submitCertificateForPackage(
+      active.id,
+      req.params.packageId,
+      req.params.certificateId,
+      body,
+      { actor: certificateActor(body) }
+    );
+    if (!result.ok) return sendCertificateError(res, result);
+    res.json(result.certificate);
+  } catch (err) {
+    console.error("[Packages] submit certificate error:", err);
+    res.status(500).json({ message: "Failed to submit payment certificate." });
+  }
+});
+
+router.post("/:packageId/certificates/:certificateId/approve", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const body = req.body || {};
+    const result = await approveCertificateForPackage(
+      active.id,
+      req.params.packageId,
+      req.params.certificateId,
+      body,
+      { actor: certificateActor(body) }
+    );
+    if (!result.ok) return sendCertificateError(res, result);
+    res.json(result.certificate);
+  } catch (err) {
+    console.error("[Packages] approve certificate error:", err);
+    res.status(500).json({ message: "Failed to approve payment certificate." });
+  }
+});
+
+router.post("/:packageId/certificates/:certificateId/reject", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const body = req.body || {};
+    const result = await rejectCertificateForPackage(
+      active.id,
+      req.params.packageId,
+      req.params.certificateId,
+      body,
+      { actor: certificateActor(body) }
+    );
+    if (!result.ok) return sendCertificateError(res, result);
+    res.json(result.certificate);
+  } catch (err) {
+    console.error("[Packages] reject certificate error:", err);
+    res.status(500).json({ message: "Failed to reject payment certificate." });
+  }
+});
+
+router.delete("/:packageId/certificates/:certificateId", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const body = req.body || {};
+    const result = await deleteCertificateForPackage(
+      active.id,
+      req.params.packageId,
+      req.params.certificateId,
+      body,
+      { actor: certificateActor(body) }
+    );
+    if (!result.ok) return sendCertificateError(res, result);
+    res.status(204).end();
+  } catch (err) {
+    console.error("[Packages] delete certificate error:", err);
+    res.status(500).json({ message: "Failed to delete payment certificate." });
   }
 });
 
