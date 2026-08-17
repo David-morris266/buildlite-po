@@ -17,7 +17,7 @@ import {
 import {
   getCertificate,
   isApprovedCommercialCertificate,
-  listCertificates,
+  resolveCertificatesForPackage,
 } from './paymentCertificateStore';
 import {
   calculatePreviousApprovedCommercialEventGross,
@@ -163,7 +163,8 @@ export function validateThisCertificatePct(previousCumulativePct, rawEntry, opti
 }
 
 export function getPreviousProgressForCell(orderKey, certificate, cellKey) {
-  const prior = listCertificates(orderKey).filter(
+  const resolved = resolveCertificatesForPackage(orderKey);
+  const prior = (resolved.ready ? resolved.certificates : []).filter(
     (item) =>
       item.certificateNumber < certificate.certificateNumber &&
       isApprovedCommercialCertificate(item)
@@ -619,7 +620,8 @@ export function buildCommercialSummaryItems(totals, { matrixReady = true } = {})
 }
 
 export function getPreviousCertificationDetails(orderKey, certificate, cellKeys) {
-  const prior = listCertificates(orderKey).filter(
+  const resolved = resolveCertificatesForPackage(orderKey);
+  const prior = (resolved.ready ? resolved.certificates : []).filter(
     (item) =>
       item.certificateNumber < certificate.certificateNumber &&
       isApprovedCommercialCertificate(item)

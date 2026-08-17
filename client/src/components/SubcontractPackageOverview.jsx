@@ -241,6 +241,8 @@ export function SubcontractPackageDashboard({
   compact = false,
   commercialEventsLoading = false,
   commercialEventsReady = true,
+  certificatesLoading = false,
+  certificatesReady = true,
 }) {
   if (!pkg) return null;
 
@@ -249,9 +251,27 @@ export function SubcontractPackageDashboard({
     commercialEventsReady === false ||
     pkg.commercialEventsReady === false;
 
+  const certificateValuesPending =
+    certificatesLoading ||
+    certificatesReady === false ||
+    pkg.certificatesReady === false;
+
   const formatCommercialMoney = (value, signed = false) => {
     if (commercialValuesPending) return 'Loading commercial data…';
     return signed ? formatSignedDisplayMoney(value) : formatDisplayMoney(value);
+  };
+
+  const formatCertifiedMoney = (value, signed = false) => {
+    if (certificateValuesPending) return 'Loading certificate data…';
+    if (value == null) return '—';
+    return signed ? formatSignedDisplayMoney(value) : formatDisplayMoney(value);
+  };
+
+  const formatRemainingMoney = (value) => {
+    if (commercialValuesPending) return 'Loading commercial data…';
+    if (certificateValuesPending) return 'Loading certificate data…';
+    if (value == null) return '—';
+    return formatDisplayMoney(Math.max(0, value));
   };
 
   const progressTitle =
@@ -276,14 +296,12 @@ export function SubcontractPackageDashboard({
         },
         {
           label: 'Certified gross',
-          value: formatDisplayMoney(pkg.certifiedGrossToDate),
+          value: formatCertifiedMoney(pkg.certifiedGrossToDate),
           modifier: 'muted',
         },
         {
           label: 'Remaining',
-          value: commercialValuesPending
-            ? 'Loading commercial data…'
-            : formatDisplayMoney(Math.max(0, pkg.remainingContractValue ?? 0)),
+          value: formatRemainingMoney(pkg.remainingContractValue),
           modifier: pkg.isOverCertified ? 'accent' : 'default',
         },
       ]
@@ -310,14 +328,12 @@ export function SubcontractPackageDashboard({
         },
         {
           label: 'Certified gross',
-          value: formatDisplayMoney(pkg.certifiedGrossToDate),
+          value: formatCertifiedMoney(pkg.certifiedGrossToDate),
           modifier: 'muted',
         },
         {
           label: 'Remaining',
-          value: commercialValuesPending
-            ? 'Loading commercial data…'
-            : formatDisplayMoney(Math.max(0, pkg.remainingContractValue ?? 0)),
+          value: formatRemainingMoney(pkg.remainingContractValue),
           modifier: pkg.isOverCertified ? 'accent' : 'default',
         },
       ];
@@ -338,13 +354,17 @@ export function SubcontractPackageDashboard({
       ))}
       {!compact && pkg.certifiedNetPaymentToDate > 0 ? (
         <p className="po-package-dashboard__net-detail">
-          Net payment certified to date: {formatDisplayMoney(pkg.certifiedNetPaymentToDate)}
+          Net payment certified to date: {formatCertifiedMoney(pkg.certifiedNetPaymentToDate)}
         </p>
       ) : null}
       {pkg.commercialProgressPct > 0 || pkg.certifiedGrossToDate > 0 ? (
         <p className="po-package-dashboard__progress-note">
           <abbr title={progressTitle}>Commercial progress</abbr>:{' '}
-          {commercialValuesPending ? 'Loading commercial data…' : `${pkg.commercialProgressPct}%`}
+          {commercialValuesPending
+            ? 'Loading commercial data…'
+            : certificateValuesPending
+              ? 'Loading certificate data…'
+              : `${pkg.commercialProgressPct}%`}
         </p>
       ) : null}
       {pkg.isOverCertified ? (

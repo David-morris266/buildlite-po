@@ -29,7 +29,7 @@ import {
 import { roundMoney } from '../payments/paymentCertificateCalculations';
 import {
   isApprovedCommercialCertificate,
-  listCertificates,
+  resolveCertificatesForPackage,
 } from '../payments/paymentCertificateStore';
 
 function toNumber(value) {
@@ -70,8 +70,11 @@ export function calculateValueInclusionCertifiedToDate(
 ) {
   if (!orderKey || !commercialEventId) return 0;
 
+  const resolved = resolveCertificatesForPackage(orderKey);
+  if (!resolved.ready) return null;
+
   return roundMoney(
-    listCertificates(orderKey)
+    resolved.certificates
       .filter(
         (certificate) =>
           isApprovedCommercialCertificate(certificate) &&
@@ -119,6 +122,8 @@ export function hasCommercialEventCertificationRemaining(event, orderKey) {
   if (!orderKey) return false;
 
   const certifiedAmount = calculateValueInclusionCertifiedToDate(orderKey, event.id);
+  if (certifiedAmount == null) return false;
+
   const remaining = calculateCommercialEventRemaining(
     event.value,
     certifiedAmount,
@@ -144,6 +149,18 @@ export function buildCommercialEventCertificateLifecycleView(
   const certifiedAmount = calculateValueInclusionCertifiedToDate(orderKey, event?.id, {
     excludeCertificateId,
   });
+
+  if (certifiedAmount == null) {
+    return {
+      approvedValue,
+      certifiedAmount: null,
+      remainingAmount: null,
+      certificateStatus: null,
+      certificatesReady: false,
+      unavailable: true,
+    };
+  }
+
   const remainingAmount = calculateCommercialEventRemaining(
     approvedValue,
     certifiedAmount,
@@ -159,6 +176,8 @@ export function buildCommercialEventCertificateLifecycleView(
     certifiedAmount,
     remainingAmount,
     certificateStatus,
+    certificatesReady: true,
+    unavailable: false,
   };
 }
 
@@ -182,6 +201,18 @@ export function getCommercialEventCertificationPresentation(event, orderKey) {
   }
 
   const lifecycle = buildCommercialEventCertificateLifecycleView(event, orderKey);
+  if (lifecycle.unavailable) {
+    return {
+      certificatesReady: false,
+      unavailable: true,
+      statusKey: null,
+      badgeLabel: null,
+      modifier: 'muted',
+      progressLabel: null,
+      ...lifecycle,
+    };
+  }
+
   const statusKey = normalizeCertificateStatusKey(lifecycle.certificateStatus);
 
   const progressLabel =
@@ -200,7 +231,7 @@ export function getCommercialEventCertificationPresentation(event, orderKey) {
 
 export function getCommercialEventCertificationBadges(event, orderKey) {
   const presentation = getCommercialEventCertificationPresentation(event, orderKey);
-  if (!presentation) return [];
+  if (!presentation || presentation.unavailable) return [];
 
   return [
     {

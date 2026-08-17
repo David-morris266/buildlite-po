@@ -9,7 +9,7 @@ import { roundMoney } from './paymentCertificateCalculations';
 import { summarizeCertificateProgress } from './paymentCertificateProgress';
 import {
   isApprovedCommercialCertificate,
-  listCertificates,
+  resolveCertificatesForPackage,
 } from './paymentCertificateStore';
 
 function readStoredMoney(value) {
@@ -56,7 +56,10 @@ export function getApprovedCertificateNetPayment(certificate, orderKey = null, o
 }
 
 export function calculatePackageCertifiedGross(orderKey, order = null) {
-  return listCertificates(orderKey).reduce(
+  const resolved = resolveCertificatesForPackage(orderKey, order);
+  if (!resolved.ready) return null;
+
+  return resolved.certificates.reduce(
     (sum, certificate) =>
       sum + getApprovedCertificateGrossValue(certificate, orderKey, order),
     0
@@ -64,7 +67,10 @@ export function calculatePackageCertifiedGross(orderKey, order = null) {
 }
 
 export function calculatePackageCertifiedNet(orderKey, order = null) {
-  return listCertificates(orderKey).reduce(
+  const resolved = resolveCertificatesForPackage(orderKey, order);
+  if (!resolved.ready) return null;
+
+  return resolved.certificates.reduce(
     (sum, certificate) =>
       sum + getApprovedCertificateNetPayment(certificate, orderKey, order),
     0
@@ -72,16 +78,18 @@ export function calculatePackageCertifiedNet(orderKey, order = null) {
 }
 
 export function calculateCommercialProgressPct(grossCertified, currentContractValue) {
-  if (currentContractValue == null) return null;
+  if (currentContractValue == null || grossCertified == null) return null;
   const contract = roundMoney(currentContractValue);
-  const gross = roundMoney(grossCertified) ?? 0;
+  const gross = roundMoney(grossCertified);
+  if (gross == null) return null;
   if (contract <= 0) return 0;
   return Math.round((gross / contract) * 100);
 }
 
 export function calculateRemainingContractValue(currentContractValue, certifiedGrossToDate) {
-  if (currentContractValue == null) return null;
+  if (currentContractValue == null || certifiedGrossToDate == null) return null;
   const contract = roundMoney(currentContractValue);
-  const gross = roundMoney(certifiedGrossToDate) ?? 0;
+  const gross = roundMoney(certifiedGrossToDate);
+  if (gross == null) return null;
   return roundMoney(contract - gross);
 }

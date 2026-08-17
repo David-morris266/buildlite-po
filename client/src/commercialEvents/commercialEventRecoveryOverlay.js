@@ -9,11 +9,12 @@
 import { roundMoney } from '../payments/paymentCertificateCalculations';
 import {
   isApprovedCommercialCertificate,
-  listCertificates,
+  resolveCertificatesForPackage,
 } from '../payments/paymentCertificateStore';
 import { normalizeCommercialLines } from '../payments/certificateCommercialLines';
 import { CERTIFICATE_COMMERCIAL_LINE_TYPES } from './commercialEventCertifiability';
 import { isCommercialEventServerAuthorityEnabled } from './commercialEventAuthority';
+import { isPaymentCertificateServerAuthorityEnabled } from '../payments/paymentCertificateAuthority';
 import { isRecoveryCommercialEvent } from './commercialEventRegisterBadges';
 import { isActiveRecovery } from './commercialEventRecovery';
 import {
@@ -41,8 +42,11 @@ export function calculateCertificateDerivedRecoveredAmount(
 ) {
   if (!orderKey || !commercialEventId) return 0;
 
+  const resolved = resolveCertificatesForPackage(orderKey);
+  if (!resolved.ready) return null;
+
   return roundMoney(
-    listCertificates(orderKey)
+    resolved.certificates
       .filter(
         (certificate) =>
           isApprovedCommercialCertificate(certificate) &&
@@ -60,7 +64,8 @@ export function calculateCertificateDerivedRecoveredAmount(
 }
 
 export function hasApprovedRecoveryCertificateHistory(orderKey, commercialEventId) {
-  return calculateCertificateDerivedRecoveredAmount(orderKey, commercialEventId) > 0;
+  const recovered = calculateCertificateDerivedRecoveredAmount(orderKey, commercialEventId);
+  return recovered != null && recovered > 0;
 }
 
 /**
@@ -76,6 +81,8 @@ export function resolveCertificateDerivedRecoveredAmount(event, orderKey, option
     event?.id,
     options
   );
+
+  if (fromCertificates == null) return null;
 
   if (isCommercialEventServerAuthorityEnabled()) {
     return fromCertificates;
@@ -116,6 +123,24 @@ export function getCommercialEventRecoveryPresentation(event, orderKey, options 
   const ceNativeStatus = normalizeRecoveryStatusKey(event.recoveryStatus);
   const recoveryMagnitude = getRecoveryMagnitude(event);
   const recoveredToDate = resolveCertificateDerivedRecoveredAmount(event, orderKey, options);
+  if (recoveredToDate == null) {
+    return {
+      eventId: event.id,
+      orderKey,
+      recoveryMagnitude,
+      recoveredToDate: null,
+      remainingRecovery: null,
+      certificateDerivedStatus: null,
+      ceNativeRecoveryStatus: ceNativeStatus,
+      presentationRecoveryStatus: null,
+      isFullyRecoveredByCertificates: false,
+      isActiveForRecovery: false,
+      certificatesReady: false,
+      unavailable: true,
+      source: 'certificate-cache-unready',
+    };
+  }
+
   const remainingRecovery = roundMoney(Math.max(0, recoveryMagnitude - recoveredToDate));
   const certificateDerivedStatus = deriveCertificateRecoveryProgressStatus(
     recoveryMagnitude,
@@ -144,7 +169,11 @@ export function getCommercialEventRecoveryPresentation(event, orderKey, options 
     isFullyRecoveredByCertificates,
     isActiveForRecovery:
       isActiveRecovery(event) && !CE_NATIVE_TERMINAL_RECOVERY_STATUSES.has(ceNativeStatus),
-    source: 'local-certificate-history',
+    certificatesReady: true,
+    unavailable: false,
+    source: isPaymentCertificateServerAuthorityEnabled()
+      ? 'server-certificate-history'
+      : 'local-certificate-history',
   };
 }
 

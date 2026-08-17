@@ -213,12 +213,14 @@ function buildApprovedEventsAwaitingValuationRecommendation(
 
 function buildOutstandingRecoveryRecommendation(event, developmentId, now = new Date()) {
   const orderKey = event.packageId || null;
-  const outstanding = getOutstandingRecoveryAmount(event, orderKey);
-  if (outstanding <= 0) return null;
-
   const presentation = orderKey
     ? getCommercialEventRecoveryPresentation(event, orderKey)
     : null;
+  if (presentation?.unavailable) return null;
+
+  const outstanding = getOutstandingRecoveryAmount(event, orderKey);
+  if (outstanding <= 0) return null;
+
   const recoveredToDate = toNumber(presentation?.recoveredToDate ?? event.recoveredAmount);
 
   return {

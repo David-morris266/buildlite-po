@@ -9,6 +9,12 @@ vi.mock('../payments/paymentCertificateStore.js', () => ({
     return status === 'approved' || status === 'locked';
   },
   listCertificates: (orderKey) => mockCertificates.get(orderKey) || [],
+  resolveCertificatesForPackage: (orderKey) => ({
+    ready: true,
+    certificates: mockCertificates.get(orderKey) || [],
+    loadState: 'local',
+    error: null,
+  }),
 }));
 
 vi.mock('../payments/subcontractOrders.js', async (importOriginal) => {

@@ -101,16 +101,25 @@ export default function PaymentCertificateDetail({
     return summarizeCertificateProgress(order.orderKey, certificateId, order);
   }, [order, certificateId, refreshToken, pkg?.matrixLoadState, pkg?.matrixReady]);
 
-  const certificate = summary?.certificate || getCertificate(order.orderKey, certificateId);
+  const certificate = summary?.certificate || getCertificate(order.orderKey, certificateId, order);
+  const certificatesPending = pkg?.certificatesReady === false;
   const status = getCertificateStatusMeta(certificate?.status);
   const commercialSummary = buildCommercialSummaryItems(summary?.totals, {
     matrixReady: summary?.matrixReady !== false,
   });
   const matrixReady = summary?.matrixReady !== false;
-  const editable = isCertificateEditable(certificate) && matrixReady;
-  const submitted = isCertificateSubmitted(certificate);
+  const editable = isCertificateEditable(certificate) && matrixReady && !certificatesPending;
+  const submitted = isCertificateSubmitted(certificate) && !certificatesPending;
   const auditItems = buildCertificateAuditItems(certificate);
   const headerMeta = buildCertificateHeaderMeta(certificate);
+
+  if (certificatesPending) {
+    return (
+      <div className="po-cert-detail" role="status">
+        <p>Loading certificate data…</p>
+      </div>
+    );
+  }
 
   if (!certificate) return null;
 

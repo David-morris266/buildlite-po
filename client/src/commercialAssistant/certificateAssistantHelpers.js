@@ -113,6 +113,7 @@ export function getOutstandingRecoveryAmount(event, orderKey = null) {
   const resolvedOrderKey = orderKey || event.packageId || null;
   if (resolvedOrderKey) {
     const presentation = getCommercialEventRecoveryPresentation(event, resolvedOrderKey);
+    if (presentation?.unavailable) return 0;
     if (presentation) {
       if (!presentation.isActiveForRecovery) return 0;
       return presentation.remainingRecovery;

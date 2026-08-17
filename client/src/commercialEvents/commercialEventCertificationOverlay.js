@@ -19,6 +19,7 @@ import {
   buildCommercialEventCertificateLifecycleView,
   isSubjectToCertificateLifecycleReconciliation,
 } from './commercialEventCertificateLifecycle';
+import { isPaymentCertificateServerAuthorityEnabled } from '../payments/paymentCertificateAuthority';
 
 /**
  * Derive certification presentation from local approved certificate history.
@@ -42,6 +43,20 @@ export function buildCommercialEventCertificationOverlay({
     excludeCertificateId,
   });
 
+  if (lifecycle.unavailable) {
+    return {
+      eventId: event.id,
+      orderKey,
+      approvedValue: lifecycle.approvedValue,
+      certifiedToDate: null,
+      remainingToCertify: null,
+      certificateStatus: null,
+      certificatesReady: false,
+      unavailable: true,
+      source: 'certificate-cache-unready',
+    };
+  }
+
   return {
     eventId: event.id,
     orderKey,
@@ -49,6 +64,10 @@ export function buildCommercialEventCertificationOverlay({
     certifiedToDate: lifecycle.certifiedAmount,
     remainingToCertify: lifecycle.remainingAmount,
     certificateStatus: lifecycle.certificateStatus,
-    source: 'local-certificate-history',
+    certificatesReady: true,
+    unavailable: false,
+    source: isPaymentCertificateServerAuthorityEnabled()
+      ? 'server-certificate-history'
+      : 'local-certificate-history',
   };
 }

@@ -80,21 +80,27 @@ export default function PaymentCertificateWorkspace({
   refreshToken = 0,
   certificateTarget = null,
   onCertificatesChanged,
+  certificatesLoading = false,
+  certificatesReady = true,
+  certificatesError = '',
 }) {
   const [selectedCertificateId, setSelectedCertificateId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const certificatesPending =
+    certificatesLoading || certificatesReady === false || pkg?.certificatesReady === false;
 
   const workspace = useMemo(
     () => buildCertificateWorkspaceModel(order, pkg),
-    [order, pkg, refreshToken]
+    [order, pkg, refreshToken, certificatesPending]
   );
 
   const certificates = useMemo(() => {
     void refreshToken;
-    return listCertificates(order.orderKey).map((certificate) =>
+    if (certificatesPending) return [];
+    return listCertificates(order.orderKey, order).map((certificate) =>
       formatCertificateListRow(certificate, order.orderKey, order)
     );
-  }, [order.orderKey, refreshToken]);
+  }, [order, order.orderKey, refreshToken, certificatesPending]);
 
   const createState = useMemo(
     () => getCreateCertificateState(order.orderKey, certificates.length),
@@ -111,6 +117,7 @@ export default function PaymentCertificateWorkspace({
 
   function handleCreateCertificate() {
     if (pkg?.matrixReady === false) return;
+    if (certificatesPending) return;
     if (!createState.ok) return;
     const result = createCertificate(order.orderKey, order);
     if (!result.ok || !result.certificate) return;
@@ -128,7 +135,7 @@ export default function PaymentCertificateWorkspace({
     onCertificatesChanged?.();
   }
 
-  if (selectedCertificateId) {
+  if (selectedCertificateId && !certificatesPending) {
     return (
       <>
         <PaymentCertificateDetail
@@ -178,7 +185,7 @@ export default function PaymentCertificateWorkspace({
               type="button"
               className="po-btn-primary"
               onClick={handleCreateCertificate}
-              disabled={!createState.ok || pkg?.matrixReady === false}
+              disabled={!createState.ok || pkg?.matrixReady === false || certificatesPending}
             >
               {createState.label}
             </button>
@@ -189,7 +196,18 @@ export default function PaymentCertificateWorkspace({
         ) : null}
       </header>
 
-      {!certificates.length ? (
+      {certificatesError ? (
+        <div className="po-module-card po-empty-state po-cert-workspace__empty" role="alert">
+          <p className="po-empty-state__message">Unable to load certificate data.</p>
+          <p className="po-empty-state__hint">
+            {certificatesError}
+          </p>
+        </div>
+      ) : certificatesPending ? (
+        <div className="po-module-card po-empty-state po-cert-workspace__empty" role="status">
+          <p className="po-empty-state__message">Loading certificate data…</p>
+        </div>
+      ) : !certificates.length ? (
         <div className="po-module-card po-empty-state po-cert-workspace__empty">
           <p className="po-empty-state__message">
             No Payment Certificates have been created.
@@ -202,7 +220,7 @@ export default function PaymentCertificateWorkspace({
             type="button"
             className="po-btn-primary"
             onClick={handleCreateCertificate}
-            disabled={pkg?.matrixReady === false}
+            disabled={pkg?.matrixReady === false || certificatesPending}
           >
             Create Certificate No. 1
           </button>

@@ -48,6 +48,7 @@ export function sumRecoveredValue(events, orderKey = null) {
       return total + toNumber(event.recoveredAmount);
     }
     const presentation = getCommercialEventRecoveryPresentation(event, resolvedOrderKey);
+    if (presentation?.unavailable) return total;
     return total + toNumber(presentation?.recoveredToDate ?? event.recoveredAmount);
   }, 0);
 }
@@ -58,7 +59,9 @@ export function sumOutstandingRecoveryAmountForEvents(events, orderKey = null) {
     if (!resolvedOrderKey) return total;
 
     const presentation = getCommercialEventRecoveryPresentation(event, resolvedOrderKey);
-    if (!presentation?.isActiveForRecovery) return total;
+    if (!presentation || presentation.unavailable || !presentation.isActiveForRecovery) {
+      return total;
+    }
 
     return total + presentation.remainingRecovery;
   }, 0);
@@ -95,7 +98,7 @@ export function countOpenRecoveryItems(events, orderKey = null) {
     const resolvedOrderKey = orderKey || event.packageId || null;
     if (resolvedOrderKey) {
       const presentation = getCommercialEventRecoveryPresentation(event, resolvedOrderKey);
-      if (!presentation) return false;
+      if (!presentation || presentation.unavailable) return false;
       if (PRESENTATION_TERMINAL_RECOVERY_STATUSES.has(presentation.presentationRecoveryStatus)) {
         return false;
       }

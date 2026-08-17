@@ -23,7 +23,7 @@ import {
   getCertificate,
   isApprovedCommercialCertificate,
   isCertificateEditable,
-  listCertificates,
+  resolveCertificatesForPackage,
 } from './paymentCertificateStore';
 
 function readStoredMoney(value) {
@@ -43,6 +43,11 @@ function sessionActor() {
     localStorage.getItem('userEmail') ||
     'Commercial Manager'
   );
+}
+
+function listResolvedCertificates(orderKey) {
+  const resolved = resolveCertificatesForPackage(orderKey);
+  return resolved.ready ? resolved.certificates : [];
 }
 
 function newCommercialLineId() {
@@ -70,7 +75,7 @@ export function calculateCommercialEventCertifiedToDate(
 ) {
   if (!orderKey || !commercialEventId) return 0;
 
-  return listCertificates(orderKey)
+  return listResolvedCertificates(orderKey)
     .filter(
       (certificate) =>
         isApprovedCommercialCertificate(certificate) &&
@@ -261,7 +266,7 @@ export function calculatePreviousApprovedCommercialEventGross(orderKey, certific
   if (!orderKey || !certificate) return 0;
 
   return roundMoney(
-    listCertificates(orderKey)
+    listResolvedCertificates(orderKey)
       .filter(
         (item) =>
           isApprovedCommercialCertificate(item) &&
@@ -279,7 +284,7 @@ export function calculatePreviousApprovedGrossWorks(orderKey, certificate) {
   if (!orderKey || !certificate) return 0;
 
   return roundMoney(
-    listCertificates(orderKey)
+    listResolvedCertificates(orderKey)
       .filter(
         (item) =>
           isApprovedCommercialCertificate(item) &&

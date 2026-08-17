@@ -32,7 +32,7 @@ import {
 } from './cvrCertifiedValue';
 import {
   isApprovedCommercialCertificate,
-  listCertificates,
+  resolveCertificatesForPackage,
 } from '../payments/paymentCertificateStore';
 
 function isApprovedPo(po) {
@@ -88,6 +88,7 @@ export function buildCertifiedByCostCode(developmentId, pos = []) {
   const totals = new Map();
   const labels = new Map();
   const hasPackage = new Set();
+  const unavailable = new Set();
 
   for (const order of buildSubcontractOrdersFromPos(pos)) {
     if (order.developmentId !== developmentId) continue;
@@ -96,17 +97,19 @@ export function buildCertifiedByCostCode(developmentId, pos = []) {
     if (!key) continue;
 
     hasPackage.add(key);
-    totals.set(
-      key,
-      (totals.get(key) || 0) + calculatePackageCertifiedValue(order.orderKey)
-    );
+    const certifiedValue = calculatePackageCertifiedValue(order.orderKey, order);
+    if (certifiedValue == null) {
+      unavailable.add(key);
+    } else {
+      totals.set(key, (totals.get(key) || 0) + certifiedValue);
+    }
 
     if (!labels.has(key)) {
       labels.set(key, buildCostCodeLabel(key, order.costCode));
     }
   }
 
-  return { totals, labels, hasPackage };
+  return { totals, labels, hasPackage, unavailable };
 }
 
 function collectCostCodeKeys(sources) {
@@ -159,7 +162,9 @@ export function buildCvrRows(developmentId, options = {}) {
       (manual.originalBudget != null || manual.currentBudget != null);
 
     const certifiedValue = certified.hasPackage.has(key)
-      ? certified.totals.get(key) ?? 0
+      ? certified.unavailable?.has(key)
+        ? null
+        : certified.totals.get(key) ?? 0
       : hasManualBudget
         ? 0
         : null;
@@ -236,7 +241,7 @@ export function buildPackagesForCostCentre(developmentId, costCodeKey, pos = [])
     label: order.supplierLabel,
     costCode: order.costCode,
     committedValue: order.committedValue,
-    certifiedValue: calculatePackageCertifiedValue(order.orderKey),
+    certifiedValue: calculatePackageCertifiedValue(order.orderKey, order),
     poNumbers: order.poNumbers,
     certificateCount: order.certificateCount,
   }));
@@ -252,7 +257,10 @@ export function buildCertificatesForCostCentre(developmentId, costCodeKey, pos =
   const certificates = [];
 
   for (const order of orders) {
-    for (const certificate of listCertificates(order.orderKey)) {
+    const resolved = resolveCertificatesForPackage(order.orderKey, order);
+    if (!resolved.ready) continue;
+
+    for (const certificate of resolved.certificates) {
       certificates.push({
         id: certificate.id,
         orderKey: order.orderKey,

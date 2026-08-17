@@ -32,7 +32,9 @@ export function getPackageDevelopmentName(order) {
 export function buildCertificateWorkspaceModel(order, pkg) {
   if (!order || !pkg) return null;
 
-  const certificateCount = getCertificateCount(order.orderKey);
+  const certificatesPending = pkg.certificatesReady === false;
+  const certificateCount = certificatesPending ? null : getCertificateCount(order.orderKey, order);
+  const loadingLabel = 'Loading certificate data…';
 
   return {
     packageName: getPackageDisplayName(order),
@@ -41,7 +43,10 @@ export function buildCertificateWorkspaceModel(order, pkg) {
     status: pkg.status,
     contractValue: pkg.currentContractValue,
     certifiedToDate: pkg.certifiedGrossToDate,
-    remainingValue: Math.max(0, pkg.remainingContractValue ?? 0),
+    remainingValue:
+      pkg.remainingContractValue == null
+        ? null
+        : Math.max(0, pkg.remainingContractValue),
     certificateCount,
     packageStatusLabel: pkg.status?.label || '—',
     summaryCards: [
@@ -52,17 +57,25 @@ export function buildCertificateWorkspaceModel(order, pkg) {
       },
       {
         label: 'Gross Certified',
-        value: formatMoneyPlaceholder(pkg.certifiedGrossToDate, true),
+        value: certificatesPending
+          ? loadingLabel
+          : formatMoneyPlaceholder(pkg.certifiedGrossToDate, true),
         modifier: 'muted',
       },
       {
         label: 'Remaining Contract',
-        value: formatMoneyPlaceholder(Math.max(0, pkg.remainingContractValue ?? 0)),
+        value: certificatesPending
+          ? loadingLabel
+          : formatMoneyPlaceholder(
+              pkg.remainingContractValue == null
+                ? null
+                : Math.max(0, pkg.remainingContractValue)
+            ),
         modifier: 'accent',
       },
       {
         label: 'Certificate Count',
-        value: String(certificateCount),
+        value: certificatesPending ? loadingLabel : String(certificateCount ?? 0),
         modifier: 'default',
       },
       {

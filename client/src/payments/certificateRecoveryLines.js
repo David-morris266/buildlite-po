@@ -28,9 +28,9 @@ import { formatMoney } from '../components/poDrawerHelpers';
 import { roundMoney } from './paymentCertificateCalculations';
 import {
   getCertificate,
+  getLocalCertificate,
   isApprovedCommercialCertificate,
   isCertificateEditable,
-  listCertificates,
 } from './paymentCertificateStore';
 import { normalizeCommercialLines } from './certificateCommercialLines';
 
@@ -467,7 +467,8 @@ export function validateRecoveryLinesForCertificate({
   commercialLines,
   forApproval = false,
 }) {
-  const certificate = listCertificates(orderKey).find((item) => item.id === certificateId);
+  const certificate =
+    getLocalCertificate(orderKey, certificateId) || getCertificate(orderKey, certificateId);
   if (!certificate) {
     return { valid: false, errors: ['Certificate not found.'] };
   }

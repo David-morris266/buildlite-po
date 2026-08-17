@@ -23,6 +23,7 @@ export default defineConfig({
     env: {
       VITE_CE_SERVER_AUTHORITY: 'false',
       VITE_MATRIX_SERVER_AUTHORITY: 'false',
+      VITE_CERTIFICATE_SERVER_AUTHORITY: 'false',
     },
   },
   server: {

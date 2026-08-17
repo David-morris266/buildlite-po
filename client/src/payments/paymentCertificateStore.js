@@ -21,6 +21,15 @@ import { CERTIFICATE_COMMERCIAL_LINE_TYPES } from '../commercialEvents/commercia
 import { getCommercialEventById } from '../commercialEvents/commercialEventStore';
 import { getCommercialEventCertifiabilityReason } from '../commercialEvents/commercialEventCertifiability';
 import { resolvePackageDevelopmentId } from '../commercialEvents/commercialEventPackageValue';
+import { isPaymentCertificateServerAuthorityEnabled } from './paymentCertificateAuthority';
+import { resolvePackageUuidFromOrder } from './orderMatrixServerMutations';
+import {
+  getCachedCertificate,
+  getCachedCertificates,
+  getCachedPackageUuidForOrderKey,
+  getCertificateFinancialReadiness,
+  getCertificateLoadError,
+} from './paymentCertificateServerCache';
 
 const STORAGE_KEY = 'buildlite_subcontract_packages_v1';
 
@@ -142,9 +151,25 @@ export function isCertificateSubmitted(certificate) {
   return certificate?.status === 'submitted';
 }
 
-export function canCreateNextCertificate(orderKey) {
-  const certificates = listCertificates(orderKey);
-  const openCertificate = certificates.find(
+function listLocalCertificates(orderKey) {
+  const record = normalizePackageRecord(readAll()[orderKey]);
+  if (!record) return [];
+
+  return [...record.certificates].sort(
+    (a, b) => a.certificateNumber - b.certificateNumber
+  );
+}
+
+function getLocalCertificate(orderKey, certificateId) {
+  return (
+    listLocalCertificates(orderKey).find((item) => item.id === certificateId) || null
+  );
+}
+
+export { getLocalCertificate };
+
+function gateCreateFromCertificates(certificates) {
+  const openCertificate = (certificates || []).find(
     (item) => item.status === 'draft' || item.status === 'submitted'
   );
 
@@ -158,31 +183,127 @@ export function canCreateNextCertificate(orderKey) {
   return { ok: true };
 }
 
-export function listCertificates(orderKey) {
-  const record = normalizePackageRecord(readAll()[orderKey]);
-  if (!record) return [];
-
-  return [...record.certificates].sort(
-    (a, b) => a.certificateNumber - b.certificateNumber
-  );
+export function resolvePackageUuidForCertificateReads(orderKey, order = null) {
+  const fromOrder = resolvePackageUuidFromOrder(order || { orderKey });
+  if (fromOrder) return fromOrder;
+  return getCachedPackageUuidForOrderKey(orderKey) || null;
 }
 
-export function listApprovedCertificates(orderKey) {
-  return listCertificates(orderKey).filter(isApprovedCommercialCertificate);
+/**
+ * Server-aware certificate resolution.
+ * Idle/loading/error are not genuine empty lists.
+ */
+export function resolveCertificatesForPackage(orderKey, order = null) {
+  if (!orderKey) {
+    return {
+      ready: true,
+      certificates: [],
+      loadState: 'loaded',
+      error: null,
+    };
+  }
+
+  if (!isPaymentCertificateServerAuthorityEnabled()) {
+    return {
+      ready: true,
+      certificates: listLocalCertificates(orderKey),
+      loadState: 'local',
+      error: null,
+    };
+  }
+
+  const packageUuid = resolvePackageUuidForCertificateReads(orderKey, order);
+  if (!packageUuid) {
+    return {
+      ready: false,
+      certificates: [],
+      loadState: 'error',
+      reason: 'missing-package-uuid',
+      error: {
+        message:
+          'Unable to load payment certificates because this package has no server identity.',
+      },
+    };
+  }
+
+  const readiness = getCertificateFinancialReadiness(packageUuid);
+  if (!readiness.ready) {
+    return {
+      ready: false,
+      certificates: [],
+      loadState: readiness.loadState,
+      reason: readiness.reason,
+      error: readiness.error || getCertificateLoadError(packageUuid),
+    };
+  }
+
+  return {
+    ready: true,
+    certificates: getCachedCertificates(packageUuid),
+    loadState: 'loaded',
+    error: null,
+    packageUuid,
+  };
 }
 
-export function getCertificate(orderKey, certificateId) {
-  return (
-    listCertificates(orderKey).find((item) => item.id === certificateId) || null
-  );
+export function areCertificatesReadyForPackage(orderKey, order = null) {
+  return resolveCertificatesForPackage(orderKey, order).ready;
 }
 
-export function getCertificateCount(orderKey) {
-  return listCertificates(orderKey).length;
+export function canCreateNextCertificate(orderKey, order = null) {
+  if (isPaymentCertificateServerAuthorityEnabled()) {
+    const resolved = resolveCertificatesForPackage(orderKey, order);
+    if (!resolved.ready) {
+      return {
+        ok: false,
+        unavailable: true,
+        reason:
+          resolved.loadState === 'error'
+            ? resolved.error?.message ||
+              'Unable to load certificate data. Please try again.'
+            : 'Loading certificate data…',
+      };
+    }
+    return gateCreateFromCertificates(resolved.certificates);
+  }
+
+  return gateCreateFromCertificates(listLocalCertificates(orderKey));
+}
+
+export function listCertificates(orderKey, order = null) {
+  const resolved = resolveCertificatesForPackage(orderKey, order);
+  return resolved.certificates;
+}
+
+export function listApprovedCertificates(orderKey, order = null) {
+  const resolved = resolveCertificatesForPackage(orderKey, order);
+  if (!resolved.ready) return [];
+  return resolved.certificates.filter(isApprovedCommercialCertificate);
+}
+
+export function getCertificate(orderKey, certificateId, order = null) {
+  if (!certificateId) return null;
+
+  if (isPaymentCertificateServerAuthorityEnabled()) {
+    const resolved = resolveCertificatesForPackage(orderKey, order);
+    if (!resolved.ready) return null;
+    if (resolved.packageUuid) {
+      return getCachedCertificate(resolved.packageUuid, certificateId);
+    }
+    return resolved.certificates.find((item) => item.id === certificateId) || null;
+  }
+
+  return getLocalCertificate(orderKey, certificateId);
+}
+
+export function getCertificateCount(orderKey, order = null) {
+  const resolved = resolveCertificatesForPackage(orderKey, order);
+  if (!resolved.ready) return null;
+  return resolved.certificates.length;
 }
 
 export function getNextCertificateNumber(orderKey) {
-  const certificates = listCertificates(orderKey);
+  const certificates = listLocalCertificates(orderKey);
   if (!certificates.length) return 1;
   return Math.max(...certificates.map((item) => item.certificateNumber)) + 1;
 }
@@ -230,7 +351,7 @@ function updateCertificateRecord(orderKey, certificateId, updater) {
 }
 
 export function createCertificate(orderKey, order = {}) {
-  const gate = canCreateNextCertificate(orderKey);
+  const gate = gateCreateFromCertificates(listLocalCertificates(orderKey));
   if (!gate.ok) {
     return { ok: false, errors: [gate.reason] };
   }
@@ -337,7 +458,7 @@ export function submitCertificate(orderKey, certificateId) {
 
 export function approveCertificate(orderKey, certificateId, totals = {}, order = null) {
   const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
-  const certificate = getCertificate(orderKey, certificateId);
+  const certificate = getLocalCertificate(orderKey, certificateId);
 
   if (certificate?.status === 'submitted') {
     const recoveryValidation = validateRecoveryLinesForCertificate({
@@ -566,7 +687,7 @@ export function addCommercialLineToCertificate(
   order = null
 ) {
   const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
-  const certificate = getCertificate(orderKey, certificateId);
+  const certificate = getLocalCertificate(orderKey, certificateId);
   if (!certificate) {
     return { ok: false, errors: ['Certificate not found.'] };
   }
@@ -623,7 +744,7 @@ export function updateCommercialLineAmount(
   amountThisCertificate,
   order = null
 ) {
-  const certificate = getCertificate(orderKey, certificateId);
+  const certificate = getLocalCertificate(orderKey, certificateId);
   if (!certificate) {
     return { ok: false, errors: ['Certificate not found.'] };
   }
@@ -648,7 +769,7 @@ export function removeCommercialLineFromCertificate(
   lineId,
   order = null
 ) {
-  const certificate = getCertificate(orderKey, certificateId);
+  const certificate = getLocalCertificate(orderKey, certificateId);
   if (!certificate) {
     return { ok: false, errors: ['Certificate not found.'] };
   }
@@ -673,7 +794,7 @@ export function addRecoveryLineToCertificate(
   order = null
 ) {
   const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
-  const certificate = getCertificate(orderKey, certificateId);
+  const certificate = getLocalCertificate(orderKey, certificateId);
   if (!certificate) {
     return { ok: false, errors: ['Certificate not found.'] };
   }
@@ -744,7 +865,7 @@ export function updateRecoveryLineAmount(
   order = null
 ) {
   const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
-  const certificate = getCertificate(orderKey, certificateId);
+  const certificate = getLocalCertificate(orderKey, certificateId);
   if (!certificate) {
     return { ok: false, errors: ['Certificate not found.'] };
   }
@@ -787,7 +908,7 @@ export function removeRecoveryLineFromCertificate(
   lineId,
   order = null
 ) {
-  const certificate = getCertificate(orderKey, certificateId);
+  const certificate = getLocalCertificate(orderKey, certificateId);
   if (!certificate) {
     return { ok: false, errors: ['Certificate not found.'] };
   }

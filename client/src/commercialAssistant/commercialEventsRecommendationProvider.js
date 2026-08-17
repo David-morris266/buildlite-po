@@ -62,6 +62,8 @@ function buildOutstandingRecoveryRecommendation(event, developmentId, now = new 
   const presentation = orderKey
     ? getCommercialEventRecoveryPresentation(event, orderKey)
     : null;
+  if (presentation?.unavailable) return null;
+
   const absoluteValue = Math.abs(toNumber(event.value));
   const recovered = toNumber(presentation?.recoveredToDate ?? event.recoveredAmount);
   const outstanding = presentation?.remainingRecovery ?? Math.max(0, absoluteValue - recovered);

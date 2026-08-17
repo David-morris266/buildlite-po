@@ -14,6 +14,12 @@ vi.mock('../payments/paymentCertificateStore.js', () => ({
   listCertificates: () => [],
   isApprovedCommercialCertificate: () => false,
   getCertificateCount: () => 0,
+  resolveCertificatesForPackage: () => ({
+    ready: true,
+    certificates: [],
+    loadState: 'local',
+    error: null,
+  }),
 }));
 
 vi.mock('../payments/subcontractOrders.js', () => ({

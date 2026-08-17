@@ -143,7 +143,9 @@ export function sumOutstandingRecoveryAmount(events) {
     if (!orderKey) return total;
 
     const presentation = getCommercialEventRecoveryPresentation(event, orderKey);
-    if (!presentation?.isActiveForRecovery) return total;
+    if (!presentation || presentation.unavailable || !presentation.isActiveForRecovery) {
+      return total;
+    }
 
     return total + presentation.remainingRecovery;
   }, 0);

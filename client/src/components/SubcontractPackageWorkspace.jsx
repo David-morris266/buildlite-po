@@ -11,6 +11,7 @@ import { buildPackageViewModel } from '../payments/subcontractPackage';
 import PackageCommercialEvents from './PackageCommercialEvents';
 import PackageCommercialHistory from './PackageCommercialHistory';
 import { usePackageWorkspaceAssistantScope } from '../commercialAssistant/usePackageWorkspaceAssistantScope';
+import { usePaymentCertificateServerHydration } from '../payments/usePaymentCertificateServerHydration';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -45,6 +46,12 @@ export default function SubcontractPackageWorkspace({
   const [matrixRefresh, setMatrixRefresh] = useState(0);
   const [certRefresh, setCertRefresh] = useState(0);
   const [commercialEventRefresh, setCommercialEventRefresh] = useState(0);
+
+  const {
+    certificatesLoading,
+    certificatesReady,
+    certificatesError,
+  } = usePaymentCertificateServerHydration(order);
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -82,6 +89,8 @@ export default function SubcontractPackageWorkspace({
     commercialEventsReady,
     matricesLoading,
     matricesReady,
+    certificatesLoading,
+    certificatesReady,
   ]);
 
   const packageTitle = `${order.supplierLabel} – ${order.projectLabel}`;
@@ -121,17 +130,26 @@ export default function SubcontractPackageWorkspace({
         </div>
       ) : null}
 
+      {certificatesError ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          {certificatesError}
+        </div>
+      ) : null}
+
       <SubcontractPackageDashboard
         pkg={pkg}
         compact={activeTab === 'variations'}
         commercialEventsLoading={commercialEventsLoading}
         commercialEventsReady={commercialEventsReady}
+        certificatesLoading={certificatesLoading}
+        certificatesReady={certificatesReady}
       />
       {activeTab !== 'variations' ? (
         <SubcontractPackageSummary
           pkg={pkg}
           compact
           commercialEventsLoading={commercialEventsLoading}
+          certificatesLoading={certificatesLoading}
         />
       ) : null}
 
@@ -176,6 +194,9 @@ export default function SubcontractPackageWorkspace({
             refreshToken={certRefresh}
             certificateTarget={certificateTarget}
             onCertificatesChanged={() => setCertRefresh((value) => value + 1)}
+            certificatesLoading={certificatesLoading}
+            certificatesReady={certificatesReady}
+            certificatesError={certificatesError}
           />
         ) : null}
 

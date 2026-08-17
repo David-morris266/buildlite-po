@@ -5,7 +5,7 @@
 
 import {
   isApprovedCommercialCertificate,
-  listCertificates,
+  resolveCertificatesForPackage,
 } from '../payments/paymentCertificateStore';
 import { roundMoney } from './cvrCalculations.js';
 
@@ -25,20 +25,26 @@ export function getApprovedCertificateValue(certificate) {
   return 0;
 }
 
-export function calculatePackageCertifiedValue(orderKey) {
-  return listCertificates(orderKey).reduce(
+export function calculatePackageCertifiedValue(orderKey, order = null) {
+  const resolved = resolveCertificatesForPackage(orderKey, order);
+  if (!resolved.ready) return null;
+
+  return resolved.certificates.reduce(
     (sum, certificate) => sum + getApprovedCertificateValue(certificate),
     0
   );
 }
 
 export function calculateOutstandingCertified(certified, actualCost) {
-  const certifiedValue = roundMoney(certified) ?? 0;
+  if (certified == null) return null;
+  const certifiedValue = roundMoney(certified);
+  if (certifiedValue == null) return null;
   const actual = roundMoney(actualCost) ?? 0;
   return roundMoney(Math.max(0, certifiedValue - actual));
 }
 
 export function getOutstandingCertifiedState(certified, actualCost) {
+  if (certified == null) return 'neutral';
   const certifiedValue = roundMoney(certified) ?? 0;
   const actual = roundMoney(actualCost) ?? 0;
   const outstanding = calculateOutstandingCertified(certified, actualCost);
@@ -51,6 +57,13 @@ export function getOutstandingCertifiedState(certified, actualCost) {
 }
 
 export function enrichCvrCertifiedFields(row) {
+  if (row.certified == null) {
+    return {
+      ...row,
+      outstandingCertified: null,
+      outstandingCertifiedState: 'neutral',
+    };
+  }
   const outstandingCertified = calculateOutstandingCertified(
     row.certified,
     row.actualCost

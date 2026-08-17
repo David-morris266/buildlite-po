@@ -8,7 +8,7 @@ import {
   getPackageRecord,
 } from './subcontractPackageStore';
 import { getSubcontractOrderStatus } from './subcontractOrders';
-import { getCertificateCount } from './paymentCertificateStore';
+import { getCertificateCount, resolveCertificatesForPackage } from './paymentCertificateStore';
 import { buildPackageCommercialDisplayFields } from '../commercialEvents/commercialEventPackageValue';
 import { buildPackageRecoverySummaryFromOrder } from '../commercialEvents/commercialEventPackageRecoveryKpis';
 import {
@@ -31,15 +31,23 @@ export function buildPackageViewModel(order) {
   const committedValue = Number(order.committedValue) || 0;
   const commercialDisplay = buildPackageCommercialDisplayFields(order);
   const recoverySummary = buildPackageRecoverySummaryFromOrder(order);
-  const certificateCount = getCertificateCount(order.orderKey);
+  const certificateResolution = resolveCertificatesForPackage(order.orderKey, order);
+  const certificatesReady = certificateResolution.ready;
+  const certificateCount = certificatesReady
+    ? getCertificateCount(order.orderKey, order)
+    : null;
 
   const originalOrderValue = commercialDisplay.originalPoCommitment;
   const approvedCommercialMovement = commercialDisplay.approvedCommercialEventMovement;
   const pendingCommercialMovement = commercialDisplay.pendingCommercialEventValue;
   const currentContractValue = commercialDisplay.currentPackageValue;
 
-  const certifiedGrossToDate = calculatePackageCertifiedGross(order.orderKey, order);
-  const certifiedNetPaymentToDate = calculatePackageCertifiedNet(order.orderKey, order);
+  const certifiedGrossToDate = certificatesReady
+    ? calculatePackageCertifiedGross(order.orderKey, order)
+    : null;
+  const certifiedNetPaymentToDate = certificatesReady
+    ? calculatePackageCertifiedNet(order.orderKey, order)
+    : null;
   const remainingContractValue = calculateRemainingContractValue(
     currentContractValue,
     certifiedGrossToDate
@@ -76,11 +84,15 @@ export function buildPackageViewModel(order) {
     currentContractValue,
     commercialEventsReady: commercialDisplay.commercialEventsReady !== false,
     commercialEventsLoadState: commercialDisplay.commercialEventsLoadState || null,
+    certificatesReady,
+    certificatesLoadState: certificateResolution.loadState,
+    certificatesError: certificateResolution.error || null,
     certifiedGrossToDate,
     certifiedNetPaymentToDate,
     remainingContractValue,
     commercialProgressPct,
-    isOverCertified: remainingContractValue < -0.005,
+    isOverCertified:
+      remainingContractValue != null && remainingContractValue < -0.005,
     approvedVariations,
     adjustedContract,
     originalPoCommitment: originalOrderValue,
