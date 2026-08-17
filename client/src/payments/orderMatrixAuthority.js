@@ -1,8 +1,8 @@
 /**
- * BL-029B — Order Matrix server authority feature flag.
+ * BL-029D — Order Matrix server authority feature flag.
  *
- * Default OFF: localStorage remains runtime matrix authority (orderMatrixStore).
- * When enabled later (BL-029D): server cache becomes read authority.
+ * Default OFF: localStorage remains runtime matrix authority.
+ * When true: reads use the server cache; imports/saves PUT to Postgres.
  */
 
 export function isOrderMatrixServerAuthorityEnabled() {

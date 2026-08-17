@@ -8,6 +8,11 @@ const orderMatrixApiStore = {
   listShouldReject: false,
   listRejectError: null,
   listCallCount: 0,
+  putCallCount: 0,
+  putDelayMs: 0,
+  putShouldReject: false,
+  putRejectError: null,
+  lastPut: null,
 };
 
 export class OrderMatrixApiError extends Error {
@@ -25,6 +30,11 @@ export function resetOrderMatrixApiStore() {
   orderMatrixApiStore.listShouldReject = false;
   orderMatrixApiStore.listRejectError = null;
   orderMatrixApiStore.listCallCount = 0;
+  orderMatrixApiStore.putCallCount = 0;
+  orderMatrixApiStore.putDelayMs = 0;
+  orderMatrixApiStore.putShouldReject = false;
+  orderMatrixApiStore.putRejectError = null;
+  orderMatrixApiStore.lastPut = null;
 }
 
 export function getOrderMatrixListCallCount() {
@@ -33,6 +43,28 @@ export function getOrderMatrixListCallCount() {
 
 export function setOrderMatrixListDelay(ms) {
   orderMatrixApiStore.listDelayMs = Number(ms) || 0;
+}
+
+export function getOrderMatrixPutCallCount() {
+  return orderMatrixApiStore.putCallCount;
+}
+
+export function getLastOrderMatrixPut() {
+  return orderMatrixApiStore.lastPut ? { ...orderMatrixApiStore.lastPut } : null;
+}
+
+export function setOrderMatrixPutDelay(ms) {
+  orderMatrixApiStore.putDelayMs = Number(ms) || 0;
+}
+
+export function setOrderMatrixPutReject(error) {
+  orderMatrixApiStore.putShouldReject = true;
+  orderMatrixApiStore.putRejectError =
+    error ||
+    new OrderMatrixApiError('Order matrix save failed', {
+      status: 500,
+      body: { message: 'Order matrix save failed' },
+    });
 }
 
 export function setOrderMatrixListReject(error) {
@@ -138,6 +170,63 @@ export async function getMatrixByOrderKey(orderKey) {
   return { ...record };
 }
 
-export async function putMatrixForPackage() {
-  throw new Error('putMatrixForPackage mock not used in BL-029B runtime');
+export async function putMatrixForPackage(packageId, payload = {}) {
+  orderMatrixApiStore.putCallCount += 1;
+  orderMatrixApiStore.lastPut = { packageId, payload: { ...payload } };
+
+  if (orderMatrixApiStore.putDelayMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, orderMatrixApiStore.putDelayMs));
+  }
+  if (orderMatrixApiStore.putShouldReject) {
+    throw orderMatrixApiStore.putRejectError;
+  }
+
+  const existing = [...orderMatrixApiStore.matrices.values()].find(
+    (matrix) => matrix.packageId === packageId || matrix.packageUuid === packageId
+  );
+
+  if (existing) {
+    if (Number(payload.version) !== Number(existing.version)) {
+      throw new OrderMatrixApiError('Order matrix version conflict.', {
+        status: 409,
+        body: {
+          message: 'Order matrix version conflict.',
+          matrix: { ...existing },
+        },
+      });
+    }
+
+    const updated = {
+      ...existing,
+      ...payload,
+      packageId: existing.packageId,
+      orderKey: existing.orderKey,
+      developmentId: existing.developmentId,
+      version: existing.version + 1,
+      updatedAt: '2026-08-15T13:00:00.000Z',
+    };
+    orderMatrixApiStore.matrices.set(
+      recordKey(updated.developmentId, updated.orderKey),
+      updated
+    );
+    return { ...updated };
+  }
+
+  const created = seedMockOrderMatrix({
+    id: `mx-${packageId}`,
+    packageId,
+    orderKey: payload.orderKey,
+    developmentId: payload.developmentId,
+    layout: payload.layout || 'plot-stage',
+    committedValue: payload.committedValue ?? 0,
+    stages: payload.stages,
+    plots: payload.plots,
+    jobId: payload.jobId,
+    supplierId: payload.supplierId,
+    projectLabel: payload.projectLabel,
+    supplierLabel: payload.supplierLabel,
+    version: 1,
+    updatedAt: '2026-08-15T12:00:00.000Z',
+  });
+  return created;
 }

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import OrderMatrixImportWizard from './OrderMatrixImportWizard';
 import { formatMoney, formatPoDate } from './poDrawerHelpers';
-import { hasOrderMatrix, loadOrderMatrix, saveOrderMatrix, resolveOrderMatrixForPackage } from '../payments/orderMatrixStore';
+import { hasOrderMatrix, loadOrderMatrix, resolveOrderMatrixForPackage } from '../payments/orderMatrixStore';
 import { isOrderMatrixServerAuthorityEnabled } from '../payments/orderMatrixAuthority';
+import { persistOrderMatrix } from '../payments/orderMatrixServerMutations';
 import { recordMatrixSaved } from '../payments/subcontractPackageStore';
 
 function ImportedMatrixTable({ matrix }) {
@@ -63,6 +64,9 @@ export default function OrderMatrixPlaceholderPreview({
   embedded = false,
 }) {
   const [importOpen, setImportOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const saveLockRef = useRef(false);
   const authorityEnabled = isOrderMatrixServerAuthorityEnabled();
   const matrixResolution = resolveOrderMatrixForPackage(order);
   const matrixExistsForOrder = authorityEnabled
@@ -75,12 +79,19 @@ export default function OrderMatrixPlaceholderPreview({
       : loadOrderMatrix(order.orderKey)
     : null;
 
-  function handleImportComplete(payload) {
+  async function handleImportComplete(payload) {
     if (payload?.layout !== 'plot-stage') return;
+    if (saveLockRef.current) return;
 
-    const isFirstSave = !hasOrderMatrix(order.orderKey);
+    saveLockRef.current = true;
+    setSaving(true);
+    setSaveError('');
 
-    saveOrderMatrix(order.orderKey, {
+    const isFirstSave = authorityEnabled
+      ? !matrixResolution.present
+      : !hasOrderMatrix(order.orderKey);
+
+    const result = await persistOrderMatrix(order, {
       orderKey: order.orderKey,
       jobId: order.jobId,
       supplierId: order.supplierId,
@@ -92,19 +103,45 @@ export default function OrderMatrixPlaceholderPreview({
       plots: payload.plots,
     });
 
+    if (!result.ok) {
+      setSaveError(result.errors?.[0] || 'Unable to save the order matrix.');
+      setSaving(false);
+      saveLockRef.current = false;
+      return;
+    }
+
     recordMatrixSaved(order.orderKey, { isFirstSave });
+    setSaving(false);
+    saveLockRef.current = false;
     setImportOpen(false);
     onMatrixImported?.();
   }
 
   if (importOpen) {
     return (
-      <OrderMatrixImportWizard
-        order={order}
-        requirePlotStageLayout
-        onCancel={() => setImportOpen(false)}
-        onImport={handleImportComplete}
-      />
+      <div className={`po-matrix-page${embedded ? ' po-matrix-page--embedded' : ''}`}>
+        {saveError ? (
+          <div className="po-list-feedback po-list-feedback--error" role="alert">
+            {saveError}
+          </div>
+        ) : null}
+        {saving ? (
+          <p className="po-matrix-empty__support" role="status">
+            Saving matrix…
+          </p>
+        ) : null}
+        <OrderMatrixImportWizard
+          order={order}
+          requirePlotStageLayout
+          importing={saving}
+          onCancel={() => {
+            if (saving) return;
+            setSaveError('');
+            setImportOpen(false);
+          }}
+          onImport={handleImportComplete}
+        />
+      </div>
     );
   }
 

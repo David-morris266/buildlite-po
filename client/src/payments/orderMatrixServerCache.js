@@ -1,8 +1,7 @@
 /**
- * BL-029B — In-memory server Order Matrix cache (shadow infrastructure).
+ * BL-029B / BL-029D — In-memory server Order Matrix cache.
  *
- * localStorage (orderMatrixStore) remains runtime authority until BL-029D.
- * When VITE_MATRIX_SERVER_AUTHORITY=true, read helpers use this cache only.
+ * When VITE_MATRIX_SERVER_AUTHORITY=true, reads and post-save patches use this cache.
  */
 
 import { listMatricesForDevelopment, OrderMatrixApiError } from '../api/orderMatrices';
@@ -147,7 +146,11 @@ export async function ensureMatricesReadyForDevelopment(developmentId) {
   return promise;
 }
 
-/** Test/helper seed — does not call the API. */
+/**
+ * Upsert a saved/canonical matrix into the development cache.
+ * Replaces a matching orderKey or packageUuid entry and marks the
+ * development loaded so consumers can render without a full refetch.
+ */
 export function patchCachedOrderMatrix(developmentId, document) {
   if (!developmentId || !document) return;
   const normalized = normalizeServerOrderMatrix(document);
@@ -165,10 +168,9 @@ export function patchCachedOrderMatrix(developmentId, document) {
       : existing.map((item, itemIndex) => (itemIndex === index ? normalized : item));
 
   indexMatrices(developmentId, next);
-  if (getOrderMatricesLoadState(developmentId) !== 'loaded') {
-    loadStateByDevelopment.set(developmentId, 'loaded');
-    loadErrorByDevelopment.set(developmentId, null);
-  }
+  loadStateByDevelopment.set(developmentId, 'loaded');
+  loadErrorByDevelopment.set(developmentId, null);
+  return normalized;
 }
 
 export function __resetOrderMatrixServerCacheForTests() {

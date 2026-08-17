@@ -12,7 +12,7 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 | `004_developments.sql` | BL-027A: developments (Doc 67) |
 | `005_packages.sql` | BL-027B: packages + package_purchase_orders (Doc 67) |
 | `006_commercial_events.sql` | BL-028A: commercial_events + commercial_event_audit (Doc 67) |
-| `007_package_order_matrices.sql` | BL-029A: package_order_matrices schema/API only (client still localStorage) |
+| `007_package_order_matrices.sql` | BL-029: package_order_matrices schema/API; client server-authority cutover in BL-029D |
 
 ## Before applying to production
 

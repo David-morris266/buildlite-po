@@ -32,6 +32,7 @@ import {
   setOrderMatrixListReject,
 } from '../test/mockOrderMatrixApi';
 import { __resetOrderMatrixServerCacheForTests } from '../payments/orderMatrixServerCache';
+import { persistOrderMatrix } from '../payments/orderMatrixServerMutations';
 import { ensurePackageRecord } from '../payments/subcontractPackageStore';
 import PaymentCertificates from './PaymentCertificates';
 
@@ -244,5 +245,36 @@ describe('PaymentCertificates order matrix hydration (BL-029B)', () => {
     expect(document.body.textContent).toMatch(/Order matrices unavailable/i);
     expect(document.body.textContent).not.toMatch(/Matrix Required/);
     expect(document.body.textContent).not.toMatch(/Get started/i);
+  });
+
+  it('shows the same cached server matrix after a Developments-style save', async () => {
+    const saveResult = await persistOrderMatrix(
+      {
+        ...orderA,
+        packageId: 'a2419cff-f776-4a2c-8a29-01934b460bf1',
+      },
+      {
+        layout: 'plot-stage',
+        stages: ['Stage 1'],
+        plots: [{ id: 'plot-1', label: 'Plot 12', values: [100000] }],
+        committedValue: 100000,
+      }
+    );
+    expect(saveResult.ok).toBe(true);
+
+    await act(async () => {
+      root.render(
+        <PaymentCertificates initialOrderKey={ORDER_KEY_A} initialTab="matrix" />
+      );
+    });
+    await flushPromises();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    await flushPromises();
+
+    expect(document.body.textContent).toContain('Plot 12');
+    expect(document.body.textContent).toContain('Order Matrix');
+    expect(document.body.textContent).not.toMatch(/Loading matrix data/i);
   });
 });

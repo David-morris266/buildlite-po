@@ -153,7 +153,7 @@ describe('orderMatrixStore authority facade (BL-029B)', () => {
     expect(hasOrderMatrix(ORDER_KEY)).toBe(false);
   });
 
-  it('writes remain localStorage even when authority is ON', () => {
+  it('authority ON saveOrderMatrix does not write localStorage', () => {
     authorityEnabled.value = true;
     patchCachedOrderMatrix(DEV_ID, {
       id: 'mx-cache',
@@ -169,9 +169,7 @@ describe('orderMatrixStore authority facade (BL-029B)', () => {
       stages: [],
     });
 
-    expect(JSON.parse(storage.get('buildlite_order_matrices_v1'))[ORDER_KEY].committedValue).toBe(
-      42
-    );
+    expect(storage.get('buildlite_order_matrices_v1')).toBeUndefined();
     expect(loadOrderMatrix(ORDER_KEY)?.committedValue).toBe(1);
   });
 });

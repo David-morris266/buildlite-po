@@ -1,8 +1,8 @@
 # BuildLite Database Reference
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
-**Last product slice:** BL-028B.3 Commercial Event server authority.  
-**NEXT:** BL-029 Order Matrix Persistence (BL-029A schema/API only; client still localStorage).
+**Last product slice:** BL-029D Order Matrix server authority.  
+**NEXT:** BL-030 Payment Certificate Persistence.
 
 ---
 
@@ -16,13 +16,14 @@ Postgres is already the authority for:
 | `004_developments.sql` | `developments` | BL-027A |
 | `005_packages.sql` | `packages`, `package_purchase_orders` | BL-027B |
 | `006_commercial_events.sql` | `commercial_events`, `commercial_event_audit` | BL-028 |
-| `007_package_order_matrices.sql` | `package_order_matrices` | BL-029A schema/API only |
+| `007_package_order_matrices.sql` | `package_order_matrices` | BL-029 complete (schema/API + client server authority) |
 
 Still **browser/localStorage** (not yet Postgres authority):
 
-- Order matrices — live client still uses localStorage; BL-029A added server persistence/API only. Do not treat BL-029 as complete.
 - BuildLite V1 payment certificates (matrix progress, commercial lines, recovery deductions, frozen totals) — **BL-030**
 - CVR periods/cost centres and purchase ledger — **BL-031**
+
+Order matrices are server-authoritative when `VITE_MATRIX_SERVER_AUTHORITY=true`. `certificate.progress` remains browser-local until BL-030.
 
 The legacy `payment_certificates` / `payment_certificate_lines` tables below are **not** the V1 React certificate engine. Do not merge those models merely because a certificate table already exists (Doc 67 §21).
 
@@ -219,7 +220,7 @@ Production authority for certificate numbering is **`legacy_cert_no`**, enforced
 | `004_developments.sql` | BL-027A: server-backed developments |
 | `005_packages.sql` | BL-027B: packages + package PO membership |
 | `006_commercial_events.sql` | BL-028A: commercial events + CE audit |
-| `007_package_order_matrices.sql` | BL-029A: plot-stage order matrix schema/API (client still localStorage) |
+| `007_package_order_matrices.sql` | BL-029: plot-stage order matrix schema/API; client server-authority cutover in BL-029D |
 
 ---
 

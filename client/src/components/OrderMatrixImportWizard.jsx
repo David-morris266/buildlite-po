@@ -59,6 +59,7 @@ export default function OrderMatrixImportWizard({
   onCancel,
   onImport,
   requirePlotStageLayout = false,
+  importing = false,
 }) {
   const fileInputRef = useRef(null);
   const [stepIndex, setStepIndex] = useState(0);
@@ -74,6 +75,7 @@ export default function OrderMatrixImportWizard({
   const [dragOver, setDragOver] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [importLayout, setImportLayout] = useState('flat');
+  const importLockRef = useRef(false);
 
   const visibleSteps = useMemo(() => {
     let steps = WIZARD_STEPS;
@@ -216,7 +218,8 @@ export default function OrderMatrixImportWizard({
     goNext();
   }
 
-  function handleImport() {
+  async function handleImport() {
+    if (importing || importLockRef.current) return;
     if (requirePlotStageLayout && importLayout !== 'plot-stage') {
       setError(
         'This package requires a plot × stage valuation matrix. Use a spreadsheet with plots in the first column and payment stages across the top.'
@@ -234,7 +237,12 @@ export default function OrderMatrixImportWizard({
         setError(result.errors[0]);
         return;
       }
-      onImport?.(result);
+      importLockRef.current = true;
+      try {
+        await onImport?.(result);
+      } finally {
+        importLockRef.current = false;
+      }
       return;
     }
 
@@ -248,7 +256,12 @@ export default function OrderMatrixImportWizard({
       setError(result.errors[0]);
       return;
     }
-    onImport?.({ layout: 'flat', rows: result.rows, ...result });
+    importLockRef.current = true;
+    try {
+      await onImport?.({ layout: 'flat', rows: result.rows, ...result });
+    } finally {
+      importLockRef.current = false;
+    }
   }
 
   function updateColumnField(columnIndex, field) {
@@ -620,8 +633,13 @@ export default function OrderMatrixImportWizard({
             ) : null}
 
             <div className="po-import-step__actions">
-              <button type="button" className="po-btn-primary" onClick={handleImport}>
-                Import Matrix
+              <button
+                type="button"
+                className="po-btn-primary"
+                onClick={handleImport}
+                disabled={importing}
+              >
+                {importing ? 'Saving matrix…' : 'Import Matrix'}
               </button>
               <button type="button" className="po-list-btn-secondary" onClick={goBack}>
                 Back

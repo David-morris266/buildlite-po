@@ -81,7 +81,7 @@ export async function getMatrixByOrderKey(orderKey) {
   return handleJson(res);
 }
 
-/** Reserved for BL-029D — not wired to runtime saves in BL-029B. */
+/** PUT canonical plot-stage matrix for a package UUID (BL-029D). */
 export async function putMatrixForPackage(packageId, payload = {}) {
   const res = await fetch(
     buildUrl(`/api/packages/${encodeURIComponent(packageId)}/matrix`),

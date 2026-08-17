@@ -90,13 +90,12 @@ Management Reporting
 
 Doc 67 persistence migration on branch `buildlite-V1-1`.
 
-Complete: BL-027A Developments, BL-027B Packages, BL-028 Commercial Events (including BL-028B.3 server-authority cutover).
+Complete: BL-027A Developments, BL-027B Packages, BL-028 Commercial Events (including BL-028B.3 server-authority cutover), BL-029 Order Matrix Persistence (including BL-029D server-authority cutover).
 
-1. **BL-029** — Order Matrix Persistence (**NEXT**)
-2. **BL-030** — Payment Certificate persistence and atomic approval
-3. **BL-031** — CVR and Ledger persistence
+1. **BL-030** — Payment Certificate persistence and atomic approval (**NEXT**)
+2. **BL-031** — CVR and Ledger persistence
 
-Do not start BL-030 before BL-029. Do not redesign working modules. See `CURRENT_STATE.md`.
+Do not start BL-031 before BL-030. Do not redesign working modules. See `CURRENT_STATE.md`.
 
 ---
 

@@ -1,9 +1,10 @@
 /**
- * BL-011B.01 / BL-029B — Order Matrix persistence facade.
+ * BL-011B.01 / BL-029B / BL-029D — Order Matrix persistence facade.
  *
  * Runtime authority remains localStorage while VITE_MATRIX_SERVER_AUTHORITY is OFF.
- * When ON (tests / later cutover), reads resolve from the server cache with no
- * localStorage fallback. Writes stay localStorage until BL-029D.
+ * When ON, reads resolve from the server cache with no localStorage fallback.
+ * Live writes use persistOrderMatrix (server PUT). saveOrderMatrix remains the
+ * localStorage helper and is a no-op write while authority is ON.
  */
 
 import { parseSubcontractOrderKey } from './packageKeyMigration';
@@ -121,6 +122,14 @@ export function loadOrderMatrix(orderKey) {
 }
 
 export function saveOrderMatrix(orderKey, matrix) {
+  if (isOrderMatrixServerAuthorityEnabled()) {
+    return {
+      ...matrix,
+      orderKey,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
   const all = readAll();
   all[orderKey] = {
     ...matrix,
@@ -132,6 +141,10 @@ export function saveOrderMatrix(orderKey, matrix) {
 }
 
 export function deleteOrderMatrix(orderKey) {
+  if (isOrderMatrixServerAuthorityEnabled()) {
+    return;
+  }
+
   const all = readAll();
   delete all[orderKey];
   writeAll(all);
