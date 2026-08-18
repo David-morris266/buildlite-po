@@ -1,8 +1,8 @@
 # BuildLite Database Reference
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
-**Last product slice:** BL-030C Payment Certificate server authority.  
-**NEXT:** BL-031 CVR & Ledger Persistence. One post-bank BL-030 check remains: locked certificate snapshot vs later matrix replacement.
+**Last product slice:** BL-030 Payment Certificate persistence (including BL-030C server authority and passed historical-freeze UAT).  
+**NEXT:** BL-031 CVR & Ledger Persistence.
 
 ---
 
@@ -17,7 +17,7 @@ Postgres is already the authority for:
 | `005_packages.sql` | `packages`, `package_purchase_orders` | BL-027B |
 | `006_commercial_events.sql` | `commercial_events`, `commercial_event_audit` | BL-028 |
 | `007_package_order_matrices.sql` | `package_order_matrices` | BL-029 complete (schema/API + client server authority) |
-| `008_package_payment_certificates.sql` | `package_payment_certificates`, `package_payment_certificate_audit` | BL-030 complete (schema/API + client server authority). One post-bank check remains: locked snapshot vs later matrix replacement. |
+| `008_package_payment_certificates.sql` | `package_payment_certificates`, `package_payment_certificate_audit` | BL-030 fully complete (schema/API + client server authority; historical-freeze UAT passed). |
 
 Still **browser/localStorage** (not yet Postgres authority):
 

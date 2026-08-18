@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030C** (Payment Certificate server-authority cutover) and the **BL-ASUS-001** development-machine checkpoint.
+This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030** (Payment Certificate persistence, including BL-030C server-authority cutover and passed historical-freeze UAT) and the **BL-ASUS-001** development-machine checkpoint.
 
 Historic Phase 0 / BL-006 schema notes remain in `docs/DATABASE.md` and `docs/phase0/`. Do not treat those files as the current programme.
 
@@ -17,7 +17,7 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Branch | `buildlite-V1-1` |
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
-| Last completed product slice | BL-030C Payment Certificate server-authority cutover |
+| Last completed product slice | BL-030 Payment Certificate persistence (including BL-030C cutover and historical-freeze UAT) |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
 | **NEXT** | **BL-031 CVR & Ledger Persistence** |
@@ -33,10 +33,10 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | BL-028 | Commercial Events → Postgres | **Complete** — schema/API (BL-028A), cache/overlays (BL-028B.1–2), **server-authority cutover (BL-028B.3)** |
 | BL-028B.3a | Isolated server test database | **Complete** — `TEST_DATABASE_URL` / `buildlite_test`; must not use `buildlite_clone` |
 | **BL-029** | Order Matrix Persistence | **Complete** — schema/API (BL-029A), cache/hydration (BL-029B), **server-authority cutover (BL-029D)** |
-| **BL-030** | Payment Certificate persistence & atomic approval | **Complete** — schema/API (BL-030A), cache/hydration (BL-030B), **server-authority cutover (BL-030C)**. One post-bank verification remains: locked certificate historical snapshot vs later matrix replacement. |
+| **BL-030** | Payment Certificate persistence & atomic approval | **Complete** — schema/API (BL-030A), cache/hydration (BL-030B), **server-authority cutover (BL-030C)**, historical-freeze UAT **PASSED**. |
 | **BL-031** | CVR & Ledger persistence | **NEXT** |
 
-Do not start BL-031 in the same slice as BL-030 banking. Persistence sprints must not add unrelated product features (Doc 67 §28). The remaining matrix-replacement freeze check is a post-bank verification, not a reason to reopen BL-030 implementation.
+BL-030 is fully complete. Persistence sprints must not add unrelated product features (Doc 67 §28). Do not start BL-031 in this housekeeping close-out.
 
 ---
 
@@ -86,9 +86,9 @@ BL-029 boundary confirmed: server-authoritative matrix structure. Certificate pr
 
 ---
 
-## BL-030C local UAT (passed, subject to one post-bank check)
+## BL-030C local UAT (passed)
 
-Authority ON locally via `client/.env.local` (`VITE_CERTIFICATE_SERVER_AUTHORITY=true`, with CE and matrix flags also ON). Test Site 1 / Wipe It Cleaners / package `c71ac6fa-63f6-403e-992d-a25f8fe88752`. Hawthorn Gardens was not imported or touched. The Wipe It Cleaners matrix was **not** replaced after lock.
+Authority ON locally via `client/.env.local` (`VITE_CERTIFICATE_SERVER_AUTHORITY=true`, with CE and matrix flags also ON). Test Site 1 / Wipe It Cleaners / package `c71ac6fa-63f6-403e-992d-a25f8fe88752`. Hawthorn Gardens was not imported or touched. Certs 1–4 were locked against matrix version 3; the live matrix was later replaced under the freeze check below.
 
 ### Package position after Certs 1–4
 
@@ -119,9 +119,15 @@ Test Site 1 CVR loaded from server-backed certificate histories. Cost code 5231 
 
 Authority-on Stage Details Set % / Complete initially failed: the client API wrapper injected `createdBy`/`updatedBy` onto PATCH via `withActor`; the server correctly rejected those forbidden keys (400). Progress did not persist and the UI showed no error. Fix: PATCH/submit/reject/approve/delete send `actor` only; create may send `createdBy`; progress errors surface on the certificate page; Stage Details keeps the typed value until save succeeds; a real UI authority-on regression was added. After the fix, Set %, Complete, and hard-refresh persistence passed live.
 
-### Remaining post-bank verification (not completed)
+### Historical-freeze UAT (PASSED)
 
-**Locked certificate historical snapshot vs later matrix replacement** has **not** been run. Do not treat it as proven. Do not replace the Wipe It Cleaners matrix until that controlled check is scheduled. Snapshots for Certs 1–4 already exist on the locked rows.
+Controlled replacement of the live Wipe It Cleaners matrix after Certs 1–4 were locked. Same matrix id `3ecc8395-17d4-4e05-99c4-947d1220dd69`: version **3 → 4**, committed still £50,000, 30 plots / 7 stages. Plot 2 / Joists **£750 → £999**. Stages reordered to Type, Roof, Joists, Low Levels, 1st fix, 2nd Fix, Finals. Plot 2 id stayed `plot-1-2`; Joists label unchanged. Hawthorn Gardens, Certs 1–4, CE-0020 / CE-0021, and authority flags were not altered.
+
+Locked result: Cert 1 still v9 £1,625 / £1,625, snapshot matrix **v3**, Plot 2 / Joists historic **£750 / 50%**, Plot 3 / Roof historic **£1,250 / 100%**. Cert 2 still v6 £375 / £375, Joists historic **£750** (previous 50 / this 50 / cumulative 100). Cert 3 still CE £250 / gross £250. Cert 4 still recovery −£100 / gross £0 / net −£100. Live £999 does not appear in locked history. Package gross certified remained **£2,250**; CVR net certified remained **£2,150**.
+
+Disposable draft **Cert 5** `8c040bd3-7faf-499d-8f1f-f43f1c5c1050` was created to prove future work uses the new matrix, then deleted from `buildlite_clone` via the V1 certificate API before BL-031. It is not business evidence. While it existed: live Plot 2 / Joists **£999**, previous progress **100%** via `plot-1-2` + `Joists`, this cert 0, remaining 0. Stage reorder did not move historic progress onto Roof. Wipe now has locked Certs 1–4 only.
+
+Local freeze-test xlsx and other Test Site 1 spreadsheet copies are UAT artefacts — do not stage or commit them.
 
 ### Non-blocking UX observations (do not change in BL-030)
 
@@ -172,7 +178,7 @@ Login remains mock (`localStorage` identity). No production-grade authentication
 | Developments / Plot Master | Working — developments are server-backed |
 | Packages / order matrices | Working — package identity and **order matrices are server-backed** after BL-029D |
 | Commercial Events | Working — **server authority** after BL-028B.3 |
-| V1 Payment Certificates | Working — **server authority** after BL-030C when `VITE_CERTIFICATE_SERVER_AUTHORITY=true`. One post-bank check remains: locked snapshot vs later matrix replacement. |
+| V1 Payment Certificates | Working — **server authority** after BL-030C when `VITE_CERTIFICATE_SERVER_AUTHORITY=true`. Historical freeze vs later matrix replacement **PASSED**. |
 | CVR / ledger / revenue | Working in UI — **localStorage authority** until BL-031 (revenue not in Doc 67 persistence sequence) |
 | Administration / Setup Assistant | Working — largely localStorage master data |
 | Commercial Assistant | Working foundation — local dispositions |
@@ -202,7 +208,7 @@ Login remains mock (`localStorage` identity). No production-grade authentication
 
 **BL-031 — CVR & Ledger Persistence.**
 
-Do not start BL-031 until this BL-030C bank is approved. After banking, the remaining **post-bank** certificate check is: replace the Wipe It Cleaners matrix under control and confirm locked Certs 1–4 still render their frozen snapshots. That check must not alter Hawthorn Gardens and is not BL-031 work.
+BL-030 is fully complete, including historical-freeze UAT. Disposable draft Cert 5 has been deleted from `buildlite_clone`. Do not start BL-031 in this close-out. Do not alter Hawthorn Gardens.
 
 ---
 

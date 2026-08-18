@@ -2,7 +2,7 @@
 
 Purchase order platform — React (Vite) frontend + Express/Postgres API.
 
-**Current position:** branch `buildlite-V1-1`, Doc 67 persistence programme. Developments, packages, Commercial Events, order matrices and V1 payment certificates are server-authoritative when their local authority flags are ON. **NEXT is BL-031 CVR & Ledger Persistence.** One post-bank certificate check remains: locked snapshot vs later matrix replacement. See `CURRENT_STATE.md` and `docs/test-data/README.md`.
+**Current position:** branch `buildlite-V1-1`, Doc 67 persistence programme. Developments, packages, Commercial Events, order matrices and V1 payment certificates are server-authoritative when their local authority flags are ON. **BL-030 is fully complete** (historical-freeze UAT passed). **NEXT is BL-031 CVR & Ledger Persistence.** See `CURRENT_STATE.md` and `docs/test-data/README.md`.
 
 Server automated tests must use isolated `TEST_DATABASE_URL` / `buildlite_test` (`npm run test:ensure-db` from `server/`). Do not run them against `buildlite_clone`.
 
