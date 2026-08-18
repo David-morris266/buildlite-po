@@ -2,7 +2,7 @@
 
 Purchase order platform — React (Vite) frontend + Express/Postgres API.
 
-**Current position:** branch `buildlite-V1-1`, Doc 67 persistence programme. Developments, packages, Commercial Events, order matrices and V1 payment certificates are server-authoritative when their local authority flags are ON. **BL-030 is fully complete** (historical-freeze UAT passed). **BL-031C** is implemented (server-write facades + controlled localStorage→Postgres migration preparation); **BL-031 is not complete**, runtime CVR/ledger authority remains localStorage, and Test Site 1 has **not** been migrated. **NEXT after bank is BL-031D** (authority cutover). See `CURRENT_STATE.md` and `docs/test-data/README.md`.
+**Current position:** branch `buildlite-V1-1`, Doc 67 persistence programme. Developments, packages, Commercial Events, order matrices and V1 payment certificates are server-authoritative when their local authority flags are ON. **BL-030 is fully complete** (historical-freeze UAT passed). **BL-031C** is implemented (server-write facades + controlled localStorage→Postgres migration; Test Site 1 CVR migration **PASSED**); **BL-031 is not complete**, runtime CVR/ledger authority remains localStorage until BL-031D, and ledger tables remain empty (no local ledger existed). **NEXT after bank is BL-031D** (authority cutover). See `CURRENT_STATE.md` and `docs/test-data/README.md`.
 
 Server automated tests must use isolated `TEST_DATABASE_URL` / `buildlite_test` (`npm run test:ensure-db` from `server/`). Do not run them against `buildlite_clone`.
 
