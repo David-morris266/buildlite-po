@@ -1,8 +1,9 @@
 # BuildLite Database Reference
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
-**Last product slice:** BL-030 Payment Certificate persistence (including BL-030C server authority and passed historical-freeze UAT).  
-**NEXT:** BL-031 CVR & Ledger Persistence.
+**Last product slice fully complete:** BL-030 Payment Certificate persistence (including BL-030C server authority and passed historical-freeze UAT).  
+**Last persistence slice implemented:** BL-031A — CVR + purchase ledger **server persistence/API foundation only**. BL-031 is **not** complete.  
+**NEXT after bank/migrate:** BL-031A.1 local clone migration.
 
 ---
 
@@ -18,10 +19,11 @@ Postgres is already the authority for:
 | `006_commercial_events.sql` | `commercial_events`, `commercial_event_audit` | BL-028 |
 | `007_package_order_matrices.sql` | `package_order_matrices` | BL-029 complete (schema/API + client server authority) |
 | `008_package_payment_certificates.sql` | `package_payment_certificates`, `package_payment_certificate_audit` | BL-030 fully complete (schema/API + client server authority; historical-freeze UAT passed). |
+| `009_cvr_and_purchase_ledger.sql` | `cvr_periods`, `cvr_period_audit`, `cvr_cost_code_inputs`, `ledger_import_batches`, `ledger_transactions` | **BL-031A** server schema/API only. No client authority, no clone migration, no CVR snapshots. |
 
 Still **browser/localStorage** (not yet Postgres authority):
 
-- CVR periods/cost centres and purchase ledger — **BL-031**
+- CVR periods/cost centres and purchase ledger **runtime** — remaining BL-031 slices (A.1 clone migrate, then client cache/authority). Server tables/API now exist.
 
 Order matrices are server-authoritative when `VITE_MATRIX_SERVER_AUTHORITY=true`. V1 payment certificates are server-authoritative when `VITE_CERTIFICATE_SERVER_AUTHORITY=true`. Do not commit `.env.local`.
 
@@ -45,12 +47,12 @@ The remainder of this file is the Phase 0 / BL-006 production schema reference. 
 
 BuildLite uses a single Postgres database (`buildlite_po_db` on Render). Schema is managed via:
 
-- Versioned SQL migrations in `server/migrations/` (`001`–`008`; `001`–`003` are the BL-006 production baseline)
+- Versioned SQL migrations in `server/migrations/` (`001`–`009`; `001`–`003` are the BL-006 production baseline)
 - `schema_migrations` tracking table
 - `npm run migrate` and `npm run seed` scripts
 - `db.js` init aligned with production plus later Doc 67 tables (fallback when migrations have not run)
 
-**Production database was the source of truth for BL-006.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files. Later Doc 67 migrations (`004`–`008`) are additive and must also not be rewritten after apply.
+**Production database was the source of truth for BL-006.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files. Later Doc 67 migrations (`004`–`009`) are additive and must also not be rewritten after apply.
 
 ---
 
@@ -222,6 +224,31 @@ Production authority for certificate numbering is **`legacy_cert_no`**, enforced
 | `006_commercial_events.sql` | BL-028A: commercial events + CE audit |
 | `007_package_order_matrices.sql` | BL-029: plot-stage order matrix schema/API; client server-authority cutover in BL-029D |
 | `008_package_payment_certificates.sql` | BL-030A: V1 package_payment_certificates + audit (does not alter legacy payment_certificates); client server-authority cutover in BL-030C |
+| `009_cvr_and_purchase_ledger.sql` | BL-031A: CVR periods + QS cost-code inputs + purchase ledger batches/transactions (server foundation only; snapshots are BL-031E) |
+
+---
+
+## BL-031A tables (server foundation)
+
+These tables persist the two domains that are still browser-local at runtime. **Do not treat this as CVR authority.** React still uses localStorage until later BL-031 slices. Approve/lock is workflow state only — immutable CVR snapshots are **BL-031E**.
+
+Agreed future commercial rules (do **not** change live client calculations in BL-031A):
+
+- Current commitment = approved PO net + approved value-changing Commercial Events
+- CVR certified cost ≈ matrix works certified + certified CE inclusions + signed recoveries/contras (exclude retention and VAT; not certificate net payment)
+- Ledger actual for CVR = **SUM(net)** (VAT stored as evidence only)
+- `manual_accrual` is a QS-entered input, distinct from outstanding certified
+- Snapshot occurs on approve/lock in BL-031E; V1 does not reopen locked CVRs
+
+| Table | Purpose |
+|-------|---------|
+| `cvr_periods` | One reporting period per development. Unique `(client_id, development_id, lower(period_key))`. Status `draft` → `submitted` → `locked`. At most one open (`draft` or `submitted`) period per development. |
+| `cvr_period_audit` | Workflow/edit evidence (created, patched, submitted, rejected, approved, locked, inputs_upserted). |
+| `cvr_cost_code_inputs` | QS overlays per period × `cost_code_key`, including `manual_accrual NUMERIC NOT NULL DEFAULT 0`. Unique `(client_id, period_id, cost_code_key)`. |
+| `ledger_import_batches` | Import provenance (file, profile, row counts, total net). |
+| `ledger_transactions` | Transaction-level actuals. Unique `(client_id, development_id, fingerprint)`. Optional `reverses_id`. |
+
+No snapshot tables in `009`. Legacy `payment_certificates` and BL-029/BL-030 matrix/certificate tables are unchanged.
 
 ---
 
@@ -230,7 +257,7 @@ Production authority for certificate numbering is **`legacy_cert_no`**, enforced
 From `server/`:
 
 ```bash
-npm run migrate    # apply pending SQL (001 → … → 008)
+npm run migrate    # apply pending SQL (001 → … → 009)
 npm run seed       # default client, cost codes, brand profile, client_id backfill
 npm start          # start API (calls db.init as fallback)
 ```

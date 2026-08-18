@@ -14,6 +14,7 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 | `006_commercial_events.sql` | BL-028A: commercial_events + commercial_event_audit (Doc 67) |
 | `007_package_order_matrices.sql` | BL-029: package_order_matrices schema/API; client server-authority cutover in BL-029D |
 | `008_package_payment_certificates.sql` | BL-030A: V1 package_payment_certificates + audit (does not alter legacy payment_certificates); client server-authority cutover in BL-030C |
+| `009_cvr_and_purchase_ledger.sql` | BL-031A: CVR periods + QS cost-code inputs + purchase ledger batches/transactions (server foundation only; no snapshots) |
 
 ## Before applying to production
 

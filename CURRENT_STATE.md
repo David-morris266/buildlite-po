@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030** (Payment Certificate persistence, including BL-030C server-authority cutover and passed historical-freeze UAT) and the **BL-ASUS-001** development-machine checkpoint.
+This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030** (Payment Certificate persistence, including BL-030C server-authority cutover and passed historical-freeze UAT), the **BL-ASUS-001** development-machine checkpoint, and **BL-031A** (CVR + purchase ledger **server persistence/API foundation only**). BL-031 is **not** complete.
 
 Historic Phase 0 / BL-006 schema notes remain in `docs/DATABASE.md` and `docs/phase0/`. Do not treat those files as the current programme.
 
@@ -18,9 +18,10 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | BL-030 Payment Certificate persistence (including BL-030C cutover and historical-freeze UAT) |
+| Last persistence slice implemented | **BL-031A** server persistence/API foundation only (not a client cutover; BL-031 not complete) |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT** | **BL-031 CVR & Ledger Persistence** |
+| **NEXT after bank/migrate** | **BL-031A.1** local clone migration |
 
 ---
 
@@ -34,9 +35,9 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | BL-028B.3a | Isolated server test database | **Complete** — `TEST_DATABASE_URL` / `buildlite_test`; must not use `buildlite_clone` |
 | **BL-029** | Order Matrix Persistence | **Complete** — schema/API (BL-029A), cache/hydration (BL-029B), **server-authority cutover (BL-029D)** |
 | **BL-030** | Payment Certificate persistence & atomic approval | **Complete** — schema/API (BL-030A), cache/hydration (BL-030B), **server-authority cutover (BL-030C)**, historical-freeze UAT **PASSED**. |
-| **BL-031** | CVR & Ledger persistence | **NEXT** |
+| **BL-031** | CVR & Ledger persistence | **In progress** — **BL-031A** server schema/API foundation only. Not complete. |
 
-BL-030 is fully complete. Persistence sprints must not add unrelated product features (Doc 67 §28). Do not start BL-031 in this housekeeping close-out.
+BL-030 is fully complete. **BL-031A** adds Postgres tables and server routes for CVR periods/inputs and purchase ledger batches/transactions. It does **not** wire React, flip authority flags, migrate `buildlite_clone`, or create CVR snapshots. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
 ---
 
@@ -51,11 +52,12 @@ BL-030 is fully complete. Persistence sprints must not add unrelated product fea
 - **Commercial Events** + CE audit (`006_commercial_events.sql`)
 - **Order matrices** (`007_package_order_matrices.sql`) — plot-stage structure, committed value, versioned PUT
 - **V1 Payment Certificates** (`008_package_payment_certificates.sql`) — draft progress, commercial/recovery lines, submit/reject/approve, frozen snapshots
-- Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, and `VITE_CERTIFICATE_SERVER_AUTHORITY` for cutover (see `client/.env.example`). Do not commit `.env.local`.
+- **CVR periods + purchase ledger tables** (`009_cvr_and_purchase_ledger.sql`) — **BL-031A server foundation only**. Runtime CVR/ledger still use localStorage. Approve/lock does **not** snapshot (BL-031E).
+- Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, and `VITE_CERTIFICATE_SERVER_AUTHORITY` for cutover (see `client/.env.example`). Do not commit `.env.local`. No CVR/ledger authority flag yet.
 
 ### Browser / localStorage authority (not yet migrated)
 
-- CVR periods / cost centres (`buildlite_cvr_v1`) and purchase ledger (`buildlite_purchase_ledgers_v1`) — **BL-031**
+- CVR periods / cost centres (`buildlite_cvr_v1`) and purchase ledger (`buildlite_purchase_ledgers_v1`) — remaining **BL-031** slices (next: **BL-031A.1** clone migrate). Server API exists; client does not use it yet.
 - Also still local: revenue, administration master data, setup drafts, Commercial Assistant dispositions
 
 `buildlite_order_matrices_v1` is backup/rollback evidence only after BL-029D. Runtime matrix reads/writes use Postgres when `VITE_MATRIX_SERVER_AUTHORITY=true`.
@@ -195,7 +197,7 @@ Login remains mock (`localStorage` identity). No production-grade authentication
 | Missing `docs/uat/` export | CE import scripts default to `docs/uat/test-site-1-commercial-events-export.json`; that path does not exist. |
 | `server/routes/supplierRoutes.js` | Unmounted orphan; file content is not a live Express router. |
 | Stale historic documents | `docs/phase0/migration-run-log.md` is an empty template; Master Documentation index and Doc 49 predate BL-028. Preserve as historic. |
-| Dual persistence | Expected until BL-031 complete: two browsers can still diverge on CVR and ledger. Matrices and V1 certificates are shared when their server-authority flags are ON. |
+| Dual persistence | Expected until BL-031 complete: two browsers can still diverge on CVR and ledger. Matrices and V1 certificates are shared when their server-authority flags are ON. BL-031A does not change this. |
 | API-outage matrix message | With the API stopped, matrix refresh shows a visible generic **Failed to fetch** state and does not fall back to localStorage. Intended fail-closed behaviour; wording is the raw fetch error rather than a matrix-specific sentence. Non-blocking. |
 | Package summary cards | Top cards show Certified Gross / Remaining. Recoveries are visible lower down. Future UX may add Recoveries / Net Certified headline cards. Non-blocking. |
 | CVR “Outstanding Certified” | Currently displays the same net certified figure (Wipe UAT: £2,150) and may need wording review. Non-blocking. |
@@ -204,11 +206,25 @@ Login remains mock (`localStorage` identity). No production-grade authentication
 
 ---
 
+## BL-031A (server foundation)
+
+Implemented: Postgres schema + server API for CVR periods, per-cost-code QS inputs (`manual_accrual` included), and purchase ledger import batches/transactions. Automated tests use `localhost:5432/buildlite_test` only.
+
+**Not in BL-031A:** React/server cache, authority flags, localStorage cutover, clone migration, CVR snapshots, live calculation formula changes, accrual UI, revenue.
+
+Agreed future commercial rules (recorded; **not** applied to live client engines in this slice):
+
+- Current commitment = approved PO net + approved value-changing Commercial Events (client still ignores CEs)
+- CVR certified cost ≈ `grossWorks + recoverySigned` (exclude retention and VAT; current client still uses certificate net)
+- Ledger actual for CVR = SUM(net)
+- `manual_accrual` is a genuine QS input, distinct from outstanding certified
+- Approve & Lock will atomically snapshot in **BL-031E**; V1 will not reopen locked CVRs
+
 ## Next action
 
-**BL-031 — CVR & Ledger Persistence.**
+**BL-031A.1 — local clone migration** (after BL-031A is banked and `009` is applied where needed).
 
-BL-030 is fully complete, including historical-freeze UAT. Disposable draft Cert 5 has been deleted from `buildlite_clone`. Do not start BL-031 in this close-out. Do not alter Hawthorn Gardens.
+Do **not** start BL-031B. Do not wire React. Do not flip client authority flags. Do not alter Test Site 1 data, Hawthorn Gardens, or live CVR calculations.
 
 ---
 

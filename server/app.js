@@ -13,6 +13,8 @@ const paymentRoutes = require("./routes/paymentRoutes");
 const developmentRoutes = require("./routes/developmentRoutes");
 const packageRoutes = require("./routes/packageRoutes");
 const commercialEventRoutes = require("./routes/commercialEventRoutes");
+const cvrRoutes = require("./routes/cvrRoutes");
+const ledgerRoutes = require("./routes/ledgerRoutes");
 
 function createApp() {
   const app = express();
@@ -34,6 +36,8 @@ function createApp() {
   app.use("/api/brand", brandRoutes);
   app.use("/api/payments", paymentRoutes);
   app.use("/api/developments", developmentRoutes);
+  app.use("/api/developments/:developmentId", cvrRoutes);
+  app.use("/api/developments/:developmentId", ledgerRoutes);
   app.use("/api/packages", packageRoutes);
   app.use("/api/commercial-events", commercialEventRoutes);
 
