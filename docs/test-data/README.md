@@ -22,3 +22,5 @@ Path: `docs/test-data/Test Site 1/`
 Test Site 1 is **legacy and current historical test evidence** (budget, matrices, ledger CSV, UAT notes). Keep it for existing scripts and past UAT.
 
 It is **not** the new clean commercial test model. Prefer Hawthorn Gardens for new end-to-end UAT.
+
+BL-031C prepares a controlled localStorage → Postgres CVR/ledger migration for Test Site 1. That migration has **not** been executed. Do not run it against `buildlite_clone` until instructed. Do not touch Wipe certificates/matrix/CEs as part of BL-031C.

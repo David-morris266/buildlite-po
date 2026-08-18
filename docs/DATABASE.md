@@ -230,7 +230,7 @@ Production authority for certificate numbering is **`legacy_cert_no`**, enforced
 
 ## BL-031A tables (server foundation)
 
-These tables persist the two domains that are still browser-local at runtime. **Do not treat this as CVR authority.** React still uses localStorage until later BL-031 slices. Approve/lock is workflow state only — immutable CVR snapshots are **BL-031E**.
+These tables persist the two domains that are still browser-local at runtime. **Do not treat this as CVR authority.** React still uses localStorage until later BL-031 slices. **BL-031C** prepared mutation facades and a manual migration tool; it did **not** migrate Test Site 1 or flip authority. Approve/lock is workflow state only — immutable CVR snapshots are **BL-031E**.
 
 Agreed future commercial rules (do **not** change live client calculations in BL-031A):
 

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { installNetworkGuard } from './networkGuard';
-import { listCvrPeriodsForDevelopment } from '../api/cvrPeriods';
-import { listLedgerTransactionsForDevelopment } from '../api/purchaseLedger';
+import { listCvrPeriodsForDevelopment, createCvrPeriodForDevelopment } from '../api/cvrPeriods';
+import { listLedgerTransactionsForDevelopment, importLedgerBatchForDevelopment } from '../api/purchaseLedger';
 
 describe('networkGuard CVR/ledger API (BL-031B)', () => {
   let networkGuard;
@@ -15,6 +15,12 @@ describe('networkGuard CVR/ledger API (BL-031B)', () => {
 
     await expect(listCvrPeriodsForDevelopment('dev-1')).rejects.toThrow(/NETWORK GUARD/);
     await expect(listLedgerTransactionsForDevelopment('dev-1')).rejects.toThrow(/NETWORK GUARD/);
+    await expect(createCvrPeriodForDevelopment('dev-1', { periodKey: 'P01' })).rejects.toThrow(
+      /NETWORK GUARD/
+    );
+    await expect(
+      importLedgerBatchForDevelopment('dev-1', { transactions: [] })
+    ).rejects.toThrow(/NETWORK GUARD/);
     expect(() => networkGuard.assertNoLiveApiCalls()).toThrow(/Live API calls detected/);
   });
 });

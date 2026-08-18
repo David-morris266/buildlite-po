@@ -50,6 +50,8 @@ function isApprovedPo(po) {
 }
 
 export function buildCommitmentsByCostCode(developmentId, pos = []) {
+  // BL-031D TODO: commitment must become approved PO net + approved
+  // value-changing Commercial Events. Live formula remains PO net only.
   const totals = new Map();
   const labels = new Map();
 
@@ -96,6 +98,8 @@ export function getCvrSourceReadiness(developmentId, periodKey = CVR_DEFAULT_PER
 }
 
 export function buildActualsByCostCode(developmentId) {
+  // Ledger actual for CVR = SUM(netAmount). VAT/gross are evidence only.
+  // BL-031D TODO: manualAccrual is persisted but still unused in live calculations.
   if (isLedgerServerAuthorityEnabled() && !getLedgerReadiness(developmentId).ready) {
     return { totals: new Map(), labels: new Map(), unavailable: true };
   }

@@ -34,6 +34,12 @@ describe('getApprovedCertificateValue', () => {
     ).toBe(60000);
   });
 
+  it('BL-031D TODO: live certified remains certificate net, not matrix + CE + recoveries', () => {
+    expect(
+      getApprovedCertificateValue({ status: 'locked', netValue: 2150, grossValue: 2250 })
+    ).toBe(2150);
+  });
+
   it('ignores draft certificates', () => {
     expect(
       getApprovedCertificateValue({ status: 'draft', grossValue: 40000, netValue: null })

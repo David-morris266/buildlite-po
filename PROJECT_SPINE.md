@@ -90,12 +90,11 @@ Management Reporting
 
 Doc 67 persistence migration on branch `buildlite-V1-1`.
 
-Complete: BL-027A Developments, BL-027B Packages, BL-028 Commercial Events (including BL-028B.3 server-authority cutover), BL-029 Order Matrix Persistence (including BL-029D server-authority cutover), BL-030 Payment Certificate Persistence (including BL-030C server-authority cutover and passed historical-freeze UAT). **BL-030 is fully complete.** **BL-031A** (server persistence/API), **BL-031A.1** (clone migrate), and **BL-031B** (client cache/hydration/readiness) are implemented; BL-031 is **not** complete.
+Complete: BL-027A Developments, BL-027B Packages, BL-028 Commercial Events (including BL-028B.3 server-authority cutover), BL-029 Order Matrix Persistence (including BL-029D server-authority cutover), BL-030 Payment Certificate Persistence (including BL-030C server-authority cutover and passed historical-freeze UAT). **BL-030 is fully complete.** **BL-031A** (server persistence/API), **BL-031A.1** (clone migrate), **BL-031B** (client cache/hydration/readiness), and **BL-031C** (server-write facades + migration preparation) are implemented; BL-031 is **not** complete. Test Site 1 CVR/ledger has **not** been migrated.
 
-1. **BL-031C** — **NEXT after bank**. Do not start in this slice.
-2. Remaining BL-031 — write cutover, snapshots (BL-031E). Authority flags remain OFF.
-
-Do not flip CVR/ledger authority flags or change live CVR calculations until instructed. See `CURRENT_STATE.md`.
+1. **BL-031D** — **NEXT after bank**. Authority cutover. Do not start in this slice.
+2. **BL-031E** — immutable snapshot / period close.
+3. Do not flip CVR/ledger authority flags until BL-031D. Do not change live CVR calculations until instructed. See `CURRENT_STATE.md`.
 
 ---
 

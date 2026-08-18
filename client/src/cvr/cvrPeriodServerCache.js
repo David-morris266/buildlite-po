@@ -2,7 +2,8 @@
  * BL-031B — In-memory CVR period/input cache (development-scoped).
  *
  * When VITE_CVR_SERVER_AUTHORITY=true, reads use this cache.
- * Mutations are not applied here in BL-031B. No localStorage fallback.
+ * BL-031C adds cache patch helpers for future BL-031D mutations.
+ * Live UI remains unwired. No localStorage fallback.
  */
 
 import {
@@ -11,7 +12,9 @@ import {
   listCvrPeriodsForDevelopment,
 } from '../api/cvrPeriods';
 import {
+  normalizeServerCvrCostCodeInput,
   normalizeServerCvrCostCodeInputList,
+  normalizeServerCvrPeriod,
   normalizeServerCvrPeriodList,
 } from './cvrPeriodServerMapper';
 
@@ -283,6 +286,44 @@ export function replaceCachedCvrInputs(periodId, documents) {
   const period = getCachedCvrPeriodById(periodId);
   if (period) period.costCentres = inputs;
   return inputs;
+}
+
+export function upsertCachedCvrPeriod(developmentId, document) {
+  if (!developmentId || !document) return null;
+  const mapped = normalizeServerCvrPeriod(document, document.costCentres || document.inputs);
+  const existing = getCachedCvrPeriods(developmentId).filter(
+    (item) => item.id !== mapped.id && item.periodKey !== mapped.periodKey
+  );
+  const next = normalizeServerCvrPeriodList([...existing, mapped]);
+  indexPeriods(developmentId, next);
+  periodLoadStateByDevelopment.set(developmentId, 'loaded');
+  periodLoadErrorByDevelopment.set(developmentId, null);
+  return mapped;
+}
+
+export function patchCachedCvrPeriod(developmentId, periodId, patch = {}) {
+  if (!developmentId || !periodId) return null;
+  const existing = getCachedCvrPeriods(developmentId);
+  const index = existing.findIndex((item) => item.id === periodId);
+  if (index < 0) return null;
+  existing[index] = { ...existing[index], ...patch, id: periodId };
+  indexPeriods(developmentId, existing);
+  return existing[index];
+}
+
+export function upsertCachedCvrInput(periodId, document) {
+  if (!periodId || !document) return null;
+  const mapped = normalizeServerCvrCostCodeInput(document);
+  const existing = getCachedCvrInputs(periodId).filter(
+    (item) => item.id !== mapped.id && item.costCodeKey !== mapped.costCodeKey
+  );
+  const next = [...existing, mapped];
+  inputsByPeriod.set(periodId, next);
+  inputLoadStateByPeriod.set(periodId, 'loaded');
+  inputLoadErrorByPeriod.set(periodId, null);
+  const period = getCachedCvrPeriodById(periodId);
+  if (period) period.costCentres = next;
+  return mapped;
 }
 
 export function __resetCvrPeriodServerCacheForTests() {

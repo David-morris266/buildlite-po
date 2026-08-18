@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030** (Payment Certificate persistence, including BL-030C server-authority cutover and passed historical-freeze UAT), the **BL-ASUS-001** development-machine checkpoint, **BL-031A** (CVR + purchase ledger server persistence/API foundation), **BL-031A.1** (local clone migration), and **BL-031B** (client API/cache/hydration/readiness). BL-031 is **not** complete.
+This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030** (Payment Certificate persistence, including BL-030C server-authority cutover and passed historical-freeze UAT), the **BL-ASUS-001** development-machine checkpoint, **BL-031A** (CVR + purchase ledger server persistence/API foundation), **BL-031A.1** (local clone migration), **BL-031B** (client API/cache/hydration/readiness), and **BL-031C** (server-write facades + controlled localStorage→Postgres migration preparation). BL-031 is **not** complete. Test Site 1 has **not** been migrated.
 
 Historic Phase 0 / BL-006 schema notes remain in `docs/DATABASE.md` and `docs/phase0/`. Do not treat those files as the current programme.
 
@@ -18,10 +18,10 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | BL-030 Payment Certificate persistence (including BL-030C cutover and historical-freeze UAT) |
-| Last persistence slice implemented | **BL-031B** client API/cache/hydration/readiness (authority flags remain OFF; BL-031 not complete) |
+| Last persistence slice implemented | **BL-031C** server-write + migration preparation (authority flags remain OFF; Test Site 1 not migrated; BL-031 not complete) |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT after bank** | **BL-031C** — do not start until instructed |
+| **NEXT after bank** | **BL-031D** — do not start until instructed |
 
 ---
 
@@ -35,9 +35,9 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | BL-028B.3a | Isolated server test database | **Complete** — `TEST_DATABASE_URL` / `buildlite_test`; must not use `buildlite_clone` |
 | **BL-029** | Order Matrix Persistence | **Complete** — schema/API (BL-029A), cache/hydration (BL-029B), **server-authority cutover (BL-029D)** |
 | **BL-030** | Payment Certificate persistence & atomic approval | **Complete** — schema/API (BL-030A), cache/hydration (BL-030B), **server-authority cutover (BL-030C)**, historical-freeze UAT **PASSED**. |
-| **BL-031** | CVR & Ledger persistence | **In progress** — **BL-031A** server schema/API, **BL-031A.1** clone migrate, **BL-031B** client cache/hydration. Not complete. Authority flags remain OFF. |
+| **BL-031** | CVR & Ledger persistence | **In progress** — **BL-031A** server schema/API, **BL-031A.1** clone migrate, **BL-031B** client cache/hydration, **BL-031C** server-write + migration prep. Not complete. Authority flags remain OFF. Test Site 1 not migrated. |
 
-BL-030 is fully complete. **BL-031B** adds client API wrappers, mappers, per-development caches, hydration, and financial readiness. It does **not** cut CVR/ledger authority over, import localStorage, write CVR/ledger from live UI, change live formulas, or snapshot. Persistence sprints must not add unrelated product features (Doc 67 §28).
+BL-030 is fully complete. **BL-031C** adds mutation facades, localStorage→server mappers, and a developer-only preflight/execute migration tool. It does **not** cut CVR/ledger authority over, auto-migrate, change live formulas, or snapshot. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
 ---
 
@@ -57,7 +57,7 @@ BL-030 is fully complete. **BL-031B** adds client API wrappers, mappers, per-dev
 
 ### Browser / localStorage authority (not yet migrated)
 
-- CVR periods / cost centres (`buildlite_cvr_v1`) and purchase ledger (`buildlite_purchase_ledgers_v1`) — remaining **BL-031** slices (next: **BL-031C**). Server API and client cache exist; runtime authority is still localStorage.
+- CVR periods / cost centres (`buildlite_cvr_v1`) and purchase ledger (`buildlite_purchase_ledgers_v1`) — remaining **BL-031** slices (next: **BL-031D**). Server API, client cache, and a manual migration tool exist; runtime authority is still localStorage. Clone CVR/ledger tables remain empty until the controlled Test Site 1 migration is approved and executed.
 - Also still local: revenue, administration master data, setup drafts, Commercial Assistant dispositions
 
 `buildlite_order_matrices_v1` is backup/rollback evidence only after BL-029D. Runtime matrix reads/writes use Postgres when `VITE_MATRIX_SERVER_AUTHORITY=true`.
@@ -226,9 +226,28 @@ Implemented: client API modules, camelCase mappers, per-development CVR/ledger c
 
 **Not in BL-031B:** authority cutover, localStorage import, live API writes, formula changes, accrual UI, snapshots, BL-031C.
 
+## BL-031C (server-write + migration preparation)
+
+Implemented: unwired CVR/ledger mutation facades, cache patch helpers, deterministic localStorage→server mappers, and a developer-only preflight/execute migration tool (`window.buildliteCvrLedgerMigration` in Vite DEV). Live UI still reads/writes `buildlite_cvr_v1` / `buildlite_purchase_ledgers_v1`. Authority flags remain OFF. Live CVR formulas are unchanged (commitment = PO net; certified = certificate net; manualAccrual unused).
+
+**Not done in BL-031C:** Test Site 1 migration against `buildlite_clone`, authority cutover, dual-write, snapshots, formula correction, Hawthorn Gardens.
+
+Controlled Test Site 1 migration is prepared only. Invoke from the Vite session that owns the browser localStorage:
+
+1. Keep `VITE_CVR_SERVER_AUTHORITY` and `VITE_LEDGER_SERVER_AUTHORITY` unset/OFF.
+2. Open Test Site 1 on `localhost:5173`.
+3. `buildliteCvrLedgerMigration.listLocalDevelopmentIds()`
+4. `await buildliteCvrLedgerMigration.preflight(developmentId, { developmentName: 'Test Site 1' })`
+5. `console.log(buildliteCvrLedgerMigration.formatReport(plan))`
+6. Review counts/totals against empty clone tables. Do not execute until approved.
+7. After approval: `await buildliteCvrLedgerMigration.execute(developmentId, { confirm: true, developmentName: 'Test Site 1' })`
+8. Hard refresh with flags still OFF — UI unchanged.
+9. Preflight again — expect already migrated / no work.
+10. Only then start BL-031D.
+
 ## Next action
 
-**BL-031C** after BL-031B is banked. Do **not** start BL-031C in this slice. Do not flip CVR/ledger authority flags. Do not alter Test Site 1 data, Hawthorn Gardens, or live CVR calculations.
+**BL-031D** after BL-031C is banked. Do **not** start BL-031D in this slice. Do not flip CVR/ledger authority flags. Do not execute Test Site 1 migration until instructed. Do not alter Hawthorn Gardens or live CVR calculations.
 
 ---
 

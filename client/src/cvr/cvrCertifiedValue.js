@@ -10,6 +10,9 @@ import {
 import { roundMoney } from './cvrCalculations.js';
 
 export function getApprovedCertificateValue(certificate) {
+  // BL-031D TODO: CVR certified must become matrix works + certified CE
+  // inclusions + signed recoveries, excluding retention and VAT.
+  // Live formula remains certificate net (fallback gross).
   if (!isApprovedCommercialCertificate(certificate)) return 0;
 
   if (certificate.netValue != null && certificate.netValue !== '') {

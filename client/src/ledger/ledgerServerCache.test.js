@@ -16,9 +16,12 @@ import {
 import {
   __resetLedgerServerCacheForTests,
   ensureLedgerReadyForDevelopment,
+  getCachedLedgerBatches,
   getCachedLedgerTransactions,
   getLedgerLoadState,
   refreshLedgerForDevelopment,
+  upsertCachedLedgerBatch,
+  appendCachedLedgerTransactions,
 } from './ledgerServerCache';
 
 const DEV_A = 'dev-ledger-a';
@@ -102,5 +105,18 @@ describe('ledgerServerCache (BL-031B)', () => {
 
     expect(getCachedLedgerTransactions(DEV_A)[0].netAmount).toBe(1000);
     expect(getCachedLedgerTransactions(DEV_B)[0].netAmount).toBe(9000);
+  });
+
+  it('cache patch helpers append transactions and upsert batches', () => {
+    const batch = upsertCachedLedgerBatch(
+      DEV_A,
+      buildServerLedgerBatchFixture({ developmentId: DEV_A, originalFileName: 'mig.csv' })
+    );
+    expect(batch.fileName).toBe('mig.csv');
+    appendCachedLedgerTransactions(DEV_A, [
+      buildServerLedgerTransactionFixture({ developmentId: DEV_A, netAmount: 25 }),
+    ]);
+    expect(getCachedLedgerTransactions(DEV_A)[0].netAmount).toBe(25);
+    expect(getCachedLedgerBatches(DEV_A)[0].originalFileName).toBe('mig.csv');
   });
 });

@@ -3,7 +3,7 @@
  *
  * Default OFF: localStorage (buildlite_cvr_v1) remains runtime authority.
  * When true: CVR reads use the server cache only. No localStorage fallback.
- * Writes remain local until BL-031C.
+ * Writes remain local until BL-031D. BL-031C mutation facades are unwired.
  */
 
 export function isCvrServerAuthorityEnabled() {

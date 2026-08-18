@@ -23,7 +23,10 @@ import {
   getCachedCvrPeriods,
   getCvrInputLoadState,
   getCvrPeriodLoadState,
+  patchCachedCvrPeriod,
   refreshCvrPeriodsForDevelopment,
+  upsertCachedCvrInput,
+  upsertCachedCvrPeriod,
 } from './cvrPeriodServerCache';
 
 const DEV_A = 'dev-cvr-a';
@@ -83,6 +86,19 @@ describe('cvrPeriodServerCache (BL-031B)', () => {
     await pending;
     expect(getCvrInputLoadState(PERIOD_A)).toBe('loaded');
     expect(getCachedCvrInputs(PERIOD_A)[0].manualAccrual).toBe(400);
+  });
+
+  it('cache patch helpers insert and update periods/inputs', () => {
+    const inserted = upsertCachedCvrPeriod(
+      DEV_A,
+      buildServerCvrPeriodFixture({ id: PERIOD_A, developmentId: DEV_A, periodKey: 'P04' })
+    );
+    expect(inserted.periodKey).toBe('P04');
+    expect(getCachedCvrPeriods(DEV_A)[0].periodKey).toBe('P04');
+    patchCachedCvrPeriod(DEV_A, PERIOD_A, { status: 'submitted', version: 2 });
+    expect(getCachedCvrPeriods(DEV_A)[0].status).toBe('submitted');
+    upsertCachedCvrInput(PERIOD_A, buildServerCvrInputFixture({ periodId: PERIOD_A, costCodeKey: '5218' }));
+    expect(getCachedCvrInputs(PERIOD_A)[0].costCodeKey).toBe('5218');
   });
 
   it('deduplicates in-flight loads for the same development and period', async () => {

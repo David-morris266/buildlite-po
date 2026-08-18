@@ -22,6 +22,7 @@ import {
   resetLedgerApiStore,
   seedMockLedgerTransactions,
   setLedgerListReject,
+  getLedgerMutationCallCounts,
 } from '../test/mockPurchaseLedgerApi';
 import {
   __resetLedgerServerCacheForTests,
@@ -72,6 +73,7 @@ describe('ledger authority reads (BL-031B)', () => {
     expect(listTransactions(DEV_ID)[0].invoiceNumber).toBe('LOCAL-1');
     expect(getTotalActualCost(DEV_ID)).toBe(777);
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY))[DEV_ID].transactions).toHaveLength(1);
+    expect(getLedgerMutationCallCounts().total).toBe(0);
   });
 
   it('authority ON ledger reads cache once loaded', async () => {

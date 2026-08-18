@@ -2,7 +2,8 @@
  * BL-031B — In-memory purchase ledger cache (development-scoped).
  *
  * When VITE_LEDGER_SERVER_AUTHORITY=true, reads use this cache.
- * Import/reversal are not applied here in BL-031B. No localStorage fallback.
+ * BL-031C adds cache patch helpers for future BL-031D mutations.
+ * Live UI remains unwired. No localStorage fallback.
  */
 
 import {
@@ -12,6 +13,7 @@ import {
   listLedgerTransactionsForDevelopment,
 } from '../api/purchaseLedger';
 import {
+  normalizeServerLedgerBatch,
   normalizeServerLedgerBatchList,
   normalizeServerLedgerTotals,
   normalizeServerLedgerTransactionList,
@@ -190,6 +192,38 @@ export function replaceCachedLedger(developmentId, { transactions, batches, tota
   loadStateByDevelopment.set(developmentId, 'loaded');
   loadErrorByDevelopment.set(developmentId, null);
   return { transactions: nextTransactions, batches: nextBatches, totals: nextTotals };
+}
+
+export function upsertCachedLedgerBatch(developmentId, document) {
+  if (!developmentId || !document) return null;
+  const mapped = normalizeServerLedgerBatch(document);
+  const existing = getCachedLedgerBatches(developmentId).filter((item) => item.id !== mapped.id);
+  batchesByDevelopment.set(developmentId, [mapped, ...existing]);
+  loadStateByDevelopment.set(developmentId, 'loaded');
+  return mapped;
+}
+
+export function appendCachedLedgerTransactions(developmentId, documents = []) {
+  const mapped = normalizeServerLedgerTransactionList(documents);
+  const existing = getCachedLedgerTransactions(developmentId);
+  const byId = new Map(existing.map((item) => [item.id, item]));
+  for (const item of mapped) byId.set(item.id, item);
+  const next = [...byId.values()];
+  transactionsByDevelopment.set(developmentId, next);
+  totalsByDevelopment.set(developmentId, {
+    totalNet: next.reduce((sum, txn) => sum + (Number(txn.netAmount) || 0), 0),
+    totalVat: next.reduce((sum, txn) => sum + (Number(txn.vatAmount) || 0), 0),
+    transactionCount: next.length,
+    actualCostByCostCode: actualsFromTransactions(next),
+  });
+  loadStateByDevelopment.set(developmentId, 'loaded');
+  return next;
+}
+
+export function replaceCachedLedgerTotals(developmentId, totals) {
+  const mapped = normalizeServerLedgerTotals(totals);
+  totalsByDevelopment.set(developmentId, mapped);
+  return mapped;
 }
 
 export function __resetLedgerServerCacheForTests() {

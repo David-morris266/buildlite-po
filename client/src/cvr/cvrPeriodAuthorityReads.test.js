@@ -24,6 +24,7 @@ import {
   seedMockCvrInputs,
   seedMockCvrPeriod,
   setCvrPeriodListReject,
+  getCvrMutationCallCounts,
 } from '../test/mockCvrPeriodApi';
 import {
   __resetCvrPeriodServerCacheForTests,
@@ -64,6 +65,7 @@ describe('CVR authority reads (BL-031B)', () => {
     expect(listCvrPeriods(DEV_ID)).toHaveLength(1);
     expect(listCvrPeriods(DEV_ID)[0].periodKey).toBe('P01');
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY))[DEV_ID].periods.P01).toBeTruthy();
+    expect(getCvrMutationCallCounts().total).toBe(0);
   });
 
   it('authority ON CVR reads cache once loaded', async () => {
