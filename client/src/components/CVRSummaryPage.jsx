@@ -137,6 +137,9 @@ export default function CVRSummaryPage({
   onOpenPackage,
   onPeriodChanged,
   initialCostCodeKey = null,
+  certificatesLoading = false,
+  certificatesReady = true,
+  certificatesError = '',
 }) {
   const [pos, setPos] = useState([]);
   const [localRefresh, setLocalRefresh] = useState(0);
@@ -175,9 +178,10 @@ export default function CVRSummaryPage({
   const summary = useMemo(() => {
     void refreshToken;
     void localRefresh;
+    void certificatesReady;
     const period = getCvrPeriod(development.id, periodKey);
     return buildCvrSummaryModel(development, { pos, periodKey, period });
-  }, [development, pos, periodKey, refreshToken, localRefresh]);
+  }, [development, pos, periodKey, refreshToken, localRefresh, certificatesReady]);
 
   useEffect(() => {
     if (!summary) return;
@@ -386,6 +390,14 @@ export default function CVRSummaryPage({
           </dl>
         </div>
       </ApplicationPageHeader>
+
+      {certificatesError ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          Unable to load certificate data. {certificatesError}
+        </div>
+      ) : certificatesLoading ? (
+        <p role="status">Loading certificate data…</p>
+      ) : null}
 
       <MemoSummaryKpiRibbon items={summary.kpis} />
 

@@ -22,14 +22,18 @@ export default function CVRRegister({
   onPrimaryActionChange = null,
   onOpenPeriod,
   onChanged,
+  certificatesLoading = false,
+  certificatesReady = true,
+  certificatesError = '',
 }) {
   const [localRefresh, setLocalRefresh] = useState(0);
 
   const register = useMemo(() => {
     void refreshToken;
     void localRefresh;
+    void certificatesReady;
     return buildCvrRegisterModel(development, { pos });
-  }, [development, pos, refreshToken, localRefresh]);
+  }, [development, pos, refreshToken, localRefresh, certificatesReady]);
 
   function refresh() {
     setLocalRefresh((value) => value + 1);
@@ -75,6 +79,14 @@ export default function CVRRegister({
         support="Monthly Commercial Reporting"
         description="Manage monthly reporting periods for this development. Only one draft may exist at a time."
       />
+
+      {certificatesError ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          Unable to load certificate data. {certificatesError}
+        </div>
+      ) : certificatesLoading ? (
+        <p role="status">Loading certificate data…</p>
+      ) : null}
 
       <div className="po-table-wrap dev-cvr-register__table-wrap">
         <table className="po-data-table dev-cvr-register__table">

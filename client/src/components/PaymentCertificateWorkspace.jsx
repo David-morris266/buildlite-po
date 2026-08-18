@@ -43,7 +43,7 @@ function CertificateSummaryDashboard({ cards, status }) {
   );
 }
 
-function CertificateDeleteDialog({ certificate, onCancel, onConfirm }) {
+function CertificateDeleteDialog({ certificate, errorMessage, busy, onCancel, onConfirm }) {
   if (!certificate) return null;
 
   return (
@@ -57,6 +57,11 @@ function CertificateDeleteDialog({ certificate, onCancel, onConfirm }) {
         <h3 id="po-cert-delete-title">
           Delete Certificate No. {certificate.certificateNumber}?
         </h3>
+        {errorMessage ? (
+          <div className="po-list-feedback po-list-feedback--error" role="alert">
+            {errorMessage}
+          </div>
+        ) : null}
         <p>
           This draft certificate will be removed from the package history. This
           action cannot be undone.
@@ -65,7 +70,12 @@ function CertificateDeleteDialog({ certificate, onCancel, onConfirm }) {
           <button type="button" className="po-list-btn-secondary" onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" className="po-cert-delete__confirm" onClick={onConfirm}>
+          <button
+            type="button"
+            className="po-cert-delete__confirm"
+            onClick={onConfirm}
+            disabled={busy}
+          >
             Delete Draft
           </button>
         </div>
@@ -86,6 +96,9 @@ export default function PaymentCertificateWorkspace({
 }) {
   const [selectedCertificateId, setSelectedCertificateId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [createBusy, setCreateBusy] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [mutationError, setMutationError] = useState('');
   const certificatesPending =
     certificatesLoading || certificatesReady === false || pkg?.certificatesReady === false;
 
@@ -103,8 +116,8 @@ export default function PaymentCertificateWorkspace({
   }, [order, order.orderKey, refreshToken, certificatesPending]);
 
   const createState = useMemo(
-    () => getCreateCertificateState(order.orderKey, certificates.length),
-    [order.orderKey, certificates.length, refreshToken]
+    () => getCreateCertificateState(order.orderKey, certificates.length, order),
+    [order, order.orderKey, certificates.length, refreshToken, certificatesPending]
   );
 
   useEffect(() => {
@@ -115,24 +128,46 @@ export default function PaymentCertificateWorkspace({
 
   if (!workspace) return null;
 
-  function handleCreateCertificate() {
+  async function handleCreateCertificate() {
     if (pkg?.matrixReady === false) return;
     if (certificatesPending) return;
     if (!createState.ok) return;
-    const result = createCertificate(order.orderKey, order);
-    if (!result.ok || !result.certificate) return;
-    setSelectedCertificateId(result.certificate.id);
-    onCertificatesChanged?.();
+    if (createBusy) return;
+    setCreateBusy(true);
+    setMutationError('');
+    try {
+      const result = await Promise.resolve(createCertificate(order.orderKey, order));
+      if (!result.ok || !result.certificate) {
+        setMutationError(result.errors?.[0] || 'Could not create certificate.');
+        return;
+      }
+      setSelectedCertificateId(result.certificate.id);
+      onCertificatesChanged?.();
+    } finally {
+      setCreateBusy(false);
+    }
   }
 
-  function handleDeleteConfirm() {
-    if (!deleteTarget) return;
-    deleteCertificate(order.orderKey, deleteTarget.id);
-    if (selectedCertificateId === deleteTarget.id) {
-      setSelectedCertificateId(null);
+  async function handleDeleteConfirm() {
+    if (!deleteTarget || deleteBusy) return;
+    setDeleteBusy(true);
+    setMutationError('');
+    try {
+      const result = await Promise.resolve(
+        deleteCertificate(order.orderKey, deleteTarget.id, order)
+      );
+      if (!result?.ok) {
+        setMutationError(result?.errors?.[0] || 'Could not delete certificate.');
+        return;
+      }
+      if (selectedCertificateId === deleteTarget.id) {
+        setSelectedCertificateId(null);
+      }
+      setDeleteTarget(null);
+      onCertificatesChanged?.();
+    } finally {
+      setDeleteBusy(false);
     }
-    setDeleteTarget(null);
-    onCertificatesChanged?.();
   }
 
   if (selectedCertificateId && !certificatesPending) {
@@ -148,7 +183,12 @@ export default function PaymentCertificateWorkspace({
         />
         <CertificateDeleteDialog
           certificate={deleteTarget}
-          onCancel={() => setDeleteTarget(null)}
+          errorMessage={mutationError}
+          busy={deleteBusy}
+          onCancel={() => {
+            setDeleteTarget(null);
+            setMutationError('');
+          }}
           onConfirm={handleDeleteConfirm}
         />
       </>
@@ -185,12 +225,14 @@ export default function PaymentCertificateWorkspace({
               type="button"
               className="po-btn-primary"
               onClick={handleCreateCertificate}
-              disabled={!createState.ok || pkg?.matrixReady === false || certificatesPending}
+              disabled={!createState.ok || pkg?.matrixReady === false || certificatesPending || createBusy}
             >
               {createState.label}
             </button>
             {!createState.ok ? (
               <p className="po-cert-workspace__create-hint">{createState.reason}</p>
+            ) : mutationError ? (
+              <p className="po-cert-workspace__create-hint" role="alert">{mutationError}</p>
             ) : null}
           </div>
         ) : null}
@@ -220,7 +262,12 @@ export default function PaymentCertificateWorkspace({
             type="button"
             className="po-btn-primary"
             onClick={handleCreateCertificate}
-            disabled={pkg?.matrixReady === false || certificatesPending}
+            disabled={
+              !createState.ok ||
+              pkg?.matrixReady === false ||
+              certificatesPending ||
+              createBusy
+            }
           >
             Create Certificate No. 1
           </button>
@@ -277,7 +324,12 @@ export default function PaymentCertificateWorkspace({
 
       <CertificateDeleteDialog
         certificate={deleteTarget}
-        onCancel={() => setDeleteTarget(null)}
+        errorMessage={mutationError}
+        busy={deleteBusy}
+        onCancel={() => {
+          setDeleteTarget(null);
+          setMutationError('');
+        }}
         onConfirm={handleDeleteConfirm}
       />
     </div>

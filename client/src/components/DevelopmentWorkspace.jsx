@@ -24,6 +24,12 @@ import {
   getOrderMatricesLoadError,
 } from '../payments/orderMatrixServerCache';
 import { isOrderMatrixServerAuthorityEnabled } from '../payments/orderMatrixAuthority';
+import { isPaymentCertificateServerAuthorityEnabled } from '../payments/paymentCertificateAuthority';
+import {
+  ensureCertificatesReadyForDevelopment,
+  getDevelopmentCertificateLoadError,
+  getDevelopmentCertificateLoadState,
+} from '../payments/paymentCertificateServerCache';
 import DevelopmentCommercialEvents from './DevelopmentCommercialEvents';
 import DevelopmentOverview, {
   DevelopmentPackagesTab,
@@ -97,6 +103,8 @@ export default function DevelopmentWorkspace({
   const [commercialEventsLoadError, setCommercialEventsLoadError] = useState('');
   const [matricesLoadState, setMatricesLoadState] = useState('idle');
   const [matricesLoadError, setMatricesLoadError] = useState('');
+  const [certificatesLoadState, setCertificatesLoadState] = useState('idle');
+  const [certificatesLoadError, setCertificatesLoadError] = useState('');
   const [packageLaunch, setPackageLaunch] = useState(null);
   const [packageLaunchError, setPackageLaunchError] = useState('');
   const [stablePackageWorkspaceOrder, setStablePackageWorkspaceOrder] = useState(null);
@@ -132,6 +140,8 @@ export default function DevelopmentWorkspace({
     setCommercialEventsLoadError('');
     setMatricesLoadState('idle');
     setMatricesLoadError('');
+    setCertificatesLoadState('idle');
+    setCertificatesLoadError('');
     setCommercialNavigationStack([]);
     setDevelopmentCommercialTarget(null);
     setCommercialRegisterError('');
@@ -193,6 +203,32 @@ export default function DevelopmentWorkspace({
         setServerPackages(packages);
         setPackagesLoadState('loaded');
 
+        if (isPaymentCertificateServerAuthorityEnabled()) {
+          setCertificatesLoadState('loading');
+          setCertificatesLoadError('');
+          try {
+            await ensureCertificatesReadyForDevelopment(development.id);
+            if (cancelled) return;
+            const certState = getDevelopmentCertificateLoadState(development.id);
+            setCertificatesLoadState(certState);
+            if (certState === 'error') {
+              const certError = getDevelopmentCertificateLoadError(development.id);
+              setCertificatesLoadError(
+                certError?.message || 'Unable to load certificate data. Please try again.'
+              );
+            }
+          } catch (certError) {
+            if (cancelled) return;
+            setCertificatesLoadState('error');
+            setCertificatesLoadError(
+              certError?.message || 'Unable to load certificate data. Please try again.'
+            );
+          }
+        } else {
+          setCertificatesLoadState('loaded');
+          setCertificatesLoadError('');
+        }
+
         const ceState = getCommercialEventsLoadState(development.id);
         setCommercialEventsLoadState(ceState);
         if (ceState === 'error' && isCommercialEventServerAuthorityEnabled()) {
@@ -217,6 +253,12 @@ export default function DevelopmentWorkspace({
         setPackagesLoadError(
           error?.message || 'Failed to load packages from the server.'
         );
+        if (isPaymentCertificateServerAuthorityEnabled()) {
+          setCertificatesLoadState('error');
+          setCertificatesLoadError(
+            error?.message || 'Unable to load certificate data. Please try again.'
+          );
+        }
         setCommercialEventsLoadState(getCommercialEventsLoadState(development.id));
         if (
           isCommercialEventServerAuthorityEnabled() &&
@@ -305,6 +347,17 @@ export default function DevelopmentWorkspace({
   const matricesReady = !matricesAuthorityEnabled || matricesLoadState === 'loaded';
   const matricesErrorMessage =
     matricesAuthorityEnabled && matricesLoadState === 'error' ? matricesLoadError : '';
+
+  const certificatesAuthorityEnabled = isPaymentCertificateServerAuthorityEnabled();
+  const certificatesLoading =
+    certificatesAuthorityEnabled &&
+    (certificatesLoadState === 'loading' || certificatesLoadState === 'idle');
+  const certificatesReady =
+    !certificatesAuthorityEnabled || certificatesLoadState === 'loaded';
+  const certificatesErrorMessage =
+    certificatesAuthorityEnabled && certificatesLoadState === 'error'
+      ? certificatesLoadError
+      : '';
 
   const packageIdentityError =
     packagesLoadState === 'error' ? packagesLoadError : packageLaunchError;
@@ -900,6 +953,9 @@ export default function DevelopmentWorkspace({
               refreshToken={cvrRefresh}
               pageNavigation={workspaceNavigation}
               onCvrChanged={handleCvrChanged}
+              certificatesLoading={certificatesLoading}
+              certificatesReady={certificatesReady}
+              certificatesError={certificatesErrorMessage}
               onBackToSummary={() => {
                 setCvrView('summary');
                 setCvrFocusCostCodeKey(null);
@@ -918,6 +974,9 @@ export default function DevelopmentWorkspace({
               periodKey={cvrPeriodKey}
               refreshToken={cvrRefresh}
               pageNavigation={workspaceNavigation}
+              certificatesLoading={certificatesLoading}
+              certificatesReady={certificatesReady}
+              certificatesError={certificatesErrorMessage}
               onContinueToCvr={() => setCvrView('worksheet')}
               onOpenWorksheetForHead={(head) => setCvrHeadFilter(head)}
               onOpenWorksheetForFamily={(head) => setCvrHeadFilter(head)}
@@ -936,6 +995,9 @@ export default function DevelopmentWorkspace({
               development={development}
               pos={pos}
               refreshToken={cvrRefresh}
+              certificatesLoading={certificatesLoading}
+              certificatesReady={certificatesReady}
+              certificatesError={certificatesErrorMessage}
               onPrimaryActionChange={setCvrRegisterAction}
               onOpenPeriod={(periodKey) => {
                 setCvrPeriodKey(periodKey);

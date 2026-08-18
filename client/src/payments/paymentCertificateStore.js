@@ -30,6 +30,15 @@ import {
   getCertificateFinancialReadiness,
   getCertificateLoadError,
 } from './paymentCertificateServerCache';
+import {
+  approveCertificateOnServer,
+  createCertificateOnServer,
+  deleteCertificateOnServer,
+  rejectCertificateOnServer,
+  submitCertificateOnServer,
+  updateCertificateCommercialLinesOnServer,
+  updateCertificateProgressOnServer,
+} from './paymentCertificateServerMutations';
 
 const STORAGE_KEY = 'buildlite_subcontract_packages_v1';
 
@@ -351,6 +360,10 @@ function updateCertificateRecord(orderKey, certificateId, updater) {
 }
 
 export function createCertificate(orderKey, order = {}) {
+  if (isPaymentCertificateServerAuthorityEnabled()) {
+    return createCertificateOnServer(orderKey, order);
+  }
+
   const gate = gateCreateFromCertificates(listLocalCertificates(orderKey));
   if (!gate.ok) {
     return { ok: false, errors: [gate.reason] };
@@ -403,7 +416,11 @@ export function createCertificate(orderKey, order = {}) {
   return { ok: true, certificate };
 }
 
-export function deleteCertificate(orderKey, certificateId) {
+export function deleteCertificate(orderKey, certificateId, order = null) {
+  if (isPaymentCertificateServerAuthorityEnabled()) {
+    return deleteCertificateOnServer(orderKey, certificateId, order);
+  }
+
   const all = readAll();
   const record = normalizePackageRecord(all[orderKey]);
   if (!record) {
@@ -431,7 +448,11 @@ export function deleteCertificate(orderKey, certificateId) {
   return { ok: true };
 }
 
-export function submitCertificate(orderKey, certificateId) {
+export function submitCertificate(orderKey, certificateId, order = null) {
+  if (isPaymentCertificateServerAuthorityEnabled()) {
+    return submitCertificateOnServer(orderKey, certificateId, order);
+  }
+
   const result = updateCertificateRecord(orderKey, certificateId, (certificate) => {
     if (certificate.status !== CERTIFICATE_DEFAULT_STATUS) {
       return null;
@@ -457,8 +478,12 @@ export function submitCertificate(orderKey, certificateId) {
 }
 
 export function approveCertificate(orderKey, certificateId, totals = {}, order = null) {
+  if (isPaymentCertificateServerAuthorityEnabled()) {
+    return approveCertificateOnServer(orderKey, certificateId, order);
+  }
+
   const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
-  const certificate = getLocalCertificate(orderKey, certificateId);
+  const certificate = resolveCertificateForMutation(orderKey, certificateId, order);
 
   if (certificate?.status === 'submitted') {
     const recoveryValidation = validateRecoveryLinesForCertificate({
@@ -526,7 +551,11 @@ export function approveCertificate(orderKey, certificateId, totals = {}, order =
   return result;
 }
 
-export function rejectCertificate(orderKey, certificateId, comment = '') {
+export function rejectCertificate(orderKey, certificateId, comment = '', order = null) {
+  if (isPaymentCertificateServerAuthorityEnabled()) {
+    return rejectCertificateOnServer(orderKey, certificateId, comment, order);
+  }
+
   const trimmed = String(comment || '').trim();
   if (!trimmed) {
     return { ok: false, errors: ['A rejection comment is required.'] };
@@ -561,7 +590,23 @@ export function rejectCertificate(orderKey, certificateId, comment = '') {
   return result;
 }
 
-export function updateCertificateProgress(orderKey, certificateId, progressPatch) {
+export function updateCertificateProgress(
+  orderKey,
+  certificateId,
+  progressPatch,
+  order = null,
+  options = {}
+) {
+  if (isPaymentCertificateServerAuthorityEnabled()) {
+    return updateCertificateProgressOnServer(
+      orderKey,
+      certificateId,
+      progressPatch,
+      order,
+      options
+    );
+  }
+
   const all = readAll();
   const record = normalizePackageRecord(all[orderKey]);
   if (!record) {
@@ -605,15 +650,28 @@ export function updateCertificateCellProgress(
   orderKey,
   certificateId,
   cellKey,
-  thisCertificatePct
+  thisCertificatePct,
+  order = null
 ) {
-  return updateCertificateProgress(orderKey, certificateId, {
-    [cellKey]: { thisCertificatePct },
-  });
+  return updateCertificateProgress(
+    orderKey,
+    certificateId,
+    {
+      [cellKey]: { thisCertificatePct },
+    },
+    order
+  );
 }
 
 function resolveDevelopmentIdForOrderKey(orderKey, order = null) {
   return resolvePackageDevelopmentId(order) || resolveDevelopmentIdFromOrderKey(orderKey);
+}
+
+function resolveCertificateForMutation(orderKey, certificateId, order = null) {
+  if (isPaymentCertificateServerAuthorityEnabled()) {
+    return getCertificate(orderKey, certificateId, order);
+  }
+  return getLocalCertificate(orderKey, certificateId);
 }
 
 /**
@@ -632,6 +690,39 @@ export function updateCertificateCommercialLines(
       ok: false,
       errors: ['Certificate commercial line update requires a line updater function.'],
     };
+  }
+
+  if (isPaymentCertificateServerAuthorityEnabled()) {
+    return updateCertificateCommercialLinesOnServer(
+      orderKey,
+      certificateId,
+      (certificate) => {
+        if (!isCertificateEditable(certificate)) {
+          const error = new Error('Only draft certificates can be edited.');
+          error.lineUpdateErrors = ['Only draft certificates can be edited.'];
+          throw error;
+        }
+
+        const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
+        const currentLines = normalizeCommercialLines(certificate.commercialLines);
+        const proposedLines = normalizeCommercialLines(lineUpdater(currentLines));
+        const validation = validateCommercialLinesForCertificate({
+          orderKey,
+          certificateId,
+          developmentId,
+          commercialLines: proposedLines,
+        });
+
+        if (!validation.valid) {
+          const error = new Error(validation.errors[0] || 'Invalid commercial lines.');
+          error.lineUpdateErrors = validation.errors;
+          throw error;
+        }
+
+        return normalizeCommercialLines(validation.commercialLines);
+      },
+      order
+    );
   }
 
   const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
@@ -687,7 +778,7 @@ export function addCommercialLineToCertificate(
   order = null
 ) {
   const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
-  const certificate = getLocalCertificate(orderKey, certificateId);
+  const certificate = resolveCertificateForMutation(orderKey, certificateId, order);
   if (!certificate) {
     return { ok: false, errors: ['Certificate not found.'] };
   }
@@ -744,7 +835,7 @@ export function updateCommercialLineAmount(
   amountThisCertificate,
   order = null
 ) {
-  const certificate = getLocalCertificate(orderKey, certificateId);
+  const certificate = resolveCertificateForMutation(orderKey, certificateId, order);
   if (!certificate) {
     return { ok: false, errors: ['Certificate not found.'] };
   }
@@ -769,7 +860,7 @@ export function removeCommercialLineFromCertificate(
   lineId,
   order = null
 ) {
-  const certificate = getLocalCertificate(orderKey, certificateId);
+  const certificate = resolveCertificateForMutation(orderKey, certificateId, order);
   if (!certificate) {
     return { ok: false, errors: ['Certificate not found.'] };
   }
@@ -794,7 +885,7 @@ export function addRecoveryLineToCertificate(
   order = null
 ) {
   const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
-  const certificate = getLocalCertificate(orderKey, certificateId);
+  const certificate = resolveCertificateForMutation(orderKey, certificateId, order);
   if (!certificate) {
     return { ok: false, errors: ['Certificate not found.'] };
   }
@@ -865,7 +956,7 @@ export function updateRecoveryLineAmount(
   order = null
 ) {
   const developmentId = resolveDevelopmentIdForOrderKey(orderKey, order);
-  const certificate = getLocalCertificate(orderKey, certificateId);
+  const certificate = resolveCertificateForMutation(orderKey, certificateId, order);
   if (!certificate) {
     return { ok: false, errors: ['Certificate not found.'] };
   }
@@ -908,7 +999,7 @@ export function removeRecoveryLineFromCertificate(
   lineId,
   order = null
 ) {
-  const certificate = getLocalCertificate(orderKey, certificateId);
+  const certificate = resolveCertificateForMutation(orderKey, certificateId, order);
   if (!certificate) {
     return { ok: false, errors: ['Certificate not found.'] };
   }

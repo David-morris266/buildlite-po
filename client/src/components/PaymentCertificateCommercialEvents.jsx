@@ -50,7 +50,7 @@ export default function PaymentCertificateCommercialEvents({
     setFeedback({ type: 'error', message });
   }
 
-  function handleAddLine() {
+  async function handleAddLine() {
     if (!selectedEventId) {
       showError('Select a commercial event to add.');
       return;
@@ -69,12 +69,14 @@ export default function PaymentCertificateCommercialEvents({
       return;
     }
 
-    const result = addCommercialLineToCertificate(
-      orderKey,
-      certificate.id,
-      selectedEventId,
-      parsed,
-      order
+    const result = await Promise.resolve(
+      addCommercialLineToCertificate(
+        orderKey,
+        certificate.id,
+        selectedEventId,
+        parsed,
+        order
+      )
     );
 
     if (!result.ok) {
@@ -96,7 +98,7 @@ export default function PaymentCertificateCommercialEvents({
     setPendingAmounts((current) => ({ ...current, [lineId]: rawValue }));
   }
 
-  function handleAmountCommit(line) {
+  async function handleAmountCommit(line) {
     const rawValue = pendingAmounts[line.id] ?? line.amountThisCertificate;
     const parsed = Number.parseFloat(String(rawValue));
     if (!Number.isFinite(parsed)) {
@@ -104,12 +106,14 @@ export default function PaymentCertificateCommercialEvents({
       return;
     }
 
-    const result = updateCommercialLineAmount(
-      orderKey,
-      certificate.id,
-      line.id,
-      parsed,
-      order
+    const result = await Promise.resolve(
+      updateCommercialLineAmount(
+        orderKey,
+        certificate.id,
+        line.id,
+        parsed,
+        order
+      )
     );
 
     if (!result.ok) {
@@ -126,12 +130,14 @@ export default function PaymentCertificateCommercialEvents({
     refresh();
   }
 
-  function handleRemoveLine(lineId) {
-    const result = removeCommercialLineFromCertificate(
-      orderKey,
-      certificate.id,
-      lineId,
-      order
+  async function handleRemoveLine(lineId) {
+    const result = await Promise.resolve(
+      removeCommercialLineFromCertificate(
+        orderKey,
+        certificate.id,
+        lineId,
+        order
+      )
     );
 
     if (!result.ok) {

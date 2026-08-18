@@ -20,6 +20,14 @@ import {
   resolveCertificatesForPackage,
 } from './paymentCertificateStore';
 import {
+  buildValuationGridFromSnapshot,
+  getPriorThisCertificatePct,
+  getUiCellProgress,
+  progressUsesStableIdentity,
+  resolveStableIdentityForUiCell,
+  sumPreviousStableProgress,
+} from './paymentCertificateProgressAdapter';
+import {
   calculatePreviousApprovedCommercialEventGross,
   calculatePreviousApprovedGrossWorks,
   formatSignedCommercialLineTotal,
@@ -42,6 +50,12 @@ export const PROGRESS_PRESETS = [10, 25, 40, 50, 60, 75, 90, 100];
 
 const DEFAULT_RETENTION_RATE = 0.05;
 const DEFAULT_VAT_RATE = 0.2;
+
+function readStoredCertificateMoney(value) {
+  if (value == null || value === '') return null;
+  const parsed = roundMoney(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 function extractPoVatRate(po) {
   const raw = Number(po?.totals?.vatRate ?? po?.vatRateDefault ?? DEFAULT_VAT_RATE);
@@ -154,27 +168,47 @@ export function parseCellKey(cellKey) {
   };
 }
 
-export function getCellProgress(certificate, cellKey) {
-  return certificate?.progress?.[cellKey]?.thisCertificatePct ?? 0;
+export function getCellProgress(certificate, cellKey, matrix = null) {
+  return getUiCellProgress(certificate, cellKey, matrix);
 }
 
 export function validateThisCertificatePct(previousCumulativePct, rawEntry, options) {
   return validateThisCertificatePctCore(previousCumulativePct, rawEntry, options);
 }
 
-export function getPreviousProgressForCell(orderKey, certificate, cellKey) {
-  const resolved = resolveCertificatesForPackage(orderKey);
-  const prior = (resolved.ready ? resolved.certificates : []).filter(
+function listPriorApprovedCertificates(orderKey, certificate, order = null) {
+  const resolved = resolveCertificatesForPackage(orderKey, order);
+  return (resolved.ready ? resolved.certificates : []).filter(
     (item) =>
       item.certificateNumber < certificate.certificateNumber &&
       isApprovedCommercialCertificate(item)
   );
+}
+
+export function getPreviousProgressForCell(orderKey, certificate, cellKey, options = {}) {
+  const { order = null, matrix = null, plotId = null, stageKey = null } = options;
+  const prior = listPriorApprovedCertificates(orderKey, certificate, order);
+  const useStable =
+    Boolean(plotId && stageKey) ||
+    progressUsesStableIdentity(certificate?.progress) ||
+    prior.some(
+      (item) =>
+        progressUsesStableIdentity(item.progress) ||
+        Array.isArray(item.valuationSnapshot?.cells)
+    );
+
+  if (useStable) {
+    const identity = resolveStableIdentityForUiCell(cellKey, matrix, plotId, stageKey);
+    if (identity.ok) {
+      return sumPreviousStableProgress(prior, identity.plotId, identity.stageKey);
+    }
+  }
 
   let cumulativePct = 0;
   let lastCertNumber = null;
 
   for (const priorCert of prior) {
-    const pct = getCellProgress(priorCert, cellKey);
+    const pct = getCellProgress(priorCert, cellKey, matrix);
     if (pct > 0) {
       cumulativePct = roundPct(Math.min(100, cumulativePct + pct));
       lastCertNumber = priorCert.certificateNumber;
@@ -205,11 +239,20 @@ export function buildCertificateCellModel({
   contractValue,
   thisCertificatePct,
   selected = false,
+  order = null,
+  matrix = null,
+  plotId = null,
+  stageKey = null,
 }) {
   const cellKey = buildCellKey(plotIndex, stageIndex);
   const contract = roundMoney(contractValue);
   const { previousCumulativePct, previousCertificateNumber } =
-    getPreviousProgressForCell(orderKey, certificate, cellKey);
+    getPreviousProgressForCell(orderKey, certificate, cellKey, {
+      order,
+      matrix,
+      plotId,
+      stageKey,
+    });
 
   const validation = validateThisCertificatePct(
     previousCumulativePct,
@@ -273,7 +316,7 @@ export function buildCertificateValuationGrid(
     const cells = matrix.stages.map((stageLabel, stageIndex) => {
       const cellKey = buildCellKey(plotIndex, stageIndex);
       const contractValue = Number(plot.values?.[stageIndex]) || 0;
-      const thisCertificatePct = getCellProgress(certificate, cellKey);
+      const thisCertificatePct = getCellProgress(certificate, cellKey, matrix);
 
       return buildCertificateCellModel({
         orderKey,
@@ -286,6 +329,10 @@ export function buildCertificateValuationGrid(
         contractValue,
         thisCertificatePct,
         selected: selectedKeys.has(cellKey),
+        order: options.order || null,
+        matrix,
+        plotId: plot.id || null,
+        stageKey: stageLabel,
       });
     });
 
@@ -414,8 +461,81 @@ export function buildCertificateCommercialTotals(
 }
 
 export function summarizeCertificateProgress(orderKey, certificateId, order = null) {
-  const certificate = getCertificate(orderKey, certificateId);
+  const certificate = getCertificate(orderKey, certificateId, order);
   if (!certificate) return null;
+
+  const lockedWithSnapshot =
+    isApprovedCommercialCertificate(certificate) &&
+    Array.isArray(certificate.valuationSnapshot?.cells) &&
+    certificate.valuationSnapshot.cells.length > 0;
+
+  if (lockedWithSnapshot) {
+    const grid = buildValuationGridFromSnapshot(certificate);
+    const currentContractValue =
+      buildPackageCommercialDisplayFields(order || { orderKey }).currentPackageValue;
+    const previousGrossWorks = calculatePreviousApprovedGrossWorks(orderKey, certificate);
+    const snapshotTotals = certificate.valuationSnapshot?.totals || {};
+    const frozenGross =
+      readStoredCertificateMoney(certificate.grossValue) ??
+      readStoredCertificateMoney(snapshotTotals.grossWorksThisCertificate) ??
+      readStoredCertificateMoney(snapshotTotals.grossThisCertificate);
+    const frozenNet =
+      readStoredCertificateMoney(certificate.netValue) ??
+      readStoredCertificateMoney(snapshotTotals.netPayment);
+
+    return {
+      certificate,
+      grid,
+      totals: {
+        matrixGrossThisCertificate:
+          readStoredCertificateMoney(certificate.matrixGross) ??
+          readStoredCertificateMoney(snapshotTotals.matrixGrossThisCertificate) ??
+          frozenGross,
+        commercialEventGrossThisCertificate:
+          readStoredCertificateMoney(certificate.commercialEventGross) ??
+          readStoredCertificateMoney(snapshotTotals.commercialEventGrossThisCertificate) ??
+          0,
+        grossWorksThisCertificate: frozenGross,
+        grossThisCertificate: frozenGross,
+        recoveryDeductionSigned:
+          readStoredCertificateMoney(certificate.recoverySigned) ??
+          readStoredCertificateMoney(snapshotTotals.recoveryDeductionSigned) ??
+          0,
+        recoveryDeductionMagnitude: Math.abs(
+          readStoredCertificateMoney(certificate.recoverySigned) ??
+            readStoredCertificateMoney(snapshotTotals.recoveryDeductionSigned) ??
+            0
+        ),
+        previousCertified: previousGrossWorks,
+        certifiedToDate: roundMoney(previousGrossWorks + (frozenGross || 0)),
+        remainingContract:
+          currentContractValue == null
+            ? null
+            : roundMoney(
+                roundMoney(currentContractValue) -
+                  roundMoney(previousGrossWorks + (frozenGross || 0))
+              ),
+        retention:
+          readStoredCertificateMoney(certificate.retention) ??
+          readStoredCertificateMoney(snapshotTotals.retention),
+        vat:
+          readStoredCertificateMoney(certificate.vat) ??
+          readStoredCertificateMoney(snapshotTotals.vat),
+        netPayment: frozenNet,
+        currentContractValue:
+          currentContractValue == null ? null : roundMoney(currentContractValue),
+        contractTotal:
+          currentContractValue == null ? null : roundMoney(currentContractValue),
+        overCertified: false,
+      },
+      matrix: null,
+      matrixReady: true,
+      matrixLoadState: 'snapshot',
+      matrixError: null,
+      frozenTotals: true,
+      fromValuationSnapshot: true,
+    };
+  }
 
   const matrixResolution = resolveOrderMatrixForPackage(order || orderKey, order?.developmentId);
   const matrixReady = matrixResolution.ready;
@@ -461,6 +581,7 @@ export function summarizeCertificateProgress(orderKey, certificateId, order = nu
 
   const grid = buildCertificateValuationGrid(orderKey, certificate, matrix, new Set(), {
     developmentId: order?.developmentId,
+    order,
   });
   if (!grid) return null;
 
@@ -619,24 +740,23 @@ export function buildCommercialSummaryItems(totals, { matrixReady = true } = {})
   return items;
 }
 
-export function getPreviousCertificationDetails(orderKey, certificate, cellKeys) {
-  const resolved = resolveCertificatesForPackage(orderKey);
-  const prior = (resolved.ready ? resolved.certificates : []).filter(
-    (item) =>
-      item.certificateNumber < certificate.certificateNumber &&
-      isApprovedCommercialCertificate(item)
-  );
+export function getPreviousCertificationDetails(orderKey, certificate, cellKeys, options = {}) {
+  const { order = null, matrix = null } = options;
+  const prior = listPriorApprovedCertificates(orderKey, certificate, order);
 
   return cellKeys.map((cellKey) => {
+    const identity = resolveStableIdentityForUiCell(cellKey, matrix);
     const entries = prior
       .map((priorCert) => ({
         certificateNumber: priorCert.certificateNumber,
-        thisCertificatePct: getCellProgress(priorCert, cellKey),
+        thisCertificatePct: identity.ok
+          ? getPriorThisCertificatePct(priorCert, identity.plotId, identity.stageKey)
+          : getCellProgress(priorCert, cellKey, matrix),
       }))
       .filter((entry) => entry.thisCertificatePct > 0);
 
     const { previousCumulativePct, previousCertificateNumber } =
-      getPreviousProgressForCell(orderKey, certificate, cellKey);
+      getPreviousProgressForCell(orderKey, certificate, cellKey, { order, matrix });
 
     return {
       cellKey,

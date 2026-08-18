@@ -36,7 +36,16 @@ function StatusBadge({ status }) {
   );
 }
 
-function CertificateDialog({ title, children, confirmLabel, cancelLabel, onCancel, onConfirm, confirmClassName }) {
+function CertificateDialog({
+  title,
+  children,
+  confirmLabel,
+  cancelLabel,
+  onCancel,
+  onConfirm,
+  confirmClassName,
+  confirmDisabled = false,
+}) {
   return (
     <div className="po-cert-delete-backdrop" role="presentation">
       <div className="po-cert-delete modal" role="dialog" aria-modal="true">
@@ -50,6 +59,7 @@ function CertificateDialog({ title, children, confirmLabel, cancelLabel, onCance
             type="button"
             className={confirmClassName || 'po-btn-primary'}
             onClick={onConfirm}
+            disabled={confirmDisabled}
           >
             {confirmLabel}
           </button>
@@ -95,6 +105,7 @@ export default function PaymentCertificateDetail({
   const [rejectComment, setRejectComment] = useState('');
   const [draftSavedAt, setDraftSavedAt] = useState(null);
   const [workflowFeedback, setWorkflowFeedback] = useState(null);
+  const [lifecycleBusy, setLifecycleBusy] = useState(false);
 
   const summary = useMemo(() => {
     void refreshToken;
@@ -129,9 +140,33 @@ export default function PaymentCertificateDetail({
   }
 
   function handleProgressChange(patch) {
-    updateCertificateProgress(order.orderKey, certificateId, patch);
-    setDraftSavedAt(new Date().toISOString());
-    refresh();
+    return Promise.resolve(
+      updateCertificateProgress(order.orderKey, certificateId, patch, order, {
+        matrix: summary?.matrix,
+      })
+    )
+      .then((result) => {
+        if (!result?.ok) {
+          setWorkflowFeedback({
+            type: 'error',
+            message: result?.errors?.[0] || 'Could not save certificate progress.',
+          });
+        } else {
+          setDraftSavedAt(new Date().toISOString());
+          setWorkflowFeedback(null);
+        }
+        refresh();
+        return result;
+      })
+      .catch((error) => {
+        const message = error?.message || 'Could not save certificate progress.';
+        setWorkflowFeedback({
+          type: 'error',
+          message,
+        });
+        refresh();
+        return { ok: false, errors: [message] };
+      });
   }
 
   function handleSaveDraft() {
@@ -139,48 +174,74 @@ export default function PaymentCertificateDetail({
     refresh();
   }
 
-  function handleSubmitConfirm() {
-    const result = submitCertificate(order.orderKey, certificateId);
-    if (!result.ok) {
-      setWorkflowFeedback({
-        type: 'error',
-        message: result.errors?.[0] || 'Could not submit certificate.',
-      });
-      return;
-    }
+  async function handleSubmitConfirm() {
+    if (lifecycleBusy) return;
+    setLifecycleBusy(true);
+    try {
+      const result = await Promise.resolve(
+        submitCertificate(order.orderKey, certificateId, order)
+      );
+      if (!result.ok) {
+        setWorkflowFeedback({
+          type: 'error',
+          message: result.errors?.[0] || 'Could not submit certificate.',
+        });
+        return;
+      }
 
-    setWorkflowFeedback(null);
-    setDialog(null);
-    refresh();
+      setWorkflowFeedback(null);
+      setDialog(null);
+      refresh();
+    } finally {
+      setLifecycleBusy(false);
+    }
   }
 
-  function handleApproveConfirm() {
-    const result = approveCertificate(
-      order.orderKey,
-      certificateId,
-      summary?.totals || {},
-      order
-    );
+  async function handleApproveConfirm() {
+    if (lifecycleBusy) return;
+    setLifecycleBusy(true);
+    try {
+      const result = await Promise.resolve(
+        approveCertificate(order.orderKey, certificateId, summary?.totals || {}, order)
+      );
 
-    if (!result.ok) {
-      setWorkflowFeedback({
-        type: 'error',
-        message: result.errors?.[0] || 'Could not approve certificate.',
-      });
-      return;
+      if (!result.ok) {
+        setWorkflowFeedback({
+          type: 'error',
+          message: result.errors?.[0] || 'Could not approve certificate.',
+        });
+        return;
+      }
+
+      setWorkflowFeedback(null);
+      setDialog(null);
+      refresh();
+    } finally {
+      setLifecycleBusy(false);
     }
-
-    setWorkflowFeedback(null);
-    setDialog(null);
-    refresh();
   }
 
-  function handleRejectConfirm() {
-    const result = rejectCertificate(order.orderKey, certificateId, rejectComment);
-    if (!result.ok) return;
-    setRejectComment('');
-    setDialog(null);
-    refresh();
+  async function handleRejectConfirm() {
+    if (lifecycleBusy) return;
+    setLifecycleBusy(true);
+    try {
+      const result = await Promise.resolve(
+        rejectCertificate(order.orderKey, certificateId, rejectComment, order)
+      );
+      if (!result.ok) {
+        setWorkflowFeedback({
+          type: 'error',
+          message: result.errors?.[0] || 'Could not reject certificate.',
+        });
+        return;
+      }
+      setRejectComment('');
+      setWorkflowFeedback(null);
+      setDialog(null);
+      refresh();
+    } finally {
+      setLifecycleBusy(false);
+    }
   }
 
   return (
@@ -235,6 +296,12 @@ export default function PaymentCertificateDetail({
         <CertificateAuditHistory items={auditItems} />
       </header>
 
+      {workflowFeedback?.type === 'error' && !dialog ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          {workflowFeedback.message}
+        </div>
+      ) : null}
+
       <div className="po-cert-detail__actions">
         {editable ? (
           <>
@@ -277,7 +344,7 @@ export default function PaymentCertificateDetail({
                 setWorkflowFeedback(null);
                 setDialog('approve');
               }}
-              disabled={summary?.matrixReady === false}
+              disabled={summary?.matrixReady === false || lifecycleBusy}
             >
               Approve &amp; Lock
             </button>
@@ -357,6 +424,7 @@ export default function PaymentCertificateDetail({
           orderKey={order.orderKey}
           certificate={certificate}
           matrix={summary?.matrix}
+          valuationGrid={summary?.fromValuationSnapshot ? summary.grid : null}
           developmentId={order.developmentId}
           editable={editable && summary?.matrixReady !== false}
           auditItems={auditItems}
@@ -376,6 +444,7 @@ export default function PaymentCertificateDetail({
             setDialog(null);
           }}
           onConfirm={handleSubmitConfirm}
+          confirmDisabled={lifecycleBusy}
         >
           {workflowFeedback?.type === 'error' ? (
             <div className="po-list-feedback po-list-feedback--error" role="alert">
@@ -398,6 +467,7 @@ export default function PaymentCertificateDetail({
             setDialog(null);
           }}
           onConfirm={handleApproveConfirm}
+          confirmDisabled={lifecycleBusy}
         >
           {workflowFeedback?.type === 'error' ? (
             <div className="po-list-feedback po-list-feedback--error" role="alert">
@@ -418,10 +488,17 @@ export default function PaymentCertificateDetail({
           confirmClassName="po-cert-delete__confirm"
           onCancel={() => {
             setRejectComment('');
+            setWorkflowFeedback(null);
             setDialog(null);
           }}
           onConfirm={handleRejectConfirm}
+          confirmDisabled={lifecycleBusy}
         >
+          {workflowFeedback?.type === 'error' ? (
+            <div className="po-list-feedback po-list-feedback--error" role="alert">
+              {workflowFeedback.message}
+            </div>
+          ) : null}
           <p>The certificate will return to draft status and editing will be re-enabled.</p>
           <label className="po-cert-detail__reject-label" htmlFor="po-cert-reject-comment">
             Rejection comment

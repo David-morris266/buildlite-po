@@ -1,9 +1,9 @@
 /**
- * BL-030B — Payment Certificate server authority feature flag.
+ * BL-030B / BL-030C — Payment Certificate server authority feature flag.
  *
  * Default OFF: localStorage (paymentCertificateStore) remains runtime authority.
- * When true in tests: reads use the server cache with no localStorage fallback.
- * Live writes stay localStorage until BL-030C.
+ * When true: V1 certificate reads and writes use the server cache/API only.
+ * There is no mixed runtime and no localStorage certificate fallback.
  */
 
 export function isPaymentCertificateServerAuthorityEnabled() {

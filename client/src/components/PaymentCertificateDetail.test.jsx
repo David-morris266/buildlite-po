@@ -125,29 +125,55 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     });
   }
 
-  function clickDialogConfirm() {
+  async function clickDialogConfirm() {
     const dialog = document.querySelector('[role="dialog"]');
     expect(dialog).toBeTruthy();
     const button = [...dialog.querySelectorAll('button')].find((node) =>
       node.textContent?.includes('Approve & Lock')
     );
     expect(button).toBeTruthy();
-    act(() => {
+    await act(async () => {
       button.click();
     });
   }
 
-  it('E. keeps approval dialog open and surfaces validation errors when approve fails', () => {
+  it('E. keeps approval dialog open and surfaces validation errors when approve fails', async () => {
     renderDetail();
     clickButton('Approve & Lock');
     expect(document.body.textContent).toContain('Approve & lock Certificate No. 3?');
 
-    clickDialogConfirm();
+    await clickDialogConfirm();
 
     expect(approveCertificate).toHaveBeenCalledTimes(1);
     expect(document.body.textContent).toContain('Approve & lock Certificate No. 3?');
     expect(document.body.textContent).toContain(
       'CE-0019 is now Closed and can no longer be deducted'
     );
+  });
+
+  it('disables duplicate approve clicks while the request is in flight', async () => {
+    let resolveApprove;
+    approveCertificate.mockReturnValue(
+      new Promise((resolve) => {
+        resolveApprove = resolve;
+      })
+    );
+    renderDetail();
+    clickButton('Approve & Lock');
+    const dialog = document.querySelector('[role="dialog"]');
+    const confirm = [...dialog.querySelectorAll('button')].find((node) =>
+      node.textContent?.includes('Approve & Lock')
+    );
+    await act(async () => {
+      confirm.click();
+    });
+    expect(confirm.disabled).toBe(true);
+    await act(async () => {
+      confirm.click();
+    });
+    expect(approveCertificate).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveApprove({ ok: true, certificate: { status: 'locked' } });
+    });
   });
 });

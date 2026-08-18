@@ -1,8 +1,8 @@
 # BuildLite Database Reference
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
-**Last product slice:** BL-029D Order Matrix server authority.  
-**NEXT:** BL-030 Payment Certificate Persistence.
+**Last product slice:** BL-030C Payment Certificate server authority.  
+**NEXT:** BL-031 CVR & Ledger Persistence. One post-bank BL-030 check remains: locked certificate snapshot vs later matrix replacement.
 
 ---
 
@@ -17,13 +17,13 @@ Postgres is already the authority for:
 | `005_packages.sql` | `packages`, `package_purchase_orders` | BL-027B |
 | `006_commercial_events.sql` | `commercial_events`, `commercial_event_audit` | BL-028 |
 | `007_package_order_matrices.sql` | `package_order_matrices` | BL-029 complete (schema/API + client server authority) |
+| `008_package_payment_certificates.sql` | `package_payment_certificates`, `package_payment_certificate_audit` | BL-030 complete (schema/API + client server authority). One post-bank check remains: locked snapshot vs later matrix replacement. |
 
 Still **browser/localStorage** (not yet Postgres authority):
 
-- BuildLite V1 payment certificates (matrix progress, commercial lines, recovery deductions, frozen totals) — **BL-030**
 - CVR periods/cost centres and purchase ledger — **BL-031**
 
-Order matrices are server-authoritative when `VITE_MATRIX_SERVER_AUTHORITY=true`. `certificate.progress` remains browser-local until BL-030.
+Order matrices are server-authoritative when `VITE_MATRIX_SERVER_AUTHORITY=true`. V1 payment certificates are server-authoritative when `VITE_CERTIFICATE_SERVER_AUTHORITY=true`. Do not commit `.env.local`.
 
 The legacy `payment_certificates` / `payment_certificate_lines` tables below are **not** the V1 React certificate engine. Do not merge those models merely because a certificate table already exists (Doc 67 §21).
 
@@ -45,12 +45,12 @@ The remainder of this file is the Phase 0 / BL-006 production schema reference. 
 
 BuildLite uses a single Postgres database (`buildlite_po_db` on Render). Schema is managed via:
 
-- Versioned SQL migrations in `server/migrations/` (`001`–`007`; `001`–`003` are the BL-006 production baseline)
+- Versioned SQL migrations in `server/migrations/` (`001`–`008`; `001`–`003` are the BL-006 production baseline)
 - `schema_migrations` tracking table
 - `npm run migrate` and `npm run seed` scripts
 - `db.js` init aligned with production plus later Doc 67 tables (fallback when migrations have not run)
 
-**Production database was the source of truth for BL-006.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files. Later Doc 67 migrations (`004`–`007`) are additive and must also not be rewritten after apply.
+**Production database was the source of truth for BL-006.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files. Later Doc 67 migrations (`004`–`008`) are additive and must also not be rewritten after apply.
 
 ---
 
@@ -221,6 +221,7 @@ Production authority for certificate numbering is **`legacy_cert_no`**, enforced
 | `005_packages.sql` | BL-027B: packages + package PO membership |
 | `006_commercial_events.sql` | BL-028A: commercial events + CE audit |
 | `007_package_order_matrices.sql` | BL-029: plot-stage order matrix schema/API; client server-authority cutover in BL-029D |
+| `008_package_payment_certificates.sql` | BL-030A: V1 package_payment_certificates + audit (does not alter legacy payment_certificates); client server-authority cutover in BL-030C |
 
 ---
 
@@ -229,7 +230,7 @@ Production authority for certificate numbering is **`legacy_cert_no`**, enforced
 From `server/`:
 
 ```bash
-npm run migrate    # apply pending SQL (001 → … → 007)
+npm run migrate    # apply pending SQL (001 → … → 008)
 npm run seed       # default client, cost codes, brand profile, client_id backfill
 npm start          # start API (calls db.init as fallback)
 ```

@@ -3,6 +3,7 @@ import { installNetworkGuard } from '../test/networkGuard';
 import {
   getCertificateById,
   listCertificatesForPackage,
+  patchCertificateForPackage,
   PaymentCertificateApiError,
 } from './paymentCertificates';
 
@@ -69,6 +70,44 @@ describe('paymentCertificates API wrapper (BL-030B)', () => {
       message: 'Certificates unavailable',
     });
     expect(PaymentCertificateApiError.name).toBe('PaymentCertificateApiError');
+  });
+
+  it('PATCH sends actor but never createdBy or updatedBy when a session user is present', async () => {
+    networkGuard = installNetworkGuard();
+    const session = new Map([['userName', 'UAT QS']]);
+    vi.stubGlobal('localStorage', {
+      getItem: (key) => session.get(key) ?? null,
+      setItem: (key, value) => session.set(key, value),
+      removeItem: (key) => session.delete(key),
+      clear: () => session.clear(),
+    });
+    const fetchMock = vi.fn(async (_url, init) => {
+      const body = JSON.parse(init.body);
+      expect(body.actor).toBe('UAT QS');
+      expect(body).not.toHaveProperty('createdBy');
+      expect(body).not.toHaveProperty('updatedBy');
+      expect(body.version).toBe(1);
+      expect(body.progress['plot-1-2::Joists'].thisCertificatePct).toBe(50);
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ id: 'c1', version: 2, progress: body.progress }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await patchCertificateForPackage('pkg-1', 'c1', {
+      version: 1,
+      progress: {
+        'plot-1-2::Joists': {
+          plotId: 'plot-1-2',
+          stageKey: 'Joists',
+          thisCertificatePct: 50,
+        },
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('networkGuard blocks localhost:3001 in client tests', async () => {

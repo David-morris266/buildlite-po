@@ -1,8 +1,5 @@
 /**
- * BL-030B — V1 Payment Certificate server API client.
- *
- * Live hydration uses LIST/GET only. Mutation helpers exist for BL-030C
- * and must not be wired to runtime UI in this slice.
+ * BL-030B / BL-030C — V1 Payment Certificate server API client.
  */
 
 const API_BASE = (
@@ -54,15 +51,17 @@ function sessionActor() {
   );
 }
 
-function withActor(payload = {}) {
+function withActor(payload = {}, { includeCreatedBy = false } = {}) {
   const actor = sessionActor();
   if (!actor) return payload;
-  return {
+  const next = {
     ...payload,
     actor,
-    createdBy: payload.createdBy ?? actor,
-    updatedBy: payload.updatedBy ?? actor,
   };
+  if (includeCreatedBy) {
+    next.createdBy = payload.createdBy ?? actor;
+  }
+  return next;
 }
 
 function certificatesUrl(packageId, certificateId = '') {
@@ -87,7 +86,7 @@ export async function createCertificateForPackage(packageId, payload = {}) {
   const res = await fetch(buildUrl(certificatesUrl(packageId)), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(withActor(payload)),
+    body: JSON.stringify(withActor(payload, { includeCreatedBy: true })),
   });
   return handleJson(res);
 }

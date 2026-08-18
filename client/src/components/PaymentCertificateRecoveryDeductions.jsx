@@ -51,7 +51,7 @@ export default function PaymentCertificateRecoveryDeductions({
     setFeedback({ type: 'error', message });
   }
 
-  function handleAddLine() {
+  async function handleAddLine() {
     if (!selectedEventId) {
       showError('Select a recovery event to deduct.');
       return;
@@ -70,12 +70,14 @@ export default function PaymentCertificateRecoveryDeductions({
       return;
     }
 
-    const result = addRecoveryLineToCertificate(
-      orderKey,
-      certificate.id,
-      selectedEventId,
-      parsed,
-      order
+    const result = await Promise.resolve(
+      addRecoveryLineToCertificate(
+        orderKey,
+        certificate.id,
+        selectedEventId,
+        parsed,
+        order
+      )
     );
 
     if (!result.ok) {
@@ -93,7 +95,7 @@ export default function PaymentCertificateRecoveryDeductions({
     refresh();
   }
 
-  function handleAmountCommit(line) {
+  async function handleAmountCommit(line) {
     const rawValue = pendingAmounts[line.id] ?? Math.abs(line.amountThisCertificate);
     const parsed = Number.parseFloat(String(rawValue));
     if (!Number.isFinite(parsed)) {
@@ -101,12 +103,14 @@ export default function PaymentCertificateRecoveryDeductions({
       return;
     }
 
-    const result = updateRecoveryLineAmount(
-      orderKey,
-      certificate.id,
-      line.id,
-      parsed,
-      order
+    const result = await Promise.resolve(
+      updateRecoveryLineAmount(
+        orderKey,
+        certificate.id,
+        line.id,
+        parsed,
+        order
+      )
     );
 
     if (!result.ok) {
@@ -123,12 +127,14 @@ export default function PaymentCertificateRecoveryDeductions({
     refresh();
   }
 
-  function handleRemoveLine(lineId) {
-    const result = removeRecoveryLineFromCertificate(
-      orderKey,
-      certificate.id,
-      lineId,
-      order
+  async function handleRemoveLine(lineId) {
+    const result = await Promise.resolve(
+      removeRecoveryLineFromCertificate(
+        orderKey,
+        certificate.id,
+        lineId,
+        order
+      )
     );
 
     if (!result.ok) {

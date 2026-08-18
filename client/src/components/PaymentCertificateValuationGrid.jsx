@@ -377,6 +377,7 @@ export default function PaymentCertificateValuationGrid({
   orderKey,
   certificate,
   matrix,
+  valuationGrid = null,
   developmentId,
   editable = true,
   auditItems = [],
@@ -397,13 +398,22 @@ export default function PaymentCertificateValuationGrid({
   const tableWrapRef = useRef(null);
   const cellRefs = useRef(new Map());
 
-  const grid = useMemo(
-    () =>
-      buildCertificateValuationGrid(orderKey, certificate, matrix, selectedKeys, {
-        developmentId,
-      }),
-    [orderKey, certificate, matrix, selectedKeys, developmentId]
-  );
+  const grid = useMemo(() => {
+    if (valuationGrid?.fromValuationSnapshot) {
+      return valuationGrid;
+    }
+    return buildCertificateValuationGrid(orderKey, certificate, matrix, selectedKeys, {
+      developmentId,
+      order: { orderKey, developmentId },
+    });
+  }, [
+    orderKey,
+    certificate,
+    matrix,
+    selectedKeys,
+    developmentId,
+    valuationGrid,
+  ]);
 
   const panelCell =
     isPanelOpen && anchorKey
@@ -598,6 +608,37 @@ export default function PaymentCertificateValuationGrid({
     setAnchorKey([...next][0] || null);
   }
 
+  function saveProgressPatch(patch) {
+    if (!patch || !Object.keys(patch).length) return;
+    setInputDrafts((current) => {
+      const next = { ...current };
+      Object.entries(patch).forEach(([cellKey, value]) => {
+        const pct = Number(value?.thisCertificatePct);
+        next[cellKey] = Number.isFinite(pct) ? pct : 0;
+      });
+      return next;
+    });
+    const result = onProgressChange?.(patch);
+    Promise.resolve(result)
+      .then((outcome) => {
+        if (outcome?.ok === false) return;
+        setInputDrafts((current) => {
+          let changed = false;
+          const next = { ...current };
+          Object.keys(patch).forEach((cellKey) => {
+            if (Object.prototype.hasOwnProperty.call(next, cellKey)) {
+              delete next[cellKey];
+              changed = true;
+            }
+          });
+          return changed ? next : current;
+        });
+      })
+      .catch(() => {
+        /* Keep the typed draft; PaymentCertificateDetail surfaces the error. */
+      });
+  }
+
   function applyToSelection(updater, options = {}) {
     if (!editable || !selectedKeys.size) return;
     const patch = {};
@@ -617,9 +658,7 @@ export default function PaymentCertificateValuationGrid({
       }
     });
 
-    if (Object.keys(patch).length) {
-      onProgressChange?.(patch);
-    }
+    saveProgressPatch(patch);
 
     setShowCustomPct(false);
     setCustomPct('');
@@ -634,14 +673,8 @@ export default function PaymentCertificateValuationGrid({
     );
 
     if (rawValue === '' || validation.valid) {
-      onProgressChange?.({
+      saveProgressPatch({
         [cellKey]: { thisCertificatePct: validation.pct },
-      });
-      setInputDrafts((current) => {
-        if (!current[cellKey]) return current;
-        const next = { ...current };
-        delete next[cellKey];
-        return next;
       });
       return;
     }
@@ -694,7 +727,10 @@ export default function PaymentCertificateValuationGrid({
   const panelPresentation = panelCell ? getCellPresentation(panelCell) : null;
   const historyDetails =
     isPanelOpen && anchorKey
-      ? getPreviousCertificationDetails(orderKey, certificate, [anchorKey])
+      ? getPreviousCertificationDetails(orderKey, certificate, [anchorKey], {
+          order: { orderKey, developmentId },
+          matrix,
+        })
       : [];
 
   return (
@@ -804,7 +840,7 @@ export default function PaymentCertificateValuationGrid({
                 { complete: true }
               );
               if (!validation.valid) return;
-              onProgressChange?.({
+              saveProgressPatch({
                 [cellKey]: { thisCertificatePct: validation.pct },
               });
             }}

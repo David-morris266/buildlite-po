@@ -86,8 +86,8 @@ export function buildCertificateHeaderMeta(certificate) {
   return items;
 }
 
-export function getCreateCertificateState(orderKey, certificateCount) {
-  const gate = canCreateNextCertificate(orderKey);
+export function getCreateCertificateState(orderKey, certificateCount, order = null) {
+  const gate = canCreateNextCertificate(orderKey, order);
   const nextNumber = certificateCount + 1;
 
   return {

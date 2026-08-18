@@ -200,6 +200,9 @@ export default function CVRWorkspace({
   headFilter = null,
   onClearFamilyFilter,
   onClearHeadFilter,
+  certificatesLoading = false,
+  certificatesReady = true,
+  certificatesError = '',
 }) {
   const [pos, setPos] = useState([]);
   const [localRefresh, setLocalRefresh] = useState(0);
@@ -251,6 +254,7 @@ export default function CVRWorkspace({
   const workspace = useMemo(() => {
     void refreshToken;
     void localRefresh;
+    void certificatesReady;
     if (!readOnly) {
       ensureDiscoveredCostCentres(development.id, pos, periodKey);
     }
@@ -260,7 +264,7 @@ export default function CVRWorkspace({
       period,
       readOnly,
     });
-  }, [development, pos, periodKey, period, readOnly, refreshToken, localRefresh]);
+  }, [development, pos, periodKey, period, readOnly, refreshToken, localRefresh, certificatesReady]);
 
   const activeHeadFilter = headFilter || familyFilter;
 
@@ -547,6 +551,14 @@ export default function CVRWorkspace({
           ))}
         </dl>
       </ApplicationPageHeader>
+
+      {certificatesError ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          Unable to load certificate data. {certificatesError}
+        </div>
+      ) : certificatesLoading ? (
+        <p role="status">Loading certificate data…</p>
+      ) : null}
 
       <CvrAuditHistory items={auditItems} />
 

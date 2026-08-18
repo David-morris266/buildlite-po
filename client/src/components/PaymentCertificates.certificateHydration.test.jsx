@@ -32,6 +32,7 @@ vi.mock('../api/packages', () => import('../test/mockPackageApi'));
 
 import {
   buildLockedServerCertificateFixture,
+  getPaymentCertificateCreateCallCount,
   getPaymentCertificateMutationCallCount,
   resetPaymentCertificateApiStore,
   setPaymentCertificateListDelay,
@@ -226,7 +227,7 @@ describe('Payment Certificates / package workspace certificate hydration (BL-030
     expect(createButton).toBeFalsy();
   });
 
-  it('does not call live certificate mutation APIs from runtime UI', async () => {
+  it('create uses the server create API and opens the returned draft', async () => {
     await act(async () => {
       root.render(
         <PaymentCertificates initialOrderKey={ORDER_KEY} initialTab="certificates" />
@@ -242,16 +243,24 @@ describe('Payment Certificates / package workspace certificate hydration (BL-030
       button.textContent.includes('Create Certificate No. 1')
     );
     expect(createButton).toBeTruthy();
-    act(() => {
+    await act(async () => {
       createButton.click();
     });
     await flushPromises();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    await flushPromises();
 
-    expect(getPaymentCertificateMutationCallCount()).toBe(0);
+    expect(getPaymentCertificateCreateCallCount()).toBe(1);
+    expect(getPaymentCertificateMutationCallCount()).toBe(1);
+    expect(document.body.textContent).toMatch(/Certificate No\. 1/i);
   });
 
   it('does not fall back to localStorage certificates when authority is ON', async () => {
+    certificateAuthorityEnabled.value = false;
     createCertificate(ORDER_KEY, order);
+    certificateAuthorityEnabled.value = true;
     setPaymentCertificateListReject();
 
     await act(async () => {
