@@ -14,6 +14,14 @@ import {
   CVR_PERIOD_DEFAULT_STATUS,
   isCvrPeriodEditable,
 } from './cvrPeriodStatus';
+import { isCvrServerAuthorityEnabled } from './cvrPeriodAuthority';
+import {
+  getCachedCvrInputsForPeriodKey,
+  getCachedCvrPeriodByKey,
+  getCachedCvrPeriods,
+  getCvrInputReadinessForPeriodKey,
+  getCvrPeriodReadiness,
+} from './cvrPeriodServerCache';
 
 const STORAGE_KEY = 'buildlite_cvr_v1';
 export const CVR_CURRENT_PERIOD = 'current';
@@ -57,10 +65,12 @@ function normaliseCostCentreRecord(centre) {
       centre.commercialAdjustment != null
         ? parseBudgetValue(centre.commercialAdjustment) ?? 0
         : 0,
-    commercialReason: String(centre.commercialReason || ''),
+    commercialReason: String(centre.commercialReason || centre.adjustmentReason || ''),
     adjustmentHistory: Array.isArray(centre.adjustmentHistory)
       ? centre.adjustmentHistory
       : [],
+    manualAccrual:
+      centre.manualAccrual != null ? parseBudgetValue(centre.manualAccrual) ?? 0 : 0,
   };
 }
 
@@ -196,19 +206,73 @@ export function ensureCvrRecord(developmentId) {
 }
 
 export function getCvrRecord(developmentId) {
+  if (isCvrServerAuthorityEnabled()) {
+    const readiness = getCvrPeriodReadiness(developmentId);
+    if (!readiness.ready) {
+      return {
+        activePeriodKey: null,
+        periods: {},
+        updatedAt: null,
+        unavailable: true,
+        loadState: readiness.loadState,
+        error: readiness.error,
+      };
+    }
+    const periods = {};
+    for (const period of getCachedCvrPeriods(developmentId)) {
+      periods[period.periodKey] = period;
+    }
+    const keys = Object.keys(periods);
+    return {
+      activePeriodKey: keys[keys.length - 1] || null,
+      periods,
+      updatedAt: null,
+    };
+  }
   return normaliseDevelopmentRecord(readAll()[developmentId]);
 }
 
 export function getActivePeriodKey(developmentId) {
+  if (isCvrServerAuthorityEnabled()) {
+    const record = getCvrRecord(developmentId);
+    return record.activePeriodKey || null;
+  }
   return getCvrRecord(developmentId).activePeriodKey || CVR_DEFAULT_PERIOD_KEY;
 }
 
 export function getPeriodData(developmentId, periodKey = CVR_DEFAULT_PERIOD_KEY) {
+  if (isCvrServerAuthorityEnabled()) {
+    const period = getCachedCvrPeriodByKey(developmentId, periodKey);
+    if (!period) {
+      return {
+        periodKey,
+        unavailable: !getCvrPeriodReadiness(developmentId).ready,
+        status: null,
+        costCentres: [],
+        commercialCommentary: emptyCommentary(),
+        developmentNotes: '',
+      };
+    }
+    const inputReady = getCvrInputReadinessForPeriodKey(developmentId, periodKey);
+    return {
+      ...period,
+      costCentres: inputReady.ready
+        ? getCachedCvrInputsForPeriodKey(developmentId, periodKey)
+        : [],
+    };
+  }
   const record = ensureCvrRecord(developmentId);
   return record.periods[periodKey] || emptyPeriod(periodKey);
 }
 
 export function listCostCentres(developmentId, periodKey = CVR_DEFAULT_PERIOD_KEY) {
+  if (isCvrServerAuthorityEnabled()) {
+    const inputReady = getCvrInputReadinessForPeriodKey(developmentId, periodKey);
+    if (!inputReady.ready) return [];
+    return getCachedCvrInputsForPeriodKey(developmentId, periodKey)
+      .filter((item) => item.active !== false)
+      .map(normaliseCostCentreRecord);
+  }
   return [...getPeriodData(developmentId, periodKey).costCentres]
     .filter((item) => item.active !== false)
     .map(normaliseCostCentreRecord);

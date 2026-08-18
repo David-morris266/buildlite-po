@@ -28,6 +28,8 @@ export default function CostCentreDrawer({
   packages = [],
   ledgerRows = [],
   certificates = [],
+  ledgerReady = true,
+  ledgerError = false,
   readOnly = false,
   onClose,
   onSaveNotes,
@@ -344,7 +346,11 @@ export default function CostCentreDrawer({
         </DrawerSection>
 
         <DrawerSection title="Ledger Transactions">
-          {ledgerRows.length ? (
+          {!ledgerReady ? (
+            <p className="dev-cvr-drawer__empty" role="status">
+              {ledgerError ? 'Unable to load ledger data' : 'Loading ledger data…'}
+            </p>
+          ) : ledgerRows.length ? (
             <div className="po-table-wrap">
               <table className="po-data-table dev-cvr-drawer__table">
                 <thead>

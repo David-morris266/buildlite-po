@@ -21,6 +21,16 @@ import {
   buildLedgerRowsForCostCentre,
   buildPackagesForCostCentre,
 } from '../cvr/cvrEngine';
+import { isCvrServerAuthorityEnabled } from '../cvr/cvrPeriodAuthority';
+import {
+  ensureCvrPeriodAndInputsReady,
+  getCvrPeriodReadiness,
+} from '../cvr/cvrPeriodServerCache';
+import { isLedgerServerAuthorityEnabled } from '../ledger/ledgerAuthority';
+import {
+  ensureLedgerReadyForDevelopment,
+  getLedgerReadiness,
+} from '../ledger/ledgerServerCache';
 
 function StatusBadge({ status }) {
   if (!status) return '—';
@@ -175,6 +185,29 @@ export default function CVRSummaryPage({
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    if (!isCvrServerAuthorityEnabled() && !isLedgerServerAuthorityEnabled()) return undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        if (isCvrServerAuthorityEnabled()) {
+          await ensureCvrPeriodAndInputsReady(development.id, periodKey);
+        }
+        if (isLedgerServerAuthorityEnabled()) {
+          await ensureLedgerReadyForDevelopment(development.id).catch(() => null);
+        }
+      } catch {
+        // Cache error state is authoritative; no localStorage fallback.
+      }
+      if (!cancelled) setLocalRefresh((value) => value + 1);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [development.id, periodKey, refreshToken]);
+
   const summary = useMemo(() => {
     void refreshToken;
     void localRefresh;
@@ -309,6 +342,35 @@ export default function CVRSummaryPage({
 
   if (!summary) return null;
 
+  const cvrReadiness = isCvrServerAuthorityEnabled()
+    ? getCvrPeriodReadiness(development.id)
+    : { ready: true, loadState: 'local', error: null };
+  const ledgerReadiness = isLedgerServerAuthorityEnabled()
+    ? getLedgerReadiness(development.id)
+    : { ready: true, loadState: 'local', error: null };
+  const cvrError = cvrReadiness.loadState === 'error' || summary.loadState === 'error';
+  const ledgerError = ledgerReadiness.loadState === 'error';
+
+  if (summary.unavailable) {
+    return (
+      <div className="dev-cvr dev-cvr-workspace dev-cvr-workspace--focused cvr-summary">
+        <ApplicationPageHeader
+          breadcrumbs={pageNavigation?.breadcrumbs || []}
+          title={development.developmentName}
+          lead={`Development ${development.jobNumber || '—'}`}
+          onBack={onBackToRegister}
+        />
+        {cvrError ? (
+          <div className="po-list-feedback po-list-feedback--error" role="alert">
+            Unable to load CVR data
+          </div>
+        ) : (
+          <p role="status">Loading CVR data…</p>
+        )}
+      </div>
+    );
+  }
+
   const drawerPackages = selectedRow
     ? buildPackagesForCostCentre(development.id, selectedRow.costCodeKey, pos)
     : [];
@@ -397,6 +459,14 @@ export default function CVRSummaryPage({
         </div>
       ) : certificatesLoading ? (
         <p role="status">Loading certificate data…</p>
+      ) : null}
+
+      {ledgerError ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          Unable to load ledger data
+        </div>
+      ) : isLedgerServerAuthorityEnabled() && !ledgerReadiness.ready ? (
+        <p role="status">Loading ledger data…</p>
       ) : null}
 
       <MemoSummaryKpiRibbon items={summary.kpis} />
@@ -644,6 +714,8 @@ export default function CVRSummaryPage({
         packages={drawerPackages}
         ledgerRows={drawerLedgerRows}
         certificates={drawerCertificates}
+        ledgerReady={!isLedgerServerAuthorityEnabled() || ledgerReadiness.ready}
+        ledgerError={ledgerError}
         readOnly={summary.readOnly}
         onClose={() => setSelectedRow(null)}
         onSaveNotes={handleSaveNotes}

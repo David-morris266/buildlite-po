@@ -11,6 +11,13 @@ import {
   buildSubcontractOrdersFromPos,
 } from '../payments/subcontractOrders';
 import { listTransactions } from '../ledger/ledgerTransactionStore';
+import { isLedgerServerAuthorityEnabled } from '../ledger/ledgerAuthority';
+import { getLedgerReadiness } from '../ledger/ledgerServerCache';
+import { isCvrServerAuthorityEnabled } from './cvrPeriodAuthority';
+import {
+  getCvrInputReadinessForPeriodKey,
+  getCvrPeriodReadiness,
+} from './cvrPeriodServerCache';
 import {
   CVR_CURRENT_PERIOD,
   CVR_DEFAULT_PERIOD_KEY,
@@ -66,7 +73,32 @@ export function buildCommitmentsByCostCode(developmentId, pos = []) {
   return { totals, labels };
 }
 
+export function getCvrSourceReadiness(developmentId, periodKey = CVR_DEFAULT_PERIOD_KEY) {
+  if (isCvrServerAuthorityEnabled()) {
+    const periods = getCvrPeriodReadiness(developmentId);
+    if (!periods.ready) {
+      return { ready: false, source: 'cvr-periods', ...periods };
+    }
+    const inputs = getCvrInputReadinessForPeriodKey(developmentId, periodKey);
+    if (!inputs.ready && !inputs.missingPeriod) {
+      return { ready: false, source: 'cvr-inputs', ...inputs };
+    }
+  }
+  const ledger = isLedgerServerAuthorityEnabled()
+    ? getLedgerReadiness(developmentId)
+    : { ready: true, loadState: 'local' };
+  return {
+    ready: true,
+    ledgerReady: Boolean(ledger.ready),
+    ledgerLoadState: ledger.loadState || 'local',
+    ledgerError: ledger.error || null,
+  };
+}
+
 export function buildActualsByCostCode(developmentId) {
+  if (isLedgerServerAuthorityEnabled() && !getLedgerReadiness(developmentId).ready) {
+    return { totals: new Map(), labels: new Map(), unavailable: true };
+  }
   const totals = new Map();
   const labels = new Map();
 
@@ -169,7 +201,7 @@ export function buildCvrRows(developmentId, options = {}) {
         ? 0
         : null;
 
-    return enrichCvrCertifiedFields(
+    const row = enrichCvrCertifiedFields(
       enrichCvrForecastRow({
         id: manual?.id || `auto-${key}`,
         costCodeKey: key,
@@ -179,7 +211,9 @@ export function buildCvrRows(developmentId, options = {}) {
         currentBudget: manual?.currentBudget ?? null,
         committed: commitments.totals.get(key) ?? (hasManualBudget ? 0 : null),
         certified: certifiedValue,
-        actualCost: actuals.totals.get(key) ?? (hasManualBudget ? 0 : null),
+        actualCost: actuals.unavailable
+          ? null
+          : actuals.totals.get(key) ?? (hasManualBudget ? 0 : null),
         commercialAdjustment: manual?.commercialAdjustment ?? 0,
         commercialReason: manual?.commercialReason || '',
         adjustmentHistory: manual?.adjustmentHistory || [],
@@ -191,6 +225,15 @@ export function buildCvrRows(developmentId, options = {}) {
           !actuals.totals.get(key),
       })
     );
+
+    if (actuals.unavailable) {
+      row.actualCost = null;
+      row.costToComplete = null;
+      row.outstandingCertified = null;
+      row.outstandingCertifiedState = 'neutral';
+    }
+
+    return row;
   });
 
   rows.sort((a, b) => a.costCodeLabel.localeCompare(b.costCodeLabel, undefined, {
@@ -202,12 +245,52 @@ export function buildCvrRows(developmentId, options = {}) {
 
 export function buildCvrModel(developmentId, options = {}) {
   const periodKey = options.periodKey || CVR_DEFAULT_PERIOD_KEY;
+  const readiness = getCvrSourceReadiness(developmentId, periodKey);
+  if (!readiness.ready) {
+    return {
+      developmentId,
+      periodKey,
+      ready: false,
+      unavailable: true,
+      reason: readiness.reason || readiness.source,
+      loadState: readiness.loadState,
+      error: readiness.error || null,
+      rows: [],
+      totals: buildCvrTotals([]),
+      developmentNotes: '',
+      summary: {
+        originalBudget: null,
+        currentBudget: null,
+        committed: null,
+        certified: null,
+        actualCost: null,
+        outstandingCertified: null,
+        systemForecast: null,
+        commercialAdjustment: null,
+        finalForecast: null,
+        forecastFinalCost: null,
+        variance: null,
+        costToComplete: null,
+        grossMargin: null,
+      },
+    };
+  }
+
   const rows = buildCvrRows(developmentId, options);
   const totals = buildCvrTotals(rows);
+  const ledgerReady = readiness.ledgerReady !== false;
+  if (!ledgerReady) {
+    totals.actualCost = null;
+    totals.costToComplete = null;
+    totals.outstandingCertified = null;
+  }
 
   return {
     developmentId,
     periodKey,
+    ready: true,
+    unavailable: false,
+    ledgerReady,
     rows,
     totals,
     developmentNotes: getDevelopmentNotes(developmentId, periodKey),
@@ -216,14 +299,14 @@ export function buildCvrModel(developmentId, options = {}) {
       currentBudget: totals.currentBudget,
       committed: totals.committed,
       certified: totals.certified,
-      actualCost: totals.actualCost,
-      outstandingCertified: totals.outstandingCertified,
+      actualCost: ledgerReady ? totals.actualCost : null,
+      outstandingCertified: ledgerReady ? totals.outstandingCertified : null,
       systemForecast: totals.systemForecast,
       commercialAdjustment: totals.commercialAdjustment,
       finalForecast: totals.finalForecast,
       forecastFinalCost: totals.finalForecast,
       variance: totals.variance,
-      costToComplete: totals.costToComplete,
+      costToComplete: ledgerReady ? totals.costToComplete : null,
       grossMargin: null,
     },
   };
@@ -296,6 +379,7 @@ export function buildLedgerRowsForCostCentre(developmentId, costCodeKey) {
 }
 
 export function ensureDiscoveredCostCentres(developmentId, pos = [], periodKey = CVR_DEFAULT_PERIOD_KEY) {
+  if (isCvrServerAuthorityEnabled()) return;
   const commitments = buildCommitmentsByCostCode(developmentId, pos);
   const certified = buildCertifiedByCostCode(developmentId, pos);
   const actuals = buildActualsByCostCode(developmentId);

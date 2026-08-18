@@ -2,8 +2,8 @@
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
 **Last product slice fully complete:** BL-030 Payment Certificate persistence (including BL-030C server authority and passed historical-freeze UAT).  
-**Last persistence slice implemented:** BL-031A — CVR + purchase ledger **server persistence/API foundation only**. BL-031 is **not** complete.  
-**NEXT after bank/migrate:** BL-031A.1 local clone migration.
+**Last persistence slice implemented:** BL-031B — CVR + purchase ledger **client API/cache/hydration/readiness**. Runtime authority remains localStorage. BL-031 is **not** complete.  
+**NEXT after bank:** BL-031C.
 
 ---
 
@@ -19,11 +19,11 @@ Postgres is already the authority for:
 | `006_commercial_events.sql` | `commercial_events`, `commercial_event_audit` | BL-028 |
 | `007_package_order_matrices.sql` | `package_order_matrices` | BL-029 complete (schema/API + client server authority) |
 | `008_package_payment_certificates.sql` | `package_payment_certificates`, `package_payment_certificate_audit` | BL-030 fully complete (schema/API + client server authority; historical-freeze UAT passed). |
-| `009_cvr_and_purchase_ledger.sql` | `cvr_periods`, `cvr_period_audit`, `cvr_cost_code_inputs`, `ledger_import_batches`, `ledger_transactions` | **BL-031A** server schema/API only. No client authority, no clone migration, no CVR snapshots. |
+| `009_cvr_and_purchase_ledger.sql` | `cvr_periods`, `cvr_period_audit`, `cvr_cost_code_inputs`, `ledger_import_batches`, `ledger_transactions` | **BL-031A** server schema/API. **BL-031B** client cache exists; flags remain OFF. No CVR snapshots. |
 
 Still **browser/localStorage** (not yet Postgres authority):
 
-- CVR periods/cost centres and purchase ledger **runtime** — remaining BL-031 slices (A.1 clone migrate, then client cache/authority). Server tables/API now exist.
+- CVR periods/cost centres and purchase ledger **runtime** — remaining BL-031 slices (next: BL-031C). Server tables/API and client cache exist; flags remain OFF.
 
 Order matrices are server-authoritative when `VITE_MATRIX_SERVER_AUTHORITY=true`. V1 payment certificates are server-authoritative when `VITE_CERTIFICATE_SERVER_AUTHORITY=true`. Do not commit `.env.local`.
 

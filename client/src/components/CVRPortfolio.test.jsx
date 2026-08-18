@@ -11,6 +11,7 @@ const buildCvrPortfolioModel = vi.hoisted(() => vi.fn());
 
 vi.mock('../developments/developmentStore', () => ({
   ensureDevelopmentsReady,
+  listDevelopments: vi.fn(() => []),
 }));
 
 vi.mock('../api', () => ({

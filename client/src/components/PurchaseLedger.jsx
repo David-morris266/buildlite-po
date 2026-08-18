@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import POPageHeader from './POPageHeader';
 import PurchaseLedgerImportWizard from './PurchaseLedgerImportWizard';
 import {
@@ -9,6 +9,11 @@ import {
   getUniqueTransactionSources,
 } from '../ledger/ledgerHelpers';
 import { listTransactions } from '../ledger/ledgerTransactionStore';
+import { isLedgerServerAuthorityEnabled } from '../ledger/ledgerAuthority';
+import {
+  ensureLedgerReadyForDevelopment,
+  getLedgerReadiness,
+} from '../ledger/ledgerServerCache';
 
 function StatusBadge({ status }) {
   return (
@@ -64,14 +69,42 @@ export default function PurchaseLedger({
   const [sourceFilter, setSourceFilter] = useState('');
   const [sortKey, setSortKey] = useState('transactionDate');
   const [sortDir, setSortDir] = useState('desc');
+  const [localRefresh, setLocalRefresh] = useState(0);
+
+  useEffect(() => {
+    if (!isLedgerServerAuthorityEnabled()) return undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        await ensureLedgerReadyForDevelopment(development.id);
+      } catch {
+        // Cache error state is authoritative; no localStorage fallback.
+      }
+      if (!cancelled) setLocalRefresh((value) => value + 1);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [development.id, refreshToken]);
 
   const workspace = useMemo(() => {
     void refreshToken;
+    void localRefresh;
     return buildLedgerWorkspaceModel(development);
-  }, [development, refreshToken]);
+  }, [development, refreshToken, localRefresh]);
+
+  const ledgerReadiness = isLedgerServerAuthorityEnabled()
+    ? getLedgerReadiness(development.id)
+    : { ready: true, loadState: 'local', error: null };
+  const ledgerUnresolved = Boolean(workspace?.unavailable);
+  const ledgerError = ledgerReadiness.loadState === 'error';
 
   const transactions = useMemo(() => {
     void refreshToken;
+    void localRefresh;
+    if (ledgerUnresolved) return [];
     const rows = listTransactions(development.id).map(formatLedgerTransactionRow);
     return filterAndSortTransactions(rows, {
       search,
@@ -79,12 +112,14 @@ export default function PurchaseLedger({
       sortKey,
       sortDir,
     });
-  }, [development.id, refreshToken, search, sourceFilter, sortKey, sortDir]);
+  }, [development.id, refreshToken, localRefresh, search, sourceFilter, sortKey, sortDir, ledgerUnresolved]);
 
   const sources = useMemo(() => {
     void refreshToken;
+    void localRefresh;
+    if (ledgerUnresolved) return [];
     return getUniqueTransactionSources(listTransactions(development.id));
-  }, [development.id, refreshToken]);
+  }, [development.id, refreshToken, localRefresh, ledgerUnresolved]);
 
   const importHistory = useMemo(
     () => workspace?.importHistory.map(formatImportHistoryRow) || [],
@@ -116,6 +151,25 @@ export default function PurchaseLedger({
   }
 
   if (!workspace) return null;
+
+  if (ledgerUnresolved) {
+    return (
+      <div className="dev-ledger">
+        <POPageHeader
+          eyebrow="Purchase Ledger"
+          title={workspace.developmentName}
+          lead={`Development ${workspace.developmentNumber || '—'}`}
+        />
+        {ledgerError ? (
+          <div className="po-list-feedback po-list-feedback--error" role="alert">
+            Unable to load ledger data
+          </div>
+        ) : (
+          <p role="status">Loading ledger data…</p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="dev-ledger">

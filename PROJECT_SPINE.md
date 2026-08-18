@@ -90,12 +90,12 @@ Management Reporting
 
 Doc 67 persistence migration on branch `buildlite-V1-1`.
 
-Complete: BL-027A Developments, BL-027B Packages, BL-028 Commercial Events (including BL-028B.3 server-authority cutover), BL-029 Order Matrix Persistence (including BL-029D server-authority cutover), BL-030 Payment Certificate Persistence (including BL-030C server-authority cutover and passed historical-freeze UAT). **BL-030 is fully complete.** **BL-031A** (server persistence/API foundation) is implemented; BL-031 is **not** complete.
+Complete: BL-027A Developments, BL-027B Packages, BL-028 Commercial Events (including BL-028B.3 server-authority cutover), BL-029 Order Matrix Persistence (including BL-029D server-authority cutover), BL-030 Payment Certificate Persistence (including BL-030C server-authority cutover and passed historical-freeze UAT). **BL-030 is fully complete.** **BL-031A** (server persistence/API), **BL-031A.1** (clone migrate), and **BL-031B** (client cache/hydration/readiness) are implemented; BL-031 is **not** complete.
 
-1. **BL-031A.1** — local clone migration (**NEXT after bank/migrate**)
-2. Remaining BL-031 — client cache/authority, snapshots (BL-031E). Do not start BL-031B in this slice.
+1. **BL-031C** — **NEXT after bank**. Do not start in this slice.
+2. Remaining BL-031 — write cutover, snapshots (BL-031E). Authority flags remain OFF.
 
-Do not wire React, flip CVR/ledger authority flags, or change live CVR calculations until instructed. See `CURRENT_STATE.md`.
+Do not flip CVR/ledger authority flags or change live CVR calculations until instructed. See `CURRENT_STATE.md`.
 
 ---
 

@@ -636,6 +636,61 @@ export function buildCvrSummaryModel(development, options = {}) {
   const pos = options.pos || [];
   const period = options.period || getCvrPeriod(developmentId, periodKey);
   const model = buildCvrModel(developmentId, { pos, periodKey });
+
+  if (model.unavailable || period?.unavailable) {
+    return {
+      developmentId,
+      developmentName: development.developmentName,
+      developmentNumber: development.jobNumber,
+      periodKey,
+      periodLabel: periodKey,
+      ready: false,
+      unavailable: true,
+      loadState: model.loadState || period?.loadState,
+      error: model.error || period?.error || null,
+      status: null,
+      readOnly: true,
+      header: {
+        developmentName: development.developmentName,
+        developmentNumber: development.jobNumber || '—',
+        periodKey,
+        periodLabel: periodKey,
+        status: null,
+        createdLabel: '—',
+        submittedLabel: '—',
+        approvedLabel: '—',
+        approvedBy: '—',
+        lastUpdatedLabel: '—',
+        commercialManager: '—',
+      },
+      workflow: {
+        showContinue: false,
+        continueLabel: 'Continue to CVR',
+        showSubmit: false,
+        showApprove: false,
+        showReject: false,
+        showCreateNext: false,
+      },
+      kpis: [],
+      financialPosition: [],
+      developmentSummary: [],
+      topVariances: [],
+      commercialExceptions: [],
+      commercialCostSummary: [],
+      recentActivity: [],
+      commentary: {
+        keyCommercialIssues: '',
+        commercialOpportunities: '',
+        financialRisks: '',
+        actionsBeforeNextCvr: '',
+      },
+      rows: [],
+      summary: model.summary,
+      period,
+      previousLockedPeriodKey: null,
+    };
+  }
+
   const rows = model.rows.map(formatCvrRow);
   const summary = model.summary;
   const previousLocked = getPreviousLockedPeriod(developmentId, periodKey);
@@ -660,6 +715,8 @@ export function buildCvrSummaryModel(development, options = {}) {
     developmentNumber: development.jobNumber,
     periodKey,
     periodLabel: periodKey,
+    ready: true,
+    unavailable: false,
     status,
     readOnly,
     header: {

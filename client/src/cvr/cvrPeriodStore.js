@@ -9,6 +9,12 @@ import {
   getPeriodData,
   updateCvrPeriodCommentary as persistCvrPeriodCommentary,
 } from './costCentreStore';
+import { isCvrServerAuthorityEnabled } from './cvrPeriodAuthority';
+import {
+  getCachedCvrPeriodByKey,
+  getCachedCvrPeriods,
+  getCvrPeriodReadiness,
+} from './cvrPeriodServerCache';
 import { migrateCostCentreHierarchy } from './commercialReportingHierarchy';
 import {
   canApproveCvrPeriod,
@@ -127,6 +133,10 @@ function copyPeriodManualData(sourcePeriod, periodKey) {
 }
 
 export function listCvrPeriods(developmentId) {
+  if (isCvrServerAuthorityEnabled()) {
+    if (!getCvrPeriodReadiness(developmentId).ready) return [];
+    return getCachedCvrPeriods(developmentId);
+  }
   const record = getCvrRecord(developmentId);
   const keys = sortPeriodKeys(Object.keys(record.periods || {}));
   return keys.map((periodKey) => ({
@@ -136,6 +146,27 @@ export function listCvrPeriods(developmentId) {
 }
 
 export function getCvrPeriod(developmentId, periodKey) {
+  if (isCvrServerAuthorityEnabled()) {
+    const readiness = getCvrPeriodReadiness(developmentId);
+    if (!readiness.ready) {
+      return {
+        periodKey,
+        unavailable: true,
+        loadState: readiness.loadState,
+        error: readiness.error,
+        status: null,
+        costCentres: [],
+      };
+    }
+    return (
+      getCachedCvrPeriodByKey(developmentId, periodKey) || {
+        periodKey,
+        missing: true,
+        status: null,
+        costCentres: [],
+      }
+    );
+  }
   return {
     periodKey,
     ...getPeriodData(developmentId, periodKey),
@@ -149,6 +180,10 @@ export function findDraftCvrPeriod(developmentId) {
 export function getEditablePeriodKey(developmentId) {
   const draft = findDraftCvrPeriod(developmentId);
   if (draft) return draft.periodKey;
+  if (isCvrServerAuthorityEnabled()) {
+    const periods = listCvrPeriods(developmentId);
+    return periods[periods.length - 1]?.periodKey || null;
+  }
   return getCvrRecord(developmentId).activePeriodKey;
 }
 
@@ -168,7 +203,20 @@ function setActivePeriod(developmentId, periodKey) {
   writeAll(all);
 }
 
+function assertCvrPeriodReadsReady(developmentId) {
+  if (!isCvrServerAuthorityEnabled()) return { ok: true };
+  const readiness = getCvrPeriodReadiness(developmentId);
+  if (readiness.ready) return { ok: true };
+  return {
+    ok: false,
+    unavailable: true,
+    errors: [readiness.error?.message || 'Unable to load CVR data'],
+  };
+}
+
 export function createOrOpenDraftPeriod(developmentId) {
+  const blocked = assertCvrPeriodReadsReady(developmentId);
+  if (!blocked.ok) return blocked;
   const existingDraft = findDraftCvrPeriod(developmentId);
   if (existingDraft) {
     setActivePeriod(developmentId, existingDraft.periodKey);
@@ -195,6 +243,8 @@ export function createOrOpenDraftPeriod(developmentId) {
 }
 
 export function createNextCvrPeriod(developmentId) {
+  const blocked = assertCvrPeriodReadsReady(developmentId);
+  if (!blocked.ok) return blocked;
   const periods = listCvrPeriods(developmentId);
   const gate = canCreateNextCvrPeriod(periods);
   if (!gate.ok) {

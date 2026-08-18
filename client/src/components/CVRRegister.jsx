@@ -5,6 +5,13 @@ import {
   createNextCvrPeriod,
   createOrOpenDraftPeriod,
 } from '../cvr/cvrPeriodHelpers';
+import { isCvrServerAuthorityEnabled } from '../cvr/cvrPeriodAuthority';
+import {
+  ensureCvrInputsReadyForPeriod,
+  ensureCvrPeriodsReadyForDevelopment,
+  getCachedCvrPeriods,
+  getCvrPeriodReadiness,
+} from '../cvr/cvrPeriodServerCache';
 
 function StatusBadge({ status }) {
   if (!status) return '—';
@@ -28,6 +35,32 @@ export default function CVRRegister({
 }) {
   const [localRefresh, setLocalRefresh] = useState(0);
 
+  useEffect(() => {
+    if (!isCvrServerAuthorityEnabled()) return undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        await ensureCvrPeriodsReadyForDevelopment(development.id);
+        const periods = getCachedCvrPeriods(development.id);
+        await Promise.all(
+          periods
+            .filter((period) => period.id)
+            .map((period) =>
+              ensureCvrInputsReadyForPeriod(development.id, period.id).catch(() => null)
+            )
+        );
+      } catch {
+        // Register reads cache error state; do not fall back to localStorage.
+      }
+      if (!cancelled) setLocalRefresh((value) => value + 1);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [development.id, refreshToken]);
+
   const register = useMemo(() => {
     void refreshToken;
     void localRefresh;
@@ -35,12 +68,23 @@ export default function CVRRegister({
     return buildCvrRegisterModel(development, { pos });
   }, [development, pos, refreshToken, localRefresh, certificatesReady]);
 
+  const cvrReadiness = isCvrServerAuthorityEnabled()
+    ? getCvrPeriodReadiness(development.id)
+    : { ready: true, loadState: 'local', error: null };
+  const cvrLoading = isCvrServerAuthorityEnabled() && !cvrReadiness.ready && cvrReadiness.loadState !== 'error';
+  const cvrError =
+    isCvrServerAuthorityEnabled() && cvrReadiness.loadState === 'error'
+      ? cvrReadiness.error?.message || 'Unable to load CVR data'
+      : '';
+
   function refresh() {
     setLocalRefresh((value) => value + 1);
     onChanged?.();
   }
 
   function handleCreatePeriod() {
+    if (!register.ready) return;
+
     const result = register.draftPeriodKey
       ? { ok: true, periodKey: register.draftPeriodKey, opened: true }
       : register.canCreateNext
@@ -63,6 +107,11 @@ export default function CVRRegister({
   useEffect(() => {
     if (!onPrimaryActionChange) return undefined;
 
+    if (!register.ready) {
+      onPrimaryActionChange(null);
+      return () => onPrimaryActionChange(null);
+    }
+
     onPrimaryActionChange(
       <button type="button" className="po-btn-primary" onClick={handleCreatePeriod}>
         {primaryActionLabel}
@@ -70,7 +119,7 @@ export default function CVRRegister({
     );
 
     return () => onPrimaryActionChange(null);
-  }, [onPrimaryActionChange, primaryActionLabel, register.draftPeriodKey]);
+  }, [onPrimaryActionChange, primaryActionLabel, register.draftPeriodKey, register.ready]);
 
   return (
     <div className="dev-cvr-register dev-cvr-workspace">
@@ -88,6 +137,14 @@ export default function CVRRegister({
         <p role="status">Loading certificate data…</p>
       ) : null}
 
+      {cvrError ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          Unable to load CVR data
+        </div>
+      ) : cvrLoading ? (
+        <p role="status">Loading CVR data…</p>
+      ) : null}
+
       <div className="po-table-wrap dev-cvr-register__table-wrap">
         <table className="po-data-table dev-cvr-register__table">
           <thead>
@@ -103,7 +160,13 @@ export default function CVRRegister({
             </tr>
           </thead>
           <tbody>
-            {register.rows.length ? (
+            {!register.ready ? (
+              <tr>
+                <td colSpan={8} className="po-empty-state__message">
+                  {cvrError ? 'Unable to load CVR data' : 'Loading CVR data…'}
+                </td>
+              </tr>
+            ) : register.rows.length ? (
               register.rows.map((row) => (
                 <tr key={row.periodKey}>
                   <td>

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030** (Payment Certificate persistence, including BL-030C server-authority cutover and passed historical-freeze UAT), the **BL-ASUS-001** development-machine checkpoint, and **BL-031A** (CVR + purchase ledger **server persistence/API foundation only**). BL-031 is **not** complete.
+This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030** (Payment Certificate persistence, including BL-030C server-authority cutover and passed historical-freeze UAT), the **BL-ASUS-001** development-machine checkpoint, **BL-031A** (CVR + purchase ledger server persistence/API foundation), **BL-031A.1** (local clone migration), and **BL-031B** (client API/cache/hydration/readiness). BL-031 is **not** complete.
 
 Historic Phase 0 / BL-006 schema notes remain in `docs/DATABASE.md` and `docs/phase0/`. Do not treat those files as the current programme.
 
@@ -18,10 +18,10 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | BL-030 Payment Certificate persistence (including BL-030C cutover and historical-freeze UAT) |
-| Last persistence slice implemented | **BL-031A** server persistence/API foundation only (not a client cutover; BL-031 not complete) |
+| Last persistence slice implemented | **BL-031B** client API/cache/hydration/readiness (authority flags remain OFF; BL-031 not complete) |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT after bank/migrate** | **BL-031A.1** local clone migration |
+| **NEXT after bank** | **BL-031C** — do not start until instructed |
 
 ---
 
@@ -35,9 +35,9 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | BL-028B.3a | Isolated server test database | **Complete** — `TEST_DATABASE_URL` / `buildlite_test`; must not use `buildlite_clone` |
 | **BL-029** | Order Matrix Persistence | **Complete** — schema/API (BL-029A), cache/hydration (BL-029B), **server-authority cutover (BL-029D)** |
 | **BL-030** | Payment Certificate persistence & atomic approval | **Complete** — schema/API (BL-030A), cache/hydration (BL-030B), **server-authority cutover (BL-030C)**, historical-freeze UAT **PASSED**. |
-| **BL-031** | CVR & Ledger persistence | **In progress** — **BL-031A** server schema/API foundation only. Not complete. |
+| **BL-031** | CVR & Ledger persistence | **In progress** — **BL-031A** server schema/API, **BL-031A.1** clone migrate, **BL-031B** client cache/hydration. Not complete. Authority flags remain OFF. |
 
-BL-030 is fully complete. **BL-031A** adds Postgres tables and server routes for CVR periods/inputs and purchase ledger batches/transactions. It does **not** wire React, flip authority flags, migrate `buildlite_clone`, or create CVR snapshots. Persistence sprints must not add unrelated product features (Doc 67 §28).
+BL-030 is fully complete. **BL-031B** adds client API wrappers, mappers, per-development caches, hydration, and financial readiness. It does **not** cut CVR/ledger authority over, import localStorage, write CVR/ledger from live UI, change live formulas, or snapshot. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
 ---
 
@@ -52,12 +52,12 @@ BL-030 is fully complete. **BL-031A** adds Postgres tables and server routes for
 - **Commercial Events** + CE audit (`006_commercial_events.sql`)
 - **Order matrices** (`007_package_order_matrices.sql`) — plot-stage structure, committed value, versioned PUT
 - **V1 Payment Certificates** (`008_package_payment_certificates.sql`) — draft progress, commercial/recovery lines, submit/reject/approve, frozen snapshots
-- **CVR periods + purchase ledger tables** (`009_cvr_and_purchase_ledger.sql`) — **BL-031A server foundation only**. Runtime CVR/ledger still use localStorage. Approve/lock does **not** snapshot (BL-031E).
-- Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, and `VITE_CERTIFICATE_SERVER_AUTHORITY` for cutover (see `client/.env.example`). Do not commit `.env.local`. No CVR/ledger authority flag yet.
+- **CVR periods + purchase ledger tables** (`009_cvr_and_purchase_ledger.sql`) — **BL-031A server foundation**. Runtime CVR/ledger still use localStorage. **BL-031B** client cache exists but flags stay OFF. Approve/lock does **not** snapshot (BL-031E).
+- Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, and `VITE_CERTIFICATE_SERVER_AUTHORITY` for cutover (see `client/.env.example`). `VITE_CVR_SERVER_AUTHORITY` and `VITE_LEDGER_SERVER_AUTHORITY` exist for tests only — do **not** set them in `.env.local`. Do not commit `.env.local`.
 
 ### Browser / localStorage authority (not yet migrated)
 
-- CVR periods / cost centres (`buildlite_cvr_v1`) and purchase ledger (`buildlite_purchase_ledgers_v1`) — remaining **BL-031** slices (next: **BL-031A.1** clone migrate). Server API exists; client does not use it yet.
+- CVR periods / cost centres (`buildlite_cvr_v1`) and purchase ledger (`buildlite_purchase_ledgers_v1`) — remaining **BL-031** slices (next: **BL-031C**). Server API and client cache exist; runtime authority is still localStorage.
 - Also still local: revenue, administration master data, setup drafts, Commercial Assistant dispositions
 
 `buildlite_order_matrices_v1` is backup/rollback evidence only after BL-029D. Runtime matrix reads/writes use Postgres when `VITE_MATRIX_SERVER_AUTHORITY=true`.
@@ -220,11 +220,15 @@ Agreed future commercial rules (recorded; **not** applied to live client engines
 - `manual_accrual` is a genuine QS input, distinct from outstanding certified
 - Approve & Lock will atomically snapshot in **BL-031E**; V1 will not reopen locked CVRs
 
+## BL-031B (client cache / hydration / readiness)
+
+Implemented: client API modules, camelCase mappers, per-development CVR/ledger caches, read facades, engine/UI readiness, and authority-ON tests. Vite test env forces `VITE_CVR_SERVER_AUTHORITY` and `VITE_LEDGER_SERVER_AUTHORITY` OFF. Live UI still reads `buildlite_cvr_v1` / `buildlite_purchase_ledgers_v1`. Mutation wrappers exist but are unwired.
+
+**Not in BL-031B:** authority cutover, localStorage import, live API writes, formula changes, accrual UI, snapshots, BL-031C.
+
 ## Next action
 
-**BL-031A.1 — local clone migration** (after BL-031A is banked and `009` is applied where needed).
-
-Do **not** start BL-031B. Do not wire React. Do not flip client authority flags. Do not alter Test Site 1 data, Hawthorn Gardens, or live CVR calculations.
+**BL-031C** after BL-031B is banked. Do **not** start BL-031C in this slice. Do not flip CVR/ledger authority flags. Do not alter Test Site 1 data, Hawthorn Gardens, or live CVR calculations.
 
 ---
 

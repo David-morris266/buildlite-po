@@ -3,6 +3,13 @@
  */
 
 import { normaliseCostCodeKey } from '../cvr/cvrCalculations';
+import { isLedgerServerAuthorityEnabled } from './ledgerAuthority';
+import {
+  getCachedLedgerBatches,
+  getCachedLedgerTotals,
+  getCachedLedgerTransactions,
+  getLedgerReadiness,
+} from './ledgerServerCache';
 
 const STORAGE_KEY = 'buildlite_purchase_ledgers_v1';
 
@@ -70,22 +77,38 @@ export function getLedger(developmentId) {
 }
 
 export function listTransactions(developmentId) {
+  if (isLedgerServerAuthorityEnabled()) {
+    if (!getLedgerReadiness(developmentId).ready) return [];
+    return [...getCachedLedgerTransactions(developmentId)];
+  }
   return [...ensureLedger(developmentId).transactions].sort(
     (a, b) => new Date(b.transactionDate) - new Date(a.transactionDate)
   );
 }
 
 export function listImportHistory(developmentId) {
+  if (isLedgerServerAuthorityEnabled()) {
+    if (!getLedgerReadiness(developmentId).ready) return [];
+    return [...getCachedLedgerBatches(developmentId)];
+  }
   return [...ensureLedger(developmentId).importHistory].sort(
     (a, b) => new Date(b.importDate) - new Date(a.importDate)
   );
 }
 
 export function getActualCostsByCostCode(developmentId) {
+  if (isLedgerServerAuthorityEnabled()) {
+    if (!getLedgerReadiness(developmentId).ready) return null;
+    return { ...getCachedLedgerTotals(developmentId).actualCostByCostCode };
+  }
   return { ...ensureLedger(developmentId).actualCostsByCostCode };
 }
 
 export function getTransactionCount(developmentId) {
+  if (isLedgerServerAuthorityEnabled()) {
+    if (!getLedgerReadiness(developmentId).ready) return null;
+    return getCachedLedgerTransactions(developmentId).length;
+  }
   return ensureLedger(developmentId).transactions.length;
 }
 
@@ -187,7 +210,13 @@ export function getExistingInvoiceKeys(developmentId) {
 }
 
 export function getTotalActualCost(developmentId) {
+  if (isLedgerServerAuthorityEnabled()) {
+    if (!getLedgerReadiness(developmentId).ready) return null;
+    const totals = getCachedLedgerTotals(developmentId);
+    if (totals.totalNet != null) return roundMoney(totals.totalNet);
+  }
   const totals = getActualCostsByCostCode(developmentId);
+  if (!totals) return null;
   return roundMoney(
     Object.values(totals).reduce((sum, value) => sum + (Number(value) || 0), 0)
   );

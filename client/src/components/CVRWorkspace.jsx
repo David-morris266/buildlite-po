@@ -37,6 +37,16 @@ import {
   updateDevelopmentNotes,
   upsertAutoCostCentre,
 } from '../cvr/cvrStore';
+import { isCvrServerAuthorityEnabled } from '../cvr/cvrPeriodAuthority';
+import {
+  ensureCvrPeriodAndInputsReady,
+  getCvrPeriodReadiness,
+} from '../cvr/cvrPeriodServerCache';
+import { isLedgerServerAuthorityEnabled } from '../ledger/ledgerAuthority';
+import {
+  ensureLedgerReadyForDevelopment,
+  getLedgerReadiness,
+} from '../ledger/ledgerServerCache';
 
 function StatusBadge({ status }) {
   return (
@@ -218,6 +228,29 @@ export default function CVRWorkspace({
     void localRefresh;
     return getCvrPeriod(development.id, periodKey);
   }, [development.id, periodKey, refreshToken, localRefresh]);
+
+  useEffect(() => {
+    if (!isCvrServerAuthorityEnabled() && !isLedgerServerAuthorityEnabled()) return undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        if (isCvrServerAuthorityEnabled()) {
+          await ensureCvrPeriodAndInputsReady(development.id, periodKey);
+        }
+        if (isLedgerServerAuthorityEnabled()) {
+          await ensureLedgerReadyForDevelopment(development.id).catch(() => null);
+        }
+      } catch {
+        // Cache error state is authoritative; no localStorage fallback.
+      }
+      if (!cancelled) setLocalRefresh((value) => value + 1);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [development.id, periodKey, refreshToken]);
 
   const readOnly = !isCvrPeriodEditable(period);
   const submitted = isCvrPeriodSubmitted(period);
@@ -459,6 +492,50 @@ export default function CVRWorkspace({
 
   if (!workspace) return null;
 
+  const cvrReadiness = isCvrServerAuthorityEnabled()
+    ? getCvrPeriodReadiness(development.id)
+    : { ready: true, loadState: 'local', error: null };
+  const ledgerReadiness = isLedgerServerAuthorityEnabled()
+    ? getLedgerReadiness(development.id)
+    : { ready: true, loadState: 'local', error: null };
+  const cvrUnresolved = Boolean(period?.unavailable || workspace.unavailable);
+  const cvrError = cvrReadiness.loadState === 'error' || workspace.loadState === 'error';
+  const ledgerError = ledgerReadiness.loadState === 'error';
+
+  if (cvrUnresolved) {
+    return (
+      <div className="dev-cvr dev-cvr-workspace dev-cvr-workspace--focused">
+        <ApplicationPageHeader
+          breadcrumbs={pageNavigation?.breadcrumbs || []}
+          title={development.developmentName}
+          lead={`Development ${development.jobNumber || '—'}`}
+          onBack={onBackToSummary}
+        />
+        {cvrError ? (
+          <div className="po-list-feedback po-list-feedback--error" role="alert">
+            Unable to load CVR data
+          </div>
+        ) : (
+          <p role="status">Loading CVR data…</p>
+        )}
+      </div>
+    );
+  }
+
+  if (period?.missing) {
+    return (
+      <div className="dev-cvr dev-cvr-workspace dev-cvr-workspace--focused">
+        <ApplicationPageHeader
+          breadcrumbs={pageNavigation?.breadcrumbs || []}
+          title={development.developmentName}
+          lead={`Development ${development.jobNumber || '—'}`}
+          onBack={onBackToSummary}
+        />
+        <p role="status">This CVR period does not exist.</p>
+      </div>
+    );
+  }
+
   if (budgetImportOpen) {
     return (
       <CVRBudgetImportWizard
@@ -560,6 +637,14 @@ export default function CVRWorkspace({
         <p role="status">Loading certificate data…</p>
       ) : null}
 
+      {ledgerError ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          Unable to load ledger data
+        </div>
+      ) : isLedgerServerAuthorityEnabled() && !ledgerReadiness.ready ? (
+        <p role="status">Loading ledger data…</p>
+      ) : null}
+
       <CvrAuditHistory items={auditItems} />
 
       {activeHeadFilter ? (
@@ -613,6 +698,8 @@ export default function CVRWorkspace({
         packages={drawerPackages}
         ledgerRows={drawerLedgerRows}
         certificates={drawerCertificates}
+        ledgerReady={!isLedgerServerAuthorityEnabled() || ledgerReadiness.ready}
+        ledgerError={ledgerError}
         readOnly={readOnly}
         onClose={() => setSelectedRow(null)}
         onSaveNotes={handleSaveNotes}

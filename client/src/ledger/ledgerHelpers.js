@@ -3,6 +3,8 @@
  */
 
 import { formatMoney, formatPoDate, formatPoDateTime } from '../components/poDrawerHelpers';
+import { isLedgerServerAuthorityEnabled } from './ledgerAuthority';
+import { getLedgerReadiness } from './ledgerServerCache';
 import {
   getActualCostsByCostCode,
   getLastImportRecord,
@@ -24,6 +26,30 @@ export function buildLedgerWorkspaceModel(development) {
   if (!development) return null;
 
   const developmentId = development.id;
+  if (isLedgerServerAuthorityEnabled()) {
+    const readiness = getLedgerReadiness(developmentId);
+    if (!readiness.ready) {
+      return {
+        developmentId,
+        developmentName: development.developmentName,
+        developmentNumber: development.jobNumber,
+        ready: false,
+        unavailable: true,
+        loadState: readiness.loadState,
+        error: readiness.error || null,
+        transactionCount: null,
+        actualCost: null,
+        unmatchedCount: null,
+        lastImportLabel: '—',
+        lastImportBy: '—',
+        importStatus: { label: '—', modifier: 'muted' },
+        actualCostsByCostCode: null,
+        summaryCards: [],
+        importHistory: [],
+      };
+    }
+  }
+
   const transactions = listTransactions(developmentId);
   const lastImport = getLastImportRecord(developmentId);
   const actualCost = getTotalActualCost(developmentId);
@@ -38,6 +64,10 @@ export function buildLedgerWorkspaceModel(development) {
     developmentId,
     developmentName: development.developmentName,
     developmentNumber: development.jobNumber,
+    ready: true,
+    unavailable: false,
+    loadState: 'loaded',
+    error: null,
     transactionCount: transactions.length,
     actualCost,
     unmatchedCount,

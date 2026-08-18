@@ -4,11 +4,17 @@ import SectionHeading from './layout/SectionHeading';
 import { buildCvrPortfolioNavigation } from '../navigation/navigationBuilders';
 import { listPOs } from '../api';
 import { buildCvrPortfolioModel } from '../cvr/cvrPeriodHelpers';
-import { ensureDevelopmentsReady } from '../developments/developmentStore';
+import { ensureDevelopmentsReady, listDevelopments } from '../developments/developmentStore';
 import {
   approveCvrPeriod,
   rejectCvrPeriod,
 } from '../cvr/cvrPeriodStore';
+import { isCvrServerAuthorityEnabled } from '../cvr/cvrPeriodAuthority';
+import {
+  ensureCvrInputsReadyForPeriod,
+  ensureCvrPeriodsReadyForDevelopment,
+  getCachedCvrPeriods,
+} from '../cvr/cvrPeriodServerCache';
 
 function StatusBadge({ status }) {
   if (!status) return '—';
@@ -88,6 +94,7 @@ export default function CVRPortfolio({
   const [localRefresh, setLocalRefresh] = useState(0);
   const [rejectTarget, setRejectTarget] = useState(null);
   const [developmentsReady, setDevelopmentsReady] = useState(false);
+  const [cvrHydrated, setCvrHydrated] = useState(!isCvrServerAuthorityEnabled());
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
@@ -117,6 +124,40 @@ export default function CVRPortfolio({
   }, [refreshToken, localRefresh]);
 
   useEffect(() => {
+    if (!developmentsReady) return undefined;
+    if (!isCvrServerAuthorityEnabled()) {
+      setCvrHydrated(true);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setCvrHydrated(false);
+
+    (async () => {
+      const developments = listDevelopments();
+      await Promise.all(
+        developments.map(async (development) => {
+          try {
+            await ensureCvrPeriodsReadyForDevelopment(development.id);
+            const periods = getCachedCvrPeriods(development.id);
+            const latest = periods[periods.length - 1];
+            if (latest?.id) {
+              await ensureCvrInputsReadyForPeriod(development.id, latest.id);
+            }
+          } catch {
+            // One development failure must not collapse others to zero.
+          }
+        })
+      );
+      if (!cancelled) setCvrHydrated(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [developmentsReady, refreshToken, localRefresh]);
+
+  useEffect(() => {
     let cancelled = false;
     listPOs()
       .then((data) => {
@@ -134,8 +175,9 @@ export default function CVRPortfolio({
     void refreshToken;
     void localRefresh;
     if (!developmentsReady) return null;
+    if (isCvrServerAuthorityEnabled() && !cvrHydrated) return null;
     return buildCvrPortfolioModel(pos);
-  }, [pos, refreshToken, localRefresh, developmentsReady]);
+  }, [pos, refreshToken, localRefresh, developmentsReady, cvrHydrated]);
 
   function refresh() {
     setLocalRefresh((value) => value + 1);
@@ -187,12 +229,16 @@ export default function CVRPortfolio({
     );
   }
 
-  if (!developmentsReady || !portfolio) {
+  if (!developmentsReady || !cvrHydrated || !portfolio) {
     return (
       <div className="dev-cvr-portfolio dev-cvr-workspace">
         {pageHeader}
         <div className="po-module-card">
-          <p>Loading CVR portfolio…</p>
+          <p role="status">
+            {developmentsReady && isCvrServerAuthorityEnabled()
+              ? 'Loading CVR data…'
+              : 'Loading CVR portfolio…'}
+          </p>
         </div>
       </div>
     );
@@ -309,8 +355,12 @@ export default function CVRPortfolio({
                     <td>
                       <StatusBadge status={row.status} />
                     </td>
-                    <td style={{ textAlign: 'right' }}>{row.forecastLabel}</td>
-                    <td style={{ textAlign: 'right' }}>{row.varianceLabel}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      {row.loadState === 'error' ? 'Unable to load CVR data' : row.forecastLabel}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {row.loadState === 'error' ? '—' : row.varianceLabel}
+                    </td>
                     <td>
                       <button
                         type="button"

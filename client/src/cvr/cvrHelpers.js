@@ -71,6 +71,25 @@ export function buildCvrWorkspaceModel(development, options = {}) {
   const { summary, totals } = model;
   const period = options.period || null;
 
+  if (model.unavailable) {
+    return {
+      developmentId: development.id,
+      developmentName: development.developmentName,
+      developmentNumber: development.jobNumber,
+      periodKey: model.periodKey,
+      period,
+      readOnly: Boolean(options.readOnly),
+      ready: false,
+      unavailable: true,
+      loadState: model.loadState,
+      error: model.error || null,
+      rows: [],
+      totals: formatCvrTotals(totals),
+      developmentNotes: '',
+      summaryCards: [],
+    };
+  }
+
   return {
     developmentId: development.id,
     developmentName: development.developmentName,
@@ -78,6 +97,9 @@ export function buildCvrWorkspaceModel(development, options = {}) {
     periodKey: model.periodKey,
     period,
     readOnly: Boolean(options.readOnly),
+    ready: true,
+    unavailable: false,
+    ledgerReady: model.ledgerReady !== false,
     rows: model.rows.map(formatCvrRow),
     totals: formatCvrTotals(totals),
     developmentNotes: model.developmentNotes,
@@ -109,7 +131,7 @@ export function buildCvrWorkspaceModel(development, options = {}) {
       },
       {
         label: 'Outstanding Certified (Not Yet in Ledger)',
-        value: formatCvrMoney(summary.outstandingCertified ?? 0),
+        value: formatCvrMoney(summary.outstandingCertified),
         modifier: 'outstanding',
       },
       {

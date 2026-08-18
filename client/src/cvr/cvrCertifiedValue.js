@@ -37,14 +37,16 @@ export function calculatePackageCertifiedValue(orderKey, order = null) {
 
 export function calculateOutstandingCertified(certified, actualCost) {
   if (certified == null) return null;
+  if (actualCost == null) return null;
   const certifiedValue = roundMoney(certified);
   if (certifiedValue == null) return null;
-  const actual = roundMoney(actualCost) ?? 0;
+  const actual = roundMoney(actualCost);
+  if (actual == null) return null;
   return roundMoney(Math.max(0, certifiedValue - actual));
 }
 
 export function getOutstandingCertifiedState(certified, actualCost) {
-  if (certified == null) return 'neutral';
+  if (certified == null || actualCost == null) return 'neutral';
   const certifiedValue = roundMoney(certified) ?? 0;
   const actual = roundMoney(actualCost) ?? 0;
   const outstanding = calculateOutstandingCertified(certified, actualCost);

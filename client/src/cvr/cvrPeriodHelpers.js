@@ -4,6 +4,8 @@
 
 import { formatPoDate, formatPoDateTime } from '../components/poDrawerHelpers';
 import { listDevelopments } from '../developments/developmentStore';
+import { isCvrServerAuthorityEnabled } from './cvrPeriodAuthority';
+import { getCvrPeriodReadiness } from './cvrPeriodServerCache';
 import { buildCvrModel } from './cvrEngine';
 import { formatCvrMoney } from './cvrHelpers';
 import {
@@ -45,13 +47,14 @@ export function buildCvrPeriodAuditItems(period) {
 export function buildCvrPeriodRegisterRow(developmentId, period, pos = []) {
   const model = buildCvrModel(developmentId, { pos, periodKey: period.periodKey });
   const status = getCvrPeriodStatusMeta(period.status);
+  const forecastUnavailable = Boolean(model.unavailable);
 
   return {
     periodKey: period.periodKey,
     status,
     statusLabel: status.label,
-    forecastLabel: formatCvrMoney(model.summary.finalForecast),
-    varianceLabel: formatCvrMoney(model.summary.variance),
+    forecastLabel: forecastUnavailable ? '—' : formatCvrMoney(model.summary.finalForecast),
+    varianceLabel: forecastUnavailable ? '—' : formatCvrMoney(model.summary.variance),
     createdLabel: formatPoDate(period.createdAt),
     submittedLabel: period.submittedAt ? formatPoDate(period.submittedAt) : '—',
     approvedLabel: period.approvedAt ? formatPoDate(period.approvedAt) : '—',
@@ -61,6 +64,24 @@ export function buildCvrPeriodRegisterRow(developmentId, period, pos = []) {
 }
 
 export function buildCvrRegisterModel(development, options = {}) {
+  if (isCvrServerAuthorityEnabled()) {
+    const readiness = getCvrPeriodReadiness(development.id);
+    if (!readiness.ready) {
+      return {
+        developmentId: development.id,
+        developmentName: development.developmentName,
+        developmentNumber: development.jobNumber,
+        rows: [],
+        draftPeriodKey: null,
+        canCreateNext: false,
+        ready: false,
+        unavailable: true,
+        loadState: readiness.loadState,
+        error: readiness.error || null,
+      };
+    }
+  }
+
   const periods = listCvrPeriods(development.id);
   const rows = periods.map((period) =>
     buildCvrPeriodRegisterRow(development.id, period, options.pos || [])
@@ -75,6 +96,10 @@ export function buildCvrRegisterModel(development, options = {}) {
     rows,
     draftPeriodKey: draftPeriod?.periodKey || null,
     canCreateNext: Boolean(latestLocked && !draftPeriod),
+    ready: true,
+    unavailable: false,
+    loadState: 'loaded',
+    error: null,
   };
 }
 
@@ -90,6 +115,25 @@ export function buildCvrPeriodHeaderMeta(period) {
 }
 
 export function buildCvrPortfolioDevelopmentRow(development, pos = []) {
+  if (isCvrServerAuthorityEnabled()) {
+    const readiness = getCvrPeriodReadiness(development.id);
+    if (!readiness.ready) {
+      return {
+        developmentId: development.id,
+        developmentNumber: development.jobNumber,
+        developmentName: development.developmentName,
+        currentPeriodKey: '—',
+        status: null,
+        forecastLabel: '—',
+        varianceLabel: '—',
+        period: null,
+        unresolved: true,
+        loadState: readiness.loadState,
+        error: readiness.error || null,
+      };
+    }
+  }
+
   const periods = listCvrPeriods(development.id);
   const sortedKeys = sortPeriodKeys(periods.map((item) => item.periodKey));
   const currentKey = sortedKeys[sortedKeys.length - 1];
@@ -97,6 +141,7 @@ export function buildCvrPortfolioDevelopmentRow(development, pos = []) {
   const model = currentPeriod
     ? buildCvrModel(development.id, { pos, periodKey: currentKey })
     : null;
+  const forecastUnavailable = Boolean(model?.unavailable);
 
   return {
     developmentId: development.id,
@@ -104,9 +149,14 @@ export function buildCvrPortfolioDevelopmentRow(development, pos = []) {
     developmentName: development.developmentName,
     currentPeriodKey: currentKey || '—',
     status: currentPeriod ? getCvrPeriodStatusMeta(currentPeriod.status) : null,
-    forecastLabel: model ? formatCvrMoney(model.summary.finalForecast) : '—',
-    varianceLabel: model ? formatCvrMoney(model.summary.variance) : '—',
+    forecastLabel:
+      !model || forecastUnavailable ? '—' : formatCvrMoney(model.summary.finalForecast),
+    varianceLabel:
+      !model || forecastUnavailable ? '—' : formatCvrMoney(model.summary.variance),
     period: currentPeriod,
+    unresolved: false,
+    loadState: 'loaded',
+    error: null,
   };
 }
 
@@ -131,6 +181,10 @@ export function buildCvrPortfolioModel(pos = []) {
   const awaitingApproval = [];
 
   for (const development of developments) {
+    if (isCvrServerAuthorityEnabled() && !getCvrPeriodReadiness(development.id).ready) {
+      continue;
+    }
+
     const periods = listCvrPeriods(development.id);
 
     for (const period of periods) {
@@ -143,8 +197,8 @@ export function buildCvrPortfolioModel(pos = []) {
           developmentName: development.developmentName,
           developmentNumber: development.jobNumber,
           periodKey: period.periodKey,
-          forecastLabel: formatCvrMoney(model.summary.finalForecast),
-          varianceLabel: formatCvrMoney(model.summary.variance),
+          forecastLabel: model.unavailable ? '—' : formatCvrMoney(model.summary.finalForecast),
+          varianceLabel: model.unavailable ? '—' : formatCvrMoney(model.summary.variance),
           submittedLabel: formatPoDate(period.submittedAt),
         });
       }
@@ -162,6 +216,7 @@ export function buildCvrPortfolioModel(pos = []) {
     const latestKey = sortPeriodKeys(periods.map((item) => item.periodKey)).pop();
     if (latestKey) {
       const model = buildCvrModel(development.id, { pos, periodKey: latestKey });
+      if (model.unavailable) continue;
       if (model.summary.finalForecast != null) {
         hasForecast = true;
         portfolioForecast += model.summary.finalForecast;

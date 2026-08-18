@@ -24,6 +24,8 @@ export default defineConfig({
       VITE_CE_SERVER_AUTHORITY: 'false',
       VITE_MATRIX_SERVER_AUTHORITY: 'false',
       VITE_CERTIFICATE_SERVER_AUTHORITY: 'false',
+      VITE_CVR_SERVER_AUTHORITY: 'false',
+      VITE_LEDGER_SERVER_AUTHORITY: 'false',
     },
   },
   server: {
