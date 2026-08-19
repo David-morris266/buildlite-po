@@ -19,7 +19,8 @@ Postgres is already the authority for:
 | `006_commercial_events.sql` | `commercial_events`, `commercial_event_audit` | BL-028 |
 | `007_package_order_matrices.sql` | `package_order_matrices` | BL-029 complete (schema/API + client server authority) |
 | `008_package_payment_certificates.sql` | `package_payment_certificates`, `package_payment_certificate_audit` | BL-030 fully complete (schema/API + client server authority; historical-freeze UAT passed). |
-| `009_cvr_and_purchase_ledger.sql` | `cvr_periods`, `cvr_period_audit`, `cvr_cost_code_inputs`, `ledger_import_batches`, `ledger_transactions` | **BL-031A–D**. Runtime CVR/ledger use Postgres when flags are ON. No CVR snapshots (BL-031E). |
+| `009_cvr_and_purchase_ledger.sql` | `cvr_periods`, `cvr_period_audit`, `cvr_cost_code_inputs`, `ledger_import_batches`, `ledger_transactions` | **BL-031A–D**. Runtime CVR/ledger use Postgres when flags are ON. |
+| `010_cvr_period_snapshots.sql` | `cvr_period_snapshots`, `cvr_period_snapshot_rows` | **BL-031E.1** schema only. Close engine (E.2) calculates a candidate snapshot and does not persist. Approve & Lock is not wired (E.3). Do not apply to `buildlite_clone` until instructed. |
 
 Still **browser/localStorage** (not yet Postgres authority):
 
@@ -47,12 +48,12 @@ The remainder of this file is the Phase 0 / BL-006 production schema reference. 
 
 BuildLite uses a single Postgres database (`buildlite_po_db` on Render). Schema is managed via:
 
-- Versioned SQL migrations in `server/migrations/` (`001`–`009`; `001`–`003` are the BL-006 production baseline)
+- Versioned SQL migrations in `server/migrations/` (`001`–`010`; `001`–`003` are the BL-006 production baseline)
 - `schema_migrations` tracking table
 - `npm run migrate` and `npm run seed` scripts
 - `db.js` init aligned with production plus later Doc 67 tables (fallback when migrations have not run)
 
-**Production database was the source of truth for BL-006.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files. Later Doc 67 migrations (`004`–`009`) are additive and must also not be rewritten after apply.
+**Production database was the source of truth for BL-006.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files. Later Doc 67 migrations (`004`–`010`) are additive and must also not be rewritten after apply.
 
 ---
 
@@ -225,6 +226,7 @@ Production authority for certificate numbering is **`legacy_cert_no`**, enforced
 | `007_package_order_matrices.sql` | BL-029: plot-stage order matrix schema/API; client server-authority cutover in BL-029D |
 | `008_package_payment_certificates.sql` | BL-030A: V1 package_payment_certificates + audit (does not alter legacy payment_certificates); client server-authority cutover in BL-030C |
 | `009_cvr_and_purchase_ledger.sql` | BL-031A: CVR periods + QS cost-code inputs + purchase ledger batches/transactions (server foundation only; snapshots are BL-031E) |
+| `010_cvr_period_snapshots.sql` | BL-031E.1: CVR period snapshot header + rows. Additive; no backfill of locked periods. Runtime persist is BL-031E.3. |
 
 ---
 
@@ -252,12 +254,27 @@ No snapshot tables in `009`. Legacy `payment_certificates` and BL-029/BL-030 mat
 
 ---
 
+## BL-031E.1 snapshot tables (schema only)
+
+Migration `010_cvr_period_snapshots.sql` adds:
+
+| Table | Purpose |
+|-------|---------|
+| `cvr_period_snapshots` | One frozen CVR close header per tenant period. Unique `(client_id, period_id)`. `period_id` is `ON DELETE RESTRICT` so deleting a CVR period cannot wipe history. |
+| `cvr_period_snapshot_rows` | Frozen per-cost-code commercial position. Unique `(snapshot_id, cost_code_key)`. Rows cascade when their snapshot is deleted. |
+
+The migration is additive and does **not** backfill locked periods. The server close engine (BL-031E.2) can reconstruct a candidate snapshot in memory; Approve & Lock does **not** persist it yet (BL-031E.3). Do not apply `010` to `buildlite_clone` until instructed.
+
+**Derived Summary labels:** BL-031D Summary “Certified Not in Ledger” is the same commercial value as Worksheet outstanding certified: `max(0, certified − actual)`. Historic Summary must derive that label from frozen `outstanding_certified`. Do **not** add a second money column. “Committed not certified” is likewise derived from frozen `committed` and `certified`.
+
+---
+
 ## Deploy runbook
 
 From `server/`:
 
 ```bash
-npm run migrate    # apply pending SQL (001 → … → 009)
+npm run migrate    # apply pending SQL (001 → …). Do not apply 010 to buildlite_clone until BL-031E.3 is instructed.
 npm run seed       # default client, cost codes, brand profile, client_id backfill
 npm start          # start API (calls db.init as fallback)
 ```
