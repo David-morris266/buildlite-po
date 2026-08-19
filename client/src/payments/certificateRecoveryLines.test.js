@@ -611,7 +611,7 @@ describe('BL-026 certificate recovery deductions', () => {
       .amountThisCertificate).toBe(-3000);
   });
 
-  it('33. certified gross excludes recovery; CVR net includes recovery deduction', () => {
+  it('33. certified gross excludes recovery; CVR certified cost includes recovery deduction', () => {
     seedApprovedVariation({ value: 10000 });
     const recovery = seedApprovedRecovery(undefined, { originValue: 5000 });
     const certificate = createDraftCertificate();
@@ -623,7 +623,7 @@ describe('BL-026 certificate recovery deductions', () => {
     });
 
     expect(calculatePackageCertifiedGross(ORDER_KEY, baseOrder)).toBe(24000);
-    expect(calculatePackageCertifiedValue(ORDER_KEY)).toBe(19800);
+    expect(calculatePackageCertifiedValue(ORDER_KEY)).toBe(21000);
   });
 
   it('34. legacy unclassified contra without financialTreatment stays contract amendment', () => {

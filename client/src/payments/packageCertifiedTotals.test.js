@@ -104,16 +104,16 @@ describe('BL-025.1 packageCertifiedTotals', () => {
     expect(calculateCommercialProgressPct(40000, 110000)).toBe(36);
   });
 
-  it('leaves existing CVR certified helper semantics unchanged', () => {
+  it('uses gross works for CVR certified cost, not certificate net payment', () => {
     approveCertWithTotals(40000, 45600);
-    expect(calculatePackageCertifiedValue(ORDER_KEY)).toBe(45600);
+    expect(calculatePackageCertifiedValue(ORDER_KEY)).toBe(40000);
     expect(
       getApprovedCertificateValue({
         status: 'locked',
         grossValue: 40000,
         netValue: 45600,
       })
-    ).toBe(45600);
+    ).toBe(40000);
     expect(
       getApprovedCertificateValue({
         status: 'locked',

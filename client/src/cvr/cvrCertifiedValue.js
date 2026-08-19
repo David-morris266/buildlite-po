@@ -3,39 +3,84 @@
  * Certified Value is informational only; it does not affect forecast calculations.
  */
 
+import { sumRecoveryDeductionLines } from '../payments/certificateRecoveryLines';
 import {
   isApprovedCommercialCertificate,
   resolveCertificatesForPackage,
 } from '../payments/paymentCertificateStore';
 import { roundMoney } from './cvrCalculations.js';
 
+function readCertificateMoney(...values) {
+  for (const value of values) {
+    if (value == null || value === '') continue;
+    const money = roundMoney(value);
+    if (money != null) return money;
+  }
+  return null;
+}
+
+function reconstructGrossWorks(certificate) {
+  const snapshotTotals = certificate?.valuationSnapshot?.totals || {};
+  const frozenGross = readCertificateMoney(
+    certificate?.grossValue,
+    snapshotTotals.grossWorksThisCertificate,
+    snapshotTotals.grossThisCertificate
+  );
+  if (frozenGross != null) return frozenGross;
+
+  const matrixGross = readCertificateMoney(
+    certificate?.matrixGross,
+    snapshotTotals.matrixGrossThisCertificate
+  );
+  const commercialEventGross = readCertificateMoney(
+    certificate?.commercialEventGross,
+    snapshotTotals.commercialEventGrossThisCertificate
+  );
+  if (matrixGross == null && commercialEventGross == null) return null;
+  return roundMoney((matrixGross ?? 0) + (commercialEventGross ?? 0));
+}
+
+function reconstructRecoverySigned(certificate) {
+  const snapshotTotals = certificate?.valuationSnapshot?.totals || {};
+  const frozenHeader = readCertificateMoney(
+    certificate?.recoverySigned,
+    snapshotTotals.recoveryDeductionSigned
+  );
+  if (frozenHeader != null) return frozenHeader;
+
+  const frozenLines =
+    certificate?.commercialLines ||
+    certificate?.valuationSnapshot?.commercialLines ||
+    [];
+  return sumRecoveryDeductionLines(frozenLines) ?? 0;
+}
+
+/**
+ * CVR certified cost for one approved certificate.
+ * gross works + signed recovery (recoveries stored negative).
+ * Does not use netValue, VAT, or retention.
+ */
 export function getApprovedCertificateValue(certificate) {
-  // BL-031D TODO: CVR certified must become matrix works + certified CE
-  // inclusions + signed recoveries, excluding retention and VAT.
-  // Live formula remains certificate net (fallback gross).
   if (!isApprovedCommercialCertificate(certificate)) return 0;
 
-  if (certificate.netValue != null && certificate.netValue !== '') {
-    const net = roundMoney(certificate.netValue);
-    if (net != null) return net;
-  }
+  const grossWorks = reconstructGrossWorks(certificate);
+  if (grossWorks == null) return null;
 
-  if (certificate.grossValue != null && certificate.grossValue !== '') {
-    const gross = roundMoney(certificate.grossValue);
-    if (gross != null) return gross;
-  }
-
-  return 0;
+  return roundMoney(grossWorks + reconstructRecoverySigned(certificate));
 }
 
 export function calculatePackageCertifiedValue(orderKey, order = null) {
   const resolved = resolveCertificatesForPackage(orderKey, order);
   if (!resolved.ready) return null;
 
-  return resolved.certificates.reduce(
-    (sum, certificate) => sum + getApprovedCertificateValue(certificate),
-    0
-  );
+  let total = 0;
+  for (const certificate of resolved.certificates) {
+    if (!isApprovedCommercialCertificate(certificate)) continue;
+    const value = getApprovedCertificateValue(certificate);
+    if (value == null) return null;
+    total += value;
+  }
+  return roundMoney(total) ?? 0;
 }
 
 export function calculateOutstandingCertified(certified, actualCost) {

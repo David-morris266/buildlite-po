@@ -82,14 +82,16 @@ export default function CVRRegister({
     onChanged?.();
   }
 
-  function handleCreatePeriod() {
+  async function handleCreatePeriod() {
     if (!register.ready) return;
 
     const result = register.draftPeriodKey
       ? { ok: true, periodKey: register.draftPeriodKey, opened: true }
-      : register.canCreateNext
-        ? createNextCvrPeriod(development.id)
-        : createOrOpenDraftPeriod(development.id);
+      : await Promise.resolve(
+          register.canCreateNext
+            ? createNextCvrPeriod(development.id)
+            : createOrOpenDraftPeriod(development.id)
+        );
 
     if (!result.ok) {
       window.alert(result.errors?.[0] || 'Could not create CVR period.');

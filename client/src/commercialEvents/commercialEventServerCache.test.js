@@ -16,6 +16,7 @@ import {
   getCachedCommercialEventById,
   getCommercialEventsLoadError,
   getCommercialEventsLoadState,
+  getCommercialEventFinancialReadiness,
   listCachedCommercialEventsByDevelopment,
   listCachedCommercialEventsByPackage,
   refreshCommercialEventsForDevelopment,
@@ -86,7 +87,24 @@ describe('commercialEventServerCache', () => {
     expect(listCachedCommercialEventsByDevelopment(DEV_A)).toHaveLength(1);
   });
 
-  it('refresh replaces cache contents', async () => {
+  it('does not drop loaded financial readiness on a later ensure() call', async () => {
+    buildApprovedVariationFixture({
+      developmentId: DEV_A,
+      orderKey: ORDER_KEY,
+      value: 250,
+    });
+    await ensureCommercialEventsReadyForDevelopment(DEV_A);
+    expect(getCommercialEventListCallCount()).toBe(1);
+    expect(getCommercialEventsLoadState(DEV_A)).toBe('loaded');
+
+    await ensureCommercialEventsReadyForDevelopment(DEV_A);
+
+    expect(getCommercialEventListCallCount()).toBe(1);
+    expect(getCommercialEventsLoadState(DEV_A)).toBe('loaded');
+    expect(listCachedCommercialEventsByDevelopment(DEV_A)).toHaveLength(1);
+  });
+
+  it('refresh keeps loaded financial readiness while replacing cache contents', async () => {
     buildApprovedVariationFixture({
       id: 'ce-first',
       developmentId: DEV_A,
@@ -111,6 +129,23 @@ describe('commercialEventServerCache', () => {
     expect(events).toHaveLength(1);
     expect(events[0].id).toBe('ce-second');
     expect(events[0].value).toBe(5000);
+    expect(getCommercialEventsLoadState(DEV_A)).toBe('loaded');
+  });
+
+  it('does not mark commercial events unavailable while refreshing a loaded cache', async () => {
+    buildApprovedVariationFixture({
+      developmentId: DEV_A,
+      orderKey: ORDER_KEY,
+      value: 250,
+    });
+    await ensureCommercialEventsReadyForDevelopment(DEV_A);
+    setCommercialEventListDelay(40);
+
+    const pending = refreshCommercialEventsForDevelopment(DEV_A);
+    expect(getCommercialEventsLoadState(DEV_A)).toBe('loaded');
+    expect(getCommercialEventFinancialReadiness(DEV_A).ready).toBe(true);
+    await pending;
+    expect(getCommercialEventsLoadState(DEV_A)).toBe('loaded');
   });
 
   it('keeps separate development caches isolated', async () => {

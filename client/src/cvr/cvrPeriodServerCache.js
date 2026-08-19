@@ -290,7 +290,16 @@ export function replaceCachedCvrInputs(periodId, documents) {
 
 export function upsertCachedCvrPeriod(developmentId, document) {
   if (!developmentId || !document) return null;
-  const mapped = normalizeServerCvrPeriod(document, document.costCentres || document.inputs);
+  const existingPeriod = getCachedCvrPeriods(developmentId).find(
+    (item) => item.id === document.id || item.periodKey === document.periodKey
+  );
+  const inputs =
+    document.costCentres ||
+    document.inputs ||
+    existingPeriod?.costCentres ||
+    getCachedCvrInputs(document.id) ||
+    [];
+  const mapped = normalizeServerCvrPeriod(document, inputs);
   const existing = getCachedCvrPeriods(developmentId).filter(
     (item) => item.id !== mapped.id && item.periodKey !== mapped.periodKey
   );

@@ -22,6 +22,10 @@ import {
   getCvrInputReadinessForPeriodKey,
   getCvrPeriodReadiness,
 } from './cvrPeriodServerCache';
+import {
+  createCostCentreOnServer,
+  patchCostCentreOnServer,
+} from './cvrPeriodAuthorityWrites';
 
 const STORAGE_KEY = 'buildlite_cvr_v1';
 export const CVR_CURRENT_PERIOD = 'current';
@@ -39,6 +43,9 @@ function readAll() {
 }
 
 function writeAll(data) {
+  if (isCvrServerAuthorityEnabled()) {
+    throw new Error('CVR localStorage writes are disabled while server authority is ON.');
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
@@ -326,6 +333,15 @@ export function updateDevelopmentNotes(
 ) {
   const editable = assertPeriodEditable(developmentId, periodKey);
   if (!editable.ok) return editable;
+  if (isCvrServerAuthorityEnabled()) {
+    return {
+      ok: false,
+      skipped: true,
+      errors: [
+        'Development notes are not stored on the server. Use cost-code notes or commercial commentary.',
+      ],
+    };
+  }
   const all = readAll();
   const record = ensureCvrRecord(developmentId);
   const now = new Date().toISOString();
@@ -403,9 +419,6 @@ function parseBudgetValue(value) {
 export function addCostCentre(developmentId, payload, periodKey = CVR_DEFAULT_PERIOD_KEY) {
   const editable = assertPeriodEditable(developmentId, periodKey);
   if (!editable.ok) return editable;
-  const all = readAll();
-  const record = ensureCvrRecord(developmentId);
-  const period = record.periods[periodKey] || emptyPeriod();
   const now = new Date().toISOString();
 
   const label = String(payload.costCodeLabel || '').trim();
@@ -430,11 +443,19 @@ export function addCostCentre(developmentId, payload, periodKey = CVR_DEFAULT_PE
     commercialReason: String(payload.commercialReason || '').trim(),
     adjustmentHistory: [],
     commercialNotes: '',
+    manualAccrual: parseBudgetValue(payload.manualAccrual) ?? 0,
     active: true,
     createdAt: now,
     updatedAt: now,
   });
 
+  if (isCvrServerAuthorityEnabled()) {
+    return createCostCentreOnServer(developmentId, periodKey, costCentre);
+  }
+
+  const all = readAll();
+  const record = ensureCvrRecord(developmentId);
+  const period = record.periods[periodKey] || emptyPeriod();
   period.costCentres = [...period.costCentres, costCentre];
   period.updatedAt = now;
   record.periods[periodKey] = period;
@@ -454,12 +475,12 @@ export function updateCostCentre(
   const editable = assertPeriodEditable(developmentId, periodKey);
   if (!editable.ok) return editable;
 
-  const all = readAll();
-  const record = ensureCvrRecord(developmentId);
-  const period = record.periods[periodKey];
+  const period = isCvrServerAuthorityEnabled()
+    ? getPeriodData(developmentId, periodKey)
+    : ensureCvrRecord(developmentId).periods[periodKey];
   if (!period) return { ok: false, errors: ['CVR period not found.'] };
 
-  const index = period.costCentres.findIndex((item) => item.id === costCentreId);
+  const index = (period.costCentres || []).findIndex((item) => item.id === costCentreId);
   if (index < 0) return { ok: false, errors: ['Cost code not found.'] };
 
   const current = period.costCentres[index];
@@ -546,12 +567,21 @@ export function updateCostCentre(
   if (patch.commercialNotes !== undefined) {
     next.commercialNotes = String(patch.commercialNotes || '');
   }
+  if (patch.manualAccrual !== undefined) {
+    next.manualAccrual = parseBudgetValue(patch.manualAccrual) ?? 0;
+  }
   if (patch.active !== undefined) {
     next.active = Boolean(patch.active);
   }
 
-  period.costCentres[index] = next;
-  period.updatedAt = now;
+  if (isCvrServerAuthorityEnabled()) {
+    return patchCostCentreOnServer(developmentId, periodKey, next);
+  }
+
+  const all = readAll();
+  const record = ensureCvrRecord(developmentId);
+  record.periods[periodKey].costCentres[index] = next;
+  record.periods[periodKey].updatedAt = now;
   record.updatedAt = now;
   all[developmentId] = record;
   writeAll(all);
@@ -572,6 +602,9 @@ export function deleteCostCentre(
   costCentreId,
   periodKey = CVR_DEFAULT_PERIOD_KEY
 ) {
+  if (isCvrServerAuthorityEnabled()) {
+    return updateCostCentre(developmentId, costCentreId, { active: false }, periodKey);
+  }
   const all = readAll();
   const record = ensureCvrRecord(developmentId);
   const period = record.periods[periodKey];
@@ -599,7 +632,7 @@ export function upsertAutoCostCentre(
   periodKey = CVR_DEFAULT_PERIOD_KEY
 ) {
   const period = getPeriodData(developmentId, periodKey);
-  const existing = period.costCentres.find(
+  const existing = (period.costCentres || []).find(
     (item) => item.costCodeKey === costCodeKey && item.active !== false
   );
   if (existing) return normaliseCostCentreRecord(existing);
@@ -620,6 +653,10 @@ export function upsertAutoCostCentre(
     },
     periodKey
   );
+
+  if (result && typeof result.then === 'function') {
+    return result.then((resolved) => (resolved.ok ? resolved.costCentre : null));
+  }
 
   return result.ok ? result.costCentre : null;
 }

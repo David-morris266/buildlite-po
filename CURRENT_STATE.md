@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030** (Payment Certificate persistence, including BL-030C server-authority cutover and passed historical-freeze UAT), the **BL-ASUS-001** development-machine checkpoint, **BL-031A** (CVR + purchase ledger server persistence/API foundation), **BL-031A.1** (local clone migration), **BL-031B** (client API/cache/hydration/readiness), and **BL-031C** (server-write facades + controlled localStorage→Postgres migration preparation, with **passed Test Site 1 CVR migration**). BL-031 is **not** complete. Runtime CVR/ledger authority remains localStorage until BL-031D.
+This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, and **BL-031A–D**. **BL-031D** Test Site 1 authority-on UAT **PASSED** and is banked. BL-031 is **not** complete: immutable CVR snapshots remain **BL-031E**. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
 
 Historic Phase 0 / BL-006 schema notes remain in `docs/DATABASE.md` and `docs/phase0/`. Do not treat those files as the current programme.
 
@@ -18,10 +18,10 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | BL-030 Payment Certificate persistence (including BL-030C cutover and historical-freeze UAT) |
-| Last persistence slice implemented | **BL-031C** server-write + migration preparation (Test Site 1 CVR migration **PASSED**; ledger empty; authority flags remain OFF; BL-031 not complete) |
+| Last persistence slice implemented | **BL-031D banked** — CVR/ledger server-authority cutover + live commercial facts/forecast overlays; Test Site 1 authority-on UAT **PASSED** |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT after bank** | **BL-031D** — do not start until instructed |
+| **NEXT after bank** | **BL-031E** — immutable CVR snapshot / period close. Do not start until instructed. |
 
 ---
 
@@ -35,9 +35,9 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | BL-028B.3a | Isolated server test database | **Complete** — `TEST_DATABASE_URL` / `buildlite_test`; must not use `buildlite_clone` |
 | **BL-029** | Order Matrix Persistence | **Complete** — schema/API (BL-029A), cache/hydration (BL-029B), **server-authority cutover (BL-029D)** |
 | **BL-030** | Payment Certificate persistence & atomic approval | **Complete** — schema/API (BL-030A), cache/hydration (BL-030B), **server-authority cutover (BL-030C)**, historical-freeze UAT **PASSED**. |
-| **BL-031** | CVR & Ledger persistence | **In progress** — **BL-031A** server schema/API, **BL-031A.1** clone migrate, **BL-031B** client cache/hydration, **BL-031C** server-write + Test Site 1 CVR migration **PASSED**. Not complete. Authority flags remain OFF. |
+| **BL-031** | CVR & Ledger persistence | **In progress** — **BL-031A–D** banked (Test Site 1 CVR migration and BL-031D authority-on UAT **PASSED**). **BL-031E** (snapshots) not started. Repo flag defaults remain OFF. |
 
-BL-030 is fully complete. **BL-031C** adds mutation facades, localStorage→server mappers, and a developer-only preflight/execute migration tool. Test Site 1 CVR P01 is now on `buildlite_clone`. It does **not** cut CVR/ledger authority over, auto-migrate, change live formulas, or snapshot. Persistence sprints must not add unrelated product features (Doc 67 §28).
+BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. It does **not** freeze historic snapshots (**BL-031E**). Persistence sprints must not add unrelated product features (Doc 67 §28).
 
 ---
 
@@ -52,12 +52,12 @@ BL-030 is fully complete. **BL-031C** adds mutation facades, localStorage→serv
 - **Commercial Events** + CE audit (`006_commercial_events.sql`)
 - **Order matrices** (`007_package_order_matrices.sql`) — plot-stage structure, committed value, versioned PUT
 - **V1 Payment Certificates** (`008_package_payment_certificates.sql`) — draft progress, commercial/recovery lines, submit/reject/approve, frozen snapshots
-- **CVR periods + purchase ledger tables** (`009_cvr_and_purchase_ledger.sql`) — **BL-031A server foundation**. Runtime CVR/ledger still use localStorage. **BL-031B** client cache exists but flags stay OFF. Approve/lock does **not** snapshot (BL-031E).
-- Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, and `VITE_CERTIFICATE_SERVER_AUTHORITY` for cutover (see `client/.env.example`). `VITE_CVR_SERVER_AUTHORITY` and `VITE_LEDGER_SERVER_AUTHORITY` exist for tests only — do **not** set them in `.env.local`. Do not commit `.env.local`.
+- **CVR periods + purchase ledger tables** (`009_cvr_and_purchase_ledger.sql`) — **BL-031A–D**. Runtime CVR/ledger use Postgres when `VITE_CVR_SERVER_AUTHORITY` / `VITE_LEDGER_SERVER_AUTHORITY` are ON. Approve/lock is workflow-only until **BL-031E** snapshots.
+- Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, `VITE_CERTIFICATE_SERVER_AUTHORITY`, `VITE_CVR_SERVER_AUTHORITY`, and `VITE_LEDGER_SERVER_AUTHORITY` for cutover (see `client/.env.example`). Repo defaults remain OFF. Local UAT uses `.env.local`. Do not commit `.env.local`.
 
 ### Browser / localStorage authority (not yet migrated)
 
-- CVR periods / cost centres (`buildlite_cvr_v1`) and purchase ledger (`buildlite_purchase_ledgers_v1`) — remaining **BL-031** slices (next: **BL-031D**). Server API, client cache, and a manual migration tool exist; runtime authority is still localStorage. `buildlite_clone` now holds Test Site 1 CVR P01 (9 inputs); ledger tables remain empty because no local ledger existed to migrate.
+- CVR periods / cost centres (`buildlite_cvr_v1`) and purchase ledger (`buildlite_purchase_ledgers_v1`) — backup/rollback evidence after BL-031D. Runtime uses Postgres when the CVR/ledger flags are ON (no localStorage fallback or dual-write).
 - Also still local: revenue, administration master data, setup drafts, Commercial Assistant dispositions
 
 `buildlite_order_matrices_v1` is backup/rollback evidence only after BL-029D. Runtime matrix reads/writes use Postgres when `VITE_MATRIX_SERVER_AUTHORITY=true`.
@@ -145,7 +145,7 @@ See `docs/test-data/README.md`.
 | Pack | Role |
 |------|------|
 | **Hawthorn Gardens** (`docs/test-data/Hawthorn Gardens UAT/`) | Intended **clean fictional known-answer** end-to-end UAT development. Permanent regression/UAT material. Not yet the imported live UAT model; import is a later task, not BL-029. |
-| **Test Site 1** (`docs/test-data/Test Site 1/`) | **Legacy / current historical test evidence.** Keep. Do not treat as the new clean commercial test model. Used for BL-029D matrix cutover, BL-030C certificate cutover UAT, and BL-031C CVR migration. |
+| **Test Site 1** (`docs/test-data/Test Site 1/`) | **Legacy / current historical test evidence.** Keep. Do not treat as the new clean commercial test model. Used for BL-029D, BL-030C, BL-031C migration, and **BL-031D authority-on UAT**. |
 
 ---
 
@@ -212,13 +212,13 @@ Implemented: Postgres schema + server API for CVR periods, per-cost-code QS inpu
 
 **Not in BL-031A:** React/server cache, authority flags, localStorage cutover, clone migration, CVR snapshots, live calculation formula changes, accrual UI, revenue.
 
-Agreed future commercial rules (recorded; **not** applied to live client engines in this slice):
+Agreed commercial rules (applied in **BL-031D**; historic snapshots remain **BL-031E**):
 
-- Current commitment = approved PO net + approved value-changing Commercial Events (client still ignores CEs)
-- CVR certified cost ≈ `grossWorks + recoverySigned` (exclude retention and VAT; current client still uses certificate net)
+- Current commitment = approved PO net + approved value-changing Commercial Events (recovery-classified CEs excluded)
+- CVR certified cost = frozen gross works + signed recovery (exclude retention and VAT; do not use `netValue`)
 - Ledger actual for CVR = SUM(net)
-- `manual_accrual` is a genuine QS input, distinct from outstanding certified
-- Approve & Lock will atomically snapshot in **BL-031E**; V1 will not reopen locked CVRs
+- `manual_accrual` is a genuine QS input on current cost / CTC, distinct from outstanding certified
+- Approve & Lock remains workflow-only until **BL-031E** atomically snapshots; V1 will not reopen locked CVRs
 
 ## BL-031B (client cache / hydration / readiness)
 
@@ -244,11 +244,41 @@ Executed from the real browser store against `buildlite_clone` for `dev-17855997
 | `ledger_import_batches` | 0 |
 | `ledger_transactions` | 0 |
 
-P01 is `draft` version 1, `period_key` / `period_label` `P01`, submitted/approved null, actor Commercial Manager, migration-time timestamps. Nine unique active inputs (`1110`, `2300`, `5105`, `5206`, `5212`, `5213`, `5215`, `5218`, `5231`) with budgets/adjustment/`manual_accrual` 0. No local ledger existed, so no batches were created. Rerun preflight: already migrated / no work. Other developments (including `dev-1785843994416-19t8ha`) have 0 CVR periods. Wipe It Cleaners evidence unchanged: 4 locked certs, gross £2,250, net £2,150, matrix v4, CE-0020 +£250, CE-0021 −£100.
+P01 is `draft` (workflow version later advanced by BL-031D submit/reject UAT). Nine unique active inputs (`1110`, `2300`, `5105`, `5206`, `5212`, `5213`, `5215`, `5218`, `5231`). No local ledger existed at migration, so no batches were created then. Other developments (including `dev-1785843994416-19t8ha`) have 0 CVR periods.
+
+## BL-031D (authority cutover + live formulas) — BANKED
+
+Test Site 1 **authority-on UAT PASSED**. Server cache/API is the runtime store when flags are ON (no localStorage fallback, no dual-write). Repo `.env.example` defaults remain OFF. Local UAT used `client/.env.local`. Do not commit `.env.local`.
+
+Live commercial facts / forecast overlays:
+
+- **Committed** = approved subcontract PO net + approved/closed contract-value CEs. Recovery-relationship events (including CE-0021) excluded. No PO/CE double count. Unresolved CE/package data stays unavailable (not silent £0). Wipe 5231: **£50,250**. Development: **£2,364,873**.
+- **Certified** = frozen gross works + signed recovery. Does **not** use certificate `netValue`, VAT, or retention. Wipe 5231: **£2,150**.
+- **Actual** = SUM(ledger `net_amount`). VAT/gross are evidence only.
+- **Current cost** = actual + **manualAccrual**. Accrual does not change committed, certified, or ledger actual.
+- **System forecast** = commitment if > 0, else non-zero current budget, else actual > 0, else 0.
+- **Final forecast** = system forecast + commercial adjustment (reason required when non-zero; adjustment history audited).
+- **Cost to complete** = final forecast − current cost.
+- **Outstanding certified** = max(0, certified − actual).
+- **Variance** = current budget − final forecast.
+
+UAT also covered worksheet Accrual / Current Cost columns, explicit **Save accrual** / **Save commercial adjustment** (no blur-write; dirty/clean button state), post-save commitment hydration (CE cache stays ready), summary KPIs, server-authority ledger import + supported reversal (offsetting row, no delete), and **Draft → Submit → Reject → Draft**. **Approve & Lock was not used** (one-way; no reopen). Snapshots remain **BL-031E**.
+
+### Test Site 1 clone evidence after UAT (do not delete)
+
+| Check | Result |
+|-------|--------|
+| P01 | `draft`; submitted/approved fields null after Reject |
+| Audit | `created`, `inputs_upserted`, `submitted`, `rejected` (`BL-031D UAT lifecycle test`) |
+| P02 | **not created** |
+| 5231 overlay | accrual **£100**, adjustment **+£500**, reason `BL-031D UAT test adjustment` |
+| Ledger | 1 batch (`BL031D-UAT-001.csv`); 2 transactions (+£25 origin, −£25 reversal); net/VAT/gross **£0**; 5231 actual **£0** |
+| Wipe certs 1–4 | locked 1625 / 375 / 250 / 0 (cert 4 net −£100) |
+| CE-0020 / CE-0021 | approved +£250 / approved −£100 recovery |
 
 ## Next action
 
-**BL-031D** is **NEXT**. Do **not** start BL-031D or BL-031E in this slice. Do not flip `VITE_CVR_SERVER_AUTHORITY` or `VITE_LEDGER_SERVER_AUTHORITY`. Do not alter Test Site 1 CVR/ledger rows, Wipe It Cleaners commercial data, Hawthorn Gardens, or live CVR calculations.
+**BL-031E** — immutable CVR snapshot / period close. Do **not** start until instructed. Do not Approve & Lock UAT P01. Do not create P02. Do not push unless asked. Do not alter Wipe certificates/matrix/CEs or Hawthorn Gardens.
 
 ---
 

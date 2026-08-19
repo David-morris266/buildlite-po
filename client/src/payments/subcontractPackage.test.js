@@ -280,13 +280,14 @@ describe('BL-025.1 canonical package value and certified totals', () => {
     expect(po100Order.committedValue).toBe(100000);
   });
 
-  it('leaves CVR calculatePackageCertifiedValue net-preferred semantics unchanged', () => {
+  it('CVR certified cost uses gross works, not certificate net payment', () => {
     ensurePackageRecord(ORDER_KEY, baseOrder);
     approveCertGross(40000, 45600);
-    expect(calculatePackageCertifiedValue(ORDER_KEY)).toBe(45600);
+    expect(calculatePackageCertifiedValue(ORDER_KEY)).toBe(40000);
     const pkg = buildPackageViewModel(baseOrder);
     expect(pkg.certifiedGrossToDate).toBe(40000);
-    expect(pkg.certifiedGrossToDate).not.toBe(calculatePackageCertifiedValue(ORDER_KEY));
+    expect(pkg.certifiedNetPaymentToDate).toBe(45600);
+    expect(pkg.certifiedNetPaymentToDate).not.toBe(calculatePackageCertifiedValue(ORDER_KEY));
   });
 
   it('handles zero current contract value without dividing by zero', () => {

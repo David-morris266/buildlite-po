@@ -10,12 +10,19 @@ import {
   updateCvrPeriodCommentary as persistCvrPeriodCommentary,
 } from './costCentreStore';
 import { isCvrServerAuthorityEnabled } from './cvrPeriodAuthority';
+import { migrateCostCentreHierarchy } from './commercialReportingHierarchy';
 import {
   getCachedCvrPeriodByKey,
   getCachedCvrPeriods,
   getCvrPeriodReadiness,
 } from './cvrPeriodServerCache';
-import { migrateCostCentreHierarchy } from './commercialReportingHierarchy';
+import {
+  approvePeriodOnServer,
+  createDraftPeriodOnServer,
+  rejectPeriodOnServer,
+  savePeriodCommentaryOnServer,
+  submitPeriodOnServer,
+} from './cvrPeriodAuthorityWrites';
 import {
   canApproveCvrPeriod,
   canCreateNextCvrPeriod,
@@ -42,6 +49,9 @@ function readAll() {
 }
 
 function writeAll(data) {
+  if (isCvrServerAuthorityEnabled()) {
+    throw new Error('CVR localStorage writes are disabled while server authority is ON.');
+  }
   localStorage.setItem('buildlite_cvr_v1', JSON.stringify(data));
 }
 
@@ -82,6 +92,7 @@ function copyCostCentreForRollForward(centre) {
     commercialReason: centre.commercialReason || '',
     adjustmentHistory: [],
     commercialNotes: centre.commercialNotes || '',
+    manualAccrual: centre.manualAccrual ?? 0,
     active: centre.active !== false,
     createdAt: now,
     updatedAt: now,
@@ -217,9 +228,27 @@ function assertCvrPeriodReadsReady(developmentId) {
 export function createOrOpenDraftPeriod(developmentId) {
   const blocked = assertCvrPeriodReadsReady(developmentId);
   if (!blocked.ok) return blocked;
+
+  if (isCvrServerAuthorityEnabled()) {
+    return (async () => {
+      const existingDraft = findDraftCvrPeriod(developmentId);
+      if (existingDraft) {
+        return { ok: true, periodKey: existingDraft.periodKey, opened: true };
+      }
+      const periods = listCvrPeriods(developmentId);
+      const source =
+        getLatestLockedCvrPeriod(developmentId) || periods[periods.length - 1] || null;
+      return createDraftPeriodOnServer(developmentId, {
+        periodKeys: periods.map((item) => item.periodKey),
+        sourcePeriod: source,
+      });
+    })();
+  }
   const existingDraft = findDraftCvrPeriod(developmentId);
   if (existingDraft) {
-    setActivePeriod(developmentId, existingDraft.periodKey);
+    if (!isCvrServerAuthorityEnabled()) {
+      setActivePeriod(developmentId, existingDraft.periodKey);
+    }
     return { ok: true, periodKey: existingDraft.periodKey, opened: true };
   }
 
@@ -245,11 +274,27 @@ export function createOrOpenDraftPeriod(developmentId) {
 export function createNextCvrPeriod(developmentId) {
   const blocked = assertCvrPeriodReadsReady(developmentId);
   if (!blocked.ok) return blocked;
+
+  if (isCvrServerAuthorityEnabled()) {
+    return (async () => {
+      const periods = listCvrPeriods(developmentId);
+      const gate = canCreateNextCvrPeriod(periods);
+      if (!gate.ok) {
+        if (gate.draftPeriodKey) {
+          return { ok: true, periodKey: gate.draftPeriodKey, opened: true };
+        }
+        return { ok: false, errors: [gate.reason] };
+      }
+      return createOrOpenDraftPeriod(developmentId);
+    })();
+  }
   const periods = listCvrPeriods(developmentId);
   const gate = canCreateNextCvrPeriod(periods);
   if (!gate.ok) {
     if (gate.draftPeriodKey) {
-      setActivePeriod(developmentId, gate.draftPeriodKey);
+      if (!isCvrServerAuthorityEnabled()) {
+        setActivePeriod(developmentId, gate.draftPeriodKey);
+      }
       return { ok: true, periodKey: gate.draftPeriodKey, opened: true };
     }
     return { ok: false, errors: [gate.reason] };
@@ -281,6 +326,16 @@ function updatePeriodRecord(developmentId, periodKey, updater) {
 }
 
 export function submitCvrPeriod(developmentId, periodKey) {
+  if (isCvrServerAuthorityEnabled()) {
+    const blocked = assertCvrPeriodReadsReady(developmentId);
+    if (!blocked.ok) return blocked;
+    const period = getCvrPeriod(developmentId, periodKey);
+    if (!canSubmitCvrPeriod(period)) {
+      return { ok: false, errors: ['This CVR period cannot be submitted.'] };
+    }
+    return submitPeriodOnServer(developmentId, periodKey);
+  }
+
   return updatePeriodRecord(developmentId, periodKey, (period) => {
     if (!canSubmitCvrPeriod(period)) return null;
 
@@ -298,6 +353,16 @@ export function submitCvrPeriod(developmentId, periodKey) {
 }
 
 export function approveCvrPeriod(developmentId, periodKey) {
+  if (isCvrServerAuthorityEnabled()) {
+    const blocked = assertCvrPeriodReadsReady(developmentId);
+    if (!blocked.ok) return blocked;
+    const period = getCvrPeriod(developmentId, periodKey);
+    if (!canApproveCvrPeriod(period)) {
+      return { ok: false, errors: ['This CVR period cannot be approved.'] };
+    }
+    return approvePeriodOnServer(developmentId, periodKey);
+  }
+
   return updatePeriodRecord(developmentId, periodKey, (period) => {
     if (!canApproveCvrPeriod(period)) return null;
 
@@ -319,6 +384,16 @@ export function rejectCvrPeriod(developmentId, periodKey, comment = '') {
   const trimmed = String(comment || '').trim();
   if (!trimmed) {
     return { ok: false, errors: ['A rejection comment is required.'] };
+  }
+
+  if (isCvrServerAuthorityEnabled()) {
+    const blocked = assertCvrPeriodReadsReady(developmentId);
+    if (!blocked.ok) return blocked;
+    const period = getCvrPeriod(developmentId, periodKey);
+    if (!canRejectCvrPeriod(period)) {
+      return { ok: false, errors: ['This CVR period cannot be rejected.'] };
+    }
+    return rejectPeriodOnServer(developmentId, periodKey, trimmed);
   }
 
   return updatePeriodRecord(developmentId, periodKey, (period) => {
@@ -360,6 +435,20 @@ export function assertCvrPeriodEditable(developmentId, periodKey) {
 }
 
 export function saveCvrPeriodCommentary(developmentId, periodKey, patch) {
+  if (isCvrServerAuthorityEnabled()) {
+    const blocked = assertCvrPeriodReadsReady(developmentId);
+    if (!blocked.ok) return blocked;
+    const period = getCvrPeriod(developmentId, periodKey);
+    if (!isCvrPeriodEditable(period)) {
+      return { ok: false, errors: ['This CVR period is read-only.'] };
+    }
+    const nextCommentary = {
+      ...(period.commercialCommentary || {}),
+      ...patch,
+    };
+    return savePeriodCommentaryOnServer(developmentId, periodKey, nextCommentary);
+  }
+
   const persist = persistCvrPeriodCommentary(developmentId, patch, periodKey);
   if (!persist.ok) return persist;
 

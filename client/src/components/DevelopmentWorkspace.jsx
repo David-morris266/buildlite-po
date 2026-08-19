@@ -185,8 +185,10 @@ export default function DevelopmentWorkspace({
       setPackagesLoadState('loading');
       setPackagesLoadError('');
       setServerPackages(null);
-      setCommercialEventsLoadState('loading');
-      setCommercialEventsLoadError('');
+      if (getCommercialEventsLoadState(development.id) !== 'loaded') {
+        setCommercialEventsLoadState('loading');
+        setCommercialEventsLoadError('');
+      }
       if (getOrderMatricesLoadState(development.id) !== 'loaded') {
         setMatricesLoadState('loading');
         setMatricesLoadError('');

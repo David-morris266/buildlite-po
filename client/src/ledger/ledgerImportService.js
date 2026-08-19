@@ -21,6 +21,10 @@ import {
   appendTransactions,
   createTransaction,
 } from './ledgerTransactionStore';
+import { isCvrServerAuthorityEnabled } from '../cvr/cvrPeriodAuthority';
+import { isLedgerServerAuthorityEnabled } from './ledgerAuthority';
+import { importServerLedgerBatch } from './ledgerServerMutations';
+import { mapLocalLedgerTransaction } from './ledgerLocalServerMapper';
 
 function sessionActor() {
   return (
@@ -86,7 +90,7 @@ export function buildLedgerValidationResult(parsed, context) {
   );
 }
 
-export function executeLedgerImport(developmentId, validationResult, metadata = {}) {
+export async function executeLedgerImport(developmentId, validationResult, metadata = {}) {
   if (!validationResult?.canImport || !validationResult.validRows?.length) {
     return { ok: false, errors: ['No valid rows to import.'] };
   }
@@ -94,7 +98,8 @@ export function executeLedgerImport(developmentId, validationResult, metadata = 
   let newCostCentresCreated = 0;
   if (
     metadata.createUnknownCostCentres &&
-    validationResult.pendingNewCostCentres?.length
+    validationResult.pendingNewCostCentres?.length &&
+    !isCvrServerAuthorityEnabled()
   ) {
     newCostCentresCreated = createCostCentresFromImport(
       developmentId,
@@ -123,6 +128,47 @@ export function executeLedgerImport(developmentId, validationResult, metadata = 
       importedBy: actor,
     })
   );
+
+  if (isLedgerServerAuthorityEnabled()) {
+    const mapped = [];
+    const errors = [];
+    transactions.forEach((txn, index) => {
+      const result = mapLocalLedgerTransaction(txn, index);
+      if (!result.ok) {
+        errors.push(...result.errors);
+        return;
+      }
+      mapped.push(result.value);
+    });
+    if (errors.length) {
+      return { ok: false, errors };
+    }
+
+    const imported = await importServerLedgerBatch(developmentId, {
+      originalFileName: metadata.fileName || '',
+      sourceProfile: metadata.importProfile || 'Custom',
+      importedBy: actor,
+      transactions: mapped,
+      metadata: {
+        importBatch,
+        rowsRejected: validationResult.errorCount,
+        warningCount: validationResult.warningCount,
+      },
+    });
+    if (!imported.ok) return imported;
+
+    return {
+      ok: true,
+      importBatch: imported.batch?.id || importBatch,
+      importedCount: imported.transactions?.length ?? validationResult.importedCount,
+      rejectedCount: validationResult.errorCount,
+      warningCount: validationResult.warningCount,
+      newCostCentresCreated,
+      totalValue: validationResult.totalValue,
+      duplicates: imported.duplicates || [],
+      batch: imported.batch,
+    };
+  }
 
   appendTransactions(developmentId, transactions);
 

@@ -72,11 +72,19 @@ export function roundMoney(value) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-export function calculateCostToComplete(forecastFinalCost, actualCost) {
+export function calculateIncurredCost(actualCost, manualAccrual = 0) {
+  if (actualCost == null || actualCost === '') return null;
+  const actual = roundMoney(actualCost);
+  if (actual == null) return null;
+  return roundMoney(actual + (roundMoney(manualAccrual) ?? 0));
+}
+
+export function calculateCostToComplete(forecastFinalCost, actualCost, manualAccrual = 0) {
   const forecast = roundMoney(forecastFinalCost);
-  const actual = roundMoney(actualCost) ?? 0;
   if (forecast == null) return null;
-  return roundMoney(forecast - actual);
+  const incurred = calculateIncurredCost(actualCost, manualAccrual);
+  if (incurred == null) return roundMoney(forecast - (roundMoney(actualCost) ?? 0));
+  return roundMoney(forecast - incurred);
 }
 
 export function calculateVariance(currentBudget, forecastFinalCost) {
@@ -120,6 +128,8 @@ export function buildCvrTotals(rows) {
     systemForecast: sumNullable(rows.map((row) => row.systemForecast)),
     outstandingCertified: sumNullable(rows.map((row) => row.outstandingCertified)),
     commercialAdjustment: sumNullable(rows.map((row) => row.commercialAdjustment)),
+    manualAccrual: sumNullable(rows.map((row) => row.manualAccrual)),
+    currentCost: sumNullable(rows.map((row) => row.currentCost)),
     finalForecast: sumNullable(rows.map((row) => row.finalForecast)),
     forecastFinalCost: sumNullable(rows.map((row) => row.finalForecast)),
     costToComplete: sumNullable(rows.map((row) => row.costToComplete)),

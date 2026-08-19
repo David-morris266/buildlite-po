@@ -90,7 +90,7 @@ describe('CVR certificate hydration (BL-030C)', () => {
 
     await ensureCertificatesReadyForDevelopment(DEV_ID);
     expect(getDevelopmentCertificateLoadState(DEV_ID)).toBe('loaded');
-    expect(calculatePackageCertifiedValue(ORDER_KEY, order)).toBe(22800);
+    expect(calculatePackageCertifiedValue(ORDER_KEY, order)).toBe(24000);
   });
 
   it('deduplicates development hydration requests', async () => {

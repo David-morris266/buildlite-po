@@ -1,8 +1,9 @@
 /**
  * BL-025.1 — Package-level certified gross/net totals (Doc 64 / Doc 65).
  *
- * CVR continues to use cvrCertifiedValue.calculatePackageCertifiedValue(),
- * which prefers netValue. These helpers are explicit for package display.
+ * CVR uses cvrCertifiedValue.calculatePackageCertifiedValue() as
+ * gross works + signed recovery (not netValue). These helpers remain
+ * explicit package-display gross/net totals.
  */
 
 import { roundMoney } from './paymentCertificateCalculations';

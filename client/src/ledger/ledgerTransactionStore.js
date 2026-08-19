@@ -25,6 +25,9 @@ function readAll() {
 }
 
 function writeAll(data) {
+  if (isLedgerServerAuthorityEnabled()) {
+    throw new Error('Ledger localStorage writes are disabled while server authority is ON.');
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
@@ -159,6 +162,12 @@ export function createTransaction(payload) {
 }
 
 export function appendTransactions(developmentId, transactions) {
+  if (isLedgerServerAuthorityEnabled()) {
+    return {
+      ok: false,
+      errors: ['Purchase ledger server authority is on. Local ledger writes are disabled.'],
+    };
+  }
   const all = readAll();
   const record = normaliseLedgerRecord(all[developmentId]);
   const now = new Date().toISOString();
@@ -173,6 +182,12 @@ export function appendTransactions(developmentId, transactions) {
 }
 
 export function appendImportHistory(developmentId, entry) {
+  if (isLedgerServerAuthorityEnabled()) {
+    return {
+      ok: false,
+      errors: ['Purchase ledger server authority is on. Local ledger writes are disabled.'],
+    };
+  }
   const all = readAll();
   const record = normaliseLedgerRecord(all[developmentId]);
   const now = new Date().toISOString();

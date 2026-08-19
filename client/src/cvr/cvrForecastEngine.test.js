@@ -3,6 +3,7 @@ import {
   calculateSystemForecast,
   calculateFinalForecast,
   enrichCvrForecastRow,
+  applyCostCentreSaveToCvrRow,
   validateCommercialAdjustment,
 } from './cvrForecastEngine.js';
 import { calculateCostToComplete, calculateVariance } from './cvrCalculations.js';
@@ -180,5 +181,55 @@ describe('enrichCvrForecastRow', () => {
     expect(row.systemForecast).toBe(50000);
     expect(row.finalForecast).toBe(50000);
     expect(row.costToComplete).toBe(-30000);
+  });
+
+  it('zero stored budget does not collapse commitment-driven forecast', () => {
+    const row = enrichCvrForecastRow({
+      currentBudget: 0,
+      originalBudget: 0,
+      committed: 50250,
+      actualCost: 0,
+      certified: 2150,
+      commercialAdjustment: 0,
+      manualAccrual: 100,
+      systemForecast: 0,
+      finalForecast: 0,
+      costToComplete: -100,
+    });
+
+    expect(row.committed).toBe(50250);
+    expect(row.certified).toBe(2150);
+    expect(row.actualCost).toBe(0);
+    expect(row.manualAccrual).toBe(100);
+    expect(row.currentCost).toBe(100);
+    expect(row.systemForecast).toBe(50250);
+    expect(row.finalForecast).toBe(50250);
+    expect(row.costToComplete).toBe(50150);
+  });
+
+  it('applyCostCentreSaveToCvrRow keeps package commitment when rehydrating accrual', () => {
+    const row = applyCostCentreSaveToCvrRow(
+      {
+        committed: 50250,
+        certified: 2150,
+        actualCost: 0,
+        currentBudget: 0,
+        commercialAdjustment: 0,
+        systemForecast: 0,
+        finalForecast: 0,
+        costToComplete: 0,
+        currentCost: 0,
+        manualAccrual: 0,
+      },
+      { manualAccrual: 100 }
+    );
+    expect(row.committed).toBe(50250);
+    expect(row.certified).toBe(2150);
+    expect(row.actualCost).toBe(0);
+    expect(row.manualAccrual).toBe(100);
+    expect(row.currentCost).toBe(100);
+    expect(row.systemForecast).toBe(50250);
+    expect(row.finalForecast).toBe(50250);
+    expect(row.costToComplete).toBe(50150);
   });
 });

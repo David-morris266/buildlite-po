@@ -9,7 +9,9 @@ import {
   getPoCostCode,
   getPoOrderScopeId,
   buildSubcontractOrdersFromPos,
+  isApprovedSubcontractPo,
 } from '../payments/subcontractOrders';
+import { buildPackageCommercialDisplayFields } from '../commercialEvents/commercialEventPackageValue';
 import { listTransactions } from '../ledger/ledgerTransactionStore';
 import { isLedgerServerAuthorityEnabled } from '../ledger/ledgerAuthority';
 import { getLedgerReadiness } from '../ledger/ledgerServerCache';
@@ -50,13 +52,31 @@ function isApprovedPo(po) {
 }
 
 export function buildCommitmentsByCostCode(developmentId, pos = []) {
-  // BL-031D TODO: commitment must become approved PO net + approved
-  // value-changing Commercial Events. Live formula remains PO net only.
   const totals = new Map();
   const labels = new Map();
+  const unavailable = new Set();
+
+  for (const order of buildSubcontractOrdersFromPos(pos)) {
+    if (order.developmentId !== developmentId) continue;
+
+    const key = normaliseCostCodeKey(order.costCode);
+    if (!key) continue;
+
+    const display = buildPackageCommercialDisplayFields(order);
+    if (display.commercialEventsReady === false) {
+      unavailable.add(key);
+      continue;
+    }
+
+    const amount = Number(display.currentPackageValue);
+    totals.set(key, (totals.get(key) || 0) + (Number.isFinite(amount) ? amount : 0));
+    if (!labels.has(key)) {
+      labels.set(key, buildCostCodeLabel(key, order.costCode));
+    }
+  }
 
   for (const po of pos) {
-    if (!isApprovedPo(po)) continue;
+    if (!isApprovedPo(po) || isApprovedSubcontractPo(po)) continue;
 
     const enriched = enrichPoWithDevelopmentRef(po);
     const scopeId = getPoOrderScopeId(enriched);
@@ -64,7 +84,7 @@ export function buildCommitmentsByCostCode(developmentId, pos = []) {
 
     const costCode = getPoCostCode(enriched);
     const key = normaliseCostCodeKey(costCode);
-    if (!key) continue;
+    if (!key || unavailable.has(key)) continue;
 
     totals.set(key, (totals.get(key) || 0) + getPoCommittedNet(enriched));
     if (!labels.has(key)) {
@@ -72,7 +92,11 @@ export function buildCommitmentsByCostCode(developmentId, pos = []) {
     }
   }
 
-  return { totals, labels };
+  for (const key of unavailable) {
+    totals.delete(key);
+  }
+
+  return { totals, labels, unavailable };
 }
 
 export function getCvrSourceReadiness(developmentId, periodKey = CVR_DEFAULT_PERIOD_KEY) {
@@ -99,7 +123,6 @@ export function getCvrSourceReadiness(developmentId, periodKey = CVR_DEFAULT_PER
 
 export function buildActualsByCostCode(developmentId) {
   // Ledger actual for CVR = SUM(netAmount). VAT/gross are evidence only.
-  // BL-031D TODO: manualAccrual is persisted but still unused in live calculations.
   if (isLedgerServerAuthorityEnabled() && !getLedgerReadiness(developmentId).ready) {
     return { totals: new Map(), labels: new Map(), unavailable: true };
   }
@@ -159,6 +182,11 @@ function collectCostCodeKeys(sources) {
         keys.add(key);
       }
     }
+    if (source.unavailable instanceof Set) {
+      for (const key of source.unavailable) {
+        keys.add(key);
+      }
+    }
   }
   return keys;
 }
@@ -213,7 +241,9 @@ export function buildCvrRows(developmentId, options = {}) {
         description: manual?.description || '',
         originalBudget: manual?.originalBudget ?? null,
         currentBudget: manual?.currentBudget ?? null,
-        committed: commitments.totals.get(key) ?? (hasManualBudget ? 0 : null),
+        committed: commitments.unavailable?.has(key)
+          ? null
+          : commitments.totals.get(key) ?? (hasManualBudget ? 0 : null),
         certified: certifiedValue,
         actualCost: actuals.unavailable
           ? null
@@ -222,6 +252,7 @@ export function buildCvrRows(developmentId, options = {}) {
         commercialReason: manual?.commercialReason || '',
         adjustmentHistory: manual?.adjustmentHistory || [],
         commercialNotes: manual?.commercialNotes || '',
+        manualAccrual: manual?.manualAccrual ?? 0,
         isManual: Boolean(manual),
         canDelete:
           !commitments.totals.get(key) &&
@@ -232,6 +263,7 @@ export function buildCvrRows(developmentId, options = {}) {
 
     if (actuals.unavailable) {
       row.actualCost = null;
+      row.currentCost = null;
       row.costToComplete = null;
       row.outstandingCertified = null;
       row.outstandingCertifiedState = 'neutral';
@@ -271,6 +303,8 @@ export function buildCvrModel(developmentId, options = {}) {
         outstandingCertified: null,
         systemForecast: null,
         commercialAdjustment: null,
+        manualAccrual: null,
+        currentCost: null,
         finalForecast: null,
         forecastFinalCost: null,
         variance: null,
@@ -285,6 +319,7 @@ export function buildCvrModel(developmentId, options = {}) {
   const ledgerReady = readiness.ledgerReady !== false;
   if (!ledgerReady) {
     totals.actualCost = null;
+    totals.currentCost = null;
     totals.costToComplete = null;
     totals.outstandingCertified = null;
   }
@@ -307,6 +342,8 @@ export function buildCvrModel(developmentId, options = {}) {
       outstandingCertified: ledgerReady ? totals.outstandingCertified : null,
       systemForecast: totals.systemForecast,
       commercialAdjustment: totals.commercialAdjustment,
+      manualAccrual: totals.manualAccrual,
+      currentCost: ledgerReady ? totals.currentCost : null,
       finalForecast: totals.finalForecast,
       forecastFinalCost: totals.finalForecast,
       variance: totals.variance,
@@ -323,15 +360,19 @@ export function buildPackagesForCostCentre(developmentId, costCodeKey, pos = [])
       costCodesMatch(order.costCode, costCodeKey)
   );
 
-  return orders.map((order) => ({
-    id: order.orderKey,
-    label: order.supplierLabel,
-    costCode: order.costCode,
-    committedValue: order.committedValue,
-    certifiedValue: calculatePackageCertifiedValue(order.orderKey, order),
-    poNumbers: order.poNumbers,
-    certificateCount: order.certificateCount,
-  }));
+  return orders.map((order) => {
+    const display = buildPackageCommercialDisplayFields(order);
+    return {
+      id: order.orderKey,
+      label: order.supplierLabel,
+      costCode: order.costCode,
+      committedValue:
+        display.commercialEventsReady === false ? null : display.currentPackageValue,
+      certifiedValue: calculatePackageCertifiedValue(order.orderKey, order),
+      poNumbers: order.poNumbers,
+      certificateCount: order.certificateCount,
+    };
+  });
 }
 
 export function buildCertificatesForCostCentre(developmentId, costCodeKey, pos = []) {

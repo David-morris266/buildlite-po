@@ -20,8 +20,8 @@ describe('authority-OFF ledger import path (BL-031B regression)', () => {
     localStorage.setItem('userName', 'Test QS');
   });
 
-  it('imports valid rows into localStorage and totals actuals from net', () => {
-    const result = executeLedgerImport(
+  it('imports valid rows into localStorage and totals actuals from net', async () => {
+    const result = await executeLedgerImport(
       DEV_ID,
       {
         canImport: true,

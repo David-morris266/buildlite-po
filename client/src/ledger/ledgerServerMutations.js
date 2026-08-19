@@ -1,7 +1,7 @@
 /**
- * BL-031C — Purchase ledger server mutation facade for future BL-031D.
+ * BL-031C/D — Purchase ledger server mutation facade.
  *
- * Live UI must not call these while VITE_LEDGER_SERVER_AUTHORITY is OFF.
+ * Live UI calls these only when VITE_LEDGER_SERVER_AUTHORITY is ON.
  */
 
 import {

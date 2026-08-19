@@ -208,7 +208,7 @@ describe('payment certificate authority reads (BL-030B)', () => {
 
     expect(calculatePackageCertifiedGross(ORDER_KEY, baseOrder)).toBe(24000);
     expect(calculatePackageCertifiedNet(ORDER_KEY, baseOrder)).toBe(22800);
-    expect(calculatePackageCertifiedValue(ORDER_KEY, baseOrder)).toBe(22800);
+    expect(calculatePackageCertifiedValue(ORDER_KEY, baseOrder)).toBe(24000);
     expect(calculateRemainingContractValue(100000, 24000)).toBe(76000);
   });
 

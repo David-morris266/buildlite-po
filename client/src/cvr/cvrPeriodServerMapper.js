@@ -37,7 +37,7 @@ function toNumber(value, fallback = 0) {
 
 export function normalizeServerCvrPeriod(document, inputs = []) {
   if (!document) return null;
-  const commentary = commentaryOf(document.commentary);
+  const commentary = commentaryOf(document.commentary || document.commercialCommentary);
   return {
     id: document.id,
     developmentId: document.developmentId,

@@ -377,7 +377,7 @@ describe('BL-025.3 certificate works totals', () => {
     expect(totals.remainingContract).toBeLessThan(0);
   });
 
-  it('25. CVR certified helper reads approved netValue including CE valuation', () => {
+  it('25. CVR certified helper uses gross works, ignoring retention in net payment', () => {
     const cert = createCertificate(ORDER_KEY, baseOrder).certificate;
     submitCertificate(ORDER_KEY, cert.id);
     approveCertificate(ORDER_KEY, cert.id, {
@@ -385,6 +385,6 @@ describe('BL-025.3 certificate works totals', () => {
       grossThisCertificate: 24000,
       netPayment: 22800,
     });
-    expect(calculatePackageCertifiedValue(ORDER_KEY)).toBe(22800);
+    expect(calculatePackageCertifiedValue(ORDER_KEY)).toBe(24000);
   });
 });

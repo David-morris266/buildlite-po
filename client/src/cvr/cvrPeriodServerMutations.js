@@ -1,7 +1,7 @@
 /**
- * BL-031C — CVR period server mutation facade for future BL-031D.
+ * BL-031C/D — CVR period server mutation facade.
  *
- * Live UI must not call these while VITE_CVR_SERVER_AUTHORITY is OFF.
+ * Live UI calls these only when VITE_CVR_SERVER_AUTHORITY is ON.
  * Approve/lock is workflow-only; snapshots remain BL-031E.
  */
 
@@ -52,7 +52,9 @@ function mapApiError(error) {
 }
 
 function cachePeriod(developmentId, period) {
-  if (developmentId && period) upsertCachedCvrPeriod(developmentId, period);
+  if (developmentId && period) {
+    return upsertCachedCvrPeriod(developmentId, period) || period;
+  }
   return period;
 }
 

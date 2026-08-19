@@ -252,7 +252,7 @@ export default function PurchaseLedgerImportWizard({
     return buildLedgerImportCrossCheck(parsedState, validationResult);
   }, [validationResult, parsedState, currentStep?.id]);
 
-  function runImport(forceConfirm = false) {
+  async function runImport(forceConfirm = false) {
     const result = buildLedgerValidationResult(parsedState, validationContext);
     if (!result.canImport) {
       setError('No valid rows available to import.');
@@ -265,7 +265,7 @@ export default function PurchaseLedgerImportWizard({
       return;
     }
 
-    const importResult = executeLedgerImport(development.id, result, {
+    const importResult = await executeLedgerImport(development.id, result, {
       fileName,
       importProfile: profileName || profiles.find((p) => p.id === selectedProfileId)?.name || 'Custom',
       createUnknownCostCentres,

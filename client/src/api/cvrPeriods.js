@@ -1,8 +1,7 @@
 /**
  * BL-031B — CVR period server API client (BL-031A routes).
  *
- * Runtime hydration uses READ helpers only. Mutation wrappers exist for BL-031C
- * and must remain unwired from live UI.
+ * Live UI mutations are used when VITE_CVR_SERVER_AUTHORITY is ON (BL-031D).
  */
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace(

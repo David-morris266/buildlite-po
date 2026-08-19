@@ -105,12 +105,19 @@ export async function loadCommercialEventsForDevelopment(developmentId) {
 
 export async function refreshCommercialEventsForDevelopment(developmentId) {
   if (!developmentId) return [];
-  loadStateByDevelopment.set(developmentId, 'loading');
+  const keepShowingCachedEvents = getCommercialEventsLoadState(developmentId) === 'loaded';
+  if (!keepShowingCachedEvents) {
+    loadStateByDevelopment.set(developmentId, 'loading');
+  }
   loadErrorByDevelopment.set(developmentId, null);
 
   try {
     const events = await fetchAndIndex(developmentId);
     loadStateByDevelopment.set(developmentId, 'loaded');
+    notifyCommercialChanged({
+      developmentId,
+      source: 'server-cache-refresh',
+    });
     return events;
   } catch (error) {
     const wrapped = wrapApiError(error);
@@ -127,6 +134,10 @@ export async function ensureCommercialEventsReadyForDevelopment(developmentId) {
 
   if (loadPromiseByDevelopment.has(developmentId)) {
     return loadPromiseByDevelopment.get(developmentId);
+  }
+
+  if (getCommercialEventsLoadState(developmentId) === 'loaded') {
+    return Promise.resolve(listCachedCommercialEventsByDevelopment(developmentId));
   }
 
   const promise = (async () => {

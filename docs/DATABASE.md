@@ -2,8 +2,8 @@
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
 **Last product slice fully complete:** BL-030 Payment Certificate persistence (including BL-030C server authority and passed historical-freeze UAT).  
-**Last persistence slice implemented:** BL-031C — server-write facades + controlled localStorage→Postgres migration; Test Site 1 CVR P01 **PASSED** on `buildlite_clone` (9 inputs; ledger empty). Runtime authority remains localStorage. BL-031 is **not** complete.  
-**NEXT after bank:** BL-031D.
+**Last persistence slice implemented:** **BL-031D banked** — CVR/ledger server-authority cutover + live commercial facts/forecast overlays; Test Site 1 authority-on UAT **PASSED**. BL-031 is **not** complete.  
+**NEXT:** **BL-031E** immutable CVR snapshot / period close. Do not start until instructed.
 
 ---
 
@@ -19,13 +19,13 @@ Postgres is already the authority for:
 | `006_commercial_events.sql` | `commercial_events`, `commercial_event_audit` | BL-028 |
 | `007_package_order_matrices.sql` | `package_order_matrices` | BL-029 complete (schema/API + client server authority) |
 | `008_package_payment_certificates.sql` | `package_payment_certificates`, `package_payment_certificate_audit` | BL-030 fully complete (schema/API + client server authority; historical-freeze UAT passed). |
-| `009_cvr_and_purchase_ledger.sql` | `cvr_periods`, `cvr_period_audit`, `cvr_cost_code_inputs`, `ledger_import_batches`, `ledger_transactions` | **BL-031A** server schema/API. **BL-031B** client cache exists; flags remain OFF. Test Site 1 CVR P01 migrated in BL-031C. No CVR snapshots. |
+| `009_cvr_and_purchase_ledger.sql` | `cvr_periods`, `cvr_period_audit`, `cvr_cost_code_inputs`, `ledger_import_batches`, `ledger_transactions` | **BL-031A–D**. Runtime CVR/ledger use Postgres when flags are ON. No CVR snapshots (BL-031E). |
 
 Still **browser/localStorage** (not yet Postgres authority):
 
-- CVR periods/cost centres and purchase ledger **runtime** — remaining BL-031 slices (next: BL-031D). Server tables/API, client cache, and Test Site 1 P01 rows exist; flags remain OFF.
+- Revenue, administration master data, setup drafts, Commercial Assistant dispositions
 
-Order matrices are server-authoritative when `VITE_MATRIX_SERVER_AUTHORITY=true`. V1 payment certificates are server-authoritative when `VITE_CERTIFICATE_SERVER_AUTHORITY=true`. Do not commit `.env.local`.
+CVR periods/cost centres and purchase ledger are server-authoritative when `VITE_CVR_SERVER_AUTHORITY=true` and `VITE_LEDGER_SERVER_AUTHORITY=true`. Order matrices are server-authoritative when `VITE_MATRIX_SERVER_AUTHORITY=true`. V1 payment certificates are server-authoritative when `VITE_CERTIFICATE_SERVER_AUTHORITY=true`. Do not commit `.env.local`.
 
 The legacy `payment_certificates` / `payment_certificate_lines` tables below are **not** the V1 React certificate engine. Do not merge those models merely because a certificate table already exists (Doc 67 §21).
 
@@ -230,7 +230,7 @@ Production authority for certificate numbering is **`legacy_cert_no`**, enforced
 
 ## BL-031A tables (server foundation)
 
-These tables persist the two domains that are still browser-local at runtime. **Do not treat this as CVR authority.** React still uses localStorage until BL-031D. **BL-031C** prepared mutation facades and a manual migration tool, then migrated Test Site 1 CVR P01 onto `buildlite_clone` (9 unique inputs; ledger empty). Authority flags remain OFF. Approve/lock is workflow state only — immutable CVR snapshots are **BL-031E**.
+These tables persist CVR periods, QS inputs, and purchase ledger batches/transactions. **BL-031D** cut runtime authority to Postgres when flags are ON (no localStorage fallback). **BL-031C** migrated Test Site 1 CVR P01 onto `buildlite_clone` (9 unique inputs). After BL-031D UAT the clone also holds one disposable ledger batch with origin + supported reversal netting to £0. Approve/lock is workflow state only — immutable CVR snapshots are **BL-031E**.
 
 Agreed future commercial rules (do **not** change live client calculations in BL-031A):
 

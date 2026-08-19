@@ -23,4 +23,4 @@ Test Site 1 is **legacy and current historical test evidence** (budget, matrices
 
 It is **not** the new clean commercial test model. Prefer Hawthorn Gardens for new end-to-end UAT.
 
-BL-031C Test Site 1 CVR migration **PASSED** on `buildlite_clone` (`dev-1785599776666-zck5pl`, P01 draft, 9 unique inputs). No local ledger existed, so ledger tables remain empty. Runtime CVR/ledger authority remains localStorage until BL-031D. Do not re-execute the migration as new work. Do not touch Wipe certificates/matrix/CEs or Hawthorn Gardens.
+BL-031C Test Site 1 CVR migration **PASSED**. **BL-031D** authority-on UAT **PASSED** on `buildlite_clone` (`dev-1785599776666-zck5pl`, P01 draft after Submit→Reject, 9 unique inputs). Ledger UAT left one batch and two transactions (origin + supported reversal) netting to £0; keep that evidence. Do not re-execute the migration as new work. Do not start BL-031E until instructed. Do not touch Wipe certificates/matrix/CEs or Hawthorn Gardens. Do not Approve & Lock P01.

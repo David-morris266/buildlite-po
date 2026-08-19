@@ -3,7 +3,7 @@ import PODrawerShell from './PODrawerShell';
 import ApplicationDrawerHeader from './layout/ApplicationDrawerHeader';
 import { formatCvrMoney } from '../cvr/cvrHelpers';
 import { formatPoDate } from './poDrawerHelpers';
-import { getAdjustmentState } from '../cvr/cvrForecastEngine';
+import { getAdjustmentState, enrichCvrForecastRow } from '../cvr/cvrForecastEngine';
 
 function DrawerSection({ title, children, className = '' }) {
   return (
@@ -19,6 +19,18 @@ function parseAdjustmentInput(value) {
   if (!trimmed) return 0;
   const parsed = Number(trimmed.replace(/,/g, ''));
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function moneyValuesDiffer(left, right) {
+  const parsedLeft = parseAdjustmentInput(left);
+  const parsedRight = parseAdjustmentInput(right);
+  if (parsedLeft == null && parsedRight == null) return false;
+  if (parsedLeft == null || parsedRight == null) return true;
+  return Math.abs(parsedLeft - parsedRight) > 0.005;
+}
+
+function textValuesDiffer(left, right) {
+  return String(left || '').trim() !== String(right || '').trim();
 }
 
 export default function CostCentreDrawer({
@@ -38,8 +50,11 @@ export default function CostCentreDrawer({
   const title = row?.costCodeLabel || 'Cost Code';
   const [adjustment, setAdjustment] = useState('');
   const [reason, setReason] = useState('');
+  const [accrual, setAccrual] = useState('');
+  const [notes, setNotes] = useState('');
   const [saveError, setSaveError] = useState('');
 
+  const displayRow = useMemo(() => (row ? enrichCvrForecastRow(row) : null), [row]);
   const packageTotal = useMemo(
     () =>
       packages.reduce((sum, item) => sum + (Number(item.committedValue) || 0), 0),
@@ -58,8 +73,10 @@ export default function CostCentreDrawer({
       row.commercialAdjustment == null ? '' : String(row.commercialAdjustment)
     );
     setReason(row.commercialReason || '');
+    setAccrual(row.manualAccrual == null ? '' : String(row.manualAccrual));
+    setNotes(row.commercialNotes || '');
     setSaveError('');
-  }, [row?.id, row?.commercialAdjustment, row?.commercialReason]);
+  }, [row?.id, row?.commercialAdjustment, row?.commercialReason, row?.manualAccrual, row?.commercialNotes]);
 
   const adjustmentValue = useMemo(() => parseAdjustmentInput(adjustment), [adjustment]);
   const reasonRequired = useMemo(() => {
@@ -71,16 +88,49 @@ export default function CostCentreDrawer({
     [adjustmentValue]
   );
   const reasonMissing = reasonRequired && !String(reason || '').trim();
+  const accrualDirty = moneyValuesDiffer(accrual, displayRow?.manualAccrual ?? 0);
+  const adjustmentDirty =
+    moneyValuesDiffer(adjustment, displayRow?.commercialAdjustment ?? 0) ||
+    textValuesDiffer(reason, displayRow?.commercialReason);
 
-  if (!row) return null;
+  if (!row || !displayRow) return null;
 
-  function handleSaveCommercial() {
-    const result = onSaveCommercialAdjustment?.({
-      commercialAdjustment: adjustment,
-      commercialReason: reason,
-    });
+  async function handleSaveCommercial() {
+    if (readOnly || !adjustmentDirty || reasonMissing || adjustmentValue == null) return;
+    const result = await Promise.resolve(
+      onSaveCommercialAdjustment?.({
+        commercialAdjustment: adjustment,
+        commercialReason: reason,
+      })
+    );
     if (result?.ok === false) {
       setSaveError(result.errors?.[0] || 'Could not save commercial adjustment.');
+      return;
+    }
+    setSaveError('');
+  }
+
+  async function handleSaveAccrual() {
+    if (readOnly || !accrualDirty) return;
+    const parsed = parseAdjustmentInput(accrual);
+    if (parsed == null) {
+      setSaveError('Manual accrual must be a number.');
+      return;
+    }
+    const result = await Promise.resolve(onSaveNotes?.({ manualAccrual: parsed }));
+    if (result?.ok === false) {
+      setSaveError(result.errors?.[0] || 'Could not save manual accrual.');
+      return;
+    }
+    setSaveError('');
+  }
+
+  async function handleNotesBlur() {
+    if (readOnly) return;
+    const result = await Promise.resolve(onSaveNotes?.({ commercialNotes: notes }));
+    if (result?.ok === false) {
+      setSaveError(result.errors?.[0] || 'Could not save notes.');
+      setNotes(row.commercialNotes || '');
       return;
     }
     setSaveError('');
@@ -105,67 +155,124 @@ export default function CostCentreDrawer({
           <dl className="dev-cvr-drawer__group-grid dev-cvr-drawer__facts-compact">
             <div>
               <dt>Original Budget</dt>
-              <dd>{formatCvrMoney(row.originalBudget)}</dd>
+              <dd>{formatCvrMoney(displayRow.originalBudget)}</dd>
             </div>
             <div>
               <dt>Current Budget</dt>
-              <dd>{formatCvrMoney(row.currentBudget)}</dd>
+              <dd>{formatCvrMoney(displayRow.currentBudget)}</dd>
             </div>
             <div>
               <dt>Committed</dt>
-              <dd>{formatCvrMoney(row.committed)}</dd>
+              <dd>{formatCvrMoney(displayRow.committed)}</dd>
             </div>
             <div>
               <dt>Certified</dt>
-              <dd>{formatCvrMoney(row.certified)}</dd>
+              <dd>{formatCvrMoney(displayRow.certified)}</dd>
             </div>
             <div>
               <dt>Actual</dt>
-              <dd>{formatCvrMoney(row.actualCost)}</dd>
+              <dd>{formatCvrMoney(displayRow.actualCost)}</dd>
+            </div>
+            <div>
+              <dt>Manual Accrual</dt>
+              <dd>{formatCvrMoney(displayRow.manualAccrual)}</dd>
+            </div>
+            <div>
+              <dt>Current Cost</dt>
+              <dd>{formatCvrMoney(displayRow.currentCost)}</dd>
             </div>
             <div>
               <dt>Outstanding Certified</dt>
               <dd
-                className={`dev-cvr__outstanding dev-cvr__outstanding--${row.outstandingCertifiedState || 'neutral'}`}
+                className={`dev-cvr__outstanding dev-cvr__outstanding--${displayRow.outstandingCertifiedState || 'neutral'}`}
               >
-                {formatCvrMoney(row.outstandingCertified)}
+                {formatCvrMoney(displayRow.outstandingCertified)}
               </dd>
             </div>
           </dl>
+        </DrawerSection>
+
+        <DrawerSection title="Cost incurred / accrual">
+          {readOnly ? (
+            <p className="dev-cvr-drawer__empty">
+              This period is read-only. Manual accrual cannot be changed.
+            </p>
+          ) : (
+            <div className="dev-cvr-drawer__adjustment-panel">
+              {saveError ? (
+                <div className="po-list-feedback po-list-feedback--error" role="alert">
+                  {saveError}
+                </div>
+              ) : null}
+              <label className="dev-form__field dev-cvr-drawer__notes-field">
+                <span className="dev-form__label">Manual Accrual</span>
+                <input
+                  className="input"
+                  type="text"
+                  inputMode="decimal"
+                  value={accrual}
+                  onChange={(event) => {
+                    setAccrual(event.target.value);
+                    setSaveError('');
+                  }}
+                  placeholder="Cost incurred not yet in the ledger"
+                  aria-describedby="manual-accrual-help"
+                />
+                <span id="manual-accrual-help" className="dev-cvr-drawer__field-hint">
+                  Incurred cost not yet in the ledger. Does not change commitment, certified,
+                  or ledger actual. Save accrual to persist.
+                </span>
+              </label>
+              <div className="dev-cvr-drawer__adjustment-actions">
+                <button
+                  type="button"
+                  className="po-btn-primary dev-cvr-drawer__save-accrual"
+                  onClick={() => {
+                    void handleSaveAccrual();
+                  }}
+                  disabled={!accrualDirty}
+                  title={accrualDirty ? 'Save manual accrual' : 'No unsaved accrual changes'}
+                >
+                  Save accrual
+                </button>
+              </div>
+            </div>
+          )}
         </DrawerSection>
 
         <DrawerSection title="Forecast">
           <dl className="dev-cvr-drawer__group-grid dev-cvr-drawer__forecast-grid">
             <div>
               <dt>System Forecast</dt>
-              <dd>{formatCvrMoney(row.systemForecast)}</dd>
+              <dd>{formatCvrMoney(displayRow.systemForecast)}</dd>
             </div>
             <div>
               <dt>Commercial Adjustment</dt>
               <dd
-                className={`dev-cvr__adjustment dev-cvr__adjustment--${row.adjustmentState || 'zero'}`}
+                className={`dev-cvr__adjustment dev-cvr__adjustment--${displayRow.adjustmentState || 'zero'}`}
               >
-                {row.commercialAdjustmentLabel || formatCvrMoney(row.commercialAdjustment)}
+                {displayRow.commercialAdjustmentLabel ||
+                  formatCvrMoney(displayRow.commercialAdjustment)}
               </dd>
             </div>
             <div>
               <dt>Final Forecast</dt>
-              <dd>{formatCvrMoney(row.finalForecast)}</dd>
+              <dd>{formatCvrMoney(displayRow.finalForecast)}</dd>
             </div>
             <div>
               <dt>Cost To Complete</dt>
               <dd
                 className={`dev-cvr__ctc${
-                  Number(row.costToComplete) < -0.005 ? ' dev-cvr__ctc--negative' : ''
+                  Number(displayRow.costToComplete) < -0.005 ? ' dev-cvr__ctc--negative' : ''
                 }`}
               >
-                {formatCvrMoney(row.costToComplete)}
+                {formatCvrMoney(displayRow.costToComplete)}
               </dd>
             </div>
             <div>
               <dt>Variance</dt>
-              <dd className={`dev-cvr__variance dev-cvr__variance--${row.varianceState}`}>
-                {formatCvrMoney(row.variance)}
+              <dd className={`dev-cvr__variance dev-cvr__variance--${displayRow.varianceState}`}>
+                {formatCvrMoney(displayRow.variance)}
               </dd>
             </div>
           </dl>
@@ -239,9 +346,14 @@ export default function CostCentreDrawer({
                   type="button"
                   className="po-btn-primary dev-cvr-drawer__save-adjustment"
                   onClick={handleSaveCommercial}
-                  disabled={reasonMissing || adjustmentValue == null}
+                  disabled={reasonMissing || adjustmentValue == null || !adjustmentDirty}
+                  title={
+                    adjustmentDirty
+                      ? 'Save commercial adjustment'
+                      : 'No unsaved commercial adjustment changes'
+                  }
                 >
-                  Save Adjustment
+                  Save commercial adjustment
                 </button>
               </div>
             </div>
@@ -282,10 +394,14 @@ export default function CostCentreDrawer({
             <textarea
               className="input dev-cvr-drawer__notes"
               rows={3}
-              value={row.commercialNotes || ''}
-              onChange={(event) =>
-                onSaveNotes?.({ commercialNotes: event.target.value })
-              }
+              value={notes}
+              onChange={(event) => {
+                setNotes(event.target.value);
+                setSaveError('');
+              }}
+              onBlur={() => {
+                void handleNotesBlur();
+              }}
               readOnly={readOnly}
               placeholder="Record commercial commentary for month-end review."
             />

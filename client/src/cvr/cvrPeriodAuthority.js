@@ -1,9 +1,9 @@
 /**
- * BL-031B — CVR period server authority feature flag.
+ * BL-031B/D — CVR period server authority feature flag.
  *
  * Default OFF: localStorage (buildlite_cvr_v1) remains runtime authority.
- * When true: CVR reads use the server cache only. No localStorage fallback.
- * Writes remain local until BL-031D. BL-031C mutation facades are unwired.
+ * When true: CVR reads and writes use the server cache/API only.
+ * No localStorage fallback and no dual-write.
  */
 
 export function isCvrServerAuthorityEnabled() {

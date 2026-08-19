@@ -1,8 +1,7 @@
 /**
  * BL-031B — Purchase ledger server API client (BL-031A routes).
  *
- * Runtime hydration uses READ helpers only. Import/reverse wrappers exist for
- * BL-031C and must remain unwired from live UI.
+ * Live import/reverse are used when VITE_LEDGER_SERVER_AUTHORITY is ON (BL-031D).
  */
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace(

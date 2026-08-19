@@ -80,6 +80,12 @@ function CVRTable({ rows, totals, onRowSelect, onBudgetChange, readOnly = false 
               <th className="dev-cvr__money-col">Committed</th>
               <th className="dev-cvr__money-col">Certified</th>
               <th className="dev-cvr__money-col">Actual</th>
+              <th className="dev-cvr__money-col" title="Manual accrual — incurred, not yet in the ledger">
+                Accrual
+              </th>
+              <th className="dev-cvr__money-col" title="Current cost = actual + manual accrual">
+                Current Cost
+              </th>
               <th className="dev-cvr__money-col">System Forecast</th>
               <th className="dev-cvr__money-col">Final Forecast</th>
               <th className="dev-cvr__money-col">CTC</th>
@@ -126,6 +132,8 @@ function CVRTable({ rows, totals, onRowSelect, onBudgetChange, readOnly = false 
                   <td className="dev-cvr__money-col">{row.committedLabel}</td>
                   <td className="dev-cvr__money-col">{row.certifiedLabel}</td>
                   <td className="dev-cvr__money-col">{row.actualCostLabel}</td>
+                  <td className="dev-cvr__money-col">{row.manualAccrualLabel}</td>
+                  <td className="dev-cvr__money-col">{row.currentCostLabel}</td>
                   <td className="dev-cvr__money-col">{row.systemForecastLabel}</td>
                   <td className="dev-cvr__money-col">{row.finalForecastLabel}</td>
                   <td className="dev-cvr__money-col">
@@ -138,7 +146,7 @@ function CVRTable({ rows, totals, onRowSelect, onBudgetChange, readOnly = false 
               ))
             ) : (
               <tr>
-                <td colSpan={10} className="po-data-table__empty">
+                <td colSpan={12} className="po-data-table__empty">
                   No cost codes yet. Add a cost code or import ledger / approve
                   purchase orders to populate the CVR.
                 </td>
@@ -164,6 +172,12 @@ function CVRTable({ rows, totals, onRowSelect, onBudgetChange, readOnly = false 
                   <strong>{totals.actualCostLabel}</strong>
                 </td>
                 <td className="dev-cvr__money-col">
+                  <strong>{totals.manualAccrualLabel}</strong>
+                </td>
+                <td className="dev-cvr__money-col">
+                  <strong>{totals.currentCostLabel}</strong>
+                </td>
+                <td className="dev-cvr__money-col">
                   <strong>{totals.systemForecastLabel}</strong>
                 </td>
                 <td className="dev-cvr__money-col">
@@ -184,8 +198,8 @@ function CVRTable({ rows, totals, onRowSelect, onBudgetChange, readOnly = false 
         </table>
       </div>
       <p className="dev-cvr__table-hint">
-        Click a cost code for forecast detail and commercial adjustments. Frozen columns
-        remain visible while scrolling.
+        Click a cost code for forecast detail, manual accrual, and commercial adjustments.
+        Current cost is actual plus accrual. Frozen columns remain visible while scrolling.
       </p>
     </div>
   );

@@ -183,8 +183,8 @@ export default function CVRPortfolio({
     setLocalRefresh((value) => value + 1);
   }
 
-  function handleApprove(item) {
-    const result = approveCvrPeriod(item.developmentId, item.periodKey);
+  async function handleApprove(item) {
+    const result = await Promise.resolve(approveCvrPeriod(item.developmentId, item.periodKey));
     if (!result.ok) {
       window.alert(result.errors?.[0] || 'Could not approve CVR.');
       return;
@@ -192,12 +192,10 @@ export default function CVRPortfolio({
     refresh();
   }
 
-  function handleReject(comment) {
+  async function handleReject(comment) {
     if (!rejectTarget) return;
-    const result = rejectCvrPeriod(
-      rejectTarget.developmentId,
-      rejectTarget.periodKey,
-      comment
+    const result = await Promise.resolve(
+      rejectCvrPeriod(rejectTarget.developmentId, rejectTarget.periodKey, comment)
     );
     if (!result.ok) {
       window.alert(result.errors?.[0] || 'Could not reject CVR.');

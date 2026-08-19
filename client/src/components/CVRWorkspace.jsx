@@ -7,6 +7,7 @@ import CVRBudgetImportWizard from './CVRBudgetImportWizard';
 import { listPOs } from '../api';
 import { subscribeCommercialChanged } from '../commercial/commercialEvents';
 import { buildCvrWorkspaceModel, formatCvrTotals } from '../cvr/cvrHelpers';
+import { applyCostCentreSaveToCvrRow } from '../cvr/cvrForecastEngine';
 import { buildCvrTotals } from '../cvr/cvrCalculations';
 import {
   buildHierarchyKeyMap,
@@ -364,94 +365,101 @@ export default function CVRWorkspace({
     onPeriodChanged?.();
   }
 
-  function handleSaveCommercialAdjustment(values) {
+  async function handleSaveCommercialAdjustment(values) {
     if (readOnly) return { ok: false, errors: ['This CVR period is read-only.'] };
     if (!selectedRow) return { ok: false, errors: ['No cost code selected.'] };
 
-    const centreId = resolveCentreId(selectedRow);
+    const centreId = await resolveCentreId(selectedRow);
     if (!centreId) return { ok: false, errors: ['Could not resolve cost code.'] };
 
-    const result = updateCostCentre(development.id, centreId, values, periodKey);
+    const result = await Promise.resolve(
+      updateCostCentre(development.id, centreId, values, periodKey)
+    );
     if (!result.ok) return result;
 
     setSelectedRow((prev) =>
-      prev
-        ? {
-            ...prev,
-            commercialAdjustment: result.costCentre.commercialAdjustment,
-            commercialReason: result.costCentre.commercialReason,
-            adjustmentHistory: result.costCentre.adjustmentHistory,
-          }
-        : prev
+      prev ? applyCostCentreSaveToCvrRow(prev, result.costCentre) : prev
     );
     refresh();
     return result;
   }
 
-  function resolveCentreId(row) {
+  async function resolveCentreId(row) {
     let targetId = row.id.startsWith('auto-') ? null : row.id;
     if (!targetId) {
-      const created = upsertAutoCostCentre(
-        development.id,
-        {
-          costCodeKey: row.costCodeKey,
-          costCodeLabel: row.costCodeLabel,
-        },
-        periodKey
+      const created = await Promise.resolve(
+        upsertAutoCostCentre(
+          development.id,
+          {
+            costCodeKey: row.costCodeKey,
+            costCodeLabel: row.costCodeLabel,
+          },
+          periodKey
+        )
       );
       targetId = created?.id;
     }
     return targetId;
   }
 
-  function handleBudgetChange(row, field, rawValue) {
+  async function handleBudgetChange(row, field, rawValue) {
     if (readOnly) return;
-    const targetId = resolveCentreId(row);
+    const targetId = await resolveCentreId(row);
     if (!targetId) return;
 
-    updateCostCentre(development.id, targetId, { [field]: rawValue }, periodKey);
+    const result = await Promise.resolve(
+      updateCostCentre(development.id, targetId, { [field]: rawValue }, periodKey)
+    );
+    if (!result.ok) {
+      window.alert(result.errors?.[0] || 'Could not save cost-code input.');
+      return;
+    }
     refresh();
   }
 
-  function handleSaveNotes(patch) {
+  async function handleSaveNotes(patch) {
     if (readOnly) return;
     if (!selectedRow) return;
 
-    let targetId = selectedRow.id.startsWith('auto-') ? null : selectedRow.id;
-    if (!targetId) {
-      const created = upsertAutoCostCentre(
-        development.id,
-        {
-          costCodeKey: selectedRow.costCodeKey,
-          costCodeLabel: selectedRow.costCodeLabel,
-        },
-        periodKey
-      );
-      targetId = created?.id;
-    }
+    const targetId = await resolveCentreId(selectedRow);
     if (!targetId) return;
 
-    updateCostCentre(development.id, targetId, patch, periodKey);
-    setSelectedRow((prev) => (prev ? { ...prev, ...patch } : prev));
+    const result = await Promise.resolve(
+      updateCostCentre(development.id, targetId, patch, periodKey)
+    );
+    if (!result.ok) {
+      window.alert(result.errors?.[0] || 'Could not save cost-code notes.');
+      return result;
+    }
+    setSelectedRow((prev) =>
+      prev ? applyCostCentreSaveToCvrRow(prev, result.costCentre || patch) : prev
+    );
     refresh();
+    return result;
   }
 
-  function handleAddCostCentre(values) {
-    const result = addCostCentre(development.id, values, periodKey);
+  async function handleAddCostCentre(values) {
+    const result = await Promise.resolve(addCostCentre(development.id, values, periodKey));
     if (!result.ok) return result;
     setAddOpen(false);
     refresh();
     return result;
   }
 
-  function handleNotesBlur() {
+  async function handleNotesBlur() {
     if (readOnly) return;
-    updateDevelopmentNotes(development.id, notes, periodKey);
+    const result = await Promise.resolve(
+      updateDevelopmentNotes(development.id, notes, periodKey)
+    );
+    if (!result.ok) {
+      window.alert(result.errors?.[0] || 'Could not save development notes.');
+      return;
+    }
     refresh();
   }
 
-  function handleSubmit() {
-    const result = submitCvrPeriod(development.id, periodKey);
+  async function handleSubmit() {
+    const result = await Promise.resolve(submitCvrPeriod(development.id, periodKey));
     if (!result.ok) {
       window.alert(result.errors?.[0] || 'Could not submit CVR.');
       return;
@@ -460,8 +468,8 @@ export default function CVRWorkspace({
     refresh();
   }
 
-  function handleApprove() {
-    const result = approveCvrPeriod(development.id, periodKey);
+  async function handleApprove() {
+    const result = await Promise.resolve(approveCvrPeriod(development.id, periodKey));
     if (!result.ok) {
       window.alert(result.errors?.[0] || 'Could not approve CVR.');
       return;
@@ -470,8 +478,10 @@ export default function CVRWorkspace({
     refresh();
   }
 
-  function handleReject() {
-    const result = rejectCvrPeriod(development.id, periodKey, rejectComment);
+  async function handleReject() {
+    const result = await Promise.resolve(
+      rejectCvrPeriod(development.id, periodKey, rejectComment)
+    );
     if (!result.ok) {
       window.alert(result.errors?.[0] || 'Could not reject CVR.');
       return;
@@ -481,8 +491,8 @@ export default function CVRWorkspace({
     refresh();
   }
 
-  function handleCreateNextPeriod() {
-    const result = createNextCvrPeriod(development.id);
+  async function handleCreateNextPeriod() {
+    const result = await Promise.resolve(createNextCvrPeriod(development.id));
     if (!result.ok) {
       window.alert(result.errors?.[0] || 'Could not create next CVR period.');
       return;

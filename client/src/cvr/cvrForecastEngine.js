@@ -6,13 +6,15 @@
 import {
   roundMoney,
   calculateCostToComplete,
+  calculateIncurredCost,
   calculateVariance,
   getVarianceState,
 } from './cvrCalculations.js';
 
 function moneyValueExists(value) {
   if (value == null || value === '') return false;
-  return roundMoney(value) != null;
+  const money = roundMoney(value);
+  return money != null && Math.abs(money) > 0.005;
 }
 
 /**
@@ -80,6 +82,37 @@ export function validateCommercialAdjustment(commercialAdjustment, commercialRea
   };
 }
 
+export function applyCostCentreSaveToCvrRow(row, savedCentre = {}) {
+  return enrichCvrForecastRow({
+    ...row,
+    id: savedCentre.id || row.id,
+    version: savedCentre.version ?? row.version,
+    originalBudget:
+      savedCentre.originalBudget !== undefined
+        ? savedCentre.originalBudget
+        : row.originalBudget,
+    currentBudget:
+      savedCentre.currentBudget !== undefined
+        ? savedCentre.currentBudget
+        : row.currentBudget,
+    commercialAdjustment:
+      savedCentre.commercialAdjustment !== undefined
+        ? savedCentre.commercialAdjustment
+        : row.commercialAdjustment,
+    commercialReason:
+      savedCentre.commercialReason !== undefined
+        ? savedCentre.commercialReason
+        : row.commercialReason,
+    adjustmentHistory: savedCentre.adjustmentHistory || row.adjustmentHistory,
+    commercialNotes:
+      savedCentre.commercialNotes ?? savedCentre.notes ?? row.commercialNotes,
+    manualAccrual:
+      savedCentre.manualAccrual !== undefined
+        ? savedCentre.manualAccrual
+        : row.manualAccrual,
+  });
+}
+
 export function enrichCvrForecastRow(row) {
   const systemForecast = calculateSystemForecast({
     committed: row.committed,
@@ -88,12 +121,16 @@ export function enrichCvrForecastRow(row) {
   });
 
   const commercialAdjustment = roundMoney(row.commercialAdjustment) ?? 0;
+  const manualAccrual = roundMoney(row.manualAccrual) ?? 0;
   const finalForecast = calculateFinalForecast(systemForecast, commercialAdjustment);
-  const costToComplete = calculateCostToComplete(finalForecast, row.actualCost);
+  const currentCost = calculateIncurredCost(row.actualCost, manualAccrual);
+  const costToComplete = calculateCostToComplete(finalForecast, row.actualCost, manualAccrual);
   const variance = calculateVariance(row.currentBudget, finalForecast);
 
   return {
     ...row,
+    manualAccrual,
+    currentCost,
     systemForecast,
     commercialAdjustment,
     commercialReason: String(row.commercialReason || ''),

@@ -34,10 +34,60 @@ describe('getApprovedCertificateValue', () => {
     ).toBe(60000);
   });
 
-  it('BL-031D TODO: live certified remains certificate net, not matrix + CE + recoveries', () => {
+  it('uses frozen gross works, not certificate net', () => {
     expect(
       getApprovedCertificateValue({ status: 'locked', netValue: 2150, grossValue: 2250 })
+    ).toBe(2250);
+  });
+
+  it('adds signed recovery to gross works for CVR certified cost', () => {
+    expect(
+      getApprovedCertificateValue({
+        status: 'locked',
+        grossValue: 2250,
+        netValue: 2150,
+        recoverySigned: -100,
+      })
     ).toBe(2150);
+  });
+
+  it('reconstructs recovery from frozen commercial lines when header is absent', () => {
+    expect(
+      getApprovedCertificateValue({
+        status: 'locked',
+        grossValue: 24000,
+        netValue: 19800,
+        commercialLines: [
+          { lineType: 'recoveryDeduction', amountThisCertificate: -3000 },
+        ],
+      })
+    ).toBe(21000);
+  });
+
+  it('does not inflate certified cost with VAT', () => {
+    expect(
+      getApprovedCertificateValue({
+        status: 'locked',
+        grossValue: 1000,
+        retention: 0,
+        vat: 200,
+        netValue: 1200,
+        recoverySigned: 0,
+      })
+    ).toBe(1000);
+  });
+
+  it('does not reduce certified cost for retention timing', () => {
+    expect(
+      getApprovedCertificateValue({
+        status: 'locked',
+        grossValue: 1000,
+        retention: 50,
+        vat: 0,
+        netValue: 950,
+        recoverySigned: 0,
+      })
+    ).toBe(1000);
   });
 
   it('ignores draft certificates', () => {

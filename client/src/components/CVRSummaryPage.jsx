@@ -16,6 +16,7 @@ import {
   upsertAutoCostCentre,
 } from '../cvr/costCentreStore';
 import CostCentreDrawer from './CostCentreDrawer';
+import { applyCostCentreSaveToCvrRow } from '../cvr/cvrForecastEngine';
 import {
   buildCertificatesForCostCentre,
   buildLedgerRowsForCostCentre,
@@ -227,13 +228,25 @@ export default function CVRSummaryPage({
     if (row) setSelectedRow(row);
   }, [initialCostCodeKey, summary?.rows]);
 
+  useEffect(() => {
+    if (!selectedRow || !summary?.rows?.length) return;
+    const latest = summary.rows.find(
+      (row) =>
+        row.id === selectedRow.id ||
+        (row.costCodeKey &&
+          selectedRow.costCodeKey &&
+          row.costCodeKey === selectedRow.costCodeKey)
+    );
+    if (latest) setSelectedRow(latest);
+  }, [summary?.rows]);
+
   function refresh() {
     setLocalRefresh((value) => value + 1);
     onPeriodChanged?.();
   }
 
-  function handleSubmit() {
-    const result = submitCvrPeriod(development.id, periodKey);
+  async function handleSubmit() {
+    const result = await Promise.resolve(submitCvrPeriod(development.id, periodKey));
     if (!result.ok) {
       window.alert(result.errors?.[0] || 'Could not submit CVR.');
       return;
@@ -241,8 +254,8 @@ export default function CVRSummaryPage({
     refresh();
   }
 
-  function handleApprove() {
-    const result = approveCvrPeriod(development.id, periodKey);
+  async function handleApprove() {
+    const result = await Promise.resolve(approveCvrPeriod(development.id, periodKey));
     if (!result.ok) {
       window.alert(result.errors?.[0] || 'Could not approve CVR.');
       return;
@@ -250,8 +263,8 @@ export default function CVRSummaryPage({
     refresh();
   }
 
-  function handleReject(comment) {
-    const result = rejectCvrPeriod(development.id, periodKey, comment);
+  async function handleReject(comment) {
+    const result = await Promise.resolve(rejectCvrPeriod(development.id, periodKey, comment));
     if (!result.ok) {
       window.alert(result.errors?.[0] || 'Could not reject CVR.');
       return;
@@ -260,8 +273,8 @@ export default function CVRSummaryPage({
     refresh();
   }
 
-  function handleCreateNextPeriod() {
-    const result = createNextCvrPeriod(development.id);
+  async function handleCreateNextPeriod() {
+    const result = await Promise.resolve(createNextCvrPeriod(development.id));
     if (!result.ok) {
       window.alert(result.errors?.[0] || 'Could not create next CVR period.');
       return;
@@ -270,11 +283,17 @@ export default function CVRSummaryPage({
     onBackToRegister?.();
   }
 
-  function handleCommentaryBlur(field) {
+  async function handleCommentaryBlur(field) {
     if (summary.readOnly) return;
-    saveCvrPeriodCommentary(development.id, periodKey, {
-      [field]: commentary[field],
-    });
+    const result = await Promise.resolve(
+      saveCvrPeriodCommentary(development.id, periodKey, {
+        [field]: commentary[field],
+      })
+    );
+    if (!result.ok) {
+      window.alert(result.errors?.[0] || 'Could not save commentary.');
+      return;
+    }
     refresh();
   }
 
@@ -288,56 +307,62 @@ export default function CVRSummaryPage({
     onContinueToCvr?.();
   }
 
-  function resolveCentreId(row) {
+  async function resolveCentreId(row) {
     let targetId = row.id.startsWith('auto-') ? null : row.id;
     if (!targetId) {
-      const created = upsertAutoCostCentre(
-        development.id,
-        {
-          costCodeKey: row.costCodeKey,
-          costCodeLabel: row.costCodeLabel,
-        },
-        periodKey
+      const created = await Promise.resolve(
+        upsertAutoCostCentre(
+          development.id,
+          {
+            costCodeKey: row.costCodeKey,
+            costCodeLabel: row.costCodeLabel,
+          },
+          periodKey
+        )
       );
       targetId = created?.id;
     }
     return targetId;
   }
 
-  function handleSaveCommercialAdjustment(values) {
+  async function handleSaveCommercialAdjustment(values) {
     if (summary.readOnly || !selectedRow) {
       return { ok: false, errors: ['This CVR period is read-only.'] };
     }
 
-    const centreId = resolveCentreId(selectedRow);
+    const centreId = await resolveCentreId(selectedRow);
     if (!centreId) return { ok: false, errors: ['Could not resolve cost code.'] };
 
-    const result = updateCostCentre(development.id, centreId, values, periodKey);
+    const result = await Promise.resolve(
+      updateCostCentre(development.id, centreId, values, periodKey)
+    );
     if (!result.ok) return result;
 
     setSelectedRow((prev) =>
-      prev
-        ? {
-            ...prev,
-            commercialAdjustment: result.costCentre.commercialAdjustment,
-            commercialReason: result.costCentre.commercialReason,
-            adjustmentHistory: result.costCentre.adjustmentHistory,
-          }
-        : prev
+      prev ? applyCostCentreSaveToCvrRow(prev, result.costCentre) : prev
     );
     refresh();
     return result;
   }
 
-  function handleSaveNotes(patch) {
+  async function handleSaveNotes(patch) {
     if (summary.readOnly || !selectedRow) return;
 
-    const targetId = resolveCentreId(selectedRow);
+    const targetId = await resolveCentreId(selectedRow);
     if (!targetId) return;
 
-    updateCostCentre(development.id, targetId, patch, periodKey);
-    setSelectedRow((prev) => (prev ? { ...prev, ...patch } : prev));
+    const result = await Promise.resolve(
+      updateCostCentre(development.id, targetId, patch, periodKey)
+    );
+    if (!result.ok) {
+      window.alert(result.errors?.[0] || 'Could not save cost-code notes.');
+      return result;
+    }
+    setSelectedRow((prev) =>
+      prev ? applyCostCentreSaveToCvrRow(prev, result.costCentre || patch) : prev
+    );
     refresh();
+    return result;
   }
 
   if (!summary) return null;
