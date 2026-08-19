@@ -3,6 +3,11 @@
  */
 
 const { query } = require("../db");
+
+async function runQuery(dbClient, text, params) {
+  if (dbClient) return dbClient.query(text, params);
+  return query(text, params);
+}
 const {
   documentToInsertRow,
   documentToUpdateRow,
@@ -72,8 +77,9 @@ async function listDevelopmentsForClient(clientId) {
   return rows.map(rowToDocument);
 }
 
-async function findDevelopmentById(clientId, id) {
-  const { rows } = await query(
+async function findDevelopmentById(clientId, id, dbClient = null) {
+  const { rows } = await runQuery(
+    dbClient,
     `
       SELECT *
       FROM developments

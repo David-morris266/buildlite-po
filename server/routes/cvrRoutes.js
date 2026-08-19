@@ -1,7 +1,8 @@
 /**
- * BL-031A — CVR period API (/api/developments/:developmentId/cvr/...).
+ * BL-031A / BL-031E.3B — CVR period API (/api/developments/:developmentId/cvr/...).
  *
- * Approve/lock is workflow state only. Snapshots are BL-031E.
+ * Approve & Lock persists an immutable snapshot atomically. Client historic
+ * snapshot rendering is BL-031E.4.
  */
 
 const express = require("express");
@@ -31,6 +32,8 @@ function sendResult(res, result, successStatus = 200, payloadKey) {
     if (result.period) payload.period = result.period;
     if (result.input) payload.input = result.input;
     if (result.duplicates) payload.duplicates = result.duplicates;
+    if (result.code) payload.code = result.code;
+    if (result.blockers) payload.blockers = result.blockers;
     return res.status(result.status || 400).json(payload);
   }
   if (payloadKey) {

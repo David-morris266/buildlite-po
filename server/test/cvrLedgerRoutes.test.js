@@ -10,11 +10,12 @@ const request = require("supertest");
 const createApp = require("../app");
 const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
-const { SNAPSHOT_DEFERRED_NOTE } = require("../services/cvrPeriodConstants");
+const { SNAPSHOT_CREATED_NOTE, SNAPSHOT_DEFERRED_NOTE } = require("../services/cvrPeriodConstants");
 
 const app = createApp();
 const MIGRATION_004 = path.join(__dirname, "..", "migrations", "004_developments.sql");
 const MIGRATION_009 = path.join(__dirname, "..", "migrations", "009_cvr_and_purchase_ledger.sql");
+const MIGRATION_010 = path.join(__dirname, "..", "migrations", "010_cvr_period_snapshots.sql");
 
 const testDevelopmentIds = [];
 const testTenantIds = [];
@@ -29,10 +30,20 @@ function trackTenant(id) {
 async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_004, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_009, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_010, "utf8"));
 }
 
 async function cleanup() {
   if (testDevelopmentIds.length) {
+    await pool.query(
+      `DELETE FROM cvr_period_snapshot_rows WHERE snapshot_id IN (
+         SELECT id FROM cvr_period_snapshots WHERE development_id = ANY($1::text[])
+       )`,
+      [testDevelopmentIds]
+    );
+    await pool.query(`DELETE FROM cvr_period_snapshots WHERE development_id = ANY($1::text[])`, [
+      testDevelopmentIds,
+    ]);
     await pool.query(
       `
         DELETE FROM ledger_transactions
@@ -70,6 +81,15 @@ async function cleanup() {
     ]);
   }
   if (testTenantIds.length) {
+    await pool.query(
+      `DELETE FROM cvr_period_snapshot_rows WHERE snapshot_id IN (
+         SELECT id FROM cvr_period_snapshots WHERE client_id = ANY($1::uuid[])
+       )`,
+      [testTenantIds]
+    );
+    await pool.query(`DELETE FROM cvr_period_snapshots WHERE client_id = ANY($1::uuid[])`, [
+      testTenantIds,
+    ]);
     await pool.query(
       `DELETE FROM ledger_transactions WHERE client_id = ANY($1::uuid[])`,
       [testTenantIds]
@@ -219,7 +239,7 @@ if (!isDbConfigured()) {
     assert.equal(stale.body.period.version, 2);
   });
 
-  test("submit, reject, approve/lock without creating a snapshot", async () => {
+  test("submit, reject, approve/lock creates an immutable snapshot", async () => {
     const development = await createDevelopment();
     const created = await request(app).post(periodUrl(development.id)).send({});
     const submitted = await request(app)
@@ -244,11 +264,19 @@ if (!isDbConfigured()) {
       .send({ actor: "Director" });
     assert.equal(locked.status, 200);
     assert.equal(locked.body.status, "locked");
-    assert.equal(locked.body.snapshot, null);
-    assert.equal(locked.body.snapshotDeferred, true);
-    assert.equal(locked.body.snapshotNote, SNAPSHOT_DEFERRED_NOTE);
+    assert.ok(locked.body.snapshot);
+    assert.equal(locked.body.snapshotDeferred, false);
+    assert.equal(locked.body.snapshotNote, SNAPSHOT_CREATED_NOTE);
+    assert.equal(locked.body.snapshot.periodId, created.body.id);
+    assert.ok(Array.isArray(locked.body.snapshot.rows));
     assert.ok(locked.body.approvedAt);
+    assert.equal(locked.body.approvedBy, "Director");
     assert.ok(locked.body.auditHistory.some((item) => item.action === "locked"));
+    assert.ok(
+      locked.body.auditHistory.some(
+        (item) => item.action === "approved" && item.comment === SNAPSHOT_CREATED_NOTE
+      )
+    );
 
     const mutateLocked = await request(app)
       .patch(periodUrl(development.id, created.body.id))
@@ -263,6 +291,8 @@ if (!isDbConfigured()) {
     assert.equal(nextPeriod.body.periodKey, "P02");
     assert.equal(nextPeriod.body.status, "draft");
     assert.equal(nextPeriod.body.snapshot, null);
+    assert.equal(nextPeriod.body.snapshotDeferred, true);
+    assert.equal(nextPeriod.body.snapshotNote, SNAPSHOT_DEFERRED_NOTE);
   });
 
   test("cost-code inputs round-trip including manual_accrual", async () => {

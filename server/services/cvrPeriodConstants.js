@@ -1,7 +1,9 @@
 /**
  * BL-031A — CVR period constants (server persistence foundation).
  *
- * Approve/lock records workflow only. Immutable CVR snapshots are BL-031E.
+ * Approve/lock records workflow state. Immutable CVR snapshots are persisted
+ * atomically on Approve & Lock (BL-031E.3B). Legacy locked periods may have
+ * no snapshot until historic-read (E.4).
  */
 
 const CVR_PERIOD_STATUSES = {
@@ -30,6 +32,10 @@ const MAX_LABEL_LENGTH = 200;
 
 const SNAPSHOT_DEFERRED_NOTE =
   "BL-031A: approve/lock records workflow only. Immutable CVR snapshots are BL-031E.";
+
+const SNAPSHOT_CREATED_NOTE = "Immutable CVR snapshot created.";
+
+const CVR_CLOSE_NOT_READY_CODE = "CVR_CLOSE_NOT_READY";
 
 function isValidUuid(value) {
   return UUID_PATTERN.test(String(value || "").trim());
@@ -89,6 +95,8 @@ module.exports = {
   MAX_COST_CODE_KEY_LENGTH,
   MAX_LABEL_LENGTH,
   SNAPSHOT_DEFERRED_NOTE,
+  SNAPSHOT_CREATED_NOTE,
+  CVR_CLOSE_NOT_READY_CODE,
   isValidUuid,
   isValidPeriodKey,
   formatPeriodKey,

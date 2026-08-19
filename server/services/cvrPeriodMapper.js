@@ -2,7 +2,7 @@
  * BL-031A — CVR period / cost-code input API documents.
  */
 
-const { SNAPSHOT_DEFERRED_NOTE, emptyCommentary } = require("./cvrPeriodConstants");
+const { SNAPSHOT_DEFERRED_NOTE, SNAPSHOT_CREATED_NOTE, emptyCommentary } = require("./cvrPeriodConstants");
 
 function toIso(value) {
   if (!value) return null;
@@ -58,9 +58,10 @@ function auditRowToEntry(row) {
   };
 }
 
-function periodRowToDocument(row, auditRows = []) {
+function periodRowToDocument(row, auditRows = [], snapshot = null) {
   if (!row) return null;
   const status = row.status;
+  const hasSnapshot = Boolean(snapshot);
   return {
     id: row.id,
     developmentId: row.development_id,
@@ -78,9 +79,9 @@ function periodRowToDocument(row, auditRows = []) {
     submittedBy: row.submitted_by ?? null,
     approvedAt: toIso(row.approved_at),
     approvedBy: row.approved_by ?? null,
-    snapshot: null,
-    snapshotDeferred: true,
-    snapshotNote: SNAPSHOT_DEFERRED_NOTE,
+    snapshot: snapshot || null,
+    snapshotDeferred: !hasSnapshot,
+    snapshotNote: hasSnapshot ? SNAPSHOT_CREATED_NOTE : SNAPSHOT_DEFERRED_NOTE,
     auditHistory: (auditRows || []).map(auditRowToEntry).filter(Boolean),
   };
 }

@@ -3,7 +3,8 @@
  *
  * Reconstructs the complete BL-031D commercial position for one
  * client/development/period from Postgres. Returns a candidate snapshot
- * model only. Does not persist. Does not wire Approve & Lock.
+ * model only. Does not persist. Approve & Lock (BL-031E.3B) persists the
+ * candidate inside the same transaction when `dbClient` is supplied.
  */
 
 const { buildSubcontractOrderKey } = require("./packageKey");
@@ -266,9 +267,10 @@ async function buildCvrCloseCandidate({
   developmentId,
   periodId,
   actor = null,
+  dbClient = null,
   loadSources = loadCvrCloseSources,
 } = {}) {
-  const loaded = await loadSources({ clientId, developmentId, periodId });
+  const loaded = await loadSources({ clientId, developmentId, periodId, dbClient });
   const sources = loaded.sources || {};
   const sourceBlockers = collectSourceBlockers(sources);
 

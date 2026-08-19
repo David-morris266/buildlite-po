@@ -1,6 +1,8 @@
 /**
  * BL-031E.2 — Authoritative Postgres sources for the CVR close engine.
  * Loads period overlays and live commercial facts. Does not persist snapshots.
+ * Optional `dbClient` uses the caller's transaction so Approve & Lock (E.3B)
+ * calculates from the same connection that will persist the snapshot.
  */
 
 const { query } = require("../db");
@@ -17,6 +19,11 @@ const {
 } = require("./packagePoExtract");
 const { rowToDocument: certificateRowToDocument } = require("./paymentCertificateMapper");
 const { CLOSE_SOURCE_KEYS } = require("./cvrCloseConstants");
+
+async function runQuery(dbClient, text, params) {
+  if (dbClient) return dbClient.query(text, params);
+  return query(text, params);
+}
 
 function sourceFailure(reason, extra = {}) {
   return { loaded: false, ready: false, reason, ...extra };
@@ -42,11 +49,11 @@ function getPoNumber(po) {
   return po?.poNumber || po?.po_number || null;
 }
 
-async function resolvePoDevelopmentId(clientId, po, caches) {
+async function resolvePoDevelopmentId(clientId, po, caches, dbClient = null) {
   const direct = getPoDevelopmentIdFromPayload(po);
   if (direct) {
     if (caches.developments.has(direct)) return caches.developments.get(direct);
-    const row = await findDevelopmentById(clientId, direct);
+    const row = await findDevelopmentById(clientId, direct, dbClient);
     const id = row ? String(row.id || direct) : null;
     caches.developments.set(direct, id);
     return id;
@@ -55,7 +62,7 @@ async function resolvePoDevelopmentId(clientId, po, caches) {
   const jobNumber = getPoJobNumber(po);
   if (!jobNumber) return null;
   if (caches.jobNumbers.has(jobNumber)) return caches.jobNumbers.get(jobNumber);
-  const row = await findDevelopmentByJobNumber(clientId, jobNumber);
+  const row = await findDevelopmentByJobNumber(clientId, jobNumber, dbClient);
   const id = row ? String(row.id) : null;
   caches.jobNumbers.set(jobNumber, id);
   return id;
@@ -69,8 +76,9 @@ function emptySourceReadiness() {
   return sources;
 }
 
-async function loadPurchaseOrders(clientId, developmentId) {
-  const { rows } = await query(
+async function loadPurchaseOrders(clientId, developmentId, dbClient = null) {
+  const { rows } = await runQuery(
+    dbClient,
     `
       SELECT po_number, payload
       FROM purchase_orders
@@ -84,15 +92,16 @@ async function loadPurchaseOrders(clientId, developmentId) {
     const payload =
       row.payload && typeof row.payload === "object" ? { ...row.payload } : {};
     if (!payload.poNumber && row.po_number) payload.poNumber = row.po_number;
-    const resolvedId = await resolvePoDevelopmentId(clientId, payload, caches);
+    const resolvedId = await resolvePoDevelopmentId(clientId, payload, caches, dbClient);
     if (resolvedId !== String(developmentId)) continue;
     matched.push(payload);
   }
   return matched;
 }
 
-async function loadCertificates(clientId, developmentId) {
-  const { rows } = await query(
+async function loadCertificates(clientId, developmentId, dbClient = null) {
+  const { rows } = await runQuery(
+    dbClient,
     `
       SELECT *
       FROM package_payment_certificates
@@ -105,11 +114,11 @@ async function loadCertificates(clientId, developmentId) {
   return rows.map((row) => certificateRowToDocument(row, []));
 }
 
-async function loadCvrCloseSources({ clientId, developmentId, periodId }) {
+async function loadCvrCloseSources({ clientId, developmentId, periodId, dbClient = null } = {}) {
   const sources = emptySourceReadiness();
 
   try {
-    const development = await findDevelopmentById(clientId, developmentId);
+    const development = await findDevelopmentById(clientId, developmentId, dbClient);
     if (!development) {
       sources.development = sourceFailure("development-not-found");
       return { ok: false, sources };
@@ -123,7 +132,7 @@ async function loadCvrCloseSources({ clientId, developmentId, periodId }) {
   }
 
   try {
-    const periodResult = await getCvrPeriod(clientId, developmentId, periodId);
+    const periodResult = await getCvrPeriod(clientId, developmentId, periodId, dbClient);
     if (!periodResult?.ok || !periodResult.period) {
       sources.period = sourceFailure(
         periodResult?.status === 404 ? "period-not-found" : "period-unavailable",
@@ -138,7 +147,7 @@ async function loadCvrCloseSources({ clientId, developmentId, periodId }) {
   }
 
   try {
-    const inputResult = await listCostCodeInputs(clientId, developmentId, periodId);
+    const inputResult = await listCostCodeInputs(clientId, developmentId, periodId, dbClient);
     if (!inputResult?.ok) {
       sources.inputs = sourceFailure("inputs-unavailable", {
         status: inputResult?.status || null,
@@ -153,7 +162,9 @@ async function loadCvrCloseSources({ clientId, developmentId, periodId }) {
   }
 
   try {
-    sources.purchaseOrders = sourceOk(await loadPurchaseOrders(clientId, developmentId));
+    sources.purchaseOrders = sourceOk(
+      await loadPurchaseOrders(clientId, developmentId, dbClient)
+    );
   } catch (err) {
     sources.purchaseOrders = sourceFailure("purchase-orders-query-failed", {
       error: err.message,
@@ -163,7 +174,7 @@ async function loadCvrCloseSources({ clientId, developmentId, periodId }) {
 
   try {
     sources.commercialEvents = sourceOk(
-      await listCommercialEvents(clientId, { developmentId })
+      await listCommercialEvents(clientId, { developmentId }, dbClient)
     );
   } catch (err) {
     sources.commercialEvents = sourceFailure("commercial-events-query-failed", {
@@ -173,7 +184,9 @@ async function loadCvrCloseSources({ clientId, developmentId, periodId }) {
   }
 
   try {
-    sources.certificates = sourceOk(await loadCertificates(clientId, developmentId));
+    sources.certificates = sourceOk(
+      await loadCertificates(clientId, developmentId, dbClient)
+    );
   } catch (err) {
     sources.certificates = sourceFailure("certificates-query-failed", {
       error: err.message,
@@ -182,7 +195,7 @@ async function loadCvrCloseSources({ clientId, developmentId, periodId }) {
   }
 
   try {
-    const ledgerResult = await listLedgerTransactions(clientId, developmentId);
+    const ledgerResult = await listLedgerTransactions(clientId, developmentId, dbClient);
     if (!ledgerResult?.ok) {
       sources.ledger = sourceFailure("ledger-unavailable", {
         status: ledgerResult?.status || null,

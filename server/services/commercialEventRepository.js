@@ -107,7 +107,7 @@ async function findCommercialEventById(clientId, id, { includeAudit = true } = {
   return rowToDocument(row, auditRows);
 }
 
-async function listCommercialEvents(clientId, filters = {}) {
+async function listCommercialEvents(clientId, filters = {}, dbClient = null) {
   const clauses = ["client_id = $1"];
   const params = [clientId];
 
@@ -132,7 +132,8 @@ async function listCommercialEvents(clientId, filters = {}) {
     clauses.push(`relationship_type = $${params.length}`);
   }
 
-  const { rows } = await query(
+  const { rows } = await runQuery(
+    dbClient,
     `
       SELECT *
       FROM commercial_events

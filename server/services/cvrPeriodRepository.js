@@ -1,7 +1,8 @@
 /**
- * BL-031A — CVR period and cost-code input Postgres access layer.
+ * BL-031A / BL-031E.3B — CVR period and cost-code input Postgres access layer.
  *
- * Approve/lock is workflow only. Do not write CVR snapshots here (BL-031E).
+ * Approve & Lock is one transaction: close candidate + snapshot persist +
+ * submitted -> locked + audit. Either all succeed or nothing changes.
  */
 
 const { pool, query } = require("../db");
@@ -9,13 +10,15 @@ const { findDevelopmentById } = require("./developmentRepository");
 const {
   CVR_PERIOD_AUDIT_ACTIONS,
   CVR_PERIOD_STATUSES,
-  SNAPSHOT_DEFERRED_NOTE,
+  CVR_CLOSE_NOT_READY_CODE,
+  SNAPSHOT_CREATED_NOTE,
   isCvrPeriodLocked,
   isCvrPeriodMutable,
   isValidUuid,
   nextPeriodKey,
 } = require("./cvrPeriodConstants");
 const { periodRowToDocument, inputRowToDocument } = require("./cvrPeriodMapper");
+const { getSnapshotForPeriod } = require("./cvrSnapshotRepository");
 const {
   parseExpectedVersion,
   validateCostCodeInputBody,
@@ -36,8 +39,8 @@ async function runQuery(dbClient, text, params) {
   return query(text, params);
 }
 
-async function developmentOr404(clientId, developmentId) {
-  const development = await findDevelopmentById(clientId, developmentId);
+async function developmentOr404(clientId, developmentId, dbClient = null) {
+  const development = await findDevelopmentById(clientId, developmentId, dbClient);
   if (!development) {
     return { ok: false, status: 404, message: "Development not found." };
   }
@@ -112,7 +115,8 @@ async function listPeriodRows(clientId, developmentId, dbClient = null) {
 async function hydratePeriod(clientId, row, dbClient = null) {
   if (!row) return null;
   const audit = await loadAuditRows(clientId, row.id, dbClient);
-  return periodRowToDocument(row, audit);
+  const snapshot = await getSnapshotForPeriod(clientId, row.id, dbClient);
+  return periodRowToDocument(row, audit, snapshot);
 }
 
 async function listCvrPeriods(clientId, developmentId) {
@@ -126,15 +130,15 @@ async function listCvrPeriods(clientId, developmentId) {
   return { ok: true, periods };
 }
 
-async function getCvrPeriod(clientId, developmentId, periodId) {
-  const scoped = await developmentOr404(clientId, developmentId);
+async function getCvrPeriod(clientId, developmentId, periodId, dbClient = null) {
+  const scoped = await developmentOr404(clientId, developmentId, dbClient);
   if (!scoped.ok) return scoped;
   if (!isValidUuid(periodId)) {
     return { ok: false, status: 400, message: "periodId must be a valid UUID." };
   }
-  const row = await findPeriodRow(clientId, developmentId, periodId);
+  const row = await findPeriodRow(clientId, developmentId, periodId, dbClient);
   if (!row) return { ok: false, status: 404, message: "CVR period not found." };
-  return { ok: true, period: await hydratePeriod(clientId, row) };
+  return { ok: true, period: await hydratePeriod(clientId, row, dbClient) };
 }
 
 async function createCvrPeriod(clientId, developmentId, body = {}, { actor } = {}) {
@@ -343,16 +347,198 @@ async function rejectCvrPeriod(clientId, developmentId, periodId, body = {}, { a
   });
 }
 
-async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, { actor } = {}) {
-  const result = await transitionPeriod(clientId, developmentId, periodId, {
-    actor,
-    comment: body.comment || SNAPSHOT_DEFERRED_NOTE,
-    fromStatus: CVR_PERIOD_STATUSES.submitted,
-    toStatus: CVR_PERIOD_STATUSES.locked,
-    action: CVR_PERIOD_AUDIT_ACTIONS.locked,
-    setApproved: true,
-  });
-  return result;
+async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, options = {}) {
+  const { buildCvrCloseCandidate } = require("./cvrCloseEngine");
+  const { persistCvrPeriodSnapshot, isUniqueViolation: isSnapshotUnique } = require("./cvrSnapshotRepository");
+
+  const actor = options.actor;
+  const failAfter = options.failAfter || null;
+  const loadSources = options.loadSources;
+  const scoped = await developmentOr404(clientId, developmentId);
+  if (!scoped.ok) return scoped;
+  if (!isValidUuid(periodId)) {
+    return { ok: false, status: 400, message: "periodId must be a valid UUID." };
+  }
+
+  let expectedVersion = null;
+  if (body.version != null && body.version !== "") {
+    expectedVersion = parseExpectedVersion(body.version);
+    if (expectedVersion == null) {
+      return { ok: false, status: 400, message: "version must be a positive integer." };
+    }
+  }
+
+  const dbClient = await pool.connect();
+  let lockedRow = null;
+  try {
+    await dbClient.query("BEGIN");
+    const row = await findPeriodRow(clientId, developmentId, periodId, dbClient, {
+      forUpdate: true,
+    });
+    if (!row) {
+      await dbClient.query("ROLLBACK");
+      return { ok: false, status: 404, message: "CVR period not found." };
+    }
+    if (row.status !== CVR_PERIOD_STATUSES.submitted) {
+      await dbClient.query("ROLLBACK");
+      if (isCvrPeriodLocked(row.status)) {
+        return {
+          ok: false,
+          status: 409,
+          message: "Locked CVR periods cannot be mutated.",
+        };
+      }
+      return {
+        ok: false,
+        status: 409,
+        message: `CVR period must be ${CVR_PERIOD_STATUSES.submitted} to ${CVR_PERIOD_AUDIT_ACTIONS.locked}.`,
+      };
+    }
+    if (expectedVersion != null && row.version !== expectedVersion) {
+      await dbClient.query("ROLLBACK");
+      return {
+        ok: false,
+        status: 409,
+        message: "CVR period version conflict.",
+        period: await hydratePeriod(clientId, row),
+      };
+    }
+
+    const existingSnapshot = await getSnapshotForPeriod(clientId, periodId, dbClient);
+    if (existingSnapshot) {
+      await dbClient.query("ROLLBACK");
+      return {
+        ok: false,
+        status: 409,
+        message: "A CVR snapshot already exists for this period.",
+      };
+    }
+
+    const candidate = await buildCvrCloseCandidate({
+      clientId,
+      developmentId,
+      periodId,
+      actor,
+      dbClient,
+      ...(loadSources ? { loadSources } : {}),
+    });
+
+    if (
+      !candidate?.ready ||
+      !candidate?.complete ||
+      !candidate?.canLock ||
+      !candidate?.snapshot
+    ) {
+      await dbClient.query("ROLLBACK");
+      return {
+        ok: false,
+        status: 409,
+        code: CVR_CLOSE_NOT_READY_CODE,
+        message: "CVR period is not ready to lock.",
+        blockers: publicCloseBlockers(candidate?.blockers),
+      };
+    }
+
+    await persistCvrPeriodSnapshot(dbClient, {
+      clientId,
+      developmentId,
+      periodRow: row,
+      candidate,
+      actor,
+      failAfter,
+    });
+
+    if (failAfter === "period") {
+      throw new Error("forced-period-update-failure");
+    }
+
+    const updated = await runQuery(
+      dbClient,
+      `
+        UPDATE cvr_periods
+        SET
+          status = $1,
+          approved_at = NOW(),
+          approved_by = $2,
+          version = version + 1,
+          updated_at = NOW(),
+          updated_by = $2
+        WHERE client_id = $3
+          AND development_id = $4
+          AND id = $5
+          AND status = $6
+        RETURNING *
+      `,
+      [
+        CVR_PERIOD_STATUSES.locked,
+        actor || null,
+        clientId,
+        developmentId,
+        periodId,
+        CVR_PERIOD_STATUSES.submitted,
+      ]
+    );
+
+    if (!updated.rowCount) {
+      await dbClient.query("ROLLBACK");
+      return {
+        ok: false,
+        status: 409,
+        message: "CVR period version conflict.",
+      };
+    }
+
+    if (failAfter === "audit") {
+      throw new Error("forced-audit-failure");
+    }
+
+    const userComment = String(body.comment || "").trim();
+    await insertAudit(dbClient, {
+      clientId,
+      periodId,
+      action: CVR_PERIOD_AUDIT_ACTIONS.locked,
+      actor,
+      comment: userComment || SNAPSHOT_CREATED_NOTE,
+      priorStatus: CVR_PERIOD_STATUSES.submitted,
+      newStatus: CVR_PERIOD_STATUSES.locked,
+    });
+    await insertAudit(dbClient, {
+      clientId,
+      periodId,
+      action: CVR_PERIOD_AUDIT_ACTIONS.approved,
+      actor,
+      comment: SNAPSHOT_CREATED_NOTE,
+      priorStatus: CVR_PERIOD_STATUSES.submitted,
+      newStatus: CVR_PERIOD_STATUSES.locked,
+    });
+
+    await dbClient.query("COMMIT");
+    lockedRow = updated.rows[0];
+  } catch (err) {
+    await dbClient.query("ROLLBACK");
+    if (isUniqueViolation(err) || isSnapshotUnique(err)) {
+      return {
+        ok: false,
+        status: 409,
+        message: "A CVR snapshot already exists for this period.",
+      };
+    }
+    throw err;
+  } finally {
+    dbClient.release();
+  }
+
+  return { ok: true, period: await hydratePeriod(clientId, lockedRow) };
+}
+
+function publicCloseBlockers(blockers) {
+  return (blockers || []).map((item) => ({
+    source: item.source || null,
+    reason: item.reason || "not-ready",
+    certificateId: item.certificateId || null,
+    orderKey: item.orderKey || null,
+    costCodeKey: item.costCodeKey || null,
+  }));
 }
 
 async function transitionPeriod(clientId, developmentId, periodId, options) {
@@ -427,18 +613,6 @@ async function transitionPeriod(clientId, developmentId, periodId, options) {
       newStatus: options.toStatus,
     });
 
-    if (options.toStatus === CVR_PERIOD_STATUSES.locked) {
-      await insertAudit(dbClient, {
-        clientId,
-        periodId,
-        action: CVR_PERIOD_AUDIT_ACTIONS.approved,
-        actor: options.actor,
-        comment: SNAPSHOT_DEFERRED_NOTE,
-        priorStatus: CVR_PERIOD_STATUSES.submitted,
-        newStatus: CVR_PERIOD_STATUSES.locked,
-      });
-    }
-
     await dbClient.query("COMMIT");
     return { ok: true, period: await hydratePeriod(clientId, updated.rows[0]) };
   } catch (err) {
@@ -449,16 +623,17 @@ async function transitionPeriod(clientId, developmentId, periodId, options) {
   }
 }
 
-async function listCostCodeInputs(clientId, developmentId, periodId) {
-  const scoped = await developmentOr404(clientId, developmentId);
+async function listCostCodeInputs(clientId, developmentId, periodId, dbClient = null) {
+  const scoped = await developmentOr404(clientId, developmentId, dbClient);
   if (!scoped.ok) return scoped;
   if (!isValidUuid(periodId)) {
     return { ok: false, status: 400, message: "periodId must be a valid UUID." };
   }
-  const period = await findPeriodRow(clientId, developmentId, periodId);
+  const period = await findPeriodRow(clientId, developmentId, periodId, dbClient);
   if (!period) return { ok: false, status: 404, message: "CVR period not found." };
 
-  const { rows } = await query(
+  const { rows } = await runQuery(
+    dbClient,
     `
       SELECT *
       FROM cvr_cost_code_inputs

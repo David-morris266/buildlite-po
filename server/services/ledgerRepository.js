@@ -21,8 +21,13 @@ function provisionalActor(body = {}) {
   return body.updatedBy || body.createdBy || body.actor || body.importedBy || null;
 }
 
-async function developmentOr404(clientId, developmentId) {
-  const development = await findDevelopmentById(clientId, developmentId);
+async function runQuery(dbClient, text, params) {
+  if (dbClient) return dbClient.query(text, params);
+  return query(text, params);
+}
+
+async function developmentOr404(clientId, developmentId, dbClient = null) {
+  const development = await findDevelopmentById(clientId, developmentId, dbClient);
   if (!development) {
     return { ok: false, status: 404, message: "Development not found." };
   }
@@ -44,10 +49,11 @@ async function listLedgerBatches(clientId, developmentId) {
   return { ok: true, batches: rows.map(batchRowToDocument) };
 }
 
-async function listLedgerTransactions(clientId, developmentId) {
-  const scoped = await developmentOr404(clientId, developmentId);
+async function listLedgerTransactions(clientId, developmentId, dbClient = null) {
+  const scoped = await developmentOr404(clientId, developmentId, dbClient);
   if (!scoped.ok) return scoped;
-  const { rows } = await query(
+  const { rows } = await runQuery(
+    dbClient,
     `
       SELECT *
       FROM ledger_transactions
