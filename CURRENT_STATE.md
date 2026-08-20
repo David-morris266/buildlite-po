@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, **BL-031A–F**, **BL-032A**, and **BL-032B**. **BL-031E is COMPLETE.** **BL-031F is COMPLETE.** **BL-032A is COMPLETE.** **BL-032B same-price Plot 31 lifecycle UAT PASSED.** Test Site 1 snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. P02 monthly-cycle UAT **PASSED**. Revenue settings authority-on UAT **PASSED**. **BL-032 is not complete.** The differing-price (£250,000) substitution proof has **not** been run. Revenue is **not** in CVR. `recognitionPolicy=exchange` is **not** live CVR/accounting behaviour. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
+This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, **BL-031A–F**, **BL-032A**, and **BL-032B**. **BL-031E is COMPLETE.** **BL-031F is COMPLETE.** **BL-032A is COMPLETE.** **BL-032B is COMPLETE.** Same-price and differing-price Plot 31 private-exchange UATs **PASSED**. Test Site 1 snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. P02 monthly-cycle UAT **PASSED**. Revenue settings authority-on UAT **PASSED**. **BL-032 is not complete** (BL-032C CVR Revenue/GP integration is not started). Revenue is **not** in CVR. `recognitionPolicy=exchange` is **not** live CVR/accounting behaviour. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
 
 Historic Phase 0 / BL-006 schema notes remain in `docs/DATABASE.md` and `docs/phase0/`. Do not treat those files as the current programme.
 
@@ -17,11 +17,11 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Branch | `buildlite-V1-1` |
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
-| Last completed product slice | **BL-032B** private plot secured-revenue lifecycle. Same-price Plot 31 UAT **PASSED**. Selling Price `step=1000` UAT defect corrected to `step=0.01`. Differing-price proof **not** run. |
+| Last completed product slice | **BL-032B — COMPLETE.** Private plot secured-revenue lifecycle. Same-price and differing-price Plot 31 UATs **PASSED**. Selling Price HTML `step` corrected `1000` → `0.01`. |
 | Last persistence slice implemented | **BL-032A — COMPLETE.** Development revenue strategy/settings server authority. Test Site 1 authority-on UAT **PASSED**. Flag default OFF. Migration `011` applied to local `buildlite_clone`. BL-032B added no table/migration. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT after bank** | Differing-price (£250,000 vs £255,100 forecast) substitution proof on Plot 31. Do **not** start BL-032C. Do **not** create P03 until instructed. P03 UAT has **not** been run. Deferred: CVR navigation UI/UX. |
+| **NEXT after bank** | **BL-032C — Revenue + Gross Profit CVR integration PRE-FLIGHT** only. Do **not** implement BL-032C until instructed. Do **not** create P03 until instructed. P03 UAT has **not** been run. Deferred: CVR navigation UI/UX. |
 
 ---
 
@@ -37,7 +37,7 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-030** | Payment Certificate persistence & atomic approval | **Complete** — schema/API (BL-030A), cache/hydration (BL-030B), **server-authority cutover (BL-030C)**, historical-freeze UAT **PASSED**. |
 | **BL-031** | CVR & Ledger persistence | **BL-031A–F complete.** Authority-on live CVR/ledger (**D**), immutable snapshots (**E**), next-period carry-forward (**F**). Snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. P02 monthly-cycle UAT **PASSED**. P03 UAT **not** run. |
 | **BL-032A** | Revenue settings persistence (foundation) | **COMPLETE.** `development_revenue_settings` + GET/PUT. Authority-on UAT **PASSED** on Test Site 1. `VITE_REVENUE_SERVER_AUTHORITY` default OFF. Plot commercial fields remain on `developments.payload`. Categories remain local. Not in CVR. `recognitionPolicy=exchange` is stored only; it is not live behaviour. |
-| **BL-032B** | Private plot revenue lifecycle / Secured Revenue | **Same-price Plot 31 UAT PASSED.** Available/Reserved forecast-only; Exchanged/Completed secured at contractual `sellingPrice`; Completed is not a second money event. Dashboard: Forecast / Secured / Remaining. Payload dates `reservedAt` / `exchangedAt` / `completedAt`. Selling Price HTML `step` corrected from `1000` to `0.01`. Differing-price proof **not** run. Not in CVR. No P03. |
+| **BL-032B** | Private plot revenue lifecycle / Secured Revenue | **COMPLETE.** Same-price and differing-price Plot 31 UATs **PASSED**. Available/Reserved forecast-only; Exchanged/Completed secured at contractual `sellingPrice`; Completion is not a second money event; differing exchange price substitutes forecast (−£5,100 proven). Dashboard: Forecast / Secured / Remaining. Payload dates `reservedAt` / `exchangedAt` / `completedAt`. Selling Price HTML `step` `0.01`. Not in CVR. No P03. |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -508,26 +508,25 @@ Do not fix these here.
 
 CVR navigation is functionally working but not intuitive across CVR Register, Summary, Worksheet, Open Draft CVR, Continue to CVR, Back, and period navigation. Defer to the broader application UI/UX review. Do not redesign it here.
 
-## BL-032B (private plot secured revenue lifecycle) — same-price UAT PASSED
+## BL-032B (private plot secured revenue lifecycle) — COMPLETE
 
-Implementation was banked at `de1a9da549bc475261fc18e74cf5580b16c3716e` (*BL-032B - Add private plot secured revenue lifecycle*). Same-price Plot 31 human UAT **PASSED** on `buildlite_clone` / Test Site 1 (`dev-1785599776666-zck5pl`). Plot 31 was restored to its Available baseline after UAT.
+Implementation was banked at `de1a9da549bc475261fc18e74cf5580b16c3716e` (*BL-032B - Add private plot secured revenue lifecycle*). Selling Price HTML `step` fix was banked at `3ad984adaab3f6b482ee614d92cb29749bd24180` (*BL-032B - Bank private revenue lifecycle UAT*). Same-price and differing-price Plot 31 human UATs **PASSED** on `buildlite_clone` / Test Site 1 (`dev-1785599776666-zck5pl`). Plot 31 was restored to its Available baseline after both proofs.
 
-### What BL-032B does
+### Proven commercial rules
 
-- Available / Reserved = forecast only; Secured = £0
-- Exchanged / Completed = Forecast and Secured at contractual `sellingPrice`
-- Completion is **not** a second revenue/money event
-- Cancelled excluded from Forecast and Secured
-- If exchange price differs from prior forecast, development Forecast **moves** to the contractual value (substitution, not double counting). That differing-price proof has **not** been run.
-- Dashboard KPIs: **Forecast Revenue / Secured Revenue / Remaining Forecast** (`plotsSold` = Exchanged + Completed)
-- Plot Master chip uses the same status-aware price logic
-- Exchanged and Completed require `sellingPrice > 0`
-- Lightweight payload dates: `reservedAt` / `exchangedAt` / `completedAt` (no typed sales table, no migration)
-- Backwards correction Exchanged → Available/Reserved drops Secured and restores derived forecast
+| Status | Forecast Revenue | Secured Revenue |
+|--------|------------------|-----------------|
+| Available | derived forecast | £0 |
+| Reserved | derived forecast | £0 |
+| Exchanged | contractual `sellingPrice` | contractual `sellingPrice` |
+| Completed | same contractual `sellingPrice` | unchanged from Exchange |
+| Cancelled | £0 (excluded) | £0 (excluded) |
+
+Development: Forecast Revenue = sum of status-aware plot Forecast; Secured Revenue = sum of Exchanged + Completed contractual values; Remaining Forecast = Forecast − Secured. `plotsSold` = Exchanged + Completed. Exchange at a different price legitimately **moves** development Forecast (substitution, not addition).
 
 ### Selling Price UAT defect (pre-existing; fixed during BL-032B UAT)
 
-Native HTML `type="number"` Selling Price used `step="1000"`. The browser rejected **£255,100** (“nearest valid values are 255000 and 256000”). This pre-existed BL-032B. Corrected to `step="0.01"` so contractual selling prices accept GBP pence. App `validatePlot` already accepted 255100; the form never submitted.
+Native HTML `type="number"` Selling Price used `step="1000"`. The browser rejected **£255,100** (“nearest valid values are 255000 and 256000”). This was a pre-existing UI defect, not a BL-032B calculation defect. Corrected to `step="0.01"` in `3ad984adaab3f6b482ee614d92cb29749bd24180` so contractual selling prices accept GBP pence. App `validatePlot` already accepted 255100; the form never submitted.
 
 ### Same-price Plot 31 UAT (PASSED)
 
@@ -539,8 +538,25 @@ Save Strategy → **No**. Contractual exchange **£255,100** equalled stored for
 | Reserved | Forecast-only; stray/absent sellingPrice did not secure |
 | Exchanged at £255,100 | Secured **£255,100**; development Forecast **unchanged**; Remaining reduced by £255,100; Plots Sold **1**; exchange date persisted |
 | Completed at £255,100 | Secured **unchanged** £255,100; not a second money event |
-| Hard refresh / persistence | lifecycle state survived |
+| Hard refresh / second session | lifecycle state survived |
 | Restore | Plot 31 returned to Available sales baseline |
+
+### Differing-price Plot 31 UAT (PASSED)
+
+Save Strategy → **No**. Baseline Plot 31 forecast **£255,100**. Contractual exchange **£250,000**.
+
+| Position | Forecast | Secured | Remaining | Plots Sold |
+|----------|----------|---------|-----------|------------|
+| Before | £10,444,608 | £0 | £10,444,608 | 0 |
+| Exchanged at £250,000 | **£10,439,508** | **£250,000** | **£10,189,508** | **1** |
+| Completed at £250,000 | £10,439,508 | £250,000 | £10,189,508 | 1 |
+| Restored | £10,444,608 | £0 | £10,444,608 | 0 |
+
+Forecast movement **−£5,100**. Plot 31 Forecast/Secured became **£250,000**; Remaining **£0**. This proves BuildLite **substitutes** contractual exchange value for the prior forecast. It does not retain £255,100 and add £250,000. Completion at the same £250,000 did not double-count.
+
+### Lifecycle dates
+
+`reservedAt` / `exchangedAt` / `completedAt` are lightweight Plot Master payload fields (no sales table, CRM, or purchaser workflow). Dates persisted during UAT and were cleared when Plot 31 was restored.
 
 ### Final Test Site 1 Plot 31 baseline (leave in place)
 
@@ -552,7 +568,7 @@ Save Strategy → **No**. Contractual exchange **£255,100** equalled stored for
 | reservedAt / exchangedAt / completedAt | **cleared** |
 | All 31 plots | **Available** |
 
-Revenue settings evidence row unchanged: `b2157b36-a243-414e-9169-2d192dad8301`, version **2**, OM **350**, `recognition_policy` **completion**. Do **not** delete it.
+Revenue settings evidence row unchanged: `b2157b36-a243-414e-9169-2d192dad8301`, version **2**, OM **350**, `recognition_policy` **completion**. Do **not** delete it. Secured Revenue is derived from plot lifecycle/status and `sellingPrice`, not from `recognitionPolicy`.
 
 ### Historic CVR protection (read-only confirmation)
 
@@ -562,24 +578,36 @@ Revenue settings evidence row unchanged: `b2157b36-a243-414e-9169-2d192dad8301`,
 | P02 | **locked** v3; snapshot `e8dea429-ff33-4218-81e6-5102bd110a7f` |
 | Snapshots | **2** headers / **18** rows; schema v1; unchanged |
 | P03 | **absent** |
+| Historic Revenue | unavailable; not backfilled |
 | Revenue in CVR | **not wired**; snapshots remain cost-only |
 
 CE-0022 / CE-0023, Wipe locked certs 1–4, and the ledger origin/reversal pair were not rewritten.
 
 ### What BL-032B does **not** do
 
-- Differing-price (£250,000 vs £255,100 forecast) substitution proof — **not run**
-- CVR Revenue integration / snapshot schema v2
-- `recognitionPolicy` flip or driving Secured from that policy
-- reservationPrice, purchaser/CRM, typed sales table
-- GP/margin, HA, incentives, selling costs, prelims, overhead/finance/PBT
+Not provided. Do **not** imply any of these are live:
+
+- Revenue in the CVR
+- Gross Profit / Gross Margin
+- Revenue in immutable CVR snapshots
+- HA / package revenue
+- Cash discounts / physical incentive treatment / customer extras
+- Reservation price
+- Selling cost forecast engine
+- Prelims engine
+- Company overhead
+- Finance / PBT
+- Cash flow / ROCE
+- `recognitionPolicy=exchange` as live CVR/accounting behaviour (stored only; Secured is status/`sellingPrice` derived)
 - P03
 
 ## Next action
 
-**BL-032B same-price Plot 31 lifecycle UAT PASSED.** Selling Price `step` defect corrected (`1000` → `0.01`). Plot 31 restored to Available / £255,100 forecast / sellingPrice £0 / dates cleared. Do not mark BL-032 complete. Do not claim revenue is in CVR. Do not claim `recognitionPolicy=exchange` is live. Repo flag default remains OFF. Local UAT left `VITE_REVENUE_SERVER_AUTHORITY=true` in ignored `client/.env.local` (do not commit it). Test Site 1 has one `development_revenue_settings` row (version 2, OM 350, completion) as evidence — do not delete it.
+**BL-032B is COMPLETE.** Same-price and differing-price Plot 31 UATs **PASSED**. Selling Price `step` defect corrected (`1000` → `0.01`). Plot 31 restored to Available / £255,100 forecast / sellingPrice £0 / dates cleared. Do not mark BL-032 complete. Do not claim revenue is in CVR. Do not claim `recognitionPolicy=exchange` is live. Repo flag default remains OFF. Local UAT left `VITE_REVENUE_SERVER_AUTHORITY=true` in ignored `client/.env.local` (do not commit it). Test Site 1 has one `development_revenue_settings` row (version 2, OM 350, completion) as evidence — do not delete it.
 
-Next expected slice: **differing-price (£250,000 vs £255,100 forecast) substitution proof** on Plot 31. Do **not** start BL-032C in this banking task. Do **not** create P03 until instructed. Do **not** claim P03 UAT has passed. Do not treat Hawthorn Gardens as started.
+Next expected slice: **BL-032C — Revenue + Gross Profit CVR integration PRE-FLIGHT** only. Do **not** implement BL-032C in this banking task. The preflight should define how live Draft/Submitted CVR consumes Revenue; Forecast / Secured / Remaining on CVR Summary; Forecast Cost from existing CVR; Gross Profit and Gross Margin %; previous/current/movement presentation; how Revenue later becomes part of the whole-CVR snapshot; and how v1 P01/P02 remain revenue-unavailable.
+
+Do **not** create P03 until instructed. Do **not** claim P03 UAT has passed. Do not treat Hawthorn Gardens as started.
 
 Optional later UAT (same freeze proof BL-031E already gave for P01): a post-lock live CE must move live commercial and leave frozen P02 unchanged. After that, Create Next Period / P03 carry-forward can copy P02 QS overlays onto a new Draft.
 

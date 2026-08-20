@@ -1,9 +1,9 @@
 # BuildLite Database Reference
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
-**Last product slice fully complete:** **BL-032B** same-price Plot 31 lifecycle UAT **PASSED** (Selling Price HTML `step` corrected to `0.01`; differing-price proof **not** run).  
+**Last product slice fully complete:** **BL-032B — COMPLETE** (same-price and differing-price Plot 31 UATs **PASSED**; Selling Price HTML `step` corrected to `0.01`).  
 **Last persistence slice implemented:** **BL-032A — COMPLETE** (development revenue settings; Test Site 1 authority-on UAT **PASSED**). Do not mark BL-032 complete. BL-032B added no table/migration.  
-**NEXT:** Differing-price (£250,000 vs £255,100 forecast) substitution proof on Plot 31. Do **not** start BL-032C. Do **not** create P03 until instructed. P03 UAT has **not** been run. Migration `011` is applied on local `buildlite_clone`.
+**NEXT:** **BL-032C — Revenue + Gross Profit CVR integration PRE-FLIGHT** only. Do **not** implement until instructed. Do **not** create P03 until instructed. P03 UAT has **not** been run. Migration `011` is applied on local `buildlite_clone`.
 
 ---
 
@@ -289,7 +289,7 @@ GET `/api/developments/:developmentId/revenue/settings` returns `exists: false` 
 
 **BL-032A authority-on UAT (PASSED) on `buildlite_clone` Test Site 1:** migration `011` applied (additive; no backfill). No `buildlite_revenue_v1` payload; live helper `preflight → NO_LOCAL`; migration execute was **not** run. Flag ON only in ignored `client/.env.local`. Initial GET `exists: false` / `version: 0` created no row. First UI write (OM £350 → £351, Save Strategy → No) created row `b2157b36-a243-414e-9169-2d192dad8301` at version 1, policy `completion`. Hard refresh and a second browser session returned 351 from Postgres; `buildlite_revenue_v1` stayed null. Restore £351 → £350 advanced the same row to version 2. Final evidence row: version **2**, OM **350**, AH 58/72/70/65/70/100, garage 0/12500/22500, empty house-type pricing / adjustments / recognitionSettings. Plot 31 stored `forecastSellingPrice` **£255,100** unchanged. Recognised revenue **£0** (Completed-only). P01 locked v5 snapshot `aa6839cc-eace-40dd-a011-6ca90afa7980` and P02 locked v3 snapshot `e8dea429-ff33-4218-81e6-5102bd110a7f` unchanged (**2** headers / **18** rows). **P03 does not exist.** Do not delete the settings row.
 
-**BL-032B same-price Plot 31 UAT (PASSED):** Available → Reserved → Exchanged at **£255,100** → Completed at **£255,100** → restore. Reserved remained forecast-only. Exchanged secured £255,100; development Forecast unchanged (contract = forecast); Remaining reduced by £255,100; Plots Sold 1. Completed did not double-count. Persistence/hard-refresh passed. Pre-existing Selling Price HTML `step="1000"` rejected £255,100; corrected to `step="0.01"` (GBP pence). Plot 31 restored to Available / forecast £255,100 / sellingPrice £0 / dates cleared. Settings row still version 2 / OM 350 / completion. P01/P02 snapshots unchanged. Revenue **not** in CVR. Differing-price (£250,000) proof **not** run. **P03 does not exist.**
+**BL-032B COMPLETE (same-price and differing-price Plot 31 UATs PASSED):** Same-price: Available → Reserved → Exchanged at **£255,100** → Completed at **£255,100** → restore. Forecast unchanged at exchange-equals-forecast; Secured £255,100; Remaining reduced by £255,100; Completion did not double-count. Differing-price: Exchanged at **£250,000** vs £255,100 forecast moved development Forecast **£10,444,608 → £10,439,508** (−£5,100); Secured £250,000; Remaining £10,189,508; Plots Sold 1; Completion at £250,000 did not double-count; restore returned Forecast £10,444,608 / Secured £0. Pre-existing Selling Price HTML `step="1000"` rejected £255,100; corrected to `step="0.01"` in `3ad984adaab3f6b482ee614d92cb29749bd24180`. Plot 31 restored to Available / forecast £255,100 / sellingPrice £0 / dates cleared. Settings row still version 2 / OM 350 / completion. P01/P02 snapshots unchanged. Revenue **not** in CVR. **P03 does not exist.**
 
 ---
 
