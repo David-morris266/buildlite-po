@@ -12,6 +12,7 @@ vi.stubGlobal('localStorage', {
 vi.mock('../api/developments', () => import('../test/mockDevelopmentApi'));
 
 import {
+  getPlotContractPrice,
   getPlotEffectivePrice,
   getPlotForecastRevenue,
   getPlotSecuredRevenue,
@@ -287,6 +288,27 @@ describe('plot lifecycle validation and dates', () => {
     ).toEqual([]);
   });
 
+  it('accepts contractual sellingPrice values that are not £1,000 increments', () => {
+    const exchanged = {
+      plotNumber: '31',
+      houseType: 'Arundel',
+      revenueStatus: 'Exchanged',
+      sellingPrice: 255100,
+    };
+    const withPence = {
+      plotNumber: '31',
+      houseType: 'Arundel',
+      revenueStatus: 'Completed',
+      sellingPrice: 255100.5,
+    };
+    expect(validatePlot(exchanged, [])).toEqual([]);
+    expect(validatePlot(withPence, [])).toEqual([]);
+    expect(getPlotContractPrice(exchanged)).toBe(255100);
+    expect(getPlotContractPrice(withPence)).toBe(255100.5);
+    expect(getPlotSecuredRevenue(exchanged)).toBe(255100);
+    expect(getPlotSecuredRevenue(withPence)).toBe(255100.5);
+  });
+
   it('persists reservedAt/exchangedAt/completedAt without fabricating historic values', async () => {
     const development = await createDevelopment({
       developmentName: 'Lifecycle Dates',
@@ -337,5 +359,29 @@ describe('plot lifecycle validation and dates', () => {
     expect(stored.reservedAt).toBe('2026-08-21');
     expect(stored.exchangedAt).toBe('2026-09-01');
     expect(stored.completedAt).toBe('2026-12-15');
+  });
+
+  it('persists a non-thousand contractual sellingPrice including pence', async () => {
+    const development = await createDevelopment({
+      developmentName: 'Contract Price Precision',
+      location: 'Test',
+    });
+    const added = await addPlot(development.id, {
+      plotNumber: '31',
+      houseType: 'Arundel',
+      niaFt2: 686,
+      revenueStatus: 'Available',
+      forecastSellingPrice: 255100,
+    });
+    expect(added.ok).toBe(true);
+
+    const exchanged = await updatePlot(development.id, added.plot.id, {
+      ...added.plot,
+      revenueStatus: 'Exchanged',
+      sellingPrice: 255100.5,
+    });
+    expect(exchanged.ok).toBe(true);
+    expect(exchanged.plot.sellingPrice).toBe(255100.5);
+    expect(getPlots(development.id)[0].sellingPrice).toBe(255100.5);
   });
 });

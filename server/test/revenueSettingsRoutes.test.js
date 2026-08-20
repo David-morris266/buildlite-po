@@ -60,7 +60,7 @@ async function getActiveClient() {
 
 async function createDevelopment(active, overrides = {}) {
   const id = overrides.id || `dev-rev-api-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  const jobNumber = overrides.jobNumber || `REV-API-${Date.now()}`;
+  const jobNumber = overrides.jobNumber || `REV-API-${id}`;
   await pool.query(
     `
       INSERT INTO developments (id, client_id, job_number, development_name, status)

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, **BL-031A–F**, and **BL-032A**. **BL-031E is COMPLETE.** **BL-031F is COMPLETE.** **BL-032A is COMPLETE.** Test Site 1 snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. P02 monthly-cycle UAT **PASSED**. Revenue settings authority-on UAT **PASSED**. **BL-032 is not complete.** Revenue is **not** in CVR. Exchange recognition is **not** live. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
+This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, **BL-031A–F**, **BL-032A**, and **BL-032B**. **BL-031E is COMPLETE.** **BL-031F is COMPLETE.** **BL-032A is COMPLETE.** **BL-032B same-price Plot 31 lifecycle UAT PASSED.** Test Site 1 snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. P02 monthly-cycle UAT **PASSED**. Revenue settings authority-on UAT **PASSED**. **BL-032 is not complete.** The differing-price (£250,000) substitution proof has **not** been run. Revenue is **not** in CVR. `recognitionPolicy=exchange` is **not** live CVR/accounting behaviour. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
 
 Historic Phase 0 / BL-006 schema notes remain in `docs/DATABASE.md` and `docs/phase0/`. Do not treat those files as the current programme.
 
@@ -17,11 +17,11 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Branch | `buildlite-V1-1` |
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
-| Last completed product slice | **BL-031F** next-period CVR carry-forward. Functional fix banked at `007c0ba`. Test Site 1 P02 monthly-cycle UAT **PASSED**. |
-| Last persistence slice implemented | **BL-032A — COMPLETE.** Development revenue strategy/settings server authority. Test Site 1 authority-on UAT **PASSED**. Flag default OFF. Migration `011` applied to local `buildlite_clone`. |
+| Last completed product slice | **BL-032B** private plot secured-revenue lifecycle. Same-price Plot 31 UAT **PASSED**. Selling Price `step=1000` UAT defect corrected to `step=0.01`. Differing-price proof **not** run. |
+| Last persistence slice implemented | **BL-032A — COMPLETE.** Development revenue strategy/settings server authority. Test Site 1 authority-on UAT **PASSED**. Flag default OFF. Migration `011` applied to local `buildlite_clone`. BL-032B added no table/migration. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT after bank** | **BL-032B** — private plot revenue lifecycle / Exchange secured revenue. Do **not** create P03 until instructed. P03 UAT has **not** been run. Deferred: CVR navigation UI/UX. |
+| **NEXT after bank** | Differing-price (£250,000 vs £255,100 forecast) substitution proof on Plot 31. Do **not** start BL-032C. Do **not** create P03 until instructed. P03 UAT has **not** been run. Deferred: CVR navigation UI/UX. |
 
 ---
 
@@ -36,7 +36,8 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-029** | Order Matrix Persistence | **Complete** — schema/API (BL-029A), cache/hydration (BL-029B), **server-authority cutover (BL-029D)** |
 | **BL-030** | Payment Certificate persistence & atomic approval | **Complete** — schema/API (BL-030A), cache/hydration (BL-030B), **server-authority cutover (BL-030C)**, historical-freeze UAT **PASSED**. |
 | **BL-031** | CVR & Ledger persistence | **BL-031A–F complete.** Authority-on live CVR/ledger (**D**), immutable snapshots (**E**), next-period carry-forward (**F**). Snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. P02 monthly-cycle UAT **PASSED**. P03 UAT **not** run. |
-| **BL-032A** | Revenue settings persistence (foundation) | **COMPLETE.** `development_revenue_settings` + GET/PUT. Authority-on UAT **PASSED** on Test Site 1. `VITE_REVENUE_SERVER_AUTHORITY` default OFF. Plot commercial fields remain on `developments.payload`. Categories remain local. Not in CVR. Exchange recognition **not** live. `recognitionPolicy=exchange` is stored only; it is not live behaviour. |
+| **BL-032A** | Revenue settings persistence (foundation) | **COMPLETE.** `development_revenue_settings` + GET/PUT. Authority-on UAT **PASSED** on Test Site 1. `VITE_REVENUE_SERVER_AUTHORITY` default OFF. Plot commercial fields remain on `developments.payload`. Categories remain local. Not in CVR. `recognitionPolicy=exchange` is stored only; it is not live behaviour. |
+| **BL-032B** | Private plot revenue lifecycle / Secured Revenue | **Same-price Plot 31 UAT PASSED.** Available/Reserved forecast-only; Exchanged/Completed secured at contractual `sellingPrice`; Completed is not a second money event. Dashboard: Forecast / Secured / Remaining. Payload dates `reservedAt` / `exchangedAt` / `completedAt`. Selling Price HTML `step` corrected from `1000` to `0.01`. Differing-price proof **not** run. Not in CVR. No P03. |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -61,7 +62,7 @@ BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when lo
 ### Browser / localStorage authority (not yet migrated)
 
 - CVR periods / cost centres (`buildlite_cvr_v1`) and purchase ledger (`buildlite_purchase_ledgers_v1`) — backup/rollback evidence after BL-031D. Runtime uses Postgres when the CVR/ledger flags are ON (no localStorage fallback or dual-write).
-- Also still local: revenue categories / administration master data, setup drafts, Commercial Assistant dispositions. Development revenue **strategy/settings** use Postgres when `VITE_REVENUE_SERVER_AUTHORITY=true` (no localStorage fallback). They remain localStorage (`buildlite_revenue_v1`) when the flag is OFF. Plot-level commercial fields remain on Plot Master / `developments.payload`. Recognised revenue remains Completed-only (legacy) until BL-032B. `recognitionPolicy=exchange` is not live behaviour.
+- Also still local: revenue categories / administration master data, setup drafts, Commercial Assistant dispositions. Development revenue **strategy/settings** use Postgres when `VITE_REVENUE_SERVER_AUTHORITY=true` (no localStorage fallback). They remain localStorage (`buildlite_revenue_v1`) when the flag is OFF. Plot-level commercial fields remain on Plot Master / `developments.payload` (including BL-032B lifecycle dates). Dashboard Secured Revenue is status/`sellingPrice` derived and is **not** driven by `recognitionPolicy`. Internal `calculateRecognisedRevenue` remains Completed-only for compatibility. `recognitionPolicy=exchange` is not live CVR/accounting behaviour. Revenue is **not** in CVR.
 
 `buildlite_order_matrices_v1` is backup/rollback evidence only after BL-029D. Runtime matrix reads/writes use Postgres when `VITE_MATRIX_SERVER_AUTHORITY=true`.
 
@@ -507,13 +508,78 @@ Do not fix these here.
 
 CVR navigation is functionally working but not intuitive across CVR Register, Summary, Worksheet, Open Draft CVR, Continue to CVR, Back, and period navigation. Defer to the broader application UI/UX review. Do not redesign it here.
 
+## BL-032B (private plot secured revenue lifecycle) — same-price UAT PASSED
+
+Implementation was banked at `de1a9da549bc475261fc18e74cf5580b16c3716e` (*BL-032B - Add private plot secured revenue lifecycle*). Same-price Plot 31 human UAT **PASSED** on `buildlite_clone` / Test Site 1 (`dev-1785599776666-zck5pl`). Plot 31 was restored to its Available baseline after UAT.
+
+### What BL-032B does
+
+- Available / Reserved = forecast only; Secured = £0
+- Exchanged / Completed = Forecast and Secured at contractual `sellingPrice`
+- Completion is **not** a second revenue/money event
+- Cancelled excluded from Forecast and Secured
+- If exchange price differs from prior forecast, development Forecast **moves** to the contractual value (substitution, not double counting). That differing-price proof has **not** been run.
+- Dashboard KPIs: **Forecast Revenue / Secured Revenue / Remaining Forecast** (`plotsSold` = Exchanged + Completed)
+- Plot Master chip uses the same status-aware price logic
+- Exchanged and Completed require `sellingPrice > 0`
+- Lightweight payload dates: `reservedAt` / `exchangedAt` / `completedAt` (no typed sales table, no migration)
+- Backwards correction Exchanged → Available/Reserved drops Secured and restores derived forecast
+
+### Selling Price UAT defect (pre-existing; fixed during BL-032B UAT)
+
+Native HTML `type="number"` Selling Price used `step="1000"`. The browser rejected **£255,100** (“nearest valid values are 255000 and 256000”). This pre-existed BL-032B. Corrected to `step="0.01"` so contractual selling prices accept GBP pence. App `validatePlot` already accepted 255100; the form never submitted.
+
+### Same-price Plot 31 UAT (PASSED)
+
+Save Strategy → **No**. Contractual exchange **£255,100** equalled stored forecast.
+
+| Step | Result |
+|------|--------|
+| Available | Forecast £255,100; Secured £0 |
+| Reserved | Forecast-only; stray/absent sellingPrice did not secure |
+| Exchanged at £255,100 | Secured **£255,100**; development Forecast **unchanged**; Remaining reduced by £255,100; Plots Sold **1**; exchange date persisted |
+| Completed at £255,100 | Secured **unchanged** £255,100; not a second money event |
+| Hard refresh / persistence | lifecycle state survived |
+| Restore | Plot 31 returned to Available sales baseline |
+
+### Final Test Site 1 Plot 31 baseline (leave in place)
+
+| Check | Result |
+|-------|--------|
+| revenueStatus | **Available** |
+| forecastSellingPrice | **£255,100** |
+| sellingPrice | **£0** |
+| reservedAt / exchangedAt / completedAt | **cleared** |
+| All 31 plots | **Available** |
+
+Revenue settings evidence row unchanged: `b2157b36-a243-414e-9169-2d192dad8301`, version **2**, OM **350**, `recognition_policy` **completion**. Do **not** delete it.
+
+### Historic CVR protection (read-only confirmation)
+
+| Check | Result |
+|-------|--------|
+| P01 | **locked** v5; snapshot `aa6839cc-eace-40dd-a011-6ca90afa7980` |
+| P02 | **locked** v3; snapshot `e8dea429-ff33-4218-81e6-5102bd110a7f` |
+| Snapshots | **2** headers / **18** rows; schema v1; unchanged |
+| P03 | **absent** |
+| Revenue in CVR | **not wired**; snapshots remain cost-only |
+
+CE-0022 / CE-0023, Wipe locked certs 1–4, and the ledger origin/reversal pair were not rewritten.
+
+### What BL-032B does **not** do
+
+- Differing-price (£250,000 vs £255,100 forecast) substitution proof — **not run**
+- CVR Revenue integration / snapshot schema v2
+- `recognitionPolicy` flip or driving Secured from that policy
+- reservationPrice, purchaser/CRM, typed sales table
+- GP/margin, HA, incentives, selling costs, prelims, overhead/finance/PBT
+- P03
+
 ## Next action
 
-**BL-032A is COMPLETE.** Authority-on UAT **PASSED**. Do not mark BL-032 complete. Do not claim revenue is in CVR. Do not claim Exchange recognition is live. `recognitionPolicy=exchange` is stored only; it is not live behaviour. Repo flag default remains OFF. Local UAT left `VITE_REVENUE_SERVER_AUTHORITY=true` in ignored `client/.env.local` (do not commit it). Test Site 1 has one `development_revenue_settings` row (version 2, OM 350, completion) as evidence — do not delete it.
+**BL-032B same-price Plot 31 lifecycle UAT PASSED.** Selling Price `step` defect corrected (`1000` → `0.01`). Plot 31 restored to Available / £255,100 forecast / sellingPrice £0 / dates cleared. Do not mark BL-032 complete. Do not claim revenue is in CVR. Do not claim `recognitionPolicy=exchange` is live. Repo flag default remains OFF. Local UAT left `VITE_REVENUE_SERVER_AUTHORITY=true` in ignored `client/.env.local` (do not commit it). Test Site 1 has one `development_revenue_settings` row (version 2, OM 350, completion) as evidence — do not delete it.
 
-Next expected slice: **BL-032B — private plot revenue lifecycle / Exchange secured revenue.** Start with BL-032B **preflight** only when instructed. Do **not** start BL-032B in this banking task.
-
-Do **not** create P03 until instructed. Do **not** claim P03 UAT has passed. Do not treat Hawthorn Gardens as started.
+Next expected slice: **differing-price (£250,000 vs £255,100 forecast) substitution proof** on Plot 31. Do **not** start BL-032C in this banking task. Do **not** create P03 until instructed. Do **not** claim P03 UAT has passed. Do not treat Hawthorn Gardens as started.
 
 Optional later UAT (same freeze proof BL-031E already gave for P01): a post-lock live CE must move live commercial and leave frozen P02 unchanged. After that, Create Next Period / P03 carry-forward can copy P02 QS overlays onto a new Draft.
 

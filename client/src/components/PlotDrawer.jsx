@@ -354,7 +354,7 @@ export default function PlotDrawer({
                 className="input"
                 type="number"
                 min="0"
-                step="1000"
+                step="0.01"
                 value={form.sellingPrice}
                 onChange={(event) => updateField('sellingPrice', event.target.value)}
                 placeholder="Contractual sale price from exchange"
