@@ -66,7 +66,38 @@ function snapshotRowToDocument(row) {
   };
 }
 
-function snapshotHeaderToDocument(header, rows = []) {
+function snapshotPlotToDocument(row) {
+  if (!row) return null;
+  const metadata =
+    row.display_metadata && typeof row.display_metadata === "object"
+      ? row.display_metadata
+      : {};
+  return {
+    id: row.id,
+    snapshotId: row.snapshot_id,
+    plotId: row.plot_id,
+    plotNumber: row.plot_number || "",
+    houseType: row.house_type || "",
+    tenure: row.tenure || "",
+    revenueCategory: row.revenue_category || "",
+    revenueStatus: row.revenue_status || "",
+    revenueSource: row.revenue_source || "",
+    forecastRevenue: toNumber(row.forecast_revenue, 0),
+    securedRevenue: toNumber(row.secured_revenue, 0),
+    remainingForecastRevenue: toNumber(row.remaining_forecast_revenue, 0),
+    sellingPrice: toNumberOrNull(row.selling_price),
+    derivedForecast: toNumber(row.derived_forecast, 0),
+    plotPremium: toNumber(row.plot_premium, 0),
+    niaFt2: toNumber(row.nia_ft2, 0),
+    effectiveGarage: row.effective_garage || "None",
+    reservedAt: row.reserved_at || null,
+    exchangedAt: row.exchanged_at || null,
+    completedAt: row.completed_at || null,
+    displayMetadata: metadata,
+  };
+}
+
+function snapshotHeaderToDocument(header, rows = [], plots = []) {
   if (!header) return null;
   return {
     id: header.id,
@@ -89,13 +120,30 @@ function snapshotHeaderToDocument(header, rows = []) {
     costToComplete: toNumber(header.cost_to_complete, 0),
     outstandingCertified: toNumber(header.outstanding_certified, 0),
     variance: toNumber(header.variance, 0),
+    forecastRevenue: toNumberOrNull(header.forecast_revenue),
+    securedRevenue: toNumberOrNull(header.secured_revenue),
+    remainingForecastRevenue: toNumberOrNull(header.remaining_forecast_revenue),
+    plotsSold: header.plots_sold == null ? null : Number(header.plots_sold),
+    plotsRemaining: header.plots_remaining == null ? null : Number(header.plots_remaining),
+    grossProfit: toNumberOrNull(header.gross_profit),
+    grossMarginPercent:
+      header.gross_margin_percent == null ? null : Number(header.gross_margin_percent),
+    revenueAssumptions:
+      header.revenue_assumptions && typeof header.revenue_assumptions === "object"
+        ? header.revenue_assumptions
+        : null,
+    revenueSettingsId: header.revenue_settings_id ?? null,
+    revenueSettingsVersion:
+      header.revenue_settings_version == null ? null : Number(header.revenue_settings_version),
     createdAt: toIso(header.created_at),
     createdBy: header.created_by ?? null,
     rows: (rows || []).map(snapshotRowToDocument).filter(Boolean),
+    plots: (plots || []).map(snapshotPlotToDocument).filter(Boolean),
   };
 }
 
 module.exports = {
   snapshotHeaderToDocument,
   snapshotRowToDocument,
+  snapshotPlotToDocument,
 };

@@ -729,6 +729,51 @@ export default function CVRSummaryPage({
           ) : null}
         </SummaryPanel>
 
+        {summary.historicRevenuePlots?.available ? (
+          <SummaryPanel
+            title="Historic plot revenue"
+            className="cvr-summary__panel--wide cvr-summary__panel--supporting"
+          >
+            {summary.historicRevenuePlots.rows.length ? (
+              <div className="po-table-wrap">
+                <table className="po-data-table cvr-summary__table">
+                  <thead>
+                    <tr>
+                      <th>Plot</th>
+                      <th>House Type</th>
+                      <th>Tenure / category</th>
+                      <th>Status</th>
+                      <th style={{ textAlign: 'right' }}>Forecast Revenue</th>
+                      <th style={{ textAlign: 'right' }}>Secured Revenue</th>
+                      <th style={{ textAlign: 'right' }}>Remaining Forecast</th>
+                      <th style={{ textAlign: 'right' }}>Selling Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.historicRevenuePlots.rows.map((row) => (
+                      <tr key={row.plotId || row.plotNumber}>
+                        <td>{row.plotNumber || '—'}</td>
+                        <td>{row.houseType || '—'}</td>
+                        <td>{row.category || '—'}</td>
+                        <td>{row.revenueStatus || '—'}</td>
+                        <td style={{ textAlign: 'right' }}>{row.forecastRevenueLabel}</td>
+                        <td style={{ textAlign: 'right' }}>{row.securedRevenueLabel}</td>
+                        <td style={{ textAlign: 'right' }}>{row.remainingForecastRevenueLabel}</td>
+                        <td style={{ textAlign: 'right' }}>{row.sellingPriceLabel}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState message={summary.historicRevenuePlots.emptyMessage} />
+            )}
+            <p className="cvr-summary__hint">
+              Frozen plot revenue from this CVR snapshot. Read-only historic evidence.
+            </p>
+          </SummaryPanel>
+        ) : null}
+
         <SummaryPanel title="Commercial Commentary" className="cvr-summary__panel--wide">
           <div className="cvr-summary__commentary-grid">
             {[

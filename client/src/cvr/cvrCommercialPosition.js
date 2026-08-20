@@ -13,6 +13,7 @@ import { getPricedPlots } from '../revenue/revenueStrategy';
 import { getRevenueSettingsReadiness } from '../revenue/revenueSettingsServerCache';
 import { roundMoney } from './cvrCalculations';
 import { CVR_HISTORIC_REVENUE_UNAVAILABLE } from './cvrHistoricConstants';
+import { snapshotHasFrozenRevenue } from './cvrSnapshotMapper';
 
 export const CVR_REVENUE_LOADING_HINT = 'Loading revenue…';
 export const CVR_REVENUE_UNAVAILABLE_HINT = 'Revenue unavailable';
@@ -137,32 +138,58 @@ export function buildCvrCommercialPosition({
   historic = false,
   historicUnavailable = false,
   costSummary = {},
+  snapshot = null,
 } = {}) {
   const forecastCost = moneyValueExists(costSummary.finalForecast)
     ? roundMoney(costSummary.finalForecast)
     : null;
   const costAvailable = forecastCost != null;
-  const historicRevenueUnavailable = Boolean(historic || historicUnavailable);
+  const frozenRevenue = snapshotHasFrozenRevenue(snapshot);
+  const historicV1 = Boolean((historic || historicUnavailable) && !frozenRevenue);
 
-  const revenue = historicRevenueUnavailable
-    ? unavailableRevenue({
-        reason: 'historic-v1',
-        hint: CVR_HISTORIC_REVENUE_UNAVAILABLE,
-      })
-    : loadLiveCvrRevenueSummary(developmentId);
+  let revenue;
+  if (historicV1) {
+    revenue = unavailableRevenue({
+      reason: 'historic-v1',
+      hint: CVR_HISTORIC_REVENUE_UNAVAILABLE,
+    });
+  } else if (historic && frozenRevenue) {
+    const totals = snapshot.totals || snapshot;
+    revenue = {
+      revenueAvailable: true,
+      reason: null,
+      hint: null,
+      error: null,
+      forecastRevenue: roundMoney(totals.forecastRevenue) ?? 0,
+      securedRevenue: roundMoney(totals.securedRevenue) ?? 0,
+      remainingForecast:
+        roundMoney(totals.remainingForecast ?? totals.remainingForecastRevenue) ?? 0,
+      plotsSold: Number(totals.plotsSold) || 0,
+      plotsRemaining: Number(totals.plotsRemaining) || 0,
+    };
+  } else {
+    revenue = loadLiveCvrRevenueSummary(developmentId);
+  }
 
+  const frozenProfit = historic && frozenRevenue ? snapshot.totals || snapshot : null;
   const grossProfit =
-    revenue.revenueAvailable && costAvailable
-      ? calculateCvrGrossProfit(revenue.forecastRevenue, forecastCost)
-      : null;
+    historic && frozenRevenue && frozenProfit?.grossProfit != null
+      ? roundMoney(frozenProfit.grossProfit)
+      : revenue.revenueAvailable && costAvailable
+        ? calculateCvrGrossProfit(revenue.forecastRevenue, forecastCost)
+        : null;
   const grossMarginPercent =
-    revenue.revenueAvailable && costAvailable
-      ? calculateCvrGrossMarginPercent(grossProfit, revenue.forecastRevenue)
-      : null;
+    historic && frozenRevenue && frozenProfit && 'grossMarginPercent' in frozenProfit
+      ? frozenProfit.grossMarginPercent == null
+        ? null
+        : Number(frozenProfit.grossMarginPercent)
+      : revenue.revenueAvailable && costAvailable
+        ? calculateCvrGrossMarginPercent(grossProfit, revenue.forecastRevenue)
+        : null;
 
   let profitHint = null;
   if (grossProfit == null) {
-    if (historicRevenueUnavailable || !revenue.revenueAvailable) {
+    if (historicV1 || !revenue.revenueAvailable) {
       profitHint = revenue.hint;
     } else if (!costAvailable) {
       profitHint = CVR_FORECAST_COST_UNAVAILABLE_HINT;
@@ -171,7 +198,7 @@ export function buildCvrCommercialPosition({
 
   return {
     ...revenue,
-    historicRevenueUnavailable,
+    historicRevenueUnavailable: historicV1,
     costAvailable,
     forecastCost,
     grossProfit,

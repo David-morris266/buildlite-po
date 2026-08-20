@@ -3,9 +3,15 @@ import {
   buildServerCvrPeriodFixture,
   buildServerCvrSnapshotFixture,
   buildServerCvrSnapshotRowFixture,
+  buildServerCvrRevenueSnapshotFixture,
+  buildServerCvrSnapshotPlotFixture,
 } from '../test/mockCvrPeriodApi';
 import { normalizeServerCvrPeriod } from './cvrPeriodServerMapper';
-import { normalizeCvrSnapshotRow, normalizeServerCvrSnapshot } from './cvrSnapshotMapper';
+import {
+  normalizeCvrSnapshotRow,
+  normalizeServerCvrSnapshot,
+  snapshotHasFrozenRevenue,
+} from './cvrSnapshotMapper';
 
 describe('CVR snapshot mapper (BL-031E.4)', () => {
   it('maps a server snapshot header into nested camelCase totals', () => {
@@ -51,6 +57,9 @@ describe('CVR snapshot mapper (BL-031E.4)', () => {
     expect(mapped.totals.manualAccrual).toBe(100);
     expect(mapped.totals.finalForecast).toBe(2365373);
     expect(mapped.totals.outstandingCertified).toBe(2150);
+    expect(mapped.totals.forecastRevenue).toBeNull();
+    expect(mapped.totals.grossProfit).toBeNull();
+    expect(mapped.plots).toEqual([]);
     expect(mapped.committed).toBeUndefined();
     expect(JSON.stringify(mapped)).not.toMatch(/current_budget|actual_cost|cost_code_key/);
   });
@@ -121,5 +130,33 @@ describe('CVR snapshot mapper (BL-031E.4)', () => {
     expect(mapped.snapshot).toBeNull();
     expect(mapped.snapshotDeferred).toBe(true);
     expect(mapped.historicUnavailable).toBe(true);
+  });
+
+  it('maps schema-v2 Revenue totals and plot snapshot rows', () => {
+    const mapped = normalizeServerCvrSnapshot(
+      buildServerCvrRevenueSnapshotFixture({
+        forecastRevenue: 10444608,
+        securedRevenue: 0,
+        remainingForecastRevenue: 10444608,
+        plotsSold: 0,
+        plotsRemaining: 1,
+        grossProfit: 8079185,
+        grossMarginPercent: 77.3512,
+        plots: [
+          buildServerCvrSnapshotPlotFixture({
+            plotId: 'plot-31',
+            plotNumber: '31',
+            forecastRevenue: 255100,
+          }),
+        ],
+      })
+    );
+    expect(mapped.schemaVersion).toBe(2);
+    expect(mapped.totals.forecastRevenue).toBe(10444608);
+    expect(mapped.totals.remainingForecast).toBe(10444608);
+    expect(mapped.totals.grossProfit).toBe(8079185);
+    expect(mapped.plots[0].plotNumber).toBe('31');
+    expect(mapped.plots[0].forecastRevenue).toBe(255100);
+    expect(snapshotHasFrozenRevenue(mapped)).toBe(true);
   });
 });

@@ -70,6 +70,14 @@ function textFrom(source, camelKey, snakeKey, fallback = '') {
 export function normalizeCvrSnapshotTotals(source = {}) {
   const totalsSource =
     source.totals && typeof source.totals === 'object' ? source.totals : source;
+  const remainingForecastRevenue = nullableMoneyFrom(
+    totalsSource,
+    'remainingForecastRevenue',
+    'remaining_forecast_revenue'
+  );
+  const remainingForecast =
+    nullableMoneyFrom(totalsSource, 'remainingForecast', 'remaining_forecast') ??
+    remainingForecastRevenue;
   return {
     originalBudget: nullableMoneyFrom(totalsSource, 'originalBudget', 'original_budget'),
     currentBudget: moneyFrom(totalsSource, 'currentBudget', 'current_budget', 0),
@@ -94,6 +102,23 @@ export function normalizeCvrSnapshotTotals(source = {}) {
       0
     ),
     variance: moneyFrom(totalsSource, 'variance', 'variance', 0),
+    forecastRevenue: nullableMoneyFrom(totalsSource, 'forecastRevenue', 'forecast_revenue'),
+    securedRevenue: nullableMoneyFrom(totalsSource, 'securedRevenue', 'secured_revenue'),
+    remainingForecastRevenue,
+    remainingForecast,
+    plotsSold:
+      firstDefined(totalsSource.plotsSold, totalsSource.plots_sold) == null
+        ? null
+        : Number(firstDefined(totalsSource.plotsSold, totalsSource.plots_sold)),
+    plotsRemaining:
+      firstDefined(totalsSource.plotsRemaining, totalsSource.plots_remaining) == null
+        ? null
+        : Number(firstDefined(totalsSource.plotsRemaining, totalsSource.plots_remaining)),
+    grossProfit: nullableMoneyFrom(totalsSource, 'grossProfit', 'gross_profit'),
+    grossMarginPercent:
+      firstDefined(totalsSource.grossMarginPercent, totalsSource.gross_margin_percent) == null
+        ? null
+        : Number(firstDefined(totalsSource.grossMarginPercent, totalsSource.gross_margin_percent)),
   };
 }
 
@@ -167,9 +192,55 @@ export function normalizeCvrSnapshotRow(document) {
   };
 }
 
+export function normalizeCvrSnapshotPlot(document) {
+  if (!document) return null;
+  const metadataSource = firstDefined(document.displayMetadata, document.display_metadata);
+  const metadata =
+    metadataSource && typeof metadataSource === 'object' && !Array.isArray(metadataSource)
+      ? metadataSource
+      : {};
+  return {
+    id: firstDefined(document.id, null),
+    snapshotId: firstDefined(document.snapshotId, document.snapshot_id, null),
+    plotId: textFrom(document, 'plotId', 'plot_id'),
+    plotNumber: textFrom(document, 'plotNumber', 'plot_number'),
+    houseType: textFrom(document, 'houseType', 'house_type'),
+    tenure: textFrom(document, 'tenure', 'tenure'),
+    revenueCategory: textFrom(document, 'revenueCategory', 'revenue_category'),
+    revenueStatus: textFrom(document, 'revenueStatus', 'revenue_status'),
+    revenueSource: textFrom(document, 'revenueSource', 'revenue_source'),
+    forecastRevenue: moneyFrom(document, 'forecastRevenue', 'forecast_revenue', 0),
+    securedRevenue: moneyFrom(document, 'securedRevenue', 'secured_revenue', 0),
+    remainingForecastRevenue: moneyFrom(
+      document,
+      'remainingForecastRevenue',
+      'remaining_forecast_revenue',
+      0
+    ),
+    sellingPrice: nullableMoneyFrom(document, 'sellingPrice', 'selling_price'),
+    derivedForecast: moneyFrom(document, 'derivedForecast', 'derived_forecast', 0),
+    plotPremium: moneyFrom(document, 'plotPremium', 'plot_premium', 0),
+    niaFt2: moneyFrom(document, 'niaFt2', 'nia_ft2', 0),
+    effectiveGarage: textFrom(document, 'effectiveGarage', 'effective_garage', 'None'),
+    reservedAt: firstDefined(document.reservedAt, document.reserved_at, null),
+    exchangedAt: firstDefined(document.exchangedAt, document.exchanged_at, null),
+    completedAt: firstDefined(document.completedAt, document.completed_at, null),
+    displayMetadata: metadata,
+  };
+}
+
+export function snapshotHasFrozenRevenue(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return false;
+  const version = Number(firstDefined(snapshot.schemaVersion, snapshot.schema_version)) || 1;
+  const totals =
+    snapshot.totals && typeof snapshot.totals === 'object' ? snapshot.totals : snapshot;
+  return version >= 2 && totals.forecastRevenue != null;
+}
+
 export function normalizeServerCvrSnapshot(document) {
   if (!document || typeof document !== 'object') return null;
   const rowsSource = Array.isArray(document.rows) ? document.rows : [];
+  const plotsSource = Array.isArray(document.plots) ? document.plots : [];
   return {
     id: firstDefined(document.id, null),
     clientId: firstDefined(document.clientId, document.client_id, null),
@@ -183,7 +254,23 @@ export function normalizeServerCvrSnapshot(document) {
     ),
     createdAt: firstDefined(document.createdAt, document.created_at, null),
     createdBy: firstDefined(document.createdBy, document.created_by, null),
+    revenueAssumptions: firstDefined(
+      document.revenueAssumptions,
+      document.revenue_assumptions,
+      null
+    ),
+    revenueSettingsId: firstDefined(
+      document.revenueSettingsId,
+      document.revenue_settings_id,
+      null
+    ),
+    revenueSettingsVersion: firstDefined(
+      document.revenueSettingsVersion,
+      document.revenue_settings_version,
+      null
+    ),
     totals: normalizeCvrSnapshotTotals(document),
     rows: rowsSource.map(normalizeCvrSnapshotRow).filter(Boolean),
+    plots: plotsSource.map(normalizeCvrSnapshotPlot).filter(Boolean),
   };
 }

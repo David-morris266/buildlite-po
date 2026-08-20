@@ -16,6 +16,18 @@ const app = createApp();
 const MIGRATION_004 = path.join(__dirname, "..", "migrations", "004_developments.sql");
 const MIGRATION_009 = path.join(__dirname, "..", "migrations", "009_cvr_and_purchase_ledger.sql");
 const MIGRATION_010 = path.join(__dirname, "..", "migrations", "010_cvr_period_snapshots.sql");
+const MIGRATION_011 = path.join(
+  __dirname,
+  "..",
+  "migrations",
+  "011_development_revenue_settings.sql"
+);
+const MIGRATION_012 = path.join(
+  __dirname,
+  "..",
+  "migrations",
+  "012_cvr_period_snapshot_revenue.sql"
+);
 
 const testDevelopmentIds = [];
 const testTenantIds = [];
@@ -31,6 +43,8 @@ async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_004, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_009, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_010, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_011, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_012, "utf8"));
 }
 
 async function cleanup() {
@@ -146,6 +160,10 @@ async function createDevelopment(overrides = {}) {
   });
   assert.equal(res.status, 201);
   trackDevelopment(res.body.id);
+  const settings = await request(app)
+    .put(`/api/developments/${encodeURIComponent(res.body.id)}/revenue/settings`)
+    .send({ version: 0, recognitionPolicy: "completion", actor: "QS" });
+  assert.equal(settings.status, 201, settings.body?.message || JSON.stringify(settings.body));
   return res.body;
 }
 
@@ -265,6 +283,7 @@ if (!isDbConfigured()) {
     assert.equal(locked.status, 200);
     assert.equal(locked.body.status, "locked");
     assert.ok(locked.body.snapshot);
+    assert.equal(locked.body.snapshot.schemaVersion, 2);
     assert.equal(locked.body.snapshotDeferred, false);
     assert.equal(locked.body.snapshotNote, SNAPSHOT_CREATED_NOTE);
     assert.equal(locked.body.snapshot.periodId, created.body.id);

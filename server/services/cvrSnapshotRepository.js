@@ -7,7 +7,7 @@
  */
 
 const { query } = require("../db");
-const { CVR_SNAPSHOT_SCHEMA_VERSION } = require("./cvrCloseConstants");
+const { CVR_SNAPSHOT_REVENUE_SCHEMA_VERSION } = require("./cvrCloseConstants");
 const { snapshotHeaderToDocument } = require("./cvrSnapshotMapper");
 
 const SNAPSHOT_MONEY_FIELDS = [
@@ -23,6 +23,13 @@ const SNAPSHOT_MONEY_FIELDS = [
   ["costToComplete", "cost_to_complete"],
   ["outstandingCertified", "outstanding_certified"],
   ["variance", "variance"],
+];
+
+const SNAPSHOT_REVENUE_FIELDS = [
+  ["forecastRevenue", "forecast_revenue"],
+  ["securedRevenue", "secured_revenue"],
+  ["remainingForecastRevenue", "remaining_forecast_revenue"],
+  ["grossProfit", "gross_profit"],
 ];
 
 const ROW_MONEY_FIELDS = [
@@ -99,7 +106,21 @@ async function getSnapshotForPeriod(clientId, periodId, dbClient = null) {
     `,
     [clientId, header.rows[0].id]
   );
-  return snapshotHeaderToDocument(header.rows[0], rows.rows);
+  let plots = { rows: [] };
+  try {
+    plots = await exec(
+      `
+        SELECT *
+        FROM cvr_period_snapshot_plots
+        WHERE client_id = $1 AND snapshot_id = $2
+        ORDER BY plot_number ASC, plot_id ASC
+      `,
+      [clientId, header.rows[0].id]
+    );
+  } catch (err) {
+    if (!/cvr_period_snapshot_plots/i.test(String(err.message || ""))) throw err;
+  }
+  return snapshotHeaderToDocument(header.rows[0], rows.rows, plots.rows);
 }
 
 async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodRow, snapshot, actor }) {
@@ -111,14 +132,22 @@ async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodR
         commentary, source_readiness,
         current_budget, committed, certified, actual_cost, manual_accrual,
         current_cost, system_forecast, commercial_adjustment, final_forecast,
-        cost_to_complete, outstanding_certified, variance, created_by
+        cost_to_complete, outstanding_certified, variance,
+        forecast_revenue, secured_revenue, remaining_forecast_revenue,
+        plots_sold, plots_remaining, gross_profit, gross_margin_percent,
+        revenue_assumptions, revenue_settings_id, revenue_settings_version,
+        created_by
       )
       VALUES (
         $1, $2, $3, $4, $5,
         $6::jsonb, $7::jsonb,
         $8, $9, $10, $11, $12,
         $13, $14, $15, $16,
-        $17, $18, $19, $20
+        $17, $18, $19,
+        $20, $21, $22,
+        $23, $24, $25, $26,
+        $27::jsonb, $28, $29,
+        $30
       )
       RETURNING *
     `,
@@ -127,7 +156,7 @@ async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodR
       developmentId,
       periodRow.id,
       periodRow.period_key,
-      snapshot.schemaVersion || CVR_SNAPSHOT_SCHEMA_VERSION,
+      snapshot.schemaVersion,
       JSON.stringify(snapshot.commentary || {}),
       JSON.stringify(snapshot.sourceReadiness || {}),
       moneyNumber(snapshot.currentBudget),
@@ -142,6 +171,16 @@ async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodR
       moneyNumber(snapshot.costToComplete),
       moneyNumber(snapshot.outstandingCertified),
       moneyNumber(snapshot.variance),
+      moneyOrNull(snapshot.forecastRevenue),
+      moneyOrNull(snapshot.securedRevenue),
+      moneyOrNull(snapshot.remainingForecastRevenue),
+      snapshot.plotsSold == null ? null : Number(snapshot.plotsSold),
+      snapshot.plotsRemaining == null ? null : Number(snapshot.plotsRemaining),
+      moneyOrNull(snapshot.grossProfit),
+      snapshot.grossMarginPercent == null ? null : Number(snapshot.grossMarginPercent),
+      snapshot.revenueAssumptions ? JSON.stringify(snapshot.revenueAssumptions) : null,
+      snapshot.revenueSettingsId || null,
+      snapshot.revenueSettingsVersion == null ? null : Number(snapshot.revenueSettingsVersion),
       actor || snapshot.createdBy || null,
     ]
   );
@@ -212,7 +251,58 @@ async function insertSnapshotRow(dbClient, { clientId, snapshotId, row }) {
   return rows[0];
 }
 
-function verifyPersistedSnapshot(header, insertedRows, snapshot) {
+async function insertSnapshotPlot(dbClient, { clientId, snapshotId, plot }) {
+  const metadata =
+    plot.displayMetadata && typeof plot.displayMetadata === "object" && !Array.isArray(plot.displayMetadata)
+      ? plot.displayMetadata
+      : {};
+  const { rows } = await runQuery(
+    dbClient,
+    `
+      INSERT INTO cvr_period_snapshot_plots (
+        client_id, snapshot_id, plot_id, plot_number, house_type, tenure,
+        revenue_category, revenue_status, revenue_source,
+        forecast_revenue, secured_revenue, remaining_forecast_revenue,
+        selling_price, derived_forecast, plot_premium, nia_ft2, effective_garage,
+        reserved_at, exchanged_at, completed_at, display_metadata
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6,
+        $7, $8, $9,
+        $10, $11, $12,
+        $13, $14, $15, $16, $17,
+        $18, $19, $20, $21::jsonb
+      )
+      RETURNING *
+    `,
+    [
+      clientId,
+      snapshotId,
+      plot.plotId,
+      plot.plotNumber || "",
+      plot.houseType || "",
+      plot.tenure || "",
+      plot.revenueCategory || "",
+      plot.revenueStatus || "",
+      plot.revenueSource || "",
+      moneyNumber(plot.forecastRevenue),
+      moneyNumber(plot.securedRevenue),
+      moneyNumber(plot.remainingForecastRevenue),
+      moneyOrNull(plot.sellingPrice),
+      moneyNumber(plot.derivedForecast),
+      moneyNumber(plot.plotPremium),
+      moneyNumber(plot.niaFt2),
+      plot.effectiveGarage || "None",
+      plot.reservedAt || null,
+      plot.exchangedAt || null,
+      plot.completedAt || null,
+      JSON.stringify(metadata),
+    ]
+  );
+  return rows[0];
+}
+
+function verifyPersistedSnapshot(header, insertedRows, insertedPlots, snapshot) {
   const candidateRows = snapshot.rows || [];
   if (insertedRows.length !== candidateRows.length) {
     throw new Error(
@@ -221,6 +311,34 @@ function verifyPersistedSnapshot(header, insertedRows, snapshot) {
   }
   for (const [camel, column] of SNAPSHOT_MONEY_FIELDS) {
     assertSameMoney(header[column], snapshot[camel], `header.${camel}`);
+  }
+  for (const [camel, column] of SNAPSHOT_REVENUE_FIELDS) {
+    assertSameMoney(header[column], snapshot[camel], `header.${camel}`);
+  }
+  if (Number(header.plots_sold) !== Number(snapshot.plotsSold)) {
+    throw new Error(
+      `CVR snapshot plotsSold mismatch: persisted ${header.plots_sold}, candidate ${snapshot.plotsSold}.`
+    );
+  }
+  if (Number(header.plots_remaining) !== Number(snapshot.plotsRemaining)) {
+    throw new Error(
+      `CVR snapshot plotsRemaining mismatch: persisted ${header.plots_remaining}, candidate ${snapshot.plotsRemaining}.`
+    );
+  }
+  const persistedMargin =
+    header.gross_margin_percent == null ? null : Number(header.gross_margin_percent);
+  const candidateMargin =
+    snapshot.grossMarginPercent == null ? null : Number(snapshot.grossMarginPercent);
+  if (persistedMargin == null || candidateMargin == null) {
+    if (persistedMargin !== candidateMargin) {
+      throw new Error(
+        `CVR snapshot grossMarginPercent mismatch: persisted ${persistedMargin}, candidate ${candidateMargin}.`
+      );
+    }
+  } else if (Math.abs(persistedMargin - candidateMargin) > 0.00015) {
+    throw new Error(
+      `CVR snapshot grossMarginPercent mismatch: persisted ${persistedMargin}, candidate ${candidateMargin}.`
+    );
   }
   const byKey = new Map(candidateRows.map((row) => [String(row.costCodeKey), row]));
   for (const persisted of insertedRows) {
@@ -231,6 +349,21 @@ function verifyPersistedSnapshot(header, insertedRows, snapshot) {
     for (const [camel, column] of ROW_MONEY_FIELDS) {
       assertSameMoney(persisted[column], candidate[camel], `${persisted.cost_code_key}.${camel}`);
     }
+  }
+  const candidatePlots = snapshot.plots || [];
+  if (insertedPlots.length !== candidatePlots.length) {
+    throw new Error(
+      `CVR snapshot plot count mismatch: persisted ${insertedPlots.length}, candidate ${candidatePlots.length}.`
+    );
+  }
+  const plotsById = new Map(candidatePlots.map((row) => [String(row.plotId), row]));
+  for (const persisted of insertedPlots) {
+    const candidate = plotsById.get(String(persisted.plot_id));
+    if (!candidate) {
+      throw new Error(`CVR snapshot persisted unexpected plot ${persisted.plot_id}.`);
+    }
+    assertSameMoney(persisted.forecast_revenue, candidate.forecastRevenue, `${persisted.plot_id}.forecastRevenue`);
+    assertSameMoney(persisted.secured_revenue, candidate.securedRevenue, `${persisted.plot_id}.securedRevenue`);
   }
 }
 
@@ -258,6 +391,25 @@ async function persistCvrPeriodSnapshot(
   if (String(periodRow.development_id) !== String(developmentId)) {
     throw new Error("CVR period development does not match approval development.");
   }
+  if (Number(snapshot.schemaVersion) !== CVR_SNAPSHOT_REVENUE_SCHEMA_VERSION) {
+    throw new Error("Whole-CVR lock requires snapshot schema version 2.");
+  }
+  if (
+    snapshot.forecastRevenue == null ||
+    snapshot.securedRevenue == null ||
+    snapshot.remainingForecastRevenue == null ||
+    snapshot.plotsSold == null ||
+    snapshot.plotsRemaining == null ||
+    snapshot.grossProfit == null
+  ) {
+    throw new Error("Whole-CVR snapshot is missing required Revenue totals.");
+  }
+  if (!snapshot.revenueAssumptions || typeof snapshot.revenueAssumptions !== "object") {
+    throw new Error("Whole-CVR snapshot is missing frozen Revenue assumptions.");
+  }
+  if (!Array.isArray(snapshot.plots)) {
+    throw new Error("Whole-CVR snapshot is missing plot Revenue rows.");
+  }
 
   const rows = Array.isArray(snapshot.rows) ? snapshot.rows : [];
   const seenKeys = new Set();
@@ -272,8 +424,12 @@ async function persistCvrPeriodSnapshot(
     seenKeys.add(key);
   }
 
-  if (failAfter === "header") {
-    throw new Error("forced-header-insert-failure");
+  if (failAfter === "header" || failAfter === "assumptions") {
+    throw new Error(
+      failAfter === "assumptions"
+        ? "forced-assumptions-insert-failure"
+        : "forced-header-insert-failure"
+    );
   }
 
   const header = await insertSnapshotHeader(dbClient, {
@@ -323,8 +479,50 @@ async function persistCvrPeriodSnapshot(
       `CVR snapshot row count mismatch: stored ${counted.rows[0].n}, candidate ${rows.length}.`
     );
   }
-  verifyPersistedSnapshot(header, insertedRows, snapshot);
-  return snapshotHeaderToDocument(header, insertedRows);
+
+  if (failAfter === "plots") {
+    throw new Error("forced-plot-insert-failure");
+  }
+
+  const plotRows = Array.isArray(snapshot.plots) ? snapshot.plots : [];
+  const seenPlots = new Set();
+  for (const plot of plotRows) {
+    const plotId = String(plot.plotId || "").trim();
+    if (!plotId) throw new Error("CVR snapshot plot is missing plotId.");
+    if (seenPlots.has(plotId)) {
+      throw new Error(`Duplicate CVR snapshot plot id: ${plotId}.`);
+    }
+    seenPlots.add(plotId);
+  }
+
+  const insertedPlots = [];
+  for (const plot of plotRows) {
+    insertedPlots.push(
+      await insertSnapshotPlot(dbClient, {
+        clientId,
+        snapshotId: header.id,
+        plot,
+      })
+    );
+  }
+
+  const plotCounted = await runQuery(
+    dbClient,
+    `
+      SELECT COUNT(*)::int AS n
+      FROM cvr_period_snapshot_plots
+      WHERE client_id = $1 AND snapshot_id = $2
+    `,
+    [clientId, header.id]
+  );
+  if (plotCounted.rows[0].n !== plotRows.length) {
+    throw new Error(
+      `CVR snapshot plot count mismatch: stored ${plotCounted.rows[0].n}, candidate ${plotRows.length}.`
+    );
+  }
+
+  verifyPersistedSnapshot(header, insertedRows, insertedPlots, snapshot);
+  return snapshotHeaderToDocument(header, insertedRows, insertedPlots);
 }
 
 module.exports = {

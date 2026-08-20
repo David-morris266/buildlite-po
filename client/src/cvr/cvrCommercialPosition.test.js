@@ -282,6 +282,109 @@ describe('BL-032C live Revenue compose', () => {
     expect(position.hint).toBe(CVR_HISTORIC_REVENUE_UNAVAILABLE);
     expect(position.forecastCost).toBe(2365423);
   });
+
+  it('uses frozen schema-v2 snapshot Revenue and does not consume live Plot Master', () => {
+    seedDevelopment([manualPlot({ manualForecastValue: 999999, forecastSellingPrice: 999999 })]);
+    const snapshot = {
+      schemaVersion: 2,
+      totals: {
+        forecastRevenue: 10444608,
+        securedRevenue: 0,
+        remainingForecast: 10444608,
+        plotsSold: 0,
+        plotsRemaining: 31,
+        grossProfit: 8079185,
+        grossMarginPercent: 77.3512,
+      },
+    };
+    const position = buildCvrCommercialPosition({
+      developmentId: DEV_ID,
+      historic: true,
+      costSummary: { finalForecast: 2365423 },
+      snapshot,
+    });
+    expect(position.historicRevenueUnavailable).toBe(false);
+    expect(position.revenueAvailable).toBe(true);
+    expect(position.forecastRevenue).toBe(10444608);
+    expect(position.securedRevenue).toBe(0);
+    expect(position.remainingForecast).toBe(10444608);
+    expect(position.grossProfit).toBe(8079185);
+    expect(position.grossMarginPercent).toBe(77.3512);
+    expect(position.forecastCost).toBe(2365423);
+  });
+
+  it('keeps frozen v2 Revenue when live Plot Master later changes', () => {
+    seedDevelopment([manualPlot({ manualForecastValue: 255100, forecastSellingPrice: 255100 })]);
+    const snapshot = {
+      schemaVersion: 2,
+      totals: {
+        forecastRevenue: 10444608,
+        securedRevenue: 0,
+        remainingForecastRevenue: 10444608,
+        plotsSold: 0,
+        plotsRemaining: 31,
+        grossProfit: 8079185,
+        grossMarginPercent: 77.3512,
+      },
+    };
+    seedDevelopment([manualPlot({ manualForecastValue: 1, forecastSellingPrice: 1 })]);
+    const position = buildCvrCommercialPosition({
+      developmentId: DEV_ID,
+      historic: true,
+      costSummary: { finalForecast: 2365423 },
+      snapshot,
+    });
+    expect(position.forecastRevenue).toBe(10444608);
+    expect(position.grossProfit).toBe(8079185);
+  });
+
+  it('stores genuine v2 Forecast Revenue £0 and withholds Gross Margin', () => {
+    const snapshot = {
+      schemaVersion: 2,
+      totals: {
+        forecastRevenue: 0,
+        securedRevenue: 0,
+        remainingForecast: 0,
+        plotsSold: 0,
+        plotsRemaining: 0,
+        grossProfit: -2365423,
+        grossMarginPercent: null,
+      },
+    };
+    const position = buildCvrCommercialPosition({
+      developmentId: DEV_ID,
+      historic: true,
+      costSummary: { finalForecast: 2365423 },
+      snapshot,
+    });
+    expect(position.revenueAvailable).toBe(true);
+    expect(position.forecastRevenue).toBe(0);
+    expect(position.grossProfit).toBe(-2365423);
+    expect(position.grossMarginPercent).toBeNull();
+    expect(position.grossMarginAvailable).toBe(false);
+  });
+
+  it('supports later v2 previous Revenue movement without treating v1 as £0', () => {
+    expect(
+      previousRevenueForMovement(
+        {
+          revenueAvailable: true,
+          forecastRevenue: 10444608,
+        },
+        'forecastRevenue'
+      )
+    ).toBe(10444608);
+    expect(
+      previousRevenueForMovement(
+        {
+          revenueAvailable: false,
+          forecastRevenue: null,
+          hint: CVR_HISTORIC_REVENUE_UNAVAILABLE,
+        },
+        'forecastRevenue'
+      )
+    ).toBeNull();
+  });
 });
 
 describe('BL-032C cost engine and snapshot isolation', () => {
@@ -294,8 +397,9 @@ describe('BL-032C cost engine and snapshot isolation', () => {
       'utf8'
     );
     expect(engine).not.toMatch(/buildRevenueSummary|getPricedPlots|getRevenuePricingContext/);
-    expect(mapper).not.toMatch(/forecastRevenue|securedRevenue|grossProfit|grossMargin/);
+    expect(mapper).not.toMatch(/getPricedPlots|getRevenuePricingContext|getPlots\(/);
     expect(closeConstants).toContain('CVR_SNAPSHOT_SCHEMA_VERSION = 1');
-    expect(closeConstants).not.toMatch(/['"]revenue['"]/);
+    expect(closeConstants).toContain('CVR_SNAPSHOT_REVENUE_SCHEMA_VERSION = 2');
+    expect(closeConstants).not.toMatch(/CLOSE_SOURCE_KEYS[\s\S]*['"]revenue['"]/);
   });
 });

@@ -17,8 +17,8 @@ describe('BL-032A CVR non-interference', () => {
     expect(mapped.schemaVersion).toBe(1);
     expect(mapped.totals.committed).toBe(2364873);
     expect(mapped.totals.revenue).toBeUndefined();
-    expect(mapped.totals.forecastRevenue).toBeUndefined();
-    expect(mapped.totals.grossProfit).toBeUndefined();
+    expect(mapped.totals.forecastRevenue).toBeNull();
+    expect(mapped.totals.grossProfit).toBeNull();
   });
 
   it('keeps the cost engine free of live Revenue formulas', () => {

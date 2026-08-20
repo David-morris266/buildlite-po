@@ -24,7 +24,7 @@ async function developmentOr404(clientId, developmentId) {
   return { ok: true, development };
 }
 
-async function findSettingsRow(clientId, developmentId, dbClient = null) {
+async function findSettingsRow(clientId, developmentId, dbClient = null, { forShare = false } = {}) {
   const exec = dbClient ? dbClient.query.bind(dbClient) : query;
   const { rows } = await exec(
     `
@@ -32,6 +32,7 @@ async function findSettingsRow(clientId, developmentId, dbClient = null) {
       FROM development_revenue_settings
       WHERE client_id = $1 AND development_id = $2
       LIMIT 1
+      ${forShare && dbClient ? "FOR SHARE" : ""}
     `,
     [clientId, developmentId]
   );
@@ -161,5 +162,6 @@ async function putRevenueSettings(clientId, developmentId, body = {}, { actor } 
 module.exports = {
   getRevenueSettings,
   putRevenueSettings,
+  findSettingsRow,
   provisionalActor,
 };

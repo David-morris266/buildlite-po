@@ -27,6 +27,18 @@ const MIGRATION_006 = path.join(__dirname, "..", "migrations", "006_commercial_e
 const MIGRATION_008 = path.join(__dirname, "..", "migrations", "008_package_payment_certificates.sql");
 const MIGRATION_009 = path.join(__dirname, "..", "migrations", "009_cvr_and_purchase_ledger.sql");
 const MIGRATION_010 = path.join(__dirname, "..", "migrations", "010_cvr_period_snapshots.sql");
+const MIGRATION_011 = path.join(
+  __dirname,
+  "..",
+  "migrations",
+  "011_development_revenue_settings.sql"
+);
+const MIGRATION_012 = path.join(
+  __dirname,
+  "..",
+  "migrations",
+  "012_cvr_period_snapshot_revenue.sql"
+);
 const CVR_ROUTES = path.join(__dirname, "..", "routes", "cvrRoutes.js");
 
 const EXPECTED_5231 = {
@@ -90,6 +102,8 @@ async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_008, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_009, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_010, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_011, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_012, "utf8"));
 }
 
 async function cleanup() {
@@ -418,10 +432,32 @@ function uniquePo(prefix = "S-AP") {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+async function seedDefaultRevenueSettings(developmentId) {
+  const res = await request(app)
+    .put(`/api/developments/${encodeURIComponent(developmentId)}/revenue/settings`)
+    .send({ version: 0, recognitionPolicy: "completion", actor: "Director" });
+  assert.equal(res.status, 201, res.body?.message || JSON.stringify(res.body));
+  return res.body;
+}
+
+async function seedPlotMaster(development, plots) {
+  const res = await request(app)
+    .put(`/api/developments/${encodeURIComponent(development.id)}`)
+    .send({
+      version: development.version,
+      plotMaster: { plots },
+      actor: "Director",
+    });
+  assert.equal(res.status, 200, res.body?.message || JSON.stringify(res.body));
+  return res.body;
+}
+
 async function setupBase({
   costCode = "5231",
   subtotal = 50000,
   supplierId,
+  seedRevenue = true,
+  plots = null,
   inputs = [
     {
       costCodeKey: "5231",
@@ -454,7 +490,12 @@ async function setupBase({
     commentary: { keyCommercialIssues: "Approve snapshot commentary" },
   });
   if (inputs.length) await putInputs(development.id, period.id, inputs);
-  return { client, development, pkg, period, po, supplierId: sid };
+  if (seedRevenue) await seedDefaultRevenueSettings(development.id);
+  let liveDevelopment = development;
+  if (Array.isArray(plots)) {
+    liveDevelopment = await seedPlotMaster(development, plots);
+  }
+  return { client, development: liveDevelopment, pkg, period, po, supplierId: sid };
 }
 
 async function submitPeriod(developmentId, periodId, actor = "QS") {
@@ -501,7 +542,13 @@ async function snapshotCounts(periodId) {
      )`,
     [periodId]
   );
-  return { headers: headers.rows[0].n, rows: rows.rows[0].n };
+  const plots = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM cvr_period_snapshot_plots WHERE snapshot_id IN (
+       SELECT id FROM cvr_period_snapshots WHERE period_id = $1
+     )`,
+    [periodId]
+  );
+  return { headers: headers.rows[0].n, rows: rows.rows[0].n, plots: plots.rows[0].n };
 }
 
 async function auditActions(periodId) {
@@ -525,6 +572,7 @@ async function assertRolledBack(clientId, developmentId, periodId) {
   const counts = await snapshotCounts(periodId);
   assert.equal(counts.headers, 0);
   assert.equal(counts.rows, 0);
+  assert.equal(counts.plots, 0);
   const audit = await auditActions(periodId);
   assert.equal(audit.some((item) => item.action === "locked"), false);
   assert.equal(audit.some((item) => item.action === "approved"), false);
@@ -658,6 +706,7 @@ async function setupTestSite1Fixture() {
     },
   ]);
 
+  await seedDefaultRevenueSettings(development.id);
   return { client, development, period, wipePkg };
 }
 
@@ -699,6 +748,13 @@ if (!isDbConfigured()) {
     assert.equal(locked.body.snapshotDeferred, false);
     assert.equal(locked.body.snapshotNote, SNAPSHOT_CREATED_NOTE);
     assert.ok(locked.body.snapshot);
+    assert.equal(locked.body.snapshot.schemaVersion, 2);
+    assert.equal(Number(locked.body.snapshot.forecastRevenue), 0);
+    assert.equal(Number(locked.body.snapshot.securedRevenue), 0);
+    assert.equal(Number(locked.body.snapshot.grossProfit), -Number(candidate.snapshot.finalForecast));
+    assert.equal(locked.body.snapshot.grossMarginPercent, null);
+    assert.ok(locked.body.snapshot.revenueAssumptions);
+    assert.ok(Array.isArray(locked.body.snapshot.plots));
     assert.equal(locked.body.snapshot.periodId, world.period.id);
     assert.equal(locked.body.snapshot.clientId, world.client.id);
     assert.equal(locked.body.snapshot.developmentId, world.development.id);
@@ -726,6 +782,7 @@ if (!isDbConfigured()) {
     const counts = await snapshotCounts(world.period.id);
     assert.equal(counts.headers, 1);
     assert.equal(counts.rows, candidate.snapshot.rows.length);
+    assert.equal(counts.plots, locked.body.snapshot.plots.length);
 
     const audit = await auditActions(world.period.id);
     assert.ok(audit.some((item) => item.action === "locked" && item.actor === "Director"));
@@ -1125,5 +1182,133 @@ if (!isDbConfigured()) {
     assert.equal(approve.status, 409);
     const after = await snapshotCounts(world.period.id);
     assert.equal(after.headers, 0);
+  });
+
+  test("forced plot insert failure rolls back the whole v2 snapshot", async () => {
+    const world = await setupBase();
+    await submitPeriod(world.development.id, world.period.id);
+    await assert.rejects(
+      () =>
+        approveCvrPeriod(
+          world.client.id,
+          world.development.id,
+          world.period.id,
+          {},
+          { actor: "Director", failAfter: "plots" }
+        ),
+      /forced-plot-insert-failure/
+    );
+    await assertRolledBack(world.client.id, world.development.id, world.period.id);
+  });
+
+  test("forced assumptions/header failure rolls back", async () => {
+    const world = await setupBase();
+    await submitPeriod(world.development.id, world.period.id);
+    await assert.rejects(
+      () =>
+        approveCvrPeriod(
+          world.client.id,
+          world.development.id,
+          world.period.id,
+          {},
+          { actor: "Director", failAfter: "assumptions" }
+        ),
+      /forced-assumptions-insert-failure/
+    );
+    await assertRolledBack(world.client.id, world.development.id, world.period.id);
+  });
+
+  test("missing Revenue settings blocks Approve & Lock without a snapshot", async () => {
+    const world = await setupBase({ seedRevenue: false });
+    await submitPeriod(world.development.id, world.period.id);
+    const result = await approveCvrPeriod(
+      world.client.id,
+      world.development.id,
+      world.period.id,
+      {},
+      { actor: "Director" }
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 409);
+    assert.ok(result.blockers.some((item) => item.reason === "revenue-settings-missing"));
+    await assertRolledBack(world.client.id, world.development.id, world.period.id);
+  });
+
+  test("Revenue load failure rolls back with no partial v2 snapshot", async () => {
+    const world = await setupBase();
+    await submitPeriod(world.development.id, world.period.id);
+    const result = await approveCvrPeriod(
+      world.client.id,
+      world.development.id,
+      world.period.id,
+      {},
+      {
+        actor: "Director",
+        loadDevelopment: async () => {
+          throw new Error("forced-revenue-load-failure");
+        },
+      }
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 409);
+    assert.ok(result.blockers.some((item) => item.reason === "plot-master-query-failed"));
+    await assertRolledBack(world.client.id, world.development.id, world.period.id);
+  });
+
+  test("invalid secured sellingPrice lists plot numbers and does not freeze £0", async () => {
+    const world = await setupBase({
+      plots: [
+        {
+          id: "plot-31",
+          plotNumber: "31",
+          houseType: "Arundel",
+          revenueStatus: "Exchanged",
+          sellingPrice: 0,
+          revenueSource: "Manual Value",
+          manualForecastValue: 255100,
+        },
+      ],
+    });
+    await submitPeriod(world.development.id, world.period.id);
+    const result = await approveCvrPeriod(
+      world.client.id,
+      world.development.id,
+      world.period.id,
+      { forecastRevenue: 1 },
+      { actor: "Director" }
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 409);
+    const blocker = result.blockers.find(
+      (item) => item.reason === "invalid-secured-selling-price"
+    );
+    assert.ok(blocker);
+    assert.deepEqual(blocker.plotNumbers, ["31"]);
+    await assertRolledBack(world.client.id, world.development.id, world.period.id);
+  });
+
+  test("browser-supplied Revenue totals cannot change snapshot truth", async () => {
+    const world = await setupBase({
+      plots: [
+        {
+          id: "plot-1",
+          plotNumber: "1",
+          houseType: "Arundel",
+          revenueStatus: "Available",
+          revenueSource: "Manual Value",
+          manualForecastValue: 1000000,
+          sellingPrice: 0,
+        },
+      ],
+    });
+    await submitPeriod(world.development.id, world.period.id);
+    const locked = await request(app)
+      .post(`${periodUrl(world.development.id, world.period.id)}/approve`)
+      .send({ actor: "Director", forecastRevenue: 1, securedRevenue: 99, grossProfit: 3 });
+    assert.equal(locked.status, 200, locked.body?.message || JSON.stringify(locked.body));
+    assert.equal(locked.body.snapshot.schemaVersion, 2);
+    assert.equal(Number(locked.body.snapshot.forecastRevenue), 1000000);
+    assert.equal(Number(locked.body.snapshot.securedRevenue), 0);
+    assert.notEqual(Number(locked.body.snapshot.grossProfit), 3);
   });
 }

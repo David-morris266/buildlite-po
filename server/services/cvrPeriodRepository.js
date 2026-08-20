@@ -348,7 +348,7 @@ async function rejectCvrPeriod(clientId, developmentId, periodId, body = {}, { a
 }
 
 async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, options = {}) {
-  const { buildCvrCloseCandidate } = require("./cvrCloseEngine");
+  const { buildWholeCvrCloseCandidate } = require("./cvrCommercialClose");
   const { persistCvrPeriodSnapshot, isUniqueViolation: isSnapshotUnique } = require("./cvrSnapshotRepository");
 
   const actor = options.actor;
@@ -414,13 +414,15 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
       };
     }
 
-    const candidate = await buildCvrCloseCandidate({
+    const candidate = await buildWholeCvrCloseCandidate({
       clientId,
       developmentId,
       periodId,
       actor,
       dbClient,
       ...(loadSources ? { loadSources } : {}),
+      ...(options.loadDevelopment ? { loadDevelopment: options.loadDevelopment } : {}),
+      ...(options.loadSettingsRow ? { loadSettingsRow: options.loadSettingsRow } : {}),
     });
 
     if (
@@ -537,6 +539,8 @@ function publicCloseBlockers(blockers) {
     reason: item.reason || "not-ready",
     certificateId: item.certificateId || null,
     orderKey: item.orderKey || null,
+    plotNumbers: Array.isArray(item.plotNumbers) ? item.plotNumbers : undefined,
+    message: item.message || undefined,
     costCodeKey: item.costCodeKey || null,
   }));
 }

@@ -2,9 +2,9 @@
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
 **Last product slice fully complete:** **BL-032C — COMPLETE** (live Draft/Submitted CVR Revenue + Gross Profit; Test Site 1 P03 Draft UAT **PASSED**).  
-**Last persistence slice implemented:** **BL-032A — COMPLETE** (development revenue settings; Test Site 1 authority-on UAT **PASSED**). Do not mark BL-032 complete. BL-032B/C added no table/migration.  
-**CRITICAL:** P03 is **Draft** with **no snapshot**. Do **not** Submit / Approve & Lock P03 until BL-032D. Snapshot schema remains v1 / cost-only.  
-**NEXT:** **BL-032D — Revenue-bearing CVR snapshot.** Preflight first. P03 remains the live Draft test vehicle. Do **not** create P04. Migration `011` is applied on local `buildlite_clone`.
+**Last persistence slice implemented:** **BL-032D — IMPLEMENTED / awaiting P03 lock/freeze UAT** (`012_cvr_period_snapshot_revenue.sql` on `buildlite_test` only). Do not mark BL-032D COMPLETE until human P03 lock/freeze UAT.  
+**CRITICAL:** P03 is **Draft** with **no snapshot**. Do **not** Submit / Approve & Lock P03 until migration `012` is applied to `buildlite_clone`.  
+**NEXT:** Controlled clone apply of `012`, then P03 Submit / Approve & Lock / freeze UAT. Do **not** create P04. Migration `011` is applied on local `buildlite_clone`. `012` is **not**.
 
 ---
 
@@ -23,6 +23,7 @@ Postgres is already the authority for:
 | `009_cvr_and_purchase_ledger.sql` | `cvr_periods`, `cvr_period_audit`, `cvr_cost_code_inputs`, `ledger_import_batches`, `ledger_transactions` | **BL-031A–D**. Runtime CVR/ledger use Postgres when flags are ON. |
 | `010_cvr_period_snapshots.sql` | `cvr_period_snapshots`, `cvr_period_snapshot_rows` | **BL-031E COMPLETE**. Schema (E.1), close engine (E.2), atomic persist on Approve & Lock (E.3), client historic reads (E.4). Test Site 1 snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. **BL-031F COMPLETE**: P02 monthly-cycle UAT **PASSED** (2 headers / 18 rows on Test Site 1). **BL-032C** created P03 Draft with no snapshot. Do not backfill legacy locked periods. Do not lock P03 until BL-032D. |
 | `011_development_revenue_settings.sql` | `development_revenue_settings` | **BL-032A COMPLETE**. Typed development revenue strategy/settings. Additive. Default recognition policy `completion` (legacy BL-019 behaviour). `exchange` is stored only; not applied to pricing/CVR. Applied on local `buildlite_clone`. Authority-on UAT **PASSED**. No P01/P02 snapshot backfill. |
+| `012_cvr_period_snapshot_revenue.sql` | Revenue columns on `cvr_period_snapshots` + `cvr_period_snapshot_plots` | **BL-032D IMPLEMENTED / awaiting P03 lock/freeze UAT**. Additive. No default £0. No v1 backfill. Applied on `buildlite_test` only. **Not applied** to `buildlite_clone`. |
 
 Still **browser/localStorage** (not yet Postgres authority):
 
@@ -52,12 +53,12 @@ The remainder of this file is the Phase 0 / BL-006 production schema reference. 
 
 BuildLite uses a single Postgres database (`buildlite_po_db` on Render). Schema is managed via:
 
-- Versioned SQL migrations in `server/migrations/` (`001`–`011`; `001`–`003` are the BL-006 production baseline). **`011` is BANKED in git but must not be applied to `buildlite_clone` until a later explicit UAT.**
+- Versioned SQL migrations in `server/migrations/` (`001`–`012`; `001`–`003` are the BL-006 production baseline). **`012` must not be applied to `buildlite_clone` until the controlled clone step.** `011` is applied on local clone.
 - `schema_migrations` tracking table
 - `npm run migrate` and `npm run seed` scripts
 - `db.js` init aligned with production plus later Doc 67 tables (fallback when migrations have not run)
 
-**Production database was the source of truth for BL-006.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files. Later Doc 67 migrations (`004`–`010`) are additive and must also not be rewritten after apply. `011` is additive and **not applied** to local clone/UAT until a later explicit cutover.
+**Production database was the source of truth for BL-006.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files. Later Doc 67 migrations (`004`–`012`) are additive and must also not be rewritten after apply. `012` is additive and **not applied** to local clone/UAT until the controlled clone step.
 
 ---
 
@@ -232,6 +233,7 @@ Production authority for certificate numbering is **`legacy_cert_no`**, enforced
 | `009_cvr_and_purchase_ledger.sql` | BL-031A: CVR periods + QS cost-code inputs + purchase ledger batches/transactions (server foundation only; snapshots are BL-031E) |
 | `010_cvr_period_snapshots.sql` | BL-031E.1: CVR period snapshot header + rows. Additive; no backfill of locked periods. Runtime persist is BL-031E.3B (atomic Approve & Lock). |
 | `011_development_revenue_settings.sql` | BL-032A: one typed revenue strategy/settings row per development. Additive. Default `recognition_policy = completion`. COMPLETE. Applied on local `buildlite_clone`. Test Site 1 authority-on UAT **PASSED**. |
+| `012_cvr_period_snapshot_revenue.sql` | BL-032D: whole-CVR Revenue snapshot columns + plot rows. Additive. No default £0. No v1 backfill. IMPLEMENTED / awaiting P03 lock/freeze UAT. Applied on `buildlite_test` only. **Not applied** to `buildlite_clone`. |
 
 ---
 
@@ -286,13 +288,15 @@ Migration `011_development_revenue_settings.sql` adds:
 |-------|---------|
 | `development_revenue_settings` | One revenue strategy/settings row per tenant development. Unique `(client_id, development_id)` and unique `development_id`. `recognition_policy` is `completion` (default, live BL-019 behaviour) or `exchange` (persisted only; not applied in BL-032A). JSONB columns hold `strategy`, `house_type_pricing`, `revenue_adjustments`, and `recognition_settings`. Optimistic `version`. Cascades when the development or client is deleted. |
 
-GET `/api/developments/:developmentId/revenue/settings` returns `exists: false` / `version: 0` / completion defaults without inserting. PUT creates on first write when `version === 0`, then optimistic-locks. Settings persistence is **not** a CVR snapshot. Live Draft/Submitted CVR compose of Revenue is BL-032C; snapshot freeze of Revenue is BL-032D. Snapshot schema remains v1 cost-only until BL-032D. Historic P01/P02 must not be backfilled with revenue. `recognition_policy = exchange` is stored only; it is **not** live recognition behaviour.
+GET `/api/developments/:developmentId/revenue/settings` returns `exists: false` / `version: 0` / completion defaults without inserting. PUT creates on first write when `version === 0`, then optimistic-locks. Settings persistence is **not** a CVR snapshot. Live Draft/Submitted CVR compose of Revenue is BL-032C. Snapshot freeze of Revenue is BL-032D (schema v2; implemented, P03 lock/freeze UAT outstanding). Historic P01/P02 must not be backfilled with revenue. `recognition_policy = exchange` is stored only; it is **not** live recognition behaviour.
 
 **BL-032A authority-on UAT (PASSED) on `buildlite_clone` Test Site 1:** migration `011` applied (additive; no backfill). No `buildlite_revenue_v1` payload; live helper `preflight → NO_LOCAL`; migration execute was **not** run. Flag ON only in ignored `client/.env.local`. Initial GET `exists: false` / `version: 0` created no row. First UI write (OM £350 → £351, Save Strategy → No) created row `b2157b36-a243-414e-9169-2d192dad8301` at version 1, policy `completion`. Hard refresh and a second browser session returned 351 from Postgres; `buildlite_revenue_v1` stayed null. Restore £351 → £350 advanced the same row to version 2. Final evidence row: version **2**, OM **350**, AH 58/72/70/65/70/100, garage 0/12500/22500, empty house-type pricing / adjustments / recognitionSettings. Plot 31 stored `forecastSellingPrice` **£255,100** unchanged. Recognised revenue **£0** (Completed-only). P01 locked v5 snapshot `aa6839cc-eace-40dd-a011-6ca90afa7980` and P02 locked v3 snapshot `e8dea429-ff33-4218-81e6-5102bd110a7f` unchanged (**2** headers / **18** rows). P03 was later created as Draft under BL-032C. Do not delete the settings row.
 
 **BL-032B COMPLETE (same-price and differing-price Plot 31 UATs PASSED):** Same-price: Available → Reserved → Exchanged at **£255,100** → Completed at **£255,100** → restore. Forecast unchanged at exchange-equals-forecast; Secured £255,100; Remaining reduced by £255,100; Completion did not double-count. Differing-price: Exchanged at **£250,000** vs £255,100 forecast moved development Forecast **£10,444,608 → £10,439,508** (−£5,100); Secured £250,000; Remaining £10,189,508; Plots Sold 1; Completion at £250,000 did not double-count; restore returned Forecast £10,444,608 / Secured £0. Pre-existing Selling Price HTML `step="1000"` rejected £255,100; corrected to `step="0.01"` in `3ad984adaab3f6b482ee614d92cb29749bd24180`. Plot 31 restored to Available / forecast £255,100 / sellingPrice £0 / dates cleared. Settings row still version 2 / OM 350 / completion. P01/P02 snapshots unchanged. Revenue was **not** in CVR in this slice.
 
-**BL-032C COMPLETE (Test Site 1 P03 Draft UAT PASSED).** Live Draft/Submitted CVR composes the existing Revenue engine with existing CVR `finalForecast` (Forecast / Secured / Remaining Revenue, Forecast Cost, Gross Profit, Gross Margin % to 1 d.p., Plots Sold). GP = Forecast Revenue − `finalForecast`. Revenue is **not** added to `cvrEngine.js`; snapshot schema remains **v1**; close-engine keys and Portfolio remain cost-only. Locked v1 P01/P02 remain Revenue/GP/Margin unavailable (no live fallback). P03 Draft `804e7777-4249-41a4-9698-9431c8942ebc` exists with **9** carried QS rows and **no snapshot**. Live P03: Forecast Revenue **£10,444,608** / Forecast Cost **£2,365,423** / Gross Profit **£8,079,185** / Gross Margin **77.4%** / Secured **£0** / Remaining **£10,444,608** / Plots Sold **0**. These live Draft values are **not** stored in a CVR snapshot. P01 snapshot `aa6839cc-eace-40dd-a011-6ca90afa7980` and P02 snapshot `e8dea429-ff33-4218-81e6-5102bd110a7f` unchanged (**2** headers / **18** rows). **P04 does not exist.** Do **not** Submit / Approve & Lock P03 until BL-032D: v1 Approve & Lock would freeze cost only and would not freeze Revenue/GP/Margin. No migration.
+**BL-032C COMPLETE (Test Site 1 P03 Draft UAT PASSED).** Live Draft/Submitted CVR composes the existing Revenue engine with existing CVR `finalForecast` (Forecast / Secured / Remaining Revenue, Forecast Cost, Gross Profit, Gross Margin % to 1 d.p., Plots Sold). GP = Forecast Revenue − `finalForecast`. Revenue is **not** added to `cvrEngine.js`; close-engine keys and Portfolio remain cost-only. Locked v1 P01/P02 remain Revenue/GP/Margin unavailable (no live fallback). P03 Draft `804e7777-4249-41a4-9698-9431c8942ebc` exists with **9** carried QS rows and **no snapshot**. Live P03: Forecast Revenue **£10,444,608** / Forecast Cost **£2,365,423** / Gross Profit **£8,079,185** / Gross Margin **77.4%** / Secured **£0** / Remaining **£10,444,608** / Plots Sold **0**. These live Draft values are **not** stored in a CVR snapshot. P01 snapshot `aa6839cc-eace-40dd-a011-6ca90afa7980` and P02 snapshot `e8dea429-ff33-4218-81e6-5102bd110a7f` unchanged (**2** headers / **18** rows). **P04 does not exist.**
+
+**BL-032D IMPLEMENTED / awaiting P03 lock/freeze UAT.** New Approve & Lock persists schema **v2** whole-CVR snapshots: existing cost totals/rows plus Forecast/Secured/Remaining Revenue, Plots Sold/Remaining, Gross Profit, Gross Margin (NULL when Forecast Revenue is effectively zero), frozen `revenue_assumptions` JSON, settings id/version evidence, and plot Revenue rows in `cvr_period_snapshot_plots`. Server-derived only. Submit remains allowed if Revenue is unavailable; Approve & Lock fails closed until cost + Revenue are complete. Invalid Exchanged/Completed `sellingPrice <= 0` blocks lock and lists plot numbers. Historic v1 stays NULL/unavailable. Historic v2 reads snapshot only. Migration `012` is additive with **no DEFAULT 0** and **no backfill**. Applied on `buildlite_test`. **Not applied** to `buildlite_clone`. Do **not** Submit / Approve & Lock P03 until the controlled clone `012` step.
 
 ---
 
@@ -301,7 +305,7 @@ GET `/api/developments/:developmentId/revenue/settings` returns `exists: false` 
 From `server/`:
 
 ```bash
-npm run migrate    # apply pending SQL (001 → …). 010 and 011 are already on local buildlite_clone. Test Site 1 P01 and P02 snapshots already exist from BL-031E/F UAT; do not recreate them. P03 is Draft with no snapshot; do not lock it until BL-032D. Test Site 1 revenue settings row (version 2) is BL-032A UAT evidence; do not delete it.
+npm run migrate    # apply pending SQL (001 → …). 010 and 011 are already on local buildlite_clone. Do **not** apply 012 to clone until the controlled BL-032D clone step. Test Site 1 P01 and P02 snapshots already exist from BL-031E/F UAT; do not recreate them. P03 is Draft with no snapshot; do not lock it until 012 is on clone. Test Site 1 revenue settings row (version 2) is BL-032A UAT evidence; do not delete it.
 npm run seed       # default client, cost codes, brand profile, client_id backfill
 npm start          # start API (calls db.init as fallback)
 ```

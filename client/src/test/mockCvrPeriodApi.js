@@ -310,7 +310,7 @@ export function buildServerCvrSnapshotFixture(overrides = {}) {
   const rows = Array.isArray(overrides.rows)
     ? overrides.rows
     : [buildServerCvrSnapshotRowFixture({ snapshotId: overrides.id || 'snap-p01' })];
-  return {
+  const document = {
     id: overrides.id || 'snap-p01',
     clientId: overrides.clientId || 'client-1',
     developmentId: overrides.developmentId || 'dev-cvr-b',
@@ -343,7 +343,91 @@ export function buildServerCvrSnapshotFixture(overrides = {}) {
     createdAt: overrides.createdAt || '2026-04-01T12:00:00.000Z',
     createdBy: overrides.createdBy || 'migration',
     rows,
+    plots: Array.isArray(overrides.plots) ? overrides.plots : [],
+    revenueAssumptions: overrides.revenueAssumptions ?? null,
+    revenueSettingsId: overrides.revenueSettingsId ?? null,
+    revenueSettingsVersion: overrides.revenueSettingsVersion ?? null,
   };
+  if (overrides.forecastRevenue !== undefined) document.forecastRevenue = overrides.forecastRevenue;
+  if (overrides.securedRevenue !== undefined) document.securedRevenue = overrides.securedRevenue;
+  if (overrides.remainingForecastRevenue !== undefined) {
+    document.remainingForecastRevenue = overrides.remainingForecastRevenue;
+  }
+  if (overrides.remainingForecast !== undefined) document.remainingForecast = overrides.remainingForecast;
+  if (overrides.plotsSold !== undefined) document.plotsSold = overrides.plotsSold;
+  if (overrides.plotsRemaining !== undefined) document.plotsRemaining = overrides.plotsRemaining;
+  if (overrides.grossProfit !== undefined) document.grossProfit = overrides.grossProfit;
+  if (overrides.grossMarginPercent !== undefined) {
+    document.grossMarginPercent = overrides.grossMarginPercent;
+  }
+  return document;
+}
+
+export function buildServerCvrSnapshotPlotFixture(overrides = {}) {
+  return {
+    id: overrides.id || 'snap-plot-1',
+    snapshotId: overrides.snapshotId || 'snap-p01',
+    plotId: overrides.plotId || 'plot-1',
+    plotNumber: overrides.plotNumber || '1',
+    houseType: overrides.houseType || 'Arundel',
+    tenure: overrides.tenure || 'Open Market',
+    revenueCategory: overrides.revenueCategory || 'Open Market',
+    revenueStatus: overrides.revenueStatus || 'Available',
+    revenueSource: overrides.revenueSource || 'Manual Value',
+    forecastRevenue: overrides.forecastRevenue ?? 255100,
+    securedRevenue: overrides.securedRevenue ?? 0,
+    remainingForecastRevenue: overrides.remainingForecastRevenue ?? 255100,
+    sellingPrice: overrides.sellingPrice ?? 0,
+    derivedForecast: overrides.derivedForecast ?? 255100,
+    plotPremium: overrides.plotPremium ?? 0,
+    niaFt2: overrides.niaFt2 ?? 686,
+    effectiveGarage: overrides.effectiveGarage || 'None',
+    reservedAt: overrides.reservedAt ?? null,
+    exchangedAt: overrides.exchangedAt ?? null,
+    completedAt: overrides.completedAt ?? null,
+    displayMetadata: overrides.displayMetadata || {},
+    ...overrides,
+  };
+}
+
+export function buildServerCvrRevenueSnapshotFixture(overrides = {}) {
+  const forecastRevenue = overrides.forecastRevenue ?? 10444608;
+  const securedRevenue = overrides.securedRevenue ?? 0;
+  const remainingForecastRevenue = overrides.remainingForecastRevenue ?? forecastRevenue - securedRevenue;
+  const finalForecast = overrides.finalForecast ?? 2365423;
+  const grossProfit = overrides.grossProfit ?? forecastRevenue - finalForecast;
+  const plots = Array.isArray(overrides.plots)
+    ? overrides.plots
+    : [buildServerCvrSnapshotPlotFixture({ snapshotId: overrides.id || 'snap-p03' })];
+  return buildServerCvrSnapshotFixture({
+    id: overrides.id || 'snap-p03',
+    periodKey: overrides.periodKey || 'P03',
+    schemaVersion: 2,
+    forecastRevenue,
+    securedRevenue,
+    remainingForecastRevenue,
+    remainingForecast: remainingForecastRevenue,
+    plotsSold: overrides.plotsSold ?? 0,
+    plotsRemaining: overrides.plotsRemaining ?? plots.length,
+    grossProfit,
+    grossMarginPercent:
+      overrides.grossMarginPercent === undefined
+        ? forecastRevenue
+          ? (grossProfit / forecastRevenue) * 100
+          : null
+        : overrides.grossMarginPercent,
+    revenueAssumptions: overrides.revenueAssumptions || {
+      recognitionPolicy: 'completion',
+      openMarket: { ratePerFt2: 350, effectiveDate: '' },
+      settingsId: 'settings-frozen',
+      settingsVersion: 2,
+    },
+    revenueSettingsId: overrides.revenueSettingsId ?? 'settings-frozen',
+    revenueSettingsVersion: overrides.revenueSettingsVersion ?? 2,
+    plots,
+    finalForecast,
+    ...overrides,
+  });
 }
 
 function snapshotFromApprovedPeriod(existing) {
@@ -401,6 +485,16 @@ function snapshotFromApprovedPeriod(existing) {
     costToComplete: 0,
     outstandingCertified: 0,
     variance: 0,
+    schemaVersion: 2,
+    forecastRevenue: 0,
+    securedRevenue: 0,
+    remainingForecastRevenue: 0,
+    plotsSold: 0,
+    plotsRemaining: 0,
+    grossProfit: rows.reduce((sum, row) => sum + (Number(row.finalForecast) || 0), 0) * -1,
+    grossMarginPercent: null,
+    revenueAssumptions: { recognitionPolicy: 'completion', settingsId: null, settingsVersion: null },
+    plots: [],
   });
 }
 

@@ -31,6 +31,7 @@ import {
   formatCvrGrossMarginPercent,
   previousRevenueForMovement,
 } from './cvrCommercialPosition';
+import { snapshotHasFrozenRevenue } from './cvrSnapshotMapper';
 
 import {
   COMMERCIAL_HEADS,
@@ -358,6 +359,38 @@ function buildFinancialPosition(summary, { historic } = {}) {
     valueLabel: formatCvrMoney(item.value),
     proportionLabel: formatProportionOfForecast(item.value, finalForecast),
   }));
+}
+
+function formatHistoricRevenuePlotRow(plot) {
+  if (!plot) return null;
+  const category = plot.tenure || plot.revenueCategory || '';
+  return {
+    plotId: plot.plotId,
+    plotNumber: plot.plotNumber || '',
+    houseType: plot.houseType || '',
+    category,
+    revenueStatus: plot.revenueStatus || '',
+    forecastRevenue: plot.forecastRevenue,
+    securedRevenue: plot.securedRevenue,
+    remainingForecastRevenue: plot.remainingForecastRevenue,
+    sellingPrice: plot.sellingPrice,
+    forecastRevenueLabel: formatCvrMoney(plot.forecastRevenue),
+    securedRevenueLabel: formatCvrMoney(plot.securedRevenue),
+    remainingForecastRevenueLabel: formatCvrMoney(plot.remainingForecastRevenue),
+    sellingPriceLabel: formatCvrMoney(plot.sellingPrice),
+  };
+}
+
+function buildHistoricRevenuePlots(snapshot, historic) {
+  if (!historic || !snapshotHasFrozenRevenue(snapshot)) {
+    return { available: false, rows: [], emptyMessage: null };
+  }
+  const rows = (snapshot.plots || []).map(formatHistoricRevenuePlotRow).filter(Boolean);
+  return {
+    available: true,
+    rows,
+    emptyMessage: rows.length ? null : 'No plot revenue rows were frozen in this CVR.',
+  };
 }
 
 function buildDevelopmentSummaryPanel(development, pos = [], commercial = {}) {
@@ -770,6 +803,7 @@ export function buildCvrSummaryModel(development, options = {}) {
       },
       rows: [],
       summary: model.summary,
+      historicRevenuePlots: { available: false, rows: [], emptyMessage: null },
       period,
       previousLockedPeriodKey: null,
     };
@@ -815,6 +849,7 @@ export function buildCvrSummaryModel(development, options = {}) {
       commentary: getCvrPeriodCommentary(developmentId, periodKey),
       rows: [],
       summary: model.summary,
+      historicRevenuePlots: { available: false, rows: [], emptyMessage: null },
       period,
       previousLockedPeriodKey: null,
     };
@@ -835,6 +870,7 @@ export function buildCvrSummaryModel(development, options = {}) {
     historic,
     historicUnavailable: false,
     costSummary: summary,
+    snapshot: historic ? period?.snapshot || null : null,
   });
   const previousCommercial =
     !previousModel || previousModel.unavailable || previousModel.historicUnavailable
@@ -844,6 +880,7 @@ export function buildCvrSummaryModel(development, options = {}) {
           historic: Boolean(previousModel.historic),
           historicUnavailable: Boolean(previousModel.historicUnavailable),
           costSummary: previousModel.summary,
+          snapshot: previousLocked?.snapshot || previousModel.period?.snapshot || null,
         });
   const centres = historic
     ? rows
@@ -900,6 +937,7 @@ export function buildCvrSummaryModel(development, options = {}) {
     rows,
     summary,
     commercial,
+    historicRevenuePlots: buildHistoricRevenuePlots(period?.snapshot, historic),
     period,
     previousLockedPeriodKey: previousLocked?.periodKey || null,
   };

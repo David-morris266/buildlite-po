@@ -63,6 +63,8 @@ import {
   buildServerCvrPeriodFixture,
   buildServerCvrSnapshotFixture,
   buildServerCvrSnapshotRowFixture,
+  buildServerCvrRevenueSnapshotFixture,
+  buildServerCvrSnapshotPlotFixture,
   resetCvrPeriodApiStore,
   seedMockCvrInputs,
   seedMockCvrPeriod,
@@ -449,10 +451,137 @@ describe('CVR historic snapshot reads (BL-031E.4)', () => {
     expect(approved.period.status).toBe('locked');
     expect(approved.snapshotDeferred).toBe(false);
     expect(approved.snapshot.rows[0].costCodeKey).toBe('5231');
+    expect(approved.snapshot.schemaVersion).toBe(2);
+    expect(approved.snapshot.totals.forecastRevenue).toBe(0);
     expect(getCachedCvrPeriods(DEV)[0].snapshot.totals).toBeTruthy();
     const model = buildCvrModel(DEV, { periodKey: 'P01' });
     expect(model.historic).toBe(true);
     expect(model.rows[0].manualAccrual).toBe(100);
+    const summary = buildCvrSummaryModel(development, { pos: [], periodKey: 'P01' });
+    expect(summary.kpis.find((item) => item.key === 'forecastRevenue')?.value).toBe('£0.00');
+    expect(summary.kpis.find((item) => item.key === 'forecastRevenue')?.value).not.toBe(
+      '£999,999.00'
+    );
+  });
+
+  it('schema v2 historic Summary uses frozen snapshot Revenue only', async () => {
+    const snapshot = buildServerCvrRevenueSnapshotFixture({
+      developmentId: DEV,
+      periodId: PERIOD_ID,
+      periodKey: 'P01',
+      forecastRevenue: 10444608,
+      securedRevenue: 0,
+      remainingForecastRevenue: 10444608,
+      plotsSold: 0,
+      plotsRemaining: 31,
+      grossProfit: 8079185,
+      grossMarginPercent: 77.3512,
+      finalForecast: 2365423,
+      plots: [
+        buildServerCvrSnapshotPlotFixture({
+          plotId: 'plot-frozen',
+          plotNumber: '31',
+          houseType: 'Arundel',
+          tenure: 'Open Market',
+          revenueStatus: 'Available',
+          forecastRevenue: 255100,
+          securedRevenue: 0,
+          remainingForecastRevenue: 255100,
+          sellingPrice: 0,
+        }),
+      ],
+    });
+    await seedLockedSnapshot(snapshot);
+    const summary = buildCvrSummaryModel(development, { pos: [], periodKey: 'P01' });
+    expect(summary.kpis.find((item) => item.key === 'forecastRevenue')?.value).toBe(
+      '£10,444,608.00'
+    );
+    expect(summary.kpis.find((item) => item.key === 'forecastProfit')?.value).toBe(
+      '£8,079,185.00'
+    );
+    expect(summary.kpis.find((item) => item.key === 'forecastMargin')?.value).toBe('77.4%');
+    expect(summary.kpis.find((item) => item.key === 'securedRevenue')?.value).toBe('£0.00');
+    expect(summary.kpis.find((item) => item.key === 'remainingForecast')?.value).toBe(
+      '£10,444,608.00'
+    );
+    expect(summary.developmentSummary.plotsSoldLabel).toBe('0');
+    expect(summary.historicRevenuePlots.available).toBe(true);
+    expect(summary.historicRevenuePlots.rows).toHaveLength(1);
+    expect(summary.historicRevenuePlots.rows[0].plotNumber).toBe('31');
+    expect(summary.historicRevenuePlots.rows[0].forecastRevenueLabel).toBe('£255,100.00');
+    expect(summary.historicRevenuePlots.rows[0].plotId).toBe('plot-frozen');
+  });
+
+  it('v1 previous to v2 current withholds Revenue movement', async () => {
+    await seedLockedSnapshot();
+    const p02 = buildServerCvrPeriodFixture({
+      id: '22222222-3333-4444-8555-666666666666',
+      developmentId: DEV,
+      periodKey: 'P02',
+      status: 'locked',
+      snapshot: buildServerCvrRevenueSnapshotFixture({
+        id: 'snap-p02',
+        developmentId: DEV,
+        periodId: '22222222-3333-4444-8555-666666666666',
+        periodKey: 'P02',
+        forecastRevenue: 10444608,
+        grossProfit: 8079185,
+        grossMarginPercent: 77.3512,
+        finalForecast: 2365423,
+      }),
+      snapshotDeferred: false,
+      approvedAt: '2026-05-01T12:00:00.000Z',
+    });
+    seedMockCvrPeriod(DEV, p02);
+    upsertCachedCvrPeriod(DEV, p02);
+    const summary = buildCvrSummaryModel(development, { pos: [], periodKey: 'P02' });
+    expect(summary.kpis.find((item) => item.key === 'forecastRevenue')?.value).toBe(
+      '£10,444,608.00'
+    );
+    expect(summary.kpis.find((item) => item.key === 'forecastRevenue')?.movement).toBeNull();
+    expect(summary.kpis.find((item) => item.key === 'forecastProfit')?.movement).toBeNull();
+    expect(summary.kpis.find((item) => item.key === 'forecastMargin')?.movement).toBeNull();
+  });
+
+  it('later v2 previous supports Revenue movement against a v2 current', async () => {
+    await seedLockedSnapshot(
+      buildServerCvrRevenueSnapshotFixture({
+        developmentId: DEV,
+        periodId: PERIOD_ID,
+        periodKey: 'P01',
+        forecastRevenue: 10000000,
+        remainingForecastRevenue: 10000000,
+        grossProfit: 7634577,
+        grossMarginPercent: 76.3458,
+        finalForecast: 2365423,
+      })
+    );
+    const p02 = buildServerCvrPeriodFixture({
+      id: '22222222-3333-4444-8555-666666666666',
+      developmentId: DEV,
+      periodKey: 'P02',
+      status: 'locked',
+      snapshot: buildServerCvrRevenueSnapshotFixture({
+        id: 'snap-p02',
+        developmentId: DEV,
+        periodId: '22222222-3333-4444-8555-666666666666',
+        periodKey: 'P02',
+        forecastRevenue: 10444608,
+        remainingForecastRevenue: 10444608,
+        remainingForecast: 10444608,
+        grossProfit: 8079185,
+        grossMarginPercent: 77.3512,
+        finalForecast: 2365423,
+      }),
+      snapshotDeferred: false,
+      approvedAt: '2026-05-01T12:00:00.000Z',
+    });
+    seedMockCvrPeriod(DEV, p02);
+    upsertCachedCvrPeriod(DEV, p02);
+    const summary = buildCvrSummaryModel(development, { pos: [], periodKey: 'P02' });
+    expect(summary.kpis.find((item) => item.key === 'forecastRevenue')?.movement).toBe(
+      '+£444,608.00 vs previous period'
+    );
   });
 
   it('authority-off draft/submitted still uses the live localStorage model', () => {
