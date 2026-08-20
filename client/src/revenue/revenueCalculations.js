@@ -6,6 +6,7 @@ import {
   getPlotEffectivePrice,
   getPlotNiaFt2,
   getPlotNiaM2,
+  getPlotSecuredRevenue,
   plotsToCommercialModels,
   roundPlotMoney,
 } from '../developments/plotCommercial';
@@ -133,22 +134,33 @@ export function calculateRecognisedRevenue(plots = []) {
   );
 }
 
+export function calculateSecuredRevenue(plots = []) {
+  return roundMoney(
+    plots.reduce((sum, plot) => sum + getPlotSecuredRevenue(plot), 0)
+  );
+}
+
 export function buildRevenueSummary({
   plots = [],
   pricedPlots = null,
   strategyMetrics = null,
   recognisedRevenue = null,
+  securedRevenue = null,
 } = {}) {
   const models = pricedPlots || plotsToCommercialModels(plots);
+  const sourcePlots = plots.length ? plots : models;
   const developmentRevenue = calculateRevenueSplitFromPlots(models);
   const grossDevelopmentValue = calculatePlotDrivenGdv(models);
   const recognised =
-    recognisedRevenue != null ? roundMoney(recognisedRevenue) : calculateRecognisedRevenue(plots);
+    recognisedRevenue != null ? roundMoney(recognisedRevenue) : calculateRecognisedRevenue(sourcePlots);
   const forecastRevenue = grossDevelopmentValue;
-  const outstandingRevenue = roundMoney(Math.max(0, forecastRevenue - recognised));
+  const secured =
+    securedRevenue != null ? roundMoney(securedRevenue) : calculateSecuredRevenue(models);
+  const remainingForecast = roundMoney(Math.max(0, forecastRevenue - secured));
+  const outstandingRevenue = remainingForecast;
   const salesMetrics = calculateSalesMetrics(models);
-  const statusCounts = calculatePlotStatusCounts(plots.length ? plots : models);
-  const plotsSold = statusCounts.Completed;
+  const statusCounts = calculatePlotStatusCounts(sourcePlots);
+  const plotsSold = (statusCounts.Exchanged || 0) + (statusCounts.Completed || 0);
   const plotsRemaining = Math.max(0, statusCounts.total - plotsSold - statusCounts.Cancelled);
 
   const openMarketPercent =
@@ -169,6 +181,8 @@ export function buildRevenueSummary({
     grossDevelopmentValue,
     forecastRevenue,
     recognisedRevenue: recognised,
+    securedRevenue: secured,
+    remainingForecast,
     outstandingRevenue,
     forecastProfit: null,
     forecastMarginPercent: null,
@@ -200,8 +214,8 @@ export function buildRevenueDashboardKpis(summary = {}) {
   return [
     { key: 'gdv', label: 'Gross Development Value', value: summary.grossDevelopmentValue ?? 0, format: 'money' },
     { key: 'forecastRevenue', label: 'Forecast Revenue', value: summary.forecastRevenue ?? 0, format: 'money' },
-    { key: 'recognisedRevenue', label: 'Recognised Revenue', value: summary.recognisedRevenue ?? 0, format: 'money' },
-    { key: 'outstandingRevenue', label: 'Outstanding Revenue', value: summary.outstandingRevenue ?? 0, format: 'money' },
+    { key: 'securedRevenue', label: 'Secured Revenue', value: summary.securedRevenue ?? 0, format: 'money' },
+    { key: 'remainingForecast', label: 'Remaining Forecast', value: summary.remainingForecast ?? 0, format: 'money' },
     { key: 'averageSellingPrice', label: 'Average Selling Price', value: summary.averageSellingPrice ?? 0, format: 'money' },
     { key: 'averagePerFt2', label: 'Average £/ft²', value: summary.averagePerFt2 ?? 0, format: 'rate' },
     { key: 'averagePerM2', label: 'Average £/m²', value: summary.averagePerM2 ?? 0, format: 'rate' },

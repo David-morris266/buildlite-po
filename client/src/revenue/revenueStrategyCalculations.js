@@ -4,6 +4,8 @@
 
 import {
   getPlotNiaFt2,
+  isCancelledRevenueStatus,
+  isSecuredRevenueStatus,
   roundPlotMoney,
 } from '../developments/plotCommercial';
 import {
@@ -223,12 +225,21 @@ export function resolvePlotForecastPrice(plot = {}, strategy = {}, houseTypePric
 
 export function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing = {}, plots = []) {
   const effectiveGarage = resolveEffectivePlotGarage(plot, houseTypePricing);
-  const forecastSellingPrice = resolvePlotForecastPrice(plot, strategy, houseTypePricing, plots);
-  const effectivePrice =
-    plot.revenueStatus === 'Completed' && roundPlotMoney(plot.sellingPrice) > 0
-      ? roundPlotMoney(plot.sellingPrice)
-      : forecastSellingPrice;
+  const derivedForecast = resolvePlotForecastPrice(plot, strategy, houseTypePricing, plots);
+  const cancelled = isCancelledRevenueStatus(plot.revenueStatus);
+  const secured = isSecuredRevenueStatus(plot.revenueStatus);
+  const contractPrice = roundPlotMoney(plot.sellingPrice || 0);
 
+  let forecastRevenue = derivedForecast;
+  let securedRevenue = 0;
+  if (cancelled) {
+    forecastRevenue = 0;
+  } else if (secured) {
+    forecastRevenue = contractPrice;
+    securedRevenue = contractPrice;
+  }
+
+  const effectivePrice = forecastRevenue;
   const niaFt2 = getPlotNiaFt2(plot);
   const perFt2 = niaFt2 > 0 && effectivePrice > 0 ? roundPlotMoney(effectivePrice / niaFt2) : 0;
 
@@ -236,7 +247,11 @@ export function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing
     ...plot,
     effectiveGarage,
     garageInherited: !plot.garageOverride,
-    forecastSellingPrice,
+    derivedForecast,
+    forecastSellingPrice: forecastRevenue,
+    forecastRevenue,
+    securedRevenue,
+    remainingForecastRevenue: roundPlotMoney(forecastRevenue - securedRevenue),
     effectivePrice,
     perFt2,
     pricingSource: plot.revenueSource || DEFAULT_REVENUE_SOURCE,
@@ -257,6 +272,9 @@ export function applyStrategyToPlots(
   { revenueSource = DEFAULT_REVENUE_SOURCE, skipManual = true } = {}
 ) {
   return plots.map((plot) => {
+    if (isSecuredRevenueStatus(plot.revenueStatus) || isCancelledRevenueStatus(plot.revenueStatus)) {
+      return plot;
+    }
     if (skipManual && PROTECTED_REVENUE_SOURCES.has(plot.revenueSource)) return plot;
     const next = {
       ...plot,

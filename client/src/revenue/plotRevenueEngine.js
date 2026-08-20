@@ -159,7 +159,7 @@ export function buildRevenueExceptions(plots = []) {
       });
     }
 
-    if (forecast > 0 && selling > 0 && forecast < selling) {
+    if (forecast > 0 && selling > 0 && forecast < selling && status !== 'Exchanged' && status !== 'Completed') {
       exceptions.push({
         id: `forecast-low:${plot.id}`,
         type: 'forecastLowerThanPrice',
@@ -170,23 +170,15 @@ export function buildRevenueExceptions(plots = []) {
       });
     }
 
-    if (status === 'Completed' && !selling) {
+    if ((status === 'Completed' || status === 'Exchanged') && !selling) {
       exceptions.push({
-        id: `completed-no-price:${plot.id}`,
-        type: 'completedNoPrice',
-        label: 'Completed plot with no selling price',
-        message: `Plot ${plot.plotNumber} is completed but has no selling price.`,
-        plotId: plot.id,
-        plotNumber: plot.plotNumber,
-      });
-    }
-
-    if (status === 'Available' && selling > 0) {
-      exceptions.push({
-        id: `reserved-available:${plot.id}`,
-        type: 'reservedStillAvailable',
-        label: 'Reserved plot still marked Available',
-        message: `Plot ${plot.plotNumber} has a selling price but remains Available.`,
+        id: `secured-no-price:${plot.id}`,
+        type: status === 'Exchanged' ? 'exchangedNoPrice' : 'completedNoPrice',
+        label:
+          status === 'Exchanged'
+            ? 'Exchanged plot with no selling price'
+            : 'Completed plot with no selling price',
+        message: `Plot ${plot.plotNumber} is ${status.toLowerCase()} but has no selling price.`,
         plotId: plot.id,
         plotNumber: plot.plotNumber,
       });

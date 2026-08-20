@@ -17,6 +17,8 @@ export const REVENUE_STATUSES = [
   'Cancelled',
 ];
 
+export const SECURED_REVENUE_STATUSES = ['Exchanged', 'Completed'];
+
 export const REVENUE_STATUS_TONES = {
   Available: 'muted',
   Reserved: 'warning',
@@ -48,11 +50,65 @@ export function getPlotNiaM2(plot = {}) {
   return niaFt2 > 0 ? roundPlotMoney(niaFt2 * FT2_TO_M2) : 0;
 }
 
+export function normalizePlotLifecycleDate(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : '';
+}
+
+export function todayIsoDate(now = new Date()) {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function isCancelledRevenueStatus(status) {
+  return normalizePlotRevenueStatus(status) === 'Cancelled';
+}
+
+export function isSecuredRevenueStatus(status) {
+  return SECURED_REVENUE_STATUSES.includes(normalizePlotRevenueStatus(status));
+}
+
+export function getPlotContractPrice(plot = {}) {
+  return roundPlotMoney(plot.sellingPrice || 0);
+}
+
+export function getPlotForecastRevenue(plot = {}) {
+  if (isCancelledRevenueStatus(plot.revenueStatus)) return 0;
+  if (isSecuredRevenueStatus(plot.revenueStatus)) return getPlotContractPrice(plot);
+  return roundPlotMoney(plot.forecastSellingPrice || 0);
+}
+
+export function getPlotSecuredRevenue(plot = {}) {
+  if (!isSecuredRevenueStatus(plot.revenueStatus)) return 0;
+  return getPlotContractPrice(plot);
+}
+
+export function getPlotRemainingForecastRevenue(plot = {}) {
+  return roundPlotMoney(getPlotForecastRevenue(plot) - getPlotSecuredRevenue(plot));
+}
+
 export function getPlotEffectivePrice(plot = {}) {
-  const forecast = roundPlotMoney(plot.forecastSellingPrice || 0);
-  const selling = roundPlotMoney(plot.sellingPrice || 0);
-  if (forecast > 0) return forecast;
-  return selling;
+  return getPlotForecastRevenue(plot);
+}
+
+export function stampLifecycleDatesOnStatusChange(form = {}, nextStatus, now = new Date()) {
+  const status = normalizePlotRevenueStatus(nextStatus);
+  const next = {
+    ...form,
+    revenueStatus: status,
+    reservedAt: normalizePlotLifecycleDate(form.reservedAt),
+    exchangedAt: normalizePlotLifecycleDate(form.exchangedAt),
+    completedAt: normalizePlotLifecycleDate(form.completedAt),
+  };
+  const today = todayIsoDate(now);
+  if (status === 'Reserved' && !next.reservedAt) next.reservedAt = today;
+  if (status === 'Exchanged' && !next.exchangedAt) next.exchangedAt = today;
+  if (status === 'Completed' && !next.completedAt) next.completedAt = today;
+  return next;
 }
 
 export function getPlotPerFt2(plot = {}) {
@@ -116,6 +172,9 @@ export function normalizePlotCommercialFields(plot = {}, existing = null) {
         : existing
           ? Boolean(existing.pricingMigrated)
           : true,
+    reservedAt: normalizePlotLifecycleDate(merged.reservedAt ?? existing?.reservedAt),
+    exchangedAt: normalizePlotLifecycleDate(merged.exchangedAt ?? existing?.exchangedAt),
+    completedAt: normalizePlotLifecycleDate(merged.completedAt ?? existing?.completedAt),
     niaFt2,
     niaM2,
   };

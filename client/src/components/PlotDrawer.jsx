@@ -6,7 +6,7 @@ import {
   PLOT_CONFIGURATION_SUGGESTIONS,
 } from '../developments/plotMaster';
 import { getPlotNiaM2 } from '../developments/plotCommercial';
-import { REVENUE_STATUSES } from '../developments/plotCommercial';
+import { REVENUE_STATUSES, stampLifecycleDatesOnStatusChange } from '../developments/plotCommercial';
 import { GARAGE_TYPES, REVENUE_SOURCES } from '../revenue/revenueTypes';
 import { resolvePlotForecastPrice } from '../revenue/revenueStrategyCalculations';
 import {
@@ -33,6 +33,9 @@ const EMPTY_FORM = {
   plotPremiumReason: '',
   manualForecastValue: '',
   plotOverrideValue: '',
+  reservedAt: '',
+  exchangedAt: '',
+  completedAt: '',
 };
 
 export default function PlotDrawer({
@@ -68,6 +71,9 @@ export default function PlotDrawer({
         plotPremiumReason: plot.plotPremiumReason || '',
         manualForecastValue: plot.manualForecastValue ?? '',
         plotOverrideValue: plot.plotOverrideValue ?? '',
+        reservedAt: plot.reservedAt || '',
+        exchangedAt: plot.exchangedAt || '',
+        completedAt: plot.completedAt || '',
       });
     } else {
       setForm({
@@ -79,6 +85,9 @@ export default function PlotDrawer({
 
   function updateField(field, value) {
     setForm((prev) => {
+      if (field === 'revenueStatus') {
+        return stampLifecycleDatesOnStatusChange(prev, value);
+      }
       const next = { ...prev, [field]: value };
       if (field === 'garage') {
         next.garageOverride = true;
@@ -348,7 +357,7 @@ export default function PlotDrawer({
                 step="1000"
                 value={form.sellingPrice}
                 onChange={(event) => updateField('sellingPrice', event.target.value)}
-                placeholder="Recorded sale price when exchanged/completed"
+                placeholder="Contractual sale price from exchange"
               />
             </label>
             <label className="dev-form__field">
@@ -374,6 +383,33 @@ export default function PlotDrawer({
                   <option key={status} value={status}>{status}</option>
                 ))}
               </select>
+            </label>
+            <label className="dev-form__field">
+              <span className="dev-form__label">Reserved date</span>
+              <input
+                className="input"
+                type="date"
+                value={form.reservedAt}
+                onChange={(event) => updateField('reservedAt', event.target.value)}
+              />
+            </label>
+            <label className="dev-form__field">
+              <span className="dev-form__label">Exchange date</span>
+              <input
+                className="input"
+                type="date"
+                value={form.exchangedAt}
+                onChange={(event) => updateField('exchangedAt', event.target.value)}
+              />
+            </label>
+            <label className="dev-form__field">
+              <span className="dev-form__label">Completion date</span>
+              <input
+                className="input"
+                type="date"
+                value={form.completedAt}
+                onChange={(event) => updateField('completedAt', event.target.value)}
+              />
             </label>
           </div>
         </section>

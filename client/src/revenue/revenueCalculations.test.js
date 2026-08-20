@@ -35,8 +35,8 @@ const samplePlots = [
     plotNumber: '1',
     houseType: 'Type A',
     niaFt2: 1000,
-    sellingPrice: 300000,
-    forecastSellingPrice: 0,
+    sellingPrice: 0,
+    forecastSellingPrice: 300000,
     revenueCategory: 'Open Market',
     revenueStatus: 'Available',
   },
@@ -90,8 +90,8 @@ describe('revenueCalculations', () => {
 
   it('calculates average selling price and area rates from plots', () => {
     const metrics = calculateSalesMetrics([
-      { sellingPrice: 300000, niaFt2: 1000, niaM2: 93 },
-      { sellingPrice: 400000, niaFt2: 1200, niaM2: 111 },
+      { forecastSellingPrice: 300000, niaFt2: 1000, niaM2: 93, revenueStatus: 'Available' },
+      { forecastSellingPrice: 400000, niaFt2: 1200, niaM2: 111, revenueStatus: 'Available' },
     ]);
 
     expect(metrics.averageSellingPrice).toBe(350000);
@@ -105,6 +105,8 @@ describe('revenueCalculations', () => {
     expect(summary.grossDevelopmentValue).toBe(950000);
     expect(summary.forecastRevenue).toBe(950000);
     expect(summary.recognisedRevenue).toBe(250000);
+    expect(summary.securedRevenue).toBe(250000);
+    expect(summary.remainingForecast).toBe(700000);
     expect(summary.outstandingRevenue).toBe(700000);
     expect(summary.statusCounts.Available).toBe(1);
     expect(summary.statusCounts.Reserved).toBe(1);
@@ -123,6 +125,9 @@ describe('revenueCalculations', () => {
     expect(kpis.length).toBeGreaterThanOrEqual(19);
     expect(kpis.find((item) => item.key === 'forecastProfit')?.placeholder).toBe('—');
     expect(formatRevenueKpiValue(kpis.find((item) => item.key === 'gdv'))).toBe('£950,000');
+    expect(formatRevenueKpiValue(kpis.find((item) => item.key === 'securedRevenue'))).toBe('£250,000');
+    expect(formatRevenueKpiValue(kpis.find((item) => item.key === 'remainingForecast'))).toBe('£700,000');
+    expect(kpis.find((item) => item.key === 'recognisedRevenue')).toBeUndefined();
     expect(formatRevenueKpiValue(kpis.find((item) => item.key === 'plotsSold'))).toBe('1');
   });
 
@@ -239,8 +244,8 @@ describe('plotRevenueEngine', () => {
 
     expect(exceptions.some((item) => item.type === 'missingNia')).toBe(true);
     expect(exceptions.some((item) => item.type === 'forecastLowerThanPrice')).toBe(true);
-    expect(exceptions.some((item) => item.type === 'reservedStillAvailable')).toBe(true);
     expect(exceptions.some((item) => item.type === 'completedNoPrice')).toBe(true);
+    expect(exceptions.some((item) => item.type === 'reservedStillAvailable')).toBe(false);
   });
 });
 

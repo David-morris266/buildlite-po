@@ -29,7 +29,7 @@ import {
 import { createDevelopment, __resetDevelopmentsStoreForTests } from '../developments/developmentStore';
 import { addPlot } from '../developments/plotMaster';
 import { resetDevelopmentApiStore } from '../test/mockDevelopmentApi';
-import { calculateRecognisedRevenue } from './revenueCalculations';
+import { calculateRecognisedRevenue, calculateSecuredRevenue } from './revenueCalculations';
 import { __resetRevenueSettingsServerCacheForTests, ensureRevenueSettingsReady } from './revenueSettingsServerCache';
 import {
   getRevenuePricingContext,
@@ -281,5 +281,6 @@ describe('BL-032A revenue authority', () => {
       { revenueStatus: 'Reserved', sellingPrice: 100000, effectivePrice: 100000 },
     ];
     expect(calculateRecognisedRevenue(plots)).toBe(250000);
+    expect(calculateSecuredRevenue(plots)).toBe(550000);
   });
 });

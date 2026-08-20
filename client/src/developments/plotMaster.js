@@ -88,6 +88,9 @@ function normalizePlotInput(input, existing = null) {
     plotOverrideValue: commercial.plotOverrideValue,
     manualOverrideExplicit: commercial.manualOverrideExplicit,
     pricingMigrated: commercial.pricingMigrated,
+    reservedAt: commercial.reservedAt,
+    exchangedAt: commercial.exchangedAt,
+    completedAt: commercial.completedAt,
     createdAt: existing?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -123,6 +126,12 @@ export function validatePlot(plot, plots, excludeId = null) {
   }
   if (plot.forecastSellingPrice != null && Number.isNaN(Number(plot.forecastSellingPrice))) {
     errors.push('Forecast Selling Price must be a number.');
+  }
+  if (
+    (plot.revenueStatus === 'Exchanged' || plot.revenueStatus === 'Completed') &&
+    !(Number(plot.sellingPrice) > 0)
+  ) {
+    errors.push('Exchanged and Completed plots require a selling price greater than 0.');
   }
 
   return errors;
@@ -228,6 +237,9 @@ export async function replacePlotMaster(developmentId, plots) {
       plotOverrideValue: plot.plotOverrideValue,
       manualOverrideExplicit: plot.manualOverrideExplicit,
       pricingMigrated: plot.pricingMigrated,
+      reservedAt: plot.reservedAt,
+      exchangedAt: plot.exchangedAt,
+      completedAt: plot.completedAt,
     })
   );
 
