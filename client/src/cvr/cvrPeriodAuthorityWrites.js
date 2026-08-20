@@ -1,11 +1,15 @@
 /**
- * BL-031D — CVR server-authority write adapter.
+ * BL-031D / BL-031F — CVR server-authority write adapter.
  *
  * Called only when VITE_CVR_SERVER_AUTHORITY is ON. Never writes localStorage.
+ * Create Next Period copies persisted QS inputs, not historic snapshot money
+ * or empty list-mapper costCentres.
  */
 
+import { normaliseCostCodeKey } from './cvrCalculations';
 import { mapLocalCommentary, mapLocalCostCodeInput } from './cvrLocalServerMapper';
 import {
+  ensureCvrInputsReadyForPeriod,
   getCachedCvrInputs,
   getCachedCvrPeriodByKey,
 } from './cvrPeriodServerCache';
@@ -43,10 +47,190 @@ function toServerInputPayload(centre) {
   };
 }
 
+function inputKeyOf(item) {
+  return normaliseCostCodeKey(item?.costCodeKey || item?.costCode);
+}
+
+function activeInputs(inputs) {
+  return (Array.isArray(inputs) ? inputs : []).filter((item) => item?.active !== false);
+}
+
+function keySetOf(inputs) {
+  return new Set(activeInputs(inputs).map(inputKeyOf).filter(Boolean));
+}
+
+function sameKeySet(left, right) {
+  if (left.size !== right.size) return false;
+  for (const key of left) {
+    if (!right.has(key)) return false;
+  }
+  return true;
+}
+
+function mapOpeningQsInputs(sourceInputs) {
+  const inputs = [];
+  for (const centre of activeInputs(sourceInputs)) {
+    const mapped = mapLocalCostCodeInput({
+      ...centre,
+      adjustmentHistory: [],
+    });
+    if (!mapped.ok) return mapped;
+    inputs.push({
+      costCodeKey: mapped.value.costCodeKey,
+      costCodeLabel: mapped.value.costCodeLabel,
+      description: mapped.value.description,
+      commercialHead: mapped.value.commercialHead,
+      commercialFamily: mapped.value.commercialFamily,
+      trade: mapped.value.trade,
+      originalBudget: mapped.value.originalBudget,
+      currentBudget: mapped.value.currentBudget,
+      commercialAdjustment: mapped.value.commercialAdjustment,
+      adjustmentReason: mapped.value.adjustmentReason,
+      commercialReason: mapped.value.commercialReason,
+      manualAccrual: mapped.value.manualAccrual,
+      notes: mapped.value.notes,
+      active: mapped.value.active,
+      displayMetadata: {
+        ...(mapped.value.displayMetadata && typeof mapped.value.displayMetadata === 'object'
+          ? mapped.value.displayMetadata
+          : {}),
+        adjustmentHistory: [],
+      },
+      adjustmentHistory: [],
+    });
+  }
+  return { ok: true, inputs };
+}
+
+async function loadPersistedQsInputs(developmentId, period) {
+  if (!period?.id) {
+    return { ok: true, inputs: [] };
+  }
+  try {
+    const loaded = await ensureCvrInputsReadyForPeriod(developmentId, period.id);
+    const inputs = activeInputs(
+      Array.isArray(loaded) && loaded.length ? loaded : getCachedCvrInputs(period.id)
+    );
+    return { ok: true, inputs };
+  } catch (error) {
+    return {
+      ok: false,
+      errors: [
+        error?.message ||
+          'Unable to load the previous period QS inputs to copy into the next CVR.',
+      ],
+    };
+  }
+}
+
+export async function copyOpeningInputsOntoDraft(developmentId, {
+  sourcePeriod,
+  targetPeriod,
+} = {}) {
+  if (!targetPeriod?.id) {
+    return { ok: false, errors: ['Draft CVR period has no identity.'] };
+  }
+
+  const source = await loadPersistedQsInputs(developmentId, sourcePeriod);
+  if (!source.ok) return source;
+
+  let targetInputs = [];
+  try {
+    targetInputs = await ensureCvrInputsReadyForPeriod(developmentId, targetPeriod.id);
+  } catch (error) {
+    return {
+      ok: false,
+      errors: [
+        error?.message || 'Unable to load the new CVR period QS inputs.',
+      ],
+      period: targetPeriod,
+      periodKey: targetPeriod.periodKey,
+    };
+  }
+
+  const expectedKeys = keySetOf(source.inputs);
+  const existingKeys = keySetOf(targetInputs);
+
+  if (expectedKeys.size === 0) {
+    return { ok: true, copied: false, period: targetPeriod };
+  }
+
+  if (existingKeys.size === 0) {
+    const mapped = mapOpeningQsInputs(source.inputs);
+    if (!mapped.ok) return mapped;
+    const upserted = await upsertServerCvrPeriodInputs(developmentId, targetPeriod.id, {
+      inputs: mapped.inputs,
+    });
+    if (!upserted.ok) {
+      return {
+        ok: false,
+        errors: [
+          upserted.errors?.[0] ||
+            `${targetPeriod.periodKey} was created but its QS opening inputs could not be copied. Open the draft and retry Create Next Period.`,
+        ],
+        status: upserted.status,
+        period: targetPeriod,
+        periodKey: targetPeriod.periodKey,
+        copyFailed: true,
+      };
+    }
+    return {
+      ok: true,
+      copied: true,
+      period: targetPeriod,
+      inputs: upserted.inputs,
+    };
+  }
+
+  if (sameKeySet(expectedKeys, existingKeys)) {
+    return {
+      ok: true,
+      copied: false,
+      alreadyComplete: true,
+      period: targetPeriod,
+    };
+  }
+
+  return {
+    ok: false,
+    errors: [
+      `${targetPeriod.periodKey} already has QS inputs that do not match the previous locked period. Opening values were not overwritten.`,
+    ],
+    period: targetPeriod,
+    periodKey: targetPeriod.periodKey,
+    conflict: true,
+  };
+}
+
+export async function recoverOrOpenDraftPeriodOnServer(developmentId, {
+  draftPeriod,
+  sourcePeriod,
+} = {}) {
+  if (!draftPeriod?.id) return periodNotFound();
+  const copied = await copyOpeningInputsOntoDraft(developmentId, {
+    sourcePeriod,
+    targetPeriod: draftPeriod,
+  });
+  if (!copied.ok) return copied;
+  return {
+    ok: true,
+    periodKey: draftPeriod.periodKey,
+    period: draftPeriod,
+    opened: true,
+    recovered: Boolean(copied.copied),
+    alreadyComplete: Boolean(copied.alreadyComplete),
+  };
+}
+
 export async function createDraftPeriodOnServer(developmentId, {
   periodKeys,
   sourcePeriod,
 } = {}) {
+  if (sourcePeriod?.id) {
+    const source = await loadPersistedQsInputs(developmentId, sourcePeriod);
+    if (!source.ok) return source;
+  }
+
   const nextKey = formatNextPeriodKey(periodKeys || []);
   const commentary = mapLocalCommentary(sourcePeriod?.commercialCommentary);
   const created = await createServerCvrPeriod(developmentId, {
@@ -56,22 +240,17 @@ export async function createDraftPeriodOnServer(developmentId, {
   });
   if (!created.ok) return created;
 
-  const sourceInputs = (sourcePeriod?.costCentres || getCachedCvrInputs(sourcePeriod?.id) || [])
-    .filter((item) => item.active !== false);
-  if (sourceInputs.length && created.period?.id) {
-    const inputs = [];
-    for (const centre of sourceInputs) {
-      const mapped = mapLocalCostCodeInput({
-        ...centre,
-        adjustmentHistory: [],
-      });
-      if (!mapped.ok) return { ok: false, errors: mapped.errors };
-      inputs.push(mapped.value);
-    }
-    const upserted = await upsertServerCvrPeriodInputs(developmentId, created.period.id, {
-      inputs,
-    });
-    if (!upserted.ok) return upserted;
+  const copied = await copyOpeningInputsOntoDraft(developmentId, {
+    sourcePeriod,
+    targetPeriod: created.period,
+  });
+  if (!copied.ok) {
+    return {
+      ...copied,
+      periodKey: created.period.periodKey,
+      period: created.period,
+      opened: false,
+    };
   }
 
   return {
@@ -79,6 +258,7 @@ export async function createDraftPeriodOnServer(developmentId, {
     periodKey: created.period.periodKey,
     period: created.period,
     opened: false,
+    copied: Boolean(copied.copied),
   };
 }
 

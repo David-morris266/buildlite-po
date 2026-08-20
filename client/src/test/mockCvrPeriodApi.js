@@ -12,6 +12,9 @@ const store = {
   inputListRejectError: null,
   mutationShouldReject: false,
   mutationRejectError: null,
+  upsertShouldReject: false,
+  upsertRejectError: null,
+  lastUpsertPayload: null,
   seq: 0,
   listCallCount: 0,
   getCallCount: 0,
@@ -58,6 +61,9 @@ export function resetCvrPeriodApiStore() {
   store.inputListRejectError = null;
   store.mutationShouldReject = false;
   store.mutationRejectError = null;
+  store.upsertShouldReject = false;
+  store.upsertRejectError = null;
+  store.lastUpsertPayload = null;
   store.seq = 0;
   store.listCallCount = 0;
   store.getCallCount = 0;
@@ -144,6 +150,20 @@ export function setCvrMutationReject(error = null) {
       status: 409,
       body: { message: 'CVR period version conflict.' },
     });
+}
+
+export function setCvrUpsertInputsReject(error = null) {
+  store.upsertShouldReject = true;
+  store.upsertRejectError =
+    error ||
+    new CvrPeriodApiError('Unable to copy CVR cost-code inputs.', {
+      status: 500,
+      body: { message: 'Unable to copy CVR cost-code inputs.' },
+    });
+}
+
+export function getLastUpsertPayload() {
+  return store.lastUpsertPayload ? clone(store.lastUpsertPayload) : null;
 }
 
 function newMockId() {
@@ -566,6 +586,8 @@ export async function createCvrPeriodInput(developmentId, periodId, payload = {}
 
 export async function upsertCvrPeriodInputs(developmentId, periodId, payload = {}) {
   store.upsertInputsCallCount += 1;
+  store.lastUpsertPayload = clone({ developmentId, periodId, payload });
+  if (store.upsertShouldReject) throw store.upsertRejectError;
   assertMutationAllowed();
   const period = findPeriod(developmentId, periodId);
   if (!period) throw new CvrPeriodApiError('CVR period not found.', { status: 404 });

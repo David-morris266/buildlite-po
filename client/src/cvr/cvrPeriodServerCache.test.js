@@ -158,4 +158,37 @@ describe('cvrPeriodServerCache (BL-031B)', () => {
     expect(getCvrInputLoadState(PERIOD_A)).toBe('error');
     expect(getCachedCvrInputs(PERIOD_A)).toEqual([]);
   });
+
+  it('empty costCentres does not suppress loaded input cache on upsert', async () => {
+    seedMockCvrPeriod(DEV_A, buildServerCvrPeriodFixture({ id: PERIOD_A, developmentId: DEV_A }));
+    seedMockCvrInputs(PERIOD_A, [buildServerCvrInputFixture({ periodId: PERIOD_A, manualAccrual: 100 })]);
+    await ensureCvrPeriodsReadyForDevelopment(DEV_A);
+    await ensureCvrInputsReadyForPeriod(DEV_A, PERIOD_A);
+    getCachedCvrPeriods(DEV_A)[0].costCentres = [];
+
+    upsertCachedCvrPeriod(
+      DEV_A,
+      buildServerCvrPeriodFixture({
+        id: PERIOD_B,
+        developmentId: DEV_A,
+        periodKey: 'P02',
+      })
+    );
+
+    const p01 = getCachedCvrPeriods(DEV_A).find((item) => item.id === PERIOD_A);
+    expect(p01.costCentres).toHaveLength(1);
+    expect(p01.costCentres[0].manualAccrual).toBe(100);
+    expect(getCachedCvrInputs(PERIOD_A)[0].manualAccrual).toBe(100);
+  });
+
+  it('ensureCvrInputsReadyForPeriod reattaches loaded inputs onto the period shape', async () => {
+    seedMockCvrPeriod(DEV_A, buildServerCvrPeriodFixture({ id: PERIOD_A, developmentId: DEV_A }));
+    seedMockCvrInputs(PERIOD_A, [buildServerCvrInputFixture({ periodId: PERIOD_A })]);
+    await ensureCvrPeriodsReadyForDevelopment(DEV_A);
+    await ensureCvrInputsReadyForPeriod(DEV_A, PERIOD_A);
+    getCachedCvrPeriods(DEV_A)[0].costCentres = [];
+    await ensureCvrInputsReadyForPeriod(DEV_A, PERIOD_A);
+    expect(getCachedCvrPeriods(DEV_A)[0].costCentres).toHaveLength(1);
+    expect(getCvrInputListCallCount()).toBe(1);
+  });
 });

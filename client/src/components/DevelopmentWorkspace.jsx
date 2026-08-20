@@ -963,6 +963,12 @@ export default function DevelopmentWorkspace({
                 setCvrFocusCostCodeKey(null);
                 setCvrHeadFilter(null);
               }}
+              onBackToRegister={() => {
+                setCvrView('register');
+                setCvrPeriodKey(null);
+                setCvrFocusCostCodeKey(null);
+                setCvrHeadFilter(null);
+              }}
               onPeriodChanged={handleCvrChanged}
               initialCostCodeKey={cvrFocusCostCodeKey}
               headFilter={cvrHeadFilter}

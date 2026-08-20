@@ -39,6 +39,13 @@ function toNumber(value, fallback = 0) {
   return n == null ? fallback : n;
 }
 
+export function firstNonEmptyArray(...candidates) {
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate) && candidate.length > 0) return candidate;
+  }
+  return [];
+}
+
 export function normalizeServerCvrPeriod(document, inputs = []) {
   if (!document) return null;
   const commentary = commentaryOf(document.commentary || document.commercialCommentary);
@@ -47,6 +54,7 @@ export function normalizeServerCvrPeriod(document, inputs = []) {
   const snapshotDeferred = snapshot
     ? false
     : document.snapshotDeferred !== false;
+  const costCentres = firstNonEmptyArray(inputs, document.costCentres, document.inputs);
   return {
     id: document.id,
     developmentId: document.developmentId,
@@ -66,9 +74,7 @@ export function normalizeServerCvrPeriod(document, inputs = []) {
     auditHistory: Array.isArray(document.auditHistory) ? document.auditHistory : [],
     commercialCommentary: commentary,
     developmentNotes: String(document.developmentNotes || ''),
-    costCentres: Array.isArray(inputs)
-      ? inputs.map(normalizeServerCvrCostCodeInput).filter(Boolean)
-      : [],
+    costCentres: costCentres.map(normalizeServerCvrCostCodeInput).filter(Boolean),
     snapshot,
     snapshotDeferred,
     snapshotNote: document.snapshotNote || null,
@@ -78,7 +84,9 @@ export function normalizeServerCvrPeriod(document, inputs = []) {
 
 export function normalizeServerCvrPeriodList(documents) {
   return (Array.isArray(documents) ? documents : [])
-    .map((item) => normalizeServerCvrPeriod(item))
+    .map((item) =>
+      normalizeServerCvrPeriod(item, firstNonEmptyArray(item?.costCentres, item?.inputs))
+    )
     .filter(Boolean)
     .sort((a, b) => String(a.periodKey).localeCompare(String(b.periodKey), undefined, {
       numeric: true,

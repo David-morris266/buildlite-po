@@ -38,6 +38,25 @@ describe('CVR period/input mappers (BL-031B)', () => {
     expect(listed.map((item) => item.periodKey)).toEqual(['P01', 'P02']);
   });
 
+  it('preserves already-attached costCentres when mapping a period list', () => {
+    const listed = normalizeServerCvrPeriodList([
+      {
+        ...buildServerCvrPeriodFixture({ id: 'a', periodKey: 'P01' }),
+        costCentres: [
+          buildServerCvrInputFixture({
+            costCodeKey: '5231',
+            manualAccrual: 100,
+            commercialAdjustment: 500,
+          }),
+        ],
+      },
+      buildServerCvrPeriodFixture({ id: 'b', periodKey: 'P02' }),
+    ]);
+    expect(listed[0].costCentres).toHaveLength(1);
+    expect(listed[0].costCentres[0].manualAccrual).toBe(100);
+    expect(listed[1].costCentres).toEqual([]);
+  });
+
   it('maps cost-code inputs including manualAccrual and labels', () => {
     const mapped = normalizeServerCvrCostCodeInput(
       buildServerCvrInputFixture({

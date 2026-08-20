@@ -209,6 +209,7 @@ export default function CVRWorkspace({
   pageNavigation = null,
   onCvrChanged,
   onBackToSummary,
+  onBackToRegister,
   onPeriodChanged,
   initialCostCodeKey = null,
   familyFilter = null,
@@ -501,7 +502,8 @@ export default function CVRWorkspace({
       window.alert(result.errors?.[0] || 'Could not create next CVR period.');
       return;
     }
-    onBackToSummary?.();
+    refresh();
+    onBackToRegister?.();
   }
 
   if (!workspace) return null;

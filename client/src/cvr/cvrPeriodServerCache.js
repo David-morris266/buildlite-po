@@ -12,6 +12,7 @@ import {
   listCvrPeriodsForDevelopment,
 } from '../api/cvrPeriods';
 import {
+  firstNonEmptyArray,
   normalizeServerCvrCostCodeInput,
   normalizeServerCvrCostCodeInputList,
   normalizeServerCvrPeriod,
@@ -127,11 +128,24 @@ export function getCachedCvrInputsForPeriodKey(developmentId, periodKey) {
   return getCachedCvrInputs(period.id);
 }
 
+function attachLoadedInputsToPeriod(period) {
+  if (!period?.id) return period;
+  if (getCvrInputLoadState(period.id) !== 'loaded') return period;
+  period.costCentres = getCachedCvrInputs(period.id);
+  return period;
+}
+
+function reattachLoadedInputs(periods = []) {
+  for (const period of periods) attachLoadedInputsToPeriod(period);
+  return periods;
+}
+
 function indexPeriods(developmentId, periods) {
   periodsByDevelopment.set(developmentId, periods);
   for (const period of periods) {
     if (period?.id) periodDevelopmentById.set(period.id, developmentId);
   }
+  reattachLoadedInputs(periods);
 }
 
 async function fetchPeriods(developmentId) {
@@ -236,7 +250,10 @@ export function ensureCvrInputsReadyForPeriod(developmentId, periodId) {
   }
 
   if (getCvrInputLoadState(periodId) === 'loaded') {
-    return Promise.resolve(getCachedCvrInputs(periodId));
+    const inputs = getCachedCvrInputs(periodId);
+    const period = getCachedCvrPeriodById(periodId);
+    if (period) period.costCentres = inputs;
+    return Promise.resolve(inputs);
   }
 
   const promise = (async () => {
@@ -293,12 +310,12 @@ export function upsertCachedCvrPeriod(developmentId, document) {
   const existingPeriod = getCachedCvrPeriods(developmentId).find(
     (item) => item.id === document.id || item.periodKey === document.periodKey
   );
-  const inputs =
-    document.costCentres ||
-    document.inputs ||
-    existingPeriod?.costCentres ||
-    getCachedCvrInputs(document.id) ||
-    [];
+  const inputs = firstNonEmptyArray(
+    document.costCentres,
+    document.inputs,
+    existingPeriod?.costCentres,
+    document.id ? getCachedCvrInputs(document.id) : null
+  );
   const mapped = normalizeServerCvrPeriod(document, inputs);
   const existing = getCachedCvrPeriods(developmentId).filter(
     (item) => item.id !== mapped.id && item.periodKey !== mapped.periodKey
@@ -318,7 +335,7 @@ export function patchCachedCvrPeriod(developmentId, periodId, patch = {}) {
   const merged = { ...existing[index], ...patch, id: periodId };
   existing[index] = normalizeServerCvrPeriod(
     merged,
-    merged.costCentres || getCachedCvrInputs(periodId)
+    firstNonEmptyArray(merged.costCentres, getCachedCvrInputs(periodId))
   );
   indexPeriods(developmentId, existing);
   return existing[index];

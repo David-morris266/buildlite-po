@@ -19,6 +19,7 @@ import {
 import {
   approvePeriodOnServer,
   createDraftPeriodOnServer,
+  recoverOrOpenDraftPeriodOnServer,
   rejectPeriodOnServer,
   savePeriodCommentaryOnServer,
   submitPeriodOnServer,
@@ -227,24 +228,50 @@ function assertCvrPeriodReadsReady(developmentId) {
   };
 }
 
+const draftCreateInFlight = new Map();
+
+function withDraftCreateLock(developmentId, work) {
+  const existing = draftCreateInFlight.get(developmentId);
+  if (existing) return existing;
+  const promise = Promise.resolve()
+    .then(work)
+    .finally(() => {
+      if (draftCreateInFlight.get(developmentId) === promise) {
+        draftCreateInFlight.delete(developmentId);
+      }
+    });
+  draftCreateInFlight.set(developmentId, promise);
+  return promise;
+}
+
+function sourcePeriodForNextDraft(developmentId) {
+  const periods = listCvrPeriods(developmentId);
+  return getLatestLockedCvrPeriod(developmentId) || periods[periods.length - 1] || null;
+}
+
+async function createOrOpenDraftPeriodOnServer(developmentId) {
+  const existingDraft = findDraftCvrPeriod(developmentId);
+  if (existingDraft) {
+    return recoverOrOpenDraftPeriodOnServer(developmentId, {
+      draftPeriod: existingDraft,
+      sourcePeriod: sourcePeriodForNextDraft(developmentId),
+    });
+  }
+  const periods = listCvrPeriods(developmentId);
+  return createDraftPeriodOnServer(developmentId, {
+    periodKeys: periods.map((item) => item.periodKey),
+    sourcePeriod: sourcePeriodForNextDraft(developmentId),
+  });
+}
+
 export function createOrOpenDraftPeriod(developmentId) {
   const blocked = assertCvrPeriodReadsReady(developmentId);
   if (!blocked.ok) return blocked;
 
   if (isCvrServerAuthorityEnabled()) {
-    return (async () => {
-      const existingDraft = findDraftCvrPeriod(developmentId);
-      if (existingDraft) {
-        return { ok: true, periodKey: existingDraft.periodKey, opened: true };
-      }
-      const periods = listCvrPeriods(developmentId);
-      const source =
-        getLatestLockedCvrPeriod(developmentId) || periods[periods.length - 1] || null;
-      return createDraftPeriodOnServer(developmentId, {
-        periodKeys: periods.map((item) => item.periodKey),
-        sourcePeriod: source,
-      });
-    })();
+    return withDraftCreateLock(developmentId, () =>
+      createOrOpenDraftPeriodOnServer(developmentId)
+    );
   }
   const existingDraft = findDraftCvrPeriod(developmentId);
   if (existingDraft) {
@@ -278,17 +305,14 @@ export function createNextCvrPeriod(developmentId) {
   if (!blocked.ok) return blocked;
 
   if (isCvrServerAuthorityEnabled()) {
-    return (async () => {
+    return withDraftCreateLock(developmentId, async () => {
       const periods = listCvrPeriods(developmentId);
       const gate = canCreateNextCvrPeriod(periods);
-      if (!gate.ok) {
-        if (gate.draftPeriodKey) {
-          return { ok: true, periodKey: gate.draftPeriodKey, opened: true };
-        }
+      if (!gate.ok && !gate.draftPeriodKey) {
         return { ok: false, errors: [gate.reason] };
       }
-      return createOrOpenDraftPeriod(developmentId);
-    })();
+      return createOrOpenDraftPeriodOnServer(developmentId);
+    });
   }
   const periods = listCvrPeriods(developmentId);
   const gate = canCreateNextCvrPeriod(periods);
@@ -303,6 +327,10 @@ export function createNextCvrPeriod(developmentId) {
   }
 
   return createOrOpenDraftPeriod(developmentId);
+}
+
+export function __resetCvrDraftCreateLockForTests() {
+  draftCreateInFlight.clear();
 }
 
 function updatePeriodRecord(developmentId, periodKey, updater) {
