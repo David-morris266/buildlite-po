@@ -36,6 +36,8 @@ import {
   ensureLedgerReadyForDevelopment,
   getLedgerReadiness,
 } from '../ledger/ledgerServerCache';
+import { isRevenueServerAuthorityEnabled } from '../revenue/revenueAuthority';
+import { ensureRevenueSettingsReady } from '../revenue/revenueSettingsServerCache';
 
 function StatusBadge({ status }) {
   if (!status) return '—';
@@ -48,7 +50,9 @@ function StatusBadge({ status }) {
 
 function SummaryKpiRibbon({ items }) {
   const heroItems = items.filter((item) => item.emphasis === 'hero');
-  const futureItems = items.filter((item) => item.emphasis === 'future');
+  const supportingItems = items.filter(
+    (item) => item.emphasis === 'supporting' || item.emphasis === 'future'
+  );
 
   return (
     <section className="cvr-summary__kpi-zone" aria-label="Executive KPIs">
@@ -63,23 +67,31 @@ function SummaryKpiRibbon({ items }) {
             {item.movement ? (
               <span className="cvr-summary__kpi-movement">{item.movement}</span>
             ) : null}
-          </div>
-        ))}
-      </div>
-      <div className="cvr-summary__kpi-future" aria-label="Future revenue KPIs">
-        {futureItems.map((item) => (
-          <div
-            key={item.key}
-            className={`cvr-summary__kpi cvr-summary__kpi--future cvr-summary__kpi--${item.modifier}`}
-          >
-            <span className="cvr-summary__kpi-label">{item.label}</span>
-            <strong className="cvr-summary__kpi-value">{item.value}</strong>
             {item.hint ? (
               <span className="cvr-summary__kpi-hint">{item.hint}</span>
             ) : null}
           </div>
         ))}
       </div>
+      {supportingItems.length ? (
+        <div className="cvr-summary__kpi-future" aria-label="Supporting revenue KPIs">
+          {supportingItems.map((item) => (
+            <div
+              key={item.key}
+              className={`cvr-summary__kpi cvr-summary__kpi--future cvr-summary__kpi--${item.modifier}`}
+            >
+              <span className="cvr-summary__kpi-label">{item.label}</span>
+              <strong className="cvr-summary__kpi-value">{item.value}</strong>
+              {item.movement ? (
+                <span className="cvr-summary__kpi-movement">{item.movement}</span>
+              ) : null}
+              {item.hint ? (
+                <span className="cvr-summary__kpi-hint">{item.hint}</span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -191,7 +203,13 @@ export default function CVRSummaryPage({
   }, []);
 
   useEffect(() => {
-    if (!isCvrServerAuthorityEnabled() && !isLedgerServerAuthorityEnabled()) return undefined;
+    if (
+      !isCvrServerAuthorityEnabled() &&
+      !isLedgerServerAuthorityEnabled() &&
+      !isRevenueServerAuthorityEnabled()
+    ) {
+      return undefined;
+    }
     let cancelled = false;
 
     (async () => {
@@ -201,6 +219,9 @@ export default function CVRSummaryPage({
         }
         if (isLedgerServerAuthorityEnabled()) {
           await ensureLedgerReadyForDevelopment(development.id).catch(() => null);
+        }
+        if (isRevenueServerAuthorityEnabled()) {
+          await ensureRevenueSettingsReady(development.id).catch(() => null);
         }
       } catch {
         // Cache error state is authoritative; no localStorage fallback.
@@ -687,6 +708,10 @@ export default function CVRSummaryPage({
               </dd>
             </div>
             <div>
+              <dt>Plots Sold</dt>
+              <dd>{summary.developmentSummary.plotsSoldLabel}</dd>
+            </div>
+            <div>
               <dt>Configurations</dt>
               <dd>{summary.developmentSummary.configurationLabel}</dd>
             </div>
@@ -699,7 +724,9 @@ export default function CVRSummaryPage({
               <dd>{summary.developmentSummary.certificateCount || '—'}</dd>
             </div>
           </dl>
-          <p className="cvr-summary__hint">{summary.developmentSummary.emptySalesHint}</p>
+          {summary.developmentSummary.emptySalesHint ? (
+            <p className="cvr-summary__hint">{summary.developmentSummary.emptySalesHint}</p>
+          ) : null}
         </SummaryPanel>
 
         <SummaryPanel title="Commercial Commentary" className="cvr-summary__panel--wide">

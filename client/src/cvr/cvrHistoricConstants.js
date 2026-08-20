@@ -12,3 +12,6 @@ export const CVR_HISTORIC_UNAVAILABLE_SHORT = 'Historic snapshot unavailable';
 
 export const CVR_HISTORIC_DRAWER_NOTE =
   'This cost code is shown from the approved historic snapshot. Live packages, certificates, and ledger transactions are not part of locked P01.';
+
+export const CVR_HISTORIC_REVENUE_UNAVAILABLE =
+  'Revenue was not captured in this historic CVR.';

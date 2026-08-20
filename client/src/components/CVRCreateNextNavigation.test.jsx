@@ -16,6 +16,10 @@ vi.mock('../cvr/cvrPeriodAuthority', () => ({
   isCvrServerAuthorityEnabled: () => cvrAuthorityEnabled.value,
 }));
 
+vi.mock('../revenue/revenueAuthority', () => ({
+  isRevenueServerAuthorityEnabled: () => false,
+}));
+
 vi.mock('../api', () => ({
   listPOs,
 }));

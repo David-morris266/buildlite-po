@@ -82,6 +82,7 @@ import { buildCvrModel } from './cvrEngine';
 import { buildCvrWorkspaceModel } from './cvrHelpers';
 import {
   CVR_HISTORIC_UNAVAILABLE_SHORT,
+  CVR_HISTORIC_REVENUE_UNAVAILABLE,
 } from './cvrHistoricConstants';
 import {
   buildCvrPeriodRegisterRow,
@@ -108,6 +109,20 @@ const development = {
   id: DEV,
   developmentName: 'Test Site 1',
   jobNumber: 'TS1',
+  plotMaster: {
+    plots: [
+      {
+        id: 'plot-live',
+        plotNumber: '31',
+        houseType: 'Arundel',
+        revenueStatus: 'Available',
+        revenueSource: 'Manual Value',
+        manualForecastValue: 999999,
+        forecastSellingPrice: 999999,
+        sellingPrice: 0,
+      },
+    ],
+  },
 };
 
 function frozenSnapshot(overrides = {}) {
@@ -314,6 +329,18 @@ describe('CVR historic snapshot reads (BL-031E.4)', () => {
     expect(summary.summary.costToComplete).toBe(2365273);
     expect(summary.summary.outstandingCertified).toBe(2150);
     expect(summary.summary.variance).toBe(-2365373);
+    expect(summary.kpis.find((item) => item.key === 'forecastRevenue')?.value).toBe('—');
+    expect(summary.kpis.find((item) => item.key === 'forecastProfit')?.value).toBe('—');
+    expect(summary.kpis.find((item) => item.key === 'forecastMargin')?.value).toBe('—');
+    expect(summary.kpis.find((item) => item.key === 'securedRevenue')?.value).toBe('—');
+    expect(summary.kpis.find((item) => item.key === 'forecastRevenue')?.hint).toBe(
+      CVR_HISTORIC_REVENUE_UNAVAILABLE
+    );
+    expect(summary.kpis.find((item) => item.key === 'forecastProfit')?.hint).toBe(
+      CVR_HISTORIC_REVENUE_UNAVAILABLE
+    );
+    expect(summary.developmentSummary.plotsSoldLabel).toBe('—');
+    expect(summary.developmentSummary.emptySalesHint).toBe(CVR_HISTORIC_REVENUE_UNAVAILABLE);
     const certifiedNotInLedger = summary.financialPosition.find(
       (item) => item.key === 'certifiedNotInLedger'
     );

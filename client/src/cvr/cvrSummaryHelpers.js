@@ -25,6 +25,12 @@ import {
   parsePeriodNumber,
   sortPeriodKeys,
 } from './cvrPeriodStatus';
+import { CVR_HISTORIC_REVENUE_UNAVAILABLE } from './cvrHistoricConstants';
+import {
+  buildCvrCommercialPosition,
+  formatCvrGrossMarginPercent,
+  previousRevenueForMovement,
+} from './cvrCommercialPosition';
 
 import {
   COMMERCIAL_HEADS,
@@ -182,6 +188,22 @@ export function formatPeriodMovement(current, previous) {
   return `${sign}£${formatMoney(Math.abs(delta))} vs previous period`;
 }
 
+export function formatMarginPointMovement(current, previous) {
+  if (current == null || previous == null) return null;
+  const currentValue = Number(current);
+  const previousValue = Number(previous);
+  if (!Number.isFinite(currentValue) || !Number.isFinite(previousValue)) return null;
+  const delta = currentValue - previousValue;
+  if (Math.abs(delta) < 0.05) return null;
+  const sign = delta > 0 ? '+' : '−';
+  return `${sign}${Math.abs(delta).toFixed(1)}pp vs previous period`;
+}
+
+function formatRevenueMovement(current, previousCommercial, key) {
+  if (!previousCommercial?.revenueAvailable) return null;
+  return formatPeriodMovement(current, previousRevenueForMovement(previousCommercial, key));
+}
+
 function getPreviousLockedPeriod(developmentId, periodKey) {
   const locked = listCvrPeriods(developmentId)
     .filter((period) => isCvrPeriodLocked(period))
@@ -192,12 +214,35 @@ function getPreviousLockedPeriod(developmentId, periodKey) {
   return previous[previous.length - 1] || null;
 }
 
-function buildExecutiveKpis(summary, previousSummary) {
+function profitModifier(value) {
+  if (value == null) return 'pending';
+  if (value > 0.005) return 'saving';
+  if (value < -0.005) return 'overspend';
+  return 'neutral';
+}
+
+function buildExecutiveKpis(summary, previousSummary, commercial, previousCommercial) {
   const forecastCost = summary.finalForecast;
   const costToComplete = summary.costToComplete;
   const forecastVariance = summary.variance;
+  const revenueHint = commercial.revenueAvailable ? null : commercial.hint;
+  const profitHint = commercial.grossProfitAvailable ? null : commercial.profitHint;
+  const marginHint = commercial.grossMarginAvailable ? null : commercial.profitHint;
 
   return [
+    {
+      key: 'forecastRevenue',
+      label: 'Forecast Revenue',
+      value: formatCvrMoney(commercial.forecastRevenue),
+      movement: formatRevenueMovement(
+        commercial.forecastRevenue,
+        previousCommercial,
+        'forecastRevenue'
+      ),
+      modifier: commercial.revenueAvailable ? 'primary' : 'pending',
+      emphasis: 'hero',
+      hint: revenueHint,
+    },
     {
       key: 'forecastCost',
       label: 'Forecast Cost',
@@ -207,31 +252,29 @@ function buildExecutiveKpis(summary, previousSummary) {
       emphasis: 'hero',
     },
     {
-      key: 'forecastRevenue',
-      label: 'Forecast Revenue',
-      value: '—',
-      movement: null,
-      modifier: 'pending',
-      emphasis: 'future',
-      hint: 'Revenue Engine not yet available',
-    },
-    {
       key: 'forecastProfit',
-      label: 'Forecast Profit',
-      value: '—',
-      movement: null,
-      modifier: 'pending',
-      emphasis: 'future',
-      hint: 'Requires Revenue Engine',
+      label: 'Gross Profit',
+      value: formatCvrMoney(commercial.grossProfit),
+      movement: formatRevenueMovement(commercial.grossProfit, previousCommercial, 'grossProfit'),
+      modifier: profitModifier(commercial.grossProfit),
+      emphasis: 'hero',
+      hint: profitHint,
     },
     {
       key: 'forecastMargin',
-      label: 'Forecast Margin',
-      value: '—',
-      movement: null,
-      modifier: 'pending',
-      emphasis: 'future',
-      hint: 'Requires Revenue Engine',
+      label: 'Gross Margin',
+      value: commercial.grossMarginAvailable
+        ? formatCvrGrossMarginPercent(commercial.grossMarginPercent)
+        : '—',
+      movement: previousCommercial?.revenueAvailable
+        ? formatMarginPointMovement(
+            commercial.grossMarginPercent,
+            previousCommercial.grossMarginPercent
+          )
+        : null,
+      modifier: profitModifier(commercial.grossProfit),
+      emphasis: 'hero',
+      hint: marginHint,
     },
     {
       key: 'costToComplete',
@@ -253,6 +296,32 @@ function buildExecutiveKpis(summary, previousSummary) {
             ? 'overspend'
             : 'neutral',
       emphasis: 'hero',
+    },
+    {
+      key: 'securedRevenue',
+      label: 'Secured Revenue',
+      value: formatCvrMoney(commercial.securedRevenue),
+      movement: formatRevenueMovement(
+        commercial.securedRevenue,
+        previousCommercial,
+        'securedRevenue'
+      ),
+      modifier: commercial.revenueAvailable ? 'neutral' : 'pending',
+      emphasis: 'supporting',
+      hint: revenueHint,
+    },
+    {
+      key: 'remainingForecast',
+      label: 'Remaining Forecast',
+      value: formatCvrMoney(commercial.remainingForecast),
+      movement: formatRevenueMovement(
+        commercial.remainingForecast,
+        previousCommercial,
+        'remainingForecast'
+      ),
+      modifier: commercial.revenueAvailable ? 'neutral' : 'pending',
+      emphasis: 'supporting',
+      hint: revenueHint,
     },
   ];
 }
@@ -291,7 +360,7 @@ function buildFinancialPosition(summary, { historic } = {}) {
   }));
 }
 
-function buildDevelopmentSummaryPanel(development, pos = []) {
+function buildDevelopmentSummaryPanel(development, pos = [], commercial = {}) {
   const plots = getPlots(development.id);
   const plotCount = getPlotCount(development);
   const activePlots = plots.filter(
@@ -301,6 +370,14 @@ function buildDevelopmentSummaryPanel(development, pos = []) {
     plots.map((plot) => plot.configuration || plot.houseType).filter(Boolean)
   );
   const snapshot = buildDevelopmentPackageSnapshot(development.id, pos);
+  const salesReady = Boolean(commercial.revenueAvailable);
+  const plotsSoldLabel = salesReady ? String(commercial.plotsSold ?? 0) : '—';
+  let emptySalesHint = null;
+  if (commercial.historicRevenueUnavailable) {
+    emptySalesHint = CVR_HISTORIC_REVENUE_UNAVAILABLE;
+  } else if (!salesReady) {
+    emptySalesHint = commercial.hint || 'Revenue unavailable';
+  }
 
   return {
     totalPlots: plotCount,
@@ -313,8 +390,10 @@ function buildDevelopmentSummaryPanel(development, pos = []) {
     purchaseOrderCount: snapshot.purchaseOrderCount,
     packageCount: snapshot.packageCount,
     certificateCount: snapshot.certificateCount,
-    salesReady: false,
-    emptySalesHint: 'Sales KPIs will appear when the Sales and Revenue module is available.',
+    salesReady,
+    plotsSold: salesReady ? commercial.plotsSold ?? 0 : null,
+    plotsSoldLabel,
+    emptySalesHint,
   };
 }
 
@@ -751,6 +830,21 @@ export function buildCvrSummaryModel(development, options = {}) {
     previousModel?.unavailable || previousModel?.historicUnavailable
       ? null
       : previousModel?.summary;
+  const commercial = buildCvrCommercialPosition({
+    developmentId,
+    historic,
+    historicUnavailable: false,
+    costSummary: summary,
+  });
+  const previousCommercial =
+    !previousModel || previousModel.unavailable || previousModel.historicUnavailable
+      ? null
+      : buildCvrCommercialPosition({
+          developmentId,
+          historic: Boolean(previousModel.historic),
+          historicUnavailable: Boolean(previousModel.historicUnavailable),
+          costSummary: previousModel.summary,
+        });
   const centres = historic
     ? rows
     : model.rows
@@ -791,9 +885,9 @@ export function buildCvrSummaryModel(development, options = {}) {
       commercialManager: period.submittedBy || period.createdBy || '—',
     },
     workflow: buildWorkflowActions(period, developmentId),
-    kpis: buildExecutiveKpis(summary, previousSummary),
+    kpis: buildExecutiveKpis(summary, previousSummary, commercial, previousCommercial),
     financialPosition: buildFinancialPosition(summary, { historic }),
-    developmentSummary: buildDevelopmentSummaryPanel(development, historic ? [] : pos),
+    developmentSummary: buildDevelopmentSummaryPanel(development, historic ? [] : pos, commercial),
     topVariances: buildTopCostVariances(rows),
     commercialExceptions: buildCommercialExceptions(rows, summary, { historic }),
     commercialCostSummary: buildCommercialCostSummary(
@@ -805,6 +899,7 @@ export function buildCvrSummaryModel(development, options = {}) {
     commentary: getCvrPeriodCommentary(developmentId, periodKey),
     rows,
     summary,
+    commercial,
     period,
     previousLockedPeriodKey: previousLocked?.periodKey || null,
   };

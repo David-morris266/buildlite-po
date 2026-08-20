@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const storage = vi.hoisted(() => new Map());
 const mockOrders = vi.hoisted(() => []);
+const revenueAuthority = vi.hoisted(() => ({ value: false }));
 
 vi.stubGlobal('localStorage', {
   getItem: (key) => storage.get(key) ?? null,
@@ -27,6 +28,10 @@ vi.mock('../payments/subcontractOrders.js', () => ({
   getPoOrderScopeId: (po) => po.developmentId,
 }));
 
+vi.mock('../revenue/revenueAuthority', () => ({
+  isRevenueServerAuthorityEnabled: () => revenueAuthority.value,
+}));
+
 import { addCostCentre, updateCostCentre } from './costCentreStore';
 import { buildCvrModel } from './cvrEngine';
 import {
@@ -43,12 +48,17 @@ import {
   calculateCertifiedNotInLedger,
   calculateCommittedNotCertified,
   formatPeriodMovement,
+  formatMarginPointMovement,
   formatProportionOfForecast,
   normaliseCommercialFamily,
   normaliseCommercialHead,
 } from './cvrSummaryHelpers';
 import { isCvrPeriodEditable } from './cvrPeriodStatus';
 import { updateCvrPeriodCommentary } from './costCentreStore';
+import {
+  __resetDevelopmentsStoreForTests,
+  __setDevelopmentsCacheForTests,
+} from '../developments/developmentStore';
 
 const DEV_ID = 'dev-summary-test';
 
@@ -58,11 +68,37 @@ const development = {
   jobNumber: 'RQ-01',
   plotMaster: {
     plots: [
-      { id: 'p1', plotNumber: '1', houseType: 'A', configuration: 'Detached', status: 'Active' },
-      { id: 'p2', plotNumber: '2', houseType: 'B', configuration: 'Semi Detached', status: 'Active' },
+      {
+        id: 'p1',
+        plotNumber: '1',
+        houseType: 'A',
+        configuration: 'Detached',
+        status: 'Active',
+        revenueStatus: 'Available',
+        revenueSource: 'Manual Value',
+        manualForecastValue: 1000000,
+        forecastSellingPrice: 1000000,
+        sellingPrice: 0,
+      },
+      {
+        id: 'p2',
+        plotNumber: '2',
+        houseType: 'B',
+        configuration: 'Semi Detached',
+        status: 'Active',
+        revenueStatus: 'Available',
+        revenueSource: 'Manual Value',
+        manualForecastValue: 500000,
+        forecastSellingPrice: 500000,
+        sellingPrice: 0,
+      },
     ],
   },
 };
+
+function seedDevelopmentCache() {
+  __setDevelopmentsCacheForTests([development]);
+}
 
 function seedBudgetRows() {
   createOrOpenDraftPeriod(DEV_ID);
@@ -110,6 +146,11 @@ describe('cvrSummaryHelpers calculations', () => {
     expect(formatPeriodMovement(300000, 250000)).toBe('+£50,000.00 vs previous period');
     expect(formatPeriodMovement(200000, 250000)).toBe('−£50,000.00 vs previous period');
     expect(formatPeriodMovement(200000, null)).toBeNull();
+  });
+
+  it('does not format margin movement when the previous period has no Revenue', () => {
+    expect(formatMarginPointMovement(40, null)).toBeNull();
+    expect(formatMarginPointMovement(40, 30)).toBe('+10.0pp vs previous period');
   });
 });
 
@@ -257,17 +298,55 @@ describe('buildCvrSummaryModel', () => {
   beforeEach(() => {
     storage.clear();
     mockOrders.length = 0;
+    revenueAuthority.value = false;
+    __resetDevelopmentsStoreForTests();
   });
 
-  it('builds KPI totals from existing CVR engine without invented revenue', () => {
+  it('keeps cost KPIs when Plot Master is not loaded and does not invent Revenue £0', () => {
     seedBudgetRows();
     const model = buildCvrSummaryModel(development, { pos: [], periodKey: 'P01' });
 
     expect(model.kpis.find((item) => item.key === 'forecastCost')?.emphasis).toBe('hero');
     expect(model.kpis.find((item) => item.key === 'costToComplete')?.emphasis).toBe('hero');
+    expect(model.kpis.find((item) => item.key === 'forecastCost')?.value).toBe('£600,000.00');
+    expect(model.kpis.find((item) => item.key === 'costToComplete')?.value).toBe('£600,000.00');
     expect(model.kpis.find((item) => item.key === 'forecastRevenue')?.value).toBe('—');
     expect(model.kpis.find((item) => item.key === 'forecastProfit')?.value).toBe('—');
-    expect(model.kpis.find((item) => item.key === 'costToComplete')?.value).toBe('£600,000.00');
+    expect(model.kpis.find((item) => item.key === 'forecastMargin')?.value).toBe('—');
+    expect(model.kpis.find((item) => item.key === 'securedRevenue')?.value).toBe('—');
+    expect(model.workflow.showSubmit).toBe(true);
+  });
+
+  it('composes live Draft Revenue, cost, GP and margin', () => {
+    seedDevelopmentCache();
+    seedBudgetRows();
+    const model = buildCvrSummaryModel(development, { pos: [], periodKey: 'P01' });
+    expect(model.readOnly).toBe(false);
+    expect(model.kpis.find((item) => item.key === 'forecastRevenue')?.value).toBe('£1,500,000.00');
+    expect(model.kpis.find((item) => item.key === 'forecastCost')?.value).toBe('£600,000.00');
+    expect(model.kpis.find((item) => item.key === 'forecastProfit')?.label).toBe('Gross Profit');
+    expect(model.kpis.find((item) => item.key === 'forecastProfit')?.value).toBe('£900,000.00');
+    expect(model.kpis.find((item) => item.key === 'forecastMargin')?.label).toBe('Gross Margin');
+    expect(model.kpis.find((item) => item.key === 'forecastMargin')?.value).toBe('60.0%');
+    expect(model.kpis.find((item) => item.key === 'securedRevenue')?.value).toBe('£0.00');
+    expect(model.kpis.find((item) => item.key === 'remainingForecast')?.value).toBe(
+      '£1,500,000.00'
+    );
+    expect(model.developmentSummary.plotsSoldLabel).toBe('0');
+    expect(model.developmentSummary.emptySalesHint).toBeNull();
+    expect(model.workflow.showSubmit).toBe(true);
+  });
+
+  it('composes live Submitted Revenue with a read-only summary', () => {
+    seedDevelopmentCache();
+    seedBudgetRows();
+    submitCvrPeriod(DEV_ID, 'P01');
+    const model = buildCvrSummaryModel(development, { pos: [], periodKey: 'P01' });
+    expect(model.readOnly).toBe(true);
+    expect(isCvrPeriodEditable(model.period)).toBe(false);
+    expect(model.kpis.find((item) => item.key === 'forecastRevenue')?.value).toBe('£1,500,000.00');
+    expect(model.kpis.find((item) => item.key === 'forecastProfit')?.value).toBe('£900,000.00');
+    expect(model.kpis.find((item) => item.key === 'securedRevenue')?.value).toBe('£0.00');
   });
 
   it('builds commercial cost summary from existing CVR totals', () => {
@@ -290,6 +369,7 @@ describe('buildCvrSummaryModel', () => {
   });
 
   it('shows movement when locked period totals differ', () => {
+    seedDevelopmentCache();
     seedBudgetRows();
     const liveP01 = buildCvrModel(DEV_ID, { pos: [], periodKey: 'P01' });
     submitCvrPeriod(DEV_ID, 'P01');
@@ -319,6 +399,11 @@ describe('buildCvrSummaryModel', () => {
     const model = buildCvrSummaryModel(development, { pos: [], periodKey: 'P02' });
     const forecastKpi = model.kpis.find((item) => item.key === 'forecastCost');
     expect(forecastKpi?.movement).toBe('+£50,000.00 vs previous period');
+    expect(model.kpis.find((item) => item.key === 'forecastRevenue')?.value).toBe('£1,500,000.00');
+    expect(model.kpis.find((item) => item.key === 'forecastRevenue')?.movement).toBeNull();
+    expect(model.kpis.find((item) => item.key === 'forecastProfit')?.movement).toBeNull();
+    expect(model.kpis.find((item) => item.key === 'forecastMargin')?.movement).toBeNull();
+    expect(model.kpis.find((item) => item.key === 'securedRevenue')?.movement).toBeNull();
   });
 
   it('marks locked summary page as read-only', () => {

@@ -17,15 +17,16 @@ describe('BL-032A CVR non-interference', () => {
     expect(mapped.schemaVersion).toBe(1);
     expect(mapped.totals.committed).toBe(2364873);
     expect(mapped.totals.revenue).toBeUndefined();
+    expect(mapped.totals.forecastRevenue).toBeUndefined();
+    expect(mapped.totals.grossProfit).toBeUndefined();
   });
 
-  it('keeps CVR Summary revenue/profit placeholders', () => {
-    const source = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), 'cvrSummaryHelpers.js'),
-      'utf8'
-    );
-    expect(source).toContain("hint: 'Revenue Engine not yet available'");
-    expect(source).toContain("key: 'forecastRevenue'");
-    expect(source).toContain("value: '—'");
+  it('keeps the cost engine free of live Revenue formulas', () => {
+    const dir = dirname(fileURLToPath(import.meta.url));
+    const engine = readFileSync(join(dir, 'cvrEngine.js'), 'utf8');
+    const helpers = readFileSync(join(dir, 'cvrSummaryHelpers.js'), 'utf8');
+    expect(engine).not.toMatch(/buildRevenueSummary|getPricedPlots|getRevenuePricingContext/);
+    expect(helpers).toContain("key: 'forecastRevenue'");
+    expect(helpers).not.toContain("hint: 'Revenue Engine not yet available'");
   });
 });
