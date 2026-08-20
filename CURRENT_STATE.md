@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, **BL-031A–D**, and **BL-031E.1–E.4** (banked). **BL-031E.4** client historic snapshot reads are banked; Test Site 1 lock/freeze UAT has **not** been run. BL-031E is **not** complete. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
+This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, **BL-031A–D**, and **BL-031E**. **BL-031E is COMPLETE.** Test Site 1 snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
 
 Historic Phase 0 / BL-006 schema notes remain in `docs/DATABASE.md` and `docs/phase0/`. Do not treat those files as the current programme.
 
@@ -17,11 +17,11 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Branch | `buildlite-V1-1` |
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
-| Last completed product slice | BL-030 Payment Certificate persistence (including BL-030C cutover and historical-freeze UAT) |
-| Last persistence slice implemented | **BL-031E.4 banked** — client historic snapshot reads. Test Site 1 lock/freeze UAT **not** run |
+| Last completed product slice | **BL-031E** immutable CVR snapshots (schema, close engine, atomic Approve & Lock, historic client reads). Snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. |
+| Last persistence slice implemented | **BL-031E — COMPLETE** |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT after bank** | Test Site 1 lock/freeze UAT for **BL-031E**. Do not Approve & Lock P01 until instructed. BL-031E is **not** complete. |
+| **NEXT after bank** | Test Site 1 **P02 monthly-cycle UAT**. Do not create P02 until instructed. P02 UAT has **not** been run. |
 
 ---
 
@@ -35,9 +35,9 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | BL-028B.3a | Isolated server test database | **Complete** — `TEST_DATABASE_URL` / `buildlite_test`; must not use `buildlite_clone` |
 | **BL-029** | Order Matrix Persistence | **Complete** — schema/API (BL-029A), cache/hydration (BL-029B), **server-authority cutover (BL-029D)** |
 | **BL-030** | Payment Certificate persistence & atomic approval | **Complete** — schema/API (BL-030A), cache/hydration (BL-030B), **server-authority cutover (BL-030C)**, historical-freeze UAT **PASSED**. |
-| **BL-031** | CVR & Ledger persistence | **In progress** — **BL-031A–D** banked. **BL-031E.1–E.4** banked (schema + close engine + atomic snapshot persist + client historic reads). Test Site 1 lock/freeze UAT **not** run. BL-031E is **not** complete. |
+| **BL-031** | CVR & Ledger persistence | **BL-031A–E complete.** Authority-on live CVR/ledger (**D**) plus immutable snapshots (**E**). Snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. P02 monthly-cycle UAT **not** run. |
 
-BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. It does **not** freeze historic snapshots (**BL-031E**). Persistence sprints must not add unrelated product features (Doc 67 §28).
+BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
 ---
 
@@ -53,7 +53,7 @@ BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when lo
 - **Order matrices** (`007_package_order_matrices.sql`) — plot-stage structure, committed value, versioned PUT
 - **V1 Payment Certificates** (`008_package_payment_certificates.sql`) — draft progress, commercial/recovery lines, submit/reject/approve, frozen snapshots
 - **CVR periods + purchase ledger tables** (`009_cvr_and_purchase_ledger.sql`) — **BL-031A–D**. Runtime CVR/ledger use Postgres when `VITE_CVR_SERVER_AUTHORITY` / `VITE_LEDGER_SERVER_AUTHORITY` are ON.
-- **CVR snapshots** (`010_cvr_period_snapshots.sql`) — **BL-031E.3B** persists an immutable snapshot atomically on Approve & Lock. **BL-031E.4 banked**: locked periods render from that snapshot (or explicit historic-unavailable if none). Test Site 1 lock/freeze UAT has **not** been run.
+- **CVR snapshots** (`010_cvr_period_snapshots.sql`) — **BL-031E COMPLETE**. Approve & Lock persists an immutable snapshot atomically. Locked periods render from that snapshot (or explicit historic-unavailable if none). Test Site 1 snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**.
 - Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, `VITE_CERTIFICATE_SERVER_AUTHORITY`, `VITE_CVR_SERVER_AUTHORITY`, and `VITE_LEDGER_SERVER_AUTHORITY` for cutover (see `client/.env.example`). Repo defaults remain OFF. Local UAT uses `.env.local`. Do not commit `.env.local`.
 
 ### Browser / localStorage authority (not yet migrated)
@@ -146,7 +146,7 @@ See `docs/test-data/README.md`.
 | Pack | Role |
 |------|------|
 | **Hawthorn Gardens** (`docs/test-data/Hawthorn Gardens UAT/`) | Intended **clean fictional known-answer** end-to-end UAT development. Permanent regression/UAT material. Not yet the imported live UAT model; import is a later task, not BL-029. |
-| **Test Site 1** (`docs/test-data/Test Site 1/`) | **Legacy / current historical test evidence.** Keep. Do not treat as the new clean commercial test model. Used for BL-029D, BL-030C, BL-031C migration, and **BL-031D authority-on UAT**. |
+| **Test Site 1** (`docs/test-data/Test Site 1/`) | **Legacy / current historical test evidence.** Keep. Do not treat as the new clean commercial test model. Used for BL-029D, BL-030C, BL-031C–E (including **BL-031E** snapshot creation and historic freeze UAT). |
 
 ---
 
@@ -182,7 +182,7 @@ Login remains mock (`localStorage` identity). No production-grade authentication
 | Packages / order matrices | Working — package identity and **order matrices are server-backed** after BL-029D |
 | Commercial Events | Working — **server authority** after BL-028B.3 |
 | V1 Payment Certificates | Working — **server authority** after BL-030C when `VITE_CERTIFICATE_SERVER_AUTHORITY=true`. Historical freeze vs later matrix replacement **PASSED**. |
-| CVR / ledger / revenue | Working in UI — **localStorage authority** until BL-031 (revenue not in Doc 67 persistence sequence) |
+| CVR / ledger / revenue | Working — **CVR/ledger server authority** after BL-031D when flags are ON. **Historic locked CVRs** render from immutable snapshots after BL-031E. Revenue is not in the Doc 67 persistence sequence. |
 | Administration / Setup Assistant | Working — largely localStorage master data |
 | Commercial Assistant | Working foundation — local dispositions |
 | User login / RBAC | Mock only |
@@ -198,7 +198,7 @@ Login remains mock (`localStorage` identity). No production-grade authentication
 | Missing `docs/uat/` export | CE import scripts default to `docs/uat/test-site-1-commercial-events-export.json`; that path does not exist. |
 | `server/routes/supplierRoutes.js` | Unmounted orphan; file content is not a live Express router. |
 | Stale historic documents | `docs/phase0/migration-run-log.md` is an empty template; Master Documentation index and Doc 49 predate BL-028. Preserve as historic. |
-| Dual persistence | Expected until BL-031 complete: two browsers can still diverge on CVR and ledger. Matrices and V1 certificates are shared when their server-authority flags are ON. BL-031A does not change this. |
+| Dual persistence | Matrices, V1 certificates, CVR periods and purchase ledger are shared when their server-authority flags are ON. Two browsers can still diverge if those flags are OFF, or on revenue / admin / assistant data that remains local. |
 | API-outage matrix message | With the API stopped, matrix refresh shows a visible generic **Failed to fetch** state and does not fall back to localStorage. Intended fail-closed behaviour; wording is the raw fetch error rather than a matrix-specific sentence. Non-blocking. |
 | Package summary cards | Top cards show Certified Gross / Remaining. Recoveries are visible lower down. Future UX may add Recoveries / Net Certified headline cards. Non-blocking. |
 | CVR “Outstanding Certified” | Currently displays the same net certified figure (Wipe UAT: £2,150) and may need wording review. Non-blocking. |
@@ -213,13 +213,13 @@ Implemented: Postgres schema + server API for CVR periods, per-cost-code QS inpu
 
 **Not in BL-031A:** React/server cache, authority flags, localStorage cutover, clone migration, CVR snapshots, live calculation formula changes, accrual UI, revenue.
 
-Agreed commercial rules (applied in **BL-031D**; historic snapshots remain **BL-031E**):
+Agreed commercial rules (applied in **BL-031D**; historic snapshots delivered in **BL-031E**):
 
 - Current commitment = approved PO net + approved value-changing Commercial Events (recovery-classified CEs excluded)
 - CVR certified cost = frozen gross works + signed recovery (exclude retention and VAT; do not use `netValue`)
 - Ledger actual for CVR = SUM(net)
 - `manual_accrual` is a genuine QS input on current cost / CTC, distinct from outstanding certified
-- Approve & Lock remains workflow-only until **BL-031E** atomically snapshots; V1 will not reopen locked CVRs
+- Approve & Lock records workflow only in BL-031A; **BL-031E** now persists the immutable snapshot atomically. V1 will not reopen locked CVRs
 
 ## BL-031B (client cache / hydration / readiness)
 
@@ -263,7 +263,7 @@ Live commercial facts / forecast overlays:
 - **Outstanding certified** = max(0, certified − actual).
 - **Variance** = current budget − final forecast.
 
-UAT also covered worksheet Accrual / Current Cost columns, explicit **Save accrual** / **Save commercial adjustment** (no blur-write; dirty/clean button state), post-save commitment hydration (CE cache stays ready), summary KPIs, server-authority ledger import + supported reversal (offsetting row, no delete), and **Draft → Submit → Reject → Draft**. **Approve & Lock was not used** (one-way; no reopen). Snapshots remain **BL-031E**.
+UAT also covered worksheet Accrual / Current Cost columns, explicit **Save accrual** / **Save commercial adjustment** (no blur-write; dirty/clean button state), post-save commitment hydration (CE cache stays ready), summary KPIs, server-authority ledger import + supported reversal (offsetting row, no delete), and **Draft → Submit → Reject → Draft**. At the close of BL-031D, Approve & Lock had not been used. Snapshots were delivered in **BL-031E**.
 
 ### Test Site 1 clone evidence after UAT (do not delete)
 
@@ -277,15 +277,67 @@ UAT also covered worksheet Accrual / Current Cost columns, explicit **Save accru
 | Wipe certs 1–4 | locked 1625 / 375 / 250 / 0 (cert 4 net −£100) |
 | CE-0020 / CE-0021 | approved +£250 / approved −£100 recovery |
 
-## BL-031E.4 (client historic snapshot reads) — BANKED, UAT NOT RUN
+## BL-031E (immutable CVR snapshots) — COMPLETE
 
-Client locked-period reads consume the E.3 immutable snapshot. Draft/submitted stay on the live BL-031D model. Locked with no snapshot is an explicit historic-unavailable state (no live PO/CE/cert/ledger fallback). Historic P01 does not depend on today's live source hydration.
+**Snapshot creation UAT — PASSED. Historic freeze UAT — PASSED.**
 
-**Not done:** live Approve & Lock, Test Site 1 historic freeze UAT. Do **not** mark BL-031E complete. Do **not** claim Test Site 1 historic freeze passed. Clone snapshot counts remain 0.
+Implemented:
+
+| Slice | What it did |
+|-------|-------------|
+| **E.1 / E.2** | Migration `010_cvr_period_snapshots.sql`. Server close engine. Authoritative close candidate. Readiness/blocker model. BL-031D formula parity. Calculate-only until Approve & Lock. |
+| **E.3** | Approve & Lock creates the immutable snapshot. Close candidate + snapshot INSERT + `submitted → locked` + audit occur atomically on one Postgres transaction / one transaction-scoped connection. Rollback on failure. One snapshot per period. |
+| **E.4** | Locked periods render from the snapshot only. Draft/submitted periods remain live. Locked legacy period without a snapshot is historic-unavailable. No live PO/CE/certificate/ledger fallback for locked historic financials. |
+
+Approve & Lock remains one-way. V1 does not reopen locked CVRs.
+
+### Test Site 1 snapshot creation UAT (PASSED)
+
+P01 Submit for Approval → Approve & Lock on `buildlite_clone` (`dev-1785599776666-zck5pl`).
+
+| Check | Result |
+|-------|--------|
+| Period id | `a2d5f821-d43a-4fb0-8a77-44fac88bebfb` |
+| P01 | **locked** version **5** |
+| Snapshot id | `aa6839cc-eace-40dd-a011-6ca90afa7980` |
+| Schema version | **1** |
+| Headers / rows | **1** snapshot header; **9** snapshot rows |
+| P02 | **not created** |
+
+Frozen P01 development: committed **£2,364,873**; certified **£2,150**; actual **£0**; accrual **£100**; current cost **£100**; system forecast **£2,364,873**; adjustment **+£500**; final forecast **£2,365,373**; CTC **£2,365,273**; outstanding certified **£2,150**; variance **−£2,365,373**.
+
+Frozen P01 5231: committed **£50,250**; certified **£2,150**; actual **£0**; accrual **£100**; current cost **£100**; system forecast **£50,250**; adjustment **+£500**; final forecast **£50,750**; CTC **£50,650**; outstanding certified **£2,150**; variance **−£50,750**.
+
+Ledger, Wipe certs 1–4, CE-0020 / CE-0021, live Wipe matrix, and the P01 5231 overlay were not rewritten by the lock.
+
+### Historic freeze UAT (PASSED)
+
+After P01 was locked, approved live commercial event **CE-0022** (Variation, `BL-031E historic freeze UAT`, **+£10**, Wipe It Cleaners / 5231). Approved after the P01 snapshot was created.
+
+Authoritative **current live** commitment moved:
+
+| | At lock | After CE-0022 |
+|--|---------|----------------|
+| 5231 committed | £50,250 | **£50,260** |
+| Development committed | £2,364,873 | **£2,364,883** |
+
+The locked P01 snapshot **did not move**. Same snapshot id, created timestamp, 1 header and 9 rows. Frozen 5231 committed remained **£50,250**; frozen development committed remained **£2,364,873**.
+
+This proves subsequent live commercial changes do not rewrite historic locked CVRs.
+
+### Create Next Period carry-forward (not yet executed)
+
+Supported Create Next Period copies active P01 CVR inputs into P02, including current budget, manual accrual, and commercial adjustment/reason where applicable. Adjustment history is cleared. Live commercial facts are **not** copied as historic values; P02 calculates them from current authoritative sources.
+
+With CE-0022 currently approved, expected **initial P02 live** commitment (when created) is 5231 **£50,260** / development **£2,364,883**, while frozen P01 remains 5231 **£50,250** / development **£2,364,873**. Expected initial committed movement: **+£10**.
+
+**P02 does not exist. P02 monthly-cycle UAT has not been run.**
 
 ## Next action
 
-Test Site 1 lock/freeze UAT for **BL-031E**. Do not Approve & Lock Test Site 1 P01 until instructed. Do not create P02. Do not alter Wipe certificates/matrix/CEs or Hawthorn Gardens.
+Test Site 1 **P02 monthly-cycle UAT**: frozen P01 → continued live commercial activity → Create Next Period → P02 Draft → current live commercial facts → carry-forward of appropriate P01 QS inputs → period movement against frozen P01.
+
+Do **not** create P02 until instructed. Do **not** claim P02 UAT has passed. Do not treat Hawthorn Gardens as started.
 
 ---
 

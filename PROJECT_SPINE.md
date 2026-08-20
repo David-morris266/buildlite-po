@@ -90,10 +90,10 @@ Management Reporting
 
 Doc 67 persistence migration on branch `buildlite-V1-1`.
 
-Complete: BL-027A Developments, BL-027B Packages, BL-028 Commercial Events (including BL-028B.3 server-authority cutover), BL-029 Order Matrix Persistence (including BL-029D server-authority cutover), BL-030 Payment Certificate Persistence (including BL-030C server-authority cutover and passed historical-freeze UAT). **BL-030 is fully complete.** **BL-031A–D** are banked (Test Site 1 CVR migration and BL-031D authority-on UAT **PASSED**). BL-031 is **not** complete: immutable snapshots remain **BL-031E**. Repo CVR/ledger flag defaults remain OFF.
+Complete: BL-027A Developments, BL-027B Packages, BL-028 Commercial Events (including BL-028B.3 server-authority cutover), BL-029 Order Matrix Persistence (including BL-029D server-authority cutover), BL-030 Payment Certificate Persistence (including BL-030C server-authority cutover and passed historical-freeze UAT), **BL-031A–E** CVR/ledger persistence including immutable snapshots. **BL-030 is fully complete.** **BL-031E is COMPLETE** (Test Site 1 snapshot creation UAT **PASSED**; historic freeze UAT **PASSED**). Repo CVR/ledger flag defaults remain OFF.
 
-1. **BL-031E** — immutable snapshot / period close. Do not start until instructed.
-2. Do not Approve & Lock Test Site 1 P01. Do not create P02. See `CURRENT_STATE.md`.
+1. **P02 monthly-cycle UAT** — frozen P01 vs next live period. Do not create P02 until instructed. P02 UAT has **not** been run.
+2. See `CURRENT_STATE.md`.
 
 ---
 

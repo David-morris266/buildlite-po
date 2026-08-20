@@ -1,9 +1,9 @@
 # BuildLite Database Reference
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
-**Last product slice fully complete:** BL-030 Payment Certificate persistence (including BL-030C server authority and passed historical-freeze UAT).  
-**Last persistence slice implemented:** **BL-031E.4 banked** — client historic snapshot reads. Test Site 1 lock/freeze UAT has **not** been run. BL-031E is **not** complete.  
-**NEXT:** Test Site 1 lock/freeze UAT for **BL-031E**. Do not lock Test Site 1 until instructed. BL-031E is **not** complete.
+**Last product slice fully complete:** **BL-031E** immutable CVR snapshots (snapshot creation UAT **PASSED**; historic freeze UAT **PASSED**).  
+**Last persistence slice implemented:** **BL-031E — COMPLETE**.  
+**NEXT:** Test Site 1 **P02 monthly-cycle UAT**. Do not create P02 until instructed. P02 UAT has **not** been run.
 
 ---
 
@@ -20,7 +20,7 @@ Postgres is already the authority for:
 | `007_package_order_matrices.sql` | `package_order_matrices` | BL-029 complete (schema/API + client server authority) |
 | `008_package_payment_certificates.sql` | `package_payment_certificates`, `package_payment_certificate_audit` | BL-030 fully complete (schema/API + client server authority; historical-freeze UAT passed). |
 | `009_cvr_and_purchase_ledger.sql` | `cvr_periods`, `cvr_period_audit`, `cvr_cost_code_inputs`, `ledger_import_batches`, `ledger_transactions` | **BL-031A–D**. Runtime CVR/ledger use Postgres when flags are ON. |
-| `010_cvr_period_snapshots.sql` | `cvr_period_snapshots`, `cvr_period_snapshot_rows` | **BL-031E.1** schema. **BL-031E.3B** persists a snapshot atomically on Approve & Lock. **BL-031E.4 banked**: client historic reads from snapshot (or historic-unavailable). UAT not run. Do not backfill legacy locked periods. Local `buildlite_clone` already has 010; do not write snapshots onto Test Site 1 until instructed. |
+| `010_cvr_period_snapshots.sql` | `cvr_period_snapshots`, `cvr_period_snapshot_rows` | **BL-031E COMPLETE**. Schema (E.1), close engine (E.2), atomic persist on Approve & Lock (E.3), client historic reads (E.4). Test Site 1 snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. Do not backfill legacy locked periods. |
 
 Still **browser/localStorage** (not yet Postgres authority):
 
@@ -232,7 +232,7 @@ Production authority for certificate numbering is **`legacy_cert_no`**, enforced
 
 ## BL-031A tables (server foundation)
 
-These tables persist CVR periods, QS inputs, and purchase ledger batches/transactions. **BL-031D** cut runtime authority to Postgres when flags are ON (no localStorage fallback). **BL-031C** migrated Test Site 1 CVR P01 onto `buildlite_clone` (9 unique inputs). After BL-031D UAT the clone also holds one disposable ledger batch with origin + supported reversal netting to £0. **BL-031E.3B** persists an immutable snapshot atomically when a *new* period is Approved & Locked. Existing locked periods with no snapshot are left untouched for E.4. Test Site 1 P01 has not been locked or snapshotted.
+These tables persist CVR periods, QS inputs, and purchase ledger batches/transactions. **BL-031D** cut runtime authority to Postgres when flags are ON (no localStorage fallback). **BL-031C** migrated Test Site 1 CVR P01 onto `buildlite_clone` (9 unique inputs). After BL-031D UAT the clone also holds one disposable ledger batch with origin + supported reversal netting to £0. **BL-031E** persists an immutable snapshot atomically when a period is Approved & Locked. Test Site 1 P01 is locked with snapshot `aa6839cc-eace-40dd-a011-6ca90afa7980` (1 header / 9 rows). Existing locked periods with no snapshot remain historic-unavailable (no live fallback).
 
 Agreed future commercial rules (do **not** change live client calculations in BL-031A):
 
@@ -263,9 +263,9 @@ Migration `010_cvr_period_snapshots.sql` adds:
 | `cvr_period_snapshots` | One frozen CVR close header per tenant period. Unique `(client_id, period_id)`. `period_id` is `ON DELETE RESTRICT` so deleting a CVR period cannot wipe history. |
 | `cvr_period_snapshot_rows` | Frozen per-cost-code commercial position. Unique `(snapshot_id, cost_code_key)`. Rows cascade when their snapshot is deleted. |
 
-The migration is additive and does **not** backfill locked periods. **BL-031E.3B** Approve & Lock now calculates the close candidate and INSERTs header + rows in the same Postgres transaction as `submitted → locked` and CVR audit. There is no UPDATE/UPSERT of historic snapshots. **BL-031E.4** (banked) client historic reads render locked periods from the snapshot only; legacy locked periods with no snapshot are historic-unavailable and must not fall back to live commercial sources. Local `buildlite_clone` already has 010 applied; do not write a Test Site 1 snapshot until instructed. Test Site 1 historic freeze UAT has **not** been run.
+The migration is additive and does **not** backfill locked periods. **BL-031E.3** Approve & Lock calculates the close candidate and INSERTs header + rows in the same Postgres transaction as `submitted → locked` and CVR audit. There is no UPDATE/UPSERT of historic snapshots. **BL-031E.4** client historic reads render locked periods from the snapshot only; legacy locked periods with no snapshot are historic-unavailable and must not fall back to live commercial sources.
 
-**Derived Summary labels:** BL-031D Summary “Certified Not in Ledger” is the same commercial value as Worksheet outstanding certified: `max(0, certified − actual)`. Historic Summary must derive that label from frozen `outstanding_certified`. Do **not** add a second money column. “Committed not certified” is likewise derived from frozen `committed` and `certified`.
+**BL-031E UAT (PASSED) on `buildlite_clone` Test Site 1 P01:** snapshot id `aa6839cc-eace-40dd-a011-6ca90afa7980`, schema version 1, 1 header / 9 rows, P01 locked v5. Frozen development committed **£2,364,873**; frozen 5231 committed **£50,250**. After lock, approved **CE-0022** Variation +£10 (`BL-031E historic freeze UAT`) moved live 5231/development committed to **£50,260** / **£2,364,883**. The snapshot did not move. P02 has **not** been created.
 
 **Derived Summary labels:** BL-031D Summary “Certified Not in Ledger” is the same commercial value as Worksheet outstanding certified: `max(0, certified − actual)`. Historic Summary must derive that label from frozen `outstanding_certified`. Do **not** add a second money column. “Committed not certified” is likewise derived from frozen `committed` and `certified`.
 
@@ -276,7 +276,7 @@ The migration is additive and does **not** backfill locked periods. **BL-031E.3B
 From `server/`:
 
 ```bash
-npm run migrate    # apply pending SQL (001 → …). 010 is already on local buildlite_clone from E.3A; do not persist Test Site 1 snapshots until instructed.
+npm run migrate    # apply pending SQL (001 → …). 010 is already on local buildlite_clone. Test Site 1 P01 snapshot already exists from BL-031E UAT; do not recreate it.
 npm run seed       # default client, cost codes, brand profile, client_id backfill
 npm start          # start API (calls db.init as fallback)
 ```
