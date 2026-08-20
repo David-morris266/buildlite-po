@@ -22,6 +22,11 @@ import {
   DEFAULT_GARAGE_PREMIUMS,
   DEFAULT_REVENUE_SOURCE,
 } from './revenueTypes';
+import { isRevenueServerAuthorityEnabled } from './revenueAuthority';
+import {
+  ensureRevenueSettingsReady,
+  refreshRevenueSettings,
+} from './revenueSettingsServerCache';
 import { getRevenueRecord, saveRevenueRecord } from './revenueStore';
 
 const PROTECTED_REVENUE_SOURCES = new Set(['Manual Value', 'Plot Override']);
@@ -141,11 +146,11 @@ export function saveHouseTypePricing(developmentId, houseTypePricing) {
   });
 }
 
-export function ensureHouseTypePricingFromPlots(developmentId) {
+export async function ensureHouseTypePricingFromPlots(developmentId) {
   const plots = getPlots(developmentId);
   const existing = getHouseTypePricing(developmentId);
   const merged = buildHouseTypePricingMap(plots, existing);
-  saveHouseTypePricing(developmentId, merged);
+  await Promise.resolve(saveHouseTypePricing(developmentId, merged));
   return merged;
 }
 
@@ -156,7 +161,7 @@ export function migratePlotPricingFromLegacy(plots = []) {
 export async function syncPlotForecastPrices(developmentId, { onlyAuto = true } = {}) {
   const plots = getPlots(developmentId);
   const strategy = getRevenueStrategy(developmentId);
-  const houseTypePricing = ensureHouseTypePricingFromPlots(developmentId);
+  const houseTypePricing = await ensureHouseTypePricingFromPlots(developmentId);
   const plotUpdates = [];
 
   for (const plot of plots) {
@@ -181,7 +186,7 @@ export async function syncPlotForecastPrices(developmentId, { onlyAuto = true } 
 export async function bulkApplyDevelopmentStrategy(developmentId) {
   const plots = getPlots(developmentId);
   const strategy = getRevenueStrategy(developmentId);
-  const houseTypePricing = ensureHouseTypePricingFromPlots(developmentId);
+  const houseTypePricing = await ensureHouseTypePricingFromPlots(developmentId);
   const nextPlots = applyStrategyToPlots(plots, strategy, houseTypePricing, {
     revenueSource: 'Development Strategy',
     skipManual: true,
@@ -223,7 +228,7 @@ export async function bulkRecalculateHouseTypeValues(developmentId) {
     plots,
     strategy
   );
-  saveHouseTypePricing(developmentId, houseTypePricing);
+  await Promise.resolve(saveHouseTypePricing(developmentId, houseTypePricing));
 
   const eligible = plots.filter(isAutoPricedPlot);
   const skippedCount = plots.length - eligible.length;
@@ -365,7 +370,14 @@ export async function migrateLegacyPlotsIfNeeded(developmentId) {
   return { migrated: plotUpdates.length };
 }
 
-export async function getRevenuePricingContext(developmentId) {
+export async function getRevenuePricingContext(developmentId, { refresh = false } = {}) {
+  if (isRevenueServerAuthorityEnabled()) {
+    if (refresh) {
+      await refreshRevenueSettings(developmentId);
+    } else {
+      await ensureRevenueSettingsReady(developmentId);
+    }
+  }
   await migrateLegacyPlotsIfNeeded(developmentId);
   const plots = getPlots(developmentId);
   const strategy = getRevenueStrategy(developmentId);

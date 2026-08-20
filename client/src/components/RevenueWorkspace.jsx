@@ -253,7 +253,9 @@ export default function RevenueWorkspace({
     setLoadError('');
     setPricingContext(null);
 
-    getRevenuePricingContext(developmentId)
+    getRevenuePricingContext(developmentId, {
+      refresh: Boolean(refreshToken) || localRefresh > 0,
+    })
       .then((context) => {
         if (!cancelled) {
           setPricingContext(context);

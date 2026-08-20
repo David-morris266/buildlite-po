@@ -16,6 +16,7 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 | `008_package_payment_certificates.sql` | BL-030A: V1 package_payment_certificates + audit (does not alter legacy payment_certificates); client server-authority cutover in BL-030C |
 | `009_cvr_and_purchase_ledger.sql` | BL-031A: CVR periods + QS cost-code inputs + purchase ledger batches/transactions (server foundation only; no snapshots) |
 | `010_cvr_period_snapshots.sql` | BL-031E.1: `cvr_period_snapshots` + `cvr_period_snapshot_rows` (additive; no backfill). BL-031E.3 persists snapshots atomically on Approve & Lock. BL-031E Test Site 1 UAT passed. |
+| `011_development_revenue_settings.sql` | BL-032A: `development_revenue_settings` (additive). BANKED. Default recognition policy `completion`. Do not apply to `buildlite_clone` until a later explicit UAT. |
 
 ## Before applying to production
 

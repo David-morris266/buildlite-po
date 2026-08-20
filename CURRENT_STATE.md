@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, and **BL-031A–F**. **BL-031E is COMPLETE.** **BL-031F is COMPLETE.** Test Site 1 snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. P02 monthly-cycle UAT **PASSED**. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
+This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, **BL-031A–F**, and **BL-032A**. **BL-031E is COMPLETE.** **BL-031F is COMPLETE.** **BL-032A is BANKED.** Test Site 1 snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. P02 monthly-cycle UAT **PASSED**. **BL-032 is not complete.** Revenue is **not** in CVR. Exchange recognition is **not** live. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
 
 Historic Phase 0 / BL-006 schema notes remain in `docs/DATABASE.md` and `docs/phase0/`. Do not treat those files as the current programme.
 
@@ -18,10 +18,10 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | **BL-031F** next-period CVR carry-forward. Functional fix banked at `007c0ba`. Test Site 1 P02 monthly-cycle UAT **PASSED**. |
-| Last persistence slice implemented | **BL-031F — COMPLETE** |
+| Last persistence slice implemented | **BL-032A — BANKED.** Development revenue strategy/settings server model + optional authority. Flag default OFF. Migration `011` not applied to `buildlite_clone`. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT after bank** | Do **not** create P03 until instructed. P03 UAT has **not** been run. Deferred: CVR navigation UI/UX (Register / Summary / Worksheet). |
+| **NEXT after bank** | **BL-032B** — private plot revenue lifecycle / Exchange secured revenue. Do **not** create P03 until instructed. P03 UAT has **not** been run. Deferred: CVR navigation UI/UX. |
 
 ---
 
@@ -36,6 +36,7 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-029** | Order Matrix Persistence | **Complete** — schema/API (BL-029A), cache/hydration (BL-029B), **server-authority cutover (BL-029D)** |
 | **BL-030** | Payment Certificate persistence & atomic approval | **Complete** — schema/API (BL-030A), cache/hydration (BL-030B), **server-authority cutover (BL-030C)**, historical-freeze UAT **PASSED**. |
 | **BL-031** | CVR & Ledger persistence | **BL-031A–F complete.** Authority-on live CVR/ledger (**D**), immutable snapshots (**E**), next-period carry-forward (**F**). Snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. P02 monthly-cycle UAT **PASSED**. P03 UAT **not** run. |
+| **BL-032A** | Revenue settings persistence (foundation) | **BANKED.** `development_revenue_settings` + GET/PUT. `VITE_REVENUE_SERVER_AUTHORITY` default OFF. Plot commercial fields remain on `developments.payload`. Categories remain local. Not in CVR. Exchange recognition **not** live. Do not apply migration `011` to `buildlite_clone` until a later explicit UAT. |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -54,12 +55,13 @@ BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when lo
 - **V1 Payment Certificates** (`008_package_payment_certificates.sql`) — draft progress, commercial/recovery lines, submit/reject/approve, frozen snapshots
 - **CVR periods + purchase ledger tables** (`009_cvr_and_purchase_ledger.sql`) — **BL-031A–D**. Runtime CVR/ledger use Postgres when `VITE_CVR_SERVER_AUTHORITY` / `VITE_LEDGER_SERVER_AUTHORITY` are ON.
 - **CVR snapshots** (`010_cvr_period_snapshots.sql`) — **BL-031E COMPLETE**. Approve & Lock persists an immutable snapshot atomically. Locked periods render from that snapshot (or explicit historic-unavailable if none). Test Site 1 snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. **BL-031F COMPLETE**: P02 monthly-cycle UAT **PASSED** (two independent locked snapshots on Test Site 1).
-- Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, `VITE_CERTIFICATE_SERVER_AUTHORITY`, `VITE_CVR_SERVER_AUTHORITY`, and `VITE_LEDGER_SERVER_AUTHORITY` for cutover (see `client/.env.example`). Repo defaults remain OFF. Local UAT uses `.env.local`. Do not commit `.env.local`.
+- **Development revenue settings** (`011_development_revenue_settings.sql`) — **BL-032A BANKED**. Typed strategy/settings row per development. Runtime uses Postgres only when `VITE_REVENUE_SERVER_AUTHORITY=true`. Default remains OFF. **Do not apply `011` to `buildlite_clone` until a later explicit UAT.** Plot Master commercial fields stay on `developments.payload`.
+- Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, `VITE_CERTIFICATE_SERVER_AUTHORITY`, `VITE_CVR_SERVER_AUTHORITY`, `VITE_LEDGER_SERVER_AUTHORITY`, and `VITE_REVENUE_SERVER_AUTHORITY` for cutover (see `client/.env.example`). Repo defaults remain OFF. Local UAT uses `.env.local`. Do not commit `.env.local`.
 
 ### Browser / localStorage authority (not yet migrated)
 
 - CVR periods / cost centres (`buildlite_cvr_v1`) and purchase ledger (`buildlite_purchase_ledgers_v1`) — backup/rollback evidence after BL-031D. Runtime uses Postgres when the CVR/ledger flags are ON (no localStorage fallback or dual-write).
-- Also still local: revenue, administration master data, setup drafts, Commercial Assistant dispositions
+- Also still local: revenue categories / administration master data, setup drafts, Commercial Assistant dispositions. Development revenue **strategy/settings** remain localStorage (`buildlite_revenue_v1`) unless `VITE_REVENUE_SERVER_AUTHORITY=true`. Plot-level commercial fields remain on Plot Master / `developments.payload`. Recognised revenue remains Completed-only (legacy) until BL-032B.
 
 `buildlite_order_matrices_v1` is backup/rollback evidence only after BL-029D. Runtime matrix reads/writes use Postgres when `VITE_MATRIX_SERVER_AUTHORITY=true`.
 
@@ -397,6 +399,10 @@ P01 and P02 remain independent immutable historic snapshots. Locked P02 renders 
 CVR navigation is functionally working but not intuitive across CVR Register, Summary, Worksheet, Open Draft CVR, Continue to CVR, Back, and period navigation. Defer to the broader application UI/UX review. Do not redesign it here.
 
 ## Next action
+
+**BL-032A is BANKED.** Do not mark BL-032 complete. Do not claim revenue is in CVR. Do not claim Exchange recognition is live. Do not apply migration `011` to `buildlite_clone` until a later explicit UAT. Do not migrate Test Site 1 revenue localStorage until that UAT. Flag remains OFF.
+
+Next expected slice after bank: **BL-032B — private plot revenue lifecycle / Exchange secured revenue.**
 
 Do **not** create P03 until instructed. Do **not** claim P03 UAT has passed. Do not treat Hawthorn Gardens as started.
 

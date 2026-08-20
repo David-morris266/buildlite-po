@@ -100,9 +100,9 @@ export default function RevenueStrategyPanel({
 
     await runAction('save-strategy', {
       progressLabel: 'Saving Revenue Strategy...',
-      execute: () => {
-        const result = saveRevenueStrategyOnly(developmentId, draft);
-        if (!result.ok) throw new Error('Could not save revenue strategy.');
+      execute: async () => {
+        const result = await Promise.resolve(saveRevenueStrategyOnly(developmentId, draft));
+        if (!result.ok) throw new Error(result.errors?.[0] || 'Could not save revenue strategy.');
         return { ok: true, applied: false };
       },
       buildToast: () => 'Revenue Strategy saved.',

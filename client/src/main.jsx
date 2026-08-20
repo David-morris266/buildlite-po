@@ -7,6 +7,9 @@ if (import.meta.env.DEV) {
   void import('./cvr/cvrLedgerMigrationDevtools.js').then((module) => {
     module.attachCvrLedgerMigrationDevtools()
   })
+  void import('./revenue/revenueSettingsMigrationDevtools.js').then((module) => {
+    module.attachRevenueSettingsMigrationDevtools()
+  })
 }
 
 createRoot(document.getElementById('root')).render(

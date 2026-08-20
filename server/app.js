@@ -15,6 +15,7 @@ const packageRoutes = require("./routes/packageRoutes");
 const commercialEventRoutes = require("./routes/commercialEventRoutes");
 const cvrRoutes = require("./routes/cvrRoutes");
 const ledgerRoutes = require("./routes/ledgerRoutes");
+const revenueSettingsRoutes = require("./routes/revenueSettingsRoutes");
 
 function createApp() {
   const app = express();
@@ -38,6 +39,7 @@ function createApp() {
   app.use("/api/developments", developmentRoutes);
   app.use("/api/developments/:developmentId", cvrRoutes);
   app.use("/api/developments/:developmentId", ledgerRoutes);
+  app.use("/api/developments/:developmentId", revenueSettingsRoutes);
   app.use("/api/packages", packageRoutes);
   app.use("/api/commercial-events", commercialEventRoutes);
 

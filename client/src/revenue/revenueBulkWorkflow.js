@@ -126,7 +126,7 @@ export function saveRevenueStrategyOnly(developmentId, draft) {
 
 export async function runSaveStrategyApplyWorkflow(developmentId, draft) {
   const manualPreserved = countManualOverrides(developmentId);
-  const saveResult = saveRevenueStrategy(developmentId, draft);
+  const saveResult = await Promise.resolve(saveRevenueStrategy(developmentId, draft));
   if (!saveResult.ok) {
     return { ok: false, errors: saveResult.errors || ['Could not save revenue strategy.'] };
   }

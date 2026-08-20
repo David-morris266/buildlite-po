@@ -2,8 +2,8 @@
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
 **Last product slice fully complete:** **BL-031F** next-period CVR carry-forward (P02 monthly-cycle UAT **PASSED**).  
-**Last persistence slice implemented:** **BL-031F — COMPLETE**.  
-**NEXT:** Do **not** create P03 until instructed. P03 UAT has **not** been run.
+**Last persistence slice implemented:** **BL-032A — BANKED** (development revenue settings). Do not mark BL-032 complete.  
+**NEXT:** **BL-032B** — private plot revenue lifecycle / Exchange secured revenue. Do **not** create P03 until instructed. P03 UAT has **not** been run. Do **not** apply migration `011` to `buildlite_clone` in this slice.
 
 ---
 
@@ -21,12 +21,15 @@ Postgres is already the authority for:
 | `008_package_payment_certificates.sql` | `package_payment_certificates`, `package_payment_certificate_audit` | BL-030 fully complete (schema/API + client server authority; historical-freeze UAT passed). |
 | `009_cvr_and_purchase_ledger.sql` | `cvr_periods`, `cvr_period_audit`, `cvr_cost_code_inputs`, `ledger_import_batches`, `ledger_transactions` | **BL-031A–D**. Runtime CVR/ledger use Postgres when flags are ON. |
 | `010_cvr_period_snapshots.sql` | `cvr_period_snapshots`, `cvr_period_snapshot_rows` | **BL-031E COMPLETE**. Schema (E.1), close engine (E.2), atomic persist on Approve & Lock (E.3), client historic reads (E.4). Test Site 1 snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. **BL-031F COMPLETE**: P02 monthly-cycle UAT **PASSED** (2 headers / 18 rows on Test Site 1). Do not backfill legacy locked periods. |
+| `011_development_revenue_settings.sql` | `development_revenue_settings` | **BL-032A BANKED**. Typed development revenue strategy/settings. Additive. Default recognition policy `completion` (legacy BL-019 behaviour). `exchange` is stored only; not applied to pricing/CVR in this slice. **Do not apply to `buildlite_clone` until a later explicit UAT.** No P01/P02 snapshot backfill. |
 
 Still **browser/localStorage** (not yet Postgres authority):
 
-- Revenue, administration master data, setup drafts, Commercial Assistant dispositions
+- Revenue **categories** / administration master data, setup drafts, Commercial Assistant dispositions
+- Development revenue **strategy/settings** (`buildlite_revenue_v1`) unless `VITE_REVENUE_SERVER_AUTHORITY=true` (BL-032A BANKED; default OFF)
+- Plot-level commercial fields remain on `developments.payload` (not moved in BL-032A)
 
-CVR periods/cost centres and purchase ledger are server-authoritative when `VITE_CVR_SERVER_AUTHORITY=true` and `VITE_LEDGER_SERVER_AUTHORITY=true`. Order matrices are server-authoritative when `VITE_MATRIX_SERVER_AUTHORITY=true`. V1 payment certificates are server-authoritative when `VITE_CERTIFICATE_SERVER_AUTHORITY=true`. Do not commit `.env.local`.
+CVR periods/cost centres and purchase ledger are server-authoritative when `VITE_CVR_SERVER_AUTHORITY=true` and `VITE_LEDGER_SERVER_AUTHORITY=true`. Order matrices are server-authoritative when `VITE_MATRIX_SERVER_AUTHORITY=true`. V1 payment certificates are server-authoritative when `VITE_CERTIFICATE_SERVER_AUTHORITY=true`. Development revenue settings are server-authoritative when `VITE_REVENUE_SERVER_AUTHORITY=true` (default OFF). Do not commit `.env.local`.
 
 The legacy `payment_certificates` / `payment_certificate_lines` tables below are **not** the V1 React certificate engine. Do not merge those models merely because a certificate table already exists (Doc 67 §21).
 
@@ -48,12 +51,12 @@ The remainder of this file is the Phase 0 / BL-006 production schema reference. 
 
 BuildLite uses a single Postgres database (`buildlite_po_db` on Render). Schema is managed via:
 
-- Versioned SQL migrations in `server/migrations/` (`001`–`010`; `001`–`003` are the BL-006 production baseline)
+- Versioned SQL migrations in `server/migrations/` (`001`–`011`; `001`–`003` are the BL-006 production baseline). **`011` is BANKED in git but must not be applied to `buildlite_clone` until a later explicit UAT.**
 - `schema_migrations` tracking table
 - `npm run migrate` and `npm run seed` scripts
 - `db.js` init aligned with production plus later Doc 67 tables (fallback when migrations have not run)
 
-**Production database was the source of truth for BL-006.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files. Later Doc 67 migrations (`004`–`010`) are additive and must also not be rewritten after apply.
+**Production database was the source of truth for BL-006.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files. Later Doc 67 migrations (`004`–`010`) are additive and must also not be rewritten after apply. `011` is additive and **not applied** to local clone/UAT until a later explicit cutover.
 
 ---
 
@@ -227,6 +230,7 @@ Production authority for certificate numbering is **`legacy_cert_no`**, enforced
 | `008_package_payment_certificates.sql` | BL-030A: V1 package_payment_certificates + audit (does not alter legacy payment_certificates); client server-authority cutover in BL-030C |
 | `009_cvr_and_purchase_ledger.sql` | BL-031A: CVR periods + QS cost-code inputs + purchase ledger batches/transactions (server foundation only; snapshots are BL-031E) |
 | `010_cvr_period_snapshots.sql` | BL-031E.1: CVR period snapshot header + rows. Additive; no backfill of locked periods. Runtime persist is BL-031E.3B (atomic Approve & Lock). |
+| `011_development_revenue_settings.sql` | BL-032A: one typed revenue strategy/settings row per development. Additive. Default `recognition_policy = completion`. BANKED in git; not applied to `buildlite_clone` until a later explicit UAT. |
 
 ---
 
@@ -273,12 +277,24 @@ The migration is additive and does **not** backfill locked periods. **BL-031E.3*
 
 ---
 
+## BL-032A development revenue settings
+
+Migration `011_development_revenue_settings.sql` adds:
+
+| Table | Purpose |
+|-------|---------|
+| `development_revenue_settings` | One revenue strategy/settings row per tenant development. Unique `(client_id, development_id)` and unique `development_id`. `recognition_policy` is `completion` (default, live BL-019 behaviour) or `exchange` (persisted only; not applied in BL-032A). JSONB columns hold `strategy`, `house_type_pricing`, `revenue_adjustments`, and `recognition_settings`. Optimistic `version`. Cascades when the development or client is deleted. |
+
+GET `/api/developments/:developmentId/revenue/settings` returns `exists: false` / `version: 0` / completion defaults without inserting. PUT creates on first write when `version === 0`, then optimistic-locks. **Not wired into CVR.** Snapshot schema remains v1 cost-only. Historic P01/P02 must not be backfilled with revenue. **Do not apply `011` to `buildlite_clone` until a later explicit UAT.**
+
+---
+
 ## Deploy runbook
 
 From `server/`:
 
 ```bash
-npm run migrate    # apply pending SQL (001 → …). 010 is already on local buildlite_clone. Test Site 1 P01 and P02 snapshots already exist from BL-031E/F UAT; do not recreate them.
+npm run migrate    # apply pending SQL (001 → …). 010 is already on local buildlite_clone. Do **not** apply 011 to clone until a later explicit UAT. Test Site 1 P01 and P02 snapshots already exist from BL-031E/F UAT; do not recreate them.
 npm run seed       # default client, cost codes, brand profile, client_id backfill
 npm start          # start API (calls db.init as fallback)
 ```
