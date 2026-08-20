@@ -74,6 +74,8 @@ export function buildCvrWorkspaceModel(development, options = {}) {
   const model = buildCvrModel(development.id, { ...options, periodKey });
   const { summary, totals } = model;
   const period = options.period || null;
+  const historic = Boolean(model.historic);
+  const historicUnavailable = Boolean(model.historicUnavailable);
 
   if (model.unavailable) {
     return {
@@ -82,9 +84,11 @@ export function buildCvrWorkspaceModel(development, options = {}) {
       developmentNumber: development.jobNumber,
       periodKey: model.periodKey,
       period,
-      readOnly: Boolean(options.readOnly),
+      readOnly: Boolean(options.readOnly) || historicUnavailable,
       ready: false,
       unavailable: true,
+      historic: false,
+      historicUnavailable,
       loadState: model.loadState,
       error: model.error || null,
       rows: [],
@@ -103,6 +107,8 @@ export function buildCvrWorkspaceModel(development, options = {}) {
     readOnly: Boolean(options.readOnly),
     ready: true,
     unavailable: false,
+    historic,
+    historicUnavailable: false,
     ledgerReady: model.ledgerReady !== false,
     rows: model.rows.map(formatCvrRow),
     totals: formatCvrTotals(totals),

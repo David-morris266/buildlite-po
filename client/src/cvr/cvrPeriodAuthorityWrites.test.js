@@ -136,8 +136,10 @@ describe('BL-031D CVR authority writes', () => {
     expect((await submitCvrPeriod(DEV_A, 'P01')).ok).toBe(true);
     const approved = await approveCvrPeriod(DEV_A, 'P01');
     expect(approved.ok).toBe(true);
-    expect(approved.snapshotDeferred).toBe(true);
+    expect(approved.snapshotDeferred).toBe(false);
+    expect(approved.snapshot).toBeTruthy();
     expect(getCachedCvrPeriods(DEV_A)[0].status).toBe('locked');
+    expect(getCachedCvrPeriods(DEV_A)[0].snapshot).toBeTruthy();
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 

@@ -9,6 +9,9 @@ import { getCvrPeriodReadiness } from './cvrPeriodServerCache';
 import { buildCvrModel } from './cvrEngine';
 import { formatCvrMoney } from './cvrHelpers';
 import {
+  CVR_HISTORIC_UNAVAILABLE_SHORT,
+} from './cvrHistoricConstants';
+import {
   createOrOpenDraftPeriod,
   createNextCvrPeriod,
   findDraftCvrPeriod,
@@ -17,7 +20,7 @@ import {
   isCvrPeriodLocked,
   listCvrPeriods,
 } from './cvrPeriodStore';
-import { sortPeriodKeys } from './cvrPeriodStatus';
+import { isCvrHistoricSnapshotPeriod, isCvrLegacyLockedPeriod, sortPeriodKeys } from './cvrPeriodStatus';
 
 const AUDIT_ACTION_LABELS = {
   created: 'Created',
@@ -45,7 +48,18 @@ export function buildCvrPeriodAuditItems(period) {
 }
 
 export function buildCvrPeriodRegisterRow(developmentId, period, pos = []) {
-  const model = buildCvrModel(developmentId, { pos, periodKey: period.periodKey });
+  const historicUnavailable = isCvrLegacyLockedPeriod(period);
+  const historic = isCvrHistoricSnapshotPeriod(period);
+  const model = historicUnavailable
+    ? {
+        unavailable: true,
+        historicUnavailable: true,
+        summary: {
+          finalForecast: null,
+          variance: null,
+        },
+      }
+    : buildCvrModel(developmentId, { pos, periodKey: period.periodKey });
   const status = getCvrPeriodStatusMeta(period.status);
   const forecastUnavailable = Boolean(model.unavailable);
 
@@ -58,6 +72,9 @@ export function buildCvrPeriodRegisterRow(developmentId, period, pos = []) {
     createdLabel: formatPoDate(period.createdAt),
     submittedLabel: period.submittedAt ? formatPoDate(period.submittedAt) : '—',
     approvedLabel: period.approvedAt ? formatPoDate(period.approvedAt) : '—',
+    historic,
+    historicUnavailable,
+    historicNote: historicUnavailable ? CVR_HISTORIC_UNAVAILABLE_SHORT : null,
     period,
     model,
   };
@@ -138,10 +155,12 @@ export function buildCvrPortfolioDevelopmentRow(development, pos = []) {
   const sortedKeys = sortPeriodKeys(periods.map((item) => item.periodKey));
   const currentKey = sortedKeys[sortedKeys.length - 1];
   const currentPeriod = currentKey ? getCvrPeriod(development.id, currentKey) : null;
-  const model = currentPeriod
-    ? buildCvrModel(development.id, { pos, periodKey: currentKey })
-    : null;
-  const forecastUnavailable = Boolean(model?.unavailable);
+  const historicUnavailable = isCvrLegacyLockedPeriod(currentPeriod);
+  const model =
+    currentPeriod && !historicUnavailable
+      ? buildCvrModel(development.id, { pos, periodKey: currentKey })
+      : null;
+  const forecastUnavailable = Boolean(historicUnavailable || model?.unavailable);
 
   return {
     developmentId: development.id,
@@ -153,6 +172,9 @@ export function buildCvrPortfolioDevelopmentRow(development, pos = []) {
       !model || forecastUnavailable ? '—' : formatCvrMoney(model.summary.finalForecast),
     varianceLabel:
       !model || forecastUnavailable ? '—' : formatCvrMoney(model.summary.variance),
+    historic: isCvrHistoricSnapshotPeriod(currentPeriod),
+    historicUnavailable,
+    historicNote: historicUnavailable ? CVR_HISTORIC_UNAVAILABLE_SHORT : null,
     period: currentPeriod,
     unresolved: false,
     loadState: 'loaded',

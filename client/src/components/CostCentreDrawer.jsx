@@ -4,6 +4,7 @@ import ApplicationDrawerHeader from './layout/ApplicationDrawerHeader';
 import { formatCvrMoney } from '../cvr/cvrHelpers';
 import { formatPoDate } from './poDrawerHelpers';
 import { getAdjustmentState, enrichCvrForecastRow } from '../cvr/cvrForecastEngine';
+import { CVR_HISTORIC_DRAWER_NOTE } from '../cvr/cvrHistoricConstants';
 
 function DrawerSection({ title, children, className = '' }) {
   return (
@@ -43,6 +44,7 @@ export default function CostCentreDrawer({
   ledgerReady = true,
   ledgerError = false,
   readOnly = false,
+  historic = false,
   onClose,
   onSaveNotes,
   onSaveCommercialAdjustment,
@@ -54,7 +56,12 @@ export default function CostCentreDrawer({
   const [notes, setNotes] = useState('');
   const [saveError, setSaveError] = useState('');
 
-  const displayRow = useMemo(() => (row ? enrichCvrForecastRow(row) : null), [row]);
+  const isHistoric = Boolean(historic || row?.historic);
+  const displayRow = useMemo(() => {
+    if (!row) return null;
+    if (historic || row.historic) return row;
+    return enrichCvrForecastRow(row);
+  }, [row, historic]);
   const packageTotal = useMemo(
     () =>
       packages.reduce((sum, item) => sum + (Number(item.committedValue) || 0), 0),
@@ -152,6 +159,11 @@ export default function CostCentreDrawer({
 
       <div className="po-drawer-body dev-cvr-drawer dev-cvr-drawer--stacked dev-cvr-drawer--dense">
         <DrawerSection title="Commercial Facts">
+          {isHistoric ? (
+            <p className="dev-cvr-drawer__empty" role="status">
+              {CVR_HISTORIC_DRAWER_NOTE}
+            </p>
+          ) : null}
           <dl className="dev-cvr-drawer__group-grid dev-cvr-drawer__facts-compact">
             <div>
               <dt>Original Budget</dt>
@@ -193,9 +205,11 @@ export default function CostCentreDrawer({
         </DrawerSection>
 
         <DrawerSection title="Cost incurred / accrual">
-          {readOnly ? (
+          {readOnly || isHistoric ? (
             <p className="dev-cvr-drawer__empty">
-              This period is read-only. Manual accrual cannot be changed.
+              {isHistoric
+                ? 'Frozen manual accrual from the approved snapshot. This value cannot be changed.'
+                : 'This period is read-only. Manual accrual cannot be changed.'}
             </p>
           ) : (
             <div className="dev-cvr-drawer__adjustment-panel">
@@ -277,10 +291,19 @@ export default function CostCentreDrawer({
             </div>
           </dl>
 
-          {readOnly ? (
-            <p className="dev-cvr-drawer__empty">
-              This period is read-only. Commercial adjustments cannot be changed.
-            </p>
+          {readOnly || isHistoric ? (
+            <div>
+              <p className="dev-cvr-drawer__empty">
+                {isHistoric
+                  ? 'Frozen commercial adjustment from the approved snapshot. This value cannot be changed.'
+                  : 'This period is read-only. Commercial adjustments cannot be changed.'}
+              </p>
+              {isHistoric && (displayRow.commercialReason || displayRow.adjustmentReason) ? (
+                <p className="dev-cvr-drawer__field-hint">
+                  Reason: {displayRow.commercialReason || displayRow.adjustmentReason}
+                </p>
+              ) : null}
+            </div>
           ) : (
             <div className="dev-cvr-drawer__adjustment-panel">
               {saveError ? (
@@ -402,12 +425,14 @@ export default function CostCentreDrawer({
               onBlur={() => {
                 void handleNotesBlur();
               }}
-              readOnly={readOnly}
+              readOnly={readOnly || isHistoric}
               placeholder="Record commercial commentary for month-end review."
             />
           </label>
         </DrawerSection>
 
+        {!isHistoric ? (
+          <>
         <DrawerSection title="Packages">
           {packages.length ? (
             <div className="po-table-wrap">
@@ -538,6 +563,8 @@ export default function CostCentreDrawer({
             </p>
           )}
         </DrawerSection>
+          </>
+        ) : null}
       </div>
     </PODrawerShell>
   );

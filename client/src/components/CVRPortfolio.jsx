@@ -352,6 +352,9 @@ export default function CVRPortfolio({
                     <td>{row.currentPeriodKey}</td>
                     <td>
                       <StatusBadge status={row.status} />
+                      {row.historicNote ? (
+                        <div className="dev-cvr-portfolio__sub">{row.historicNote}</div>
+                      ) : null}
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       {row.loadState === 'error' ? 'Unable to load CVR data' : row.forecastLabel}

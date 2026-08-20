@@ -18,6 +18,10 @@ import {
 import CostCentreDrawer from './CostCentreDrawer';
 import { applyCostCentreSaveToCvrRow } from '../cvr/cvrForecastEngine';
 import {
+  CVR_HISTORIC_SNAPSHOT_BANNER,
+  CVR_HISTORIC_UNAVAILABLE_MESSAGE,
+} from '../cvr/cvrHistoricConstants';
+import {
   buildCertificatesForCostCentre,
   buildLedgerRowsForCostCentre,
   buildPackagesForCostCentre,
@@ -376,7 +380,7 @@ export default function CVRSummaryPage({
   const cvrError = cvrReadiness.loadState === 'error' || summary.loadState === 'error';
   const ledgerError = ledgerReadiness.loadState === 'error';
 
-  if (summary.unavailable) {
+  if (summary.unavailable && !summary.historicUnavailable) {
     return (
       <div className="dev-cvr dev-cvr-workspace dev-cvr-workspace--focused cvr-summary">
         <ApplicationPageHeader
@@ -396,15 +400,18 @@ export default function CVRSummaryPage({
     );
   }
 
-  const drawerPackages = selectedRow
-    ? buildPackagesForCostCentre(development.id, selectedRow.costCodeKey, pos)
-    : [];
-  const drawerLedgerRows = selectedRow
-    ? buildLedgerRowsForCostCentre(development.id, selectedRow.costCodeKey)
-    : [];
-  const drawerCertificates = selectedRow
-    ? buildCertificatesForCostCentre(development.id, selectedRow.costCodeKey, pos)
-    : [];
+  const drawerPackages =
+    selectedRow && !summary.historic && !summary.historicUnavailable
+      ? buildPackagesForCostCentre(development.id, selectedRow.costCodeKey, pos)
+      : [];
+  const drawerLedgerRows =
+    selectedRow && !summary.historic && !summary.historicUnavailable
+      ? buildLedgerRowsForCostCentre(development.id, selectedRow.costCodeKey)
+      : [];
+  const drawerCertificates =
+    selectedRow && !summary.historic && !summary.historicUnavailable
+      ? buildCertificatesForCostCentre(development.id, selectedRow.costCodeKey, pos)
+      : [];
 
   return (
     <div className="dev-cvr dev-cvr-workspace dev-cvr-workspace--focused cvr-summary">
@@ -478,24 +485,38 @@ export default function CVRSummaryPage({
         </div>
       </ApplicationPageHeader>
 
-      {certificatesError ? (
+      {summary.historicUnavailable ? (
+        <div className="po-list-feedback po-list-feedback--warning" role="status">
+          {CVR_HISTORIC_UNAVAILABLE_MESSAGE}
+        </div>
+      ) : summary.historic ? (
+        <div className="po-list-feedback po-list-feedback--info" role="status">
+          {CVR_HISTORIC_SNAPSHOT_BANNER}
+        </div>
+      ) : null}
+
+      {!summary.historic && !summary.historicUnavailable && certificatesError ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">
           Unable to load certificate data. {certificatesError}
         </div>
-      ) : certificatesLoading ? (
+      ) : !summary.historic && !summary.historicUnavailable && certificatesLoading ? (
         <p role="status">Loading certificate data…</p>
       ) : null}
 
-      {ledgerError ? (
+      {!summary.historic && !summary.historicUnavailable && ledgerError ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">
           Unable to load ledger data
         </div>
-      ) : isLedgerServerAuthorityEnabled() && !ledgerReadiness.ready ? (
+      ) : !summary.historic &&
+        !summary.historicUnavailable &&
+        isLedgerServerAuthorityEnabled() &&
+        !ledgerReadiness.ready ? (
         <p role="status">Loading ledger data…</p>
       ) : null}
 
-      <MemoSummaryKpiRibbon items={summary.kpis} />
+      {!summary.historicUnavailable ? <MemoSummaryKpiRibbon items={summary.kpis} /> : null}
 
+      {!summary.historicUnavailable ? (
       <div className="cvr-summary__grid">
         <SummaryPanel
           title="Commercial Cost Summary"
@@ -728,6 +749,7 @@ export default function CVRSummaryPage({
           )}
         </SummaryPanel>
       </div>
+      ) : null}
 
       <CostCentreDrawer
         open={Boolean(selectedRow)}
@@ -742,6 +764,7 @@ export default function CVRSummaryPage({
         ledgerReady={!isLedgerServerAuthorityEnabled() || ledgerReadiness.ready}
         ledgerError={ledgerError}
         readOnly={summary.readOnly}
+        historic={Boolean(summary.historic)}
         onClose={() => setSelectedRow(null)}
         onSaveNotes={handleSaveNotes}
         onSaveCommercialAdjustment={handleSaveCommercialAdjustment}

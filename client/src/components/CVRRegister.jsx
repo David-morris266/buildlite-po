@@ -176,6 +176,9 @@ export default function CVRRegister({
                   </td>
                   <td>
                     <StatusBadge status={row.status} />
+                    {row.historicNote ? (
+                      <div className="dev-cvr-register__historic-note">{row.historicNote}</div>
+                    ) : null}
                   </td>
                   <td style={{ textAlign: 'right' }}>{row.forecastLabel}</td>
                   <td style={{ textAlign: 'right' }}>{row.varianceLabel}</td>

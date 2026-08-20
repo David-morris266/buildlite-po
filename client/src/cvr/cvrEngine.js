@@ -24,16 +24,22 @@ import {
   CVR_CURRENT_PERIOD,
   CVR_DEFAULT_PERIOD_KEY,
   getDevelopmentNotes,
+  getPeriodData,
   listCostCentres,
   upsertAutoCostCentre,
 } from './costCentreStore';
 import {
   buildCvrTotals,
+  getVarianceState,
   normaliseCostCodeKey,
   buildCostCodeLabel,
   costCodesMatch,
 } from './cvrCalculations';
-import { enrichCvrForecastRow } from './cvrForecastEngine';
+import { enrichCvrForecastRow, getAdjustmentState } from './cvrForecastEngine';
+import {
+  isCvrHistoricSnapshotPeriod,
+  isCvrLegacyLockedPeriod,
+} from './cvrPeriodStatus';
 import {
   calculatePackageCertifiedValue,
   enrichCvrCertifiedFields,
@@ -279,8 +285,167 @@ export function buildCvrRows(developmentId, options = {}) {
   return rows;
 }
 
+function emptyCvrSummary() {
+  return {
+    originalBudget: null,
+    currentBudget: null,
+    committed: null,
+    certified: null,
+    actualCost: null,
+    outstandingCertified: null,
+    systemForecast: null,
+    commercialAdjustment: null,
+    manualAccrual: null,
+    currentCost: null,
+    finalForecast: null,
+    forecastFinalCost: null,
+    variance: null,
+    costToComplete: null,
+    grossMargin: null,
+  };
+}
+
+function summaryFromTotals(totals, ledgerReady = true) {
+  return {
+    originalBudget: totals.originalBudget,
+    currentBudget: totals.currentBudget,
+    committed: totals.committed,
+    certified: totals.certified,
+    actualCost: ledgerReady ? totals.actualCost : null,
+    outstandingCertified: ledgerReady ? totals.outstandingCertified : null,
+    systemForecast: totals.systemForecast,
+    commercialAdjustment: totals.commercialAdjustment,
+    manualAccrual: totals.manualAccrual,
+    currentCost: ledgerReady ? totals.currentCost : null,
+    finalForecast: totals.finalForecast,
+    forecastFinalCost: totals.finalForecast,
+    variance: totals.variance,
+    costToComplete: ledgerReady ? totals.costToComplete : null,
+    grossMargin: null,
+  };
+}
+
+function snapshotRowToCvrRow(row) {
+  const outstanding = Number(row.outstandingCertified);
+  return {
+    id: row.id || `snapshot-${row.costCodeKey}`,
+    costCodeKey: row.costCodeKey,
+    costCodeLabel: row.costCodeLabel || row.costCodeKey,
+    description: row.description || '',
+    commercialHead: row.commercialHead || '',
+    commercialFamily: row.commercialFamily || '',
+    trade: row.trade || '',
+    active: row.active !== false,
+    originalBudget: row.originalBudget,
+    currentBudget: row.currentBudget,
+    commercialAdjustment: row.commercialAdjustment ?? 0,
+    commercialReason: row.commercialReason || row.adjustmentReason || '',
+    adjustmentReason: row.adjustmentReason || row.commercialReason || '',
+    manualAccrual: row.manualAccrual ?? 0,
+    notes: row.notes || row.commercialNotes || '',
+    commercialNotes: row.commercialNotes || row.notes || '',
+    committed: row.committed,
+    certified: row.certified,
+    actualCost: row.actualCost,
+    currentCost: row.currentCost,
+    systemForecast: row.systemForecast,
+    finalForecast: row.finalForecast,
+    forecastFinalCost: row.finalForecast,
+    costToComplete: row.costToComplete,
+    outstandingCertified: row.outstandingCertified,
+    outstandingCertifiedState:
+      Number.isFinite(outstanding) && outstanding > 0.005 ? 'warning' : 'neutral',
+    variance: row.variance,
+    displayMetadata: row.displayMetadata || {},
+    adjustmentHistory: Array.isArray(row.adjustmentHistory) ? row.adjustmentHistory : [],
+    isManual: true,
+    canDelete: false,
+    historic: true,
+    varianceState: getVarianceState(row.variance),
+    adjustmentState: getAdjustmentState(row.commercialAdjustment),
+  };
+}
+
+function historicTotalsFromSnapshot(snapshot, rows) {
+  const fromRows = buildCvrTotals(rows);
+  const header = snapshot?.totals || {};
+  return {
+    ...fromRows,
+    currentBudget: header.currentBudget ?? fromRows.currentBudget,
+    committed: header.committed ?? fromRows.committed,
+    certified: header.certified ?? fromRows.certified,
+    actualCost: header.actualCost ?? fromRows.actualCost,
+    manualAccrual: header.manualAccrual ?? fromRows.manualAccrual,
+    currentCost: header.currentCost ?? fromRows.currentCost,
+    systemForecast: header.systemForecast ?? fromRows.systemForecast,
+    commercialAdjustment: header.commercialAdjustment ?? fromRows.commercialAdjustment,
+    finalForecast: header.finalForecast ?? fromRows.finalForecast,
+    forecastFinalCost: header.finalForecast ?? fromRows.forecastFinalCost,
+    costToComplete: header.costToComplete ?? fromRows.costToComplete,
+    outstandingCertified: header.outstandingCertified ?? fromRows.outstandingCertified,
+    variance: header.variance ?? fromRows.variance,
+    originalBudget: fromRows.originalBudget ?? header.originalBudget ?? null,
+  };
+}
+
+function buildHistoricCvrModel(developmentId, periodKey, period) {
+  if (isCvrLegacyLockedPeriod(period)) {
+    return {
+      developmentId,
+      periodKey,
+      ready: false,
+      unavailable: true,
+      historic: false,
+      historicUnavailable: true,
+      reason: 'legacy-no-snapshot',
+      loadState: 'loaded',
+      error: null,
+      rows: [],
+      totals: buildCvrTotals([]),
+      developmentNotes: '',
+      summary: emptyCvrSummary(),
+      snapshot: null,
+    };
+  }
+
+  const snapshot = period.snapshot;
+  const rows = (snapshot.rows || []).map(snapshotRowToCvrRow);
+  rows.sort((a, b) =>
+    String(a.costCodeLabel).localeCompare(String(b.costCodeLabel), undefined, {
+      sensitivity: 'base',
+    })
+  );
+  const totals = historicTotalsFromSnapshot(snapshot, rows);
+
+  return {
+    developmentId,
+    periodKey,
+    ready: true,
+    unavailable: false,
+    historic: true,
+    historicUnavailable: false,
+    ledgerReady: true,
+    rows,
+    totals,
+    developmentNotes: period.developmentNotes || getDevelopmentNotes(developmentId, periodKey),
+    summary: summaryFromTotals(totals, true),
+    snapshot,
+    sourceReadiness: snapshot.sourceReadiness || {},
+  };
+}
+
 export function buildCvrModel(developmentId, options = {}) {
   const periodKey = options.periodKey || CVR_DEFAULT_PERIOD_KEY;
+  const period = options.period || getPeriodData(developmentId, periodKey);
+
+  if (
+    !period?.unavailable &&
+    !period?.missing &&
+    (isCvrHistoricSnapshotPeriod(period) || isCvrLegacyLockedPeriod(period))
+  ) {
+    return buildHistoricCvrModel(developmentId, periodKey, period);
+  }
+
   const readiness = getCvrSourceReadiness(developmentId, periodKey);
   if (!readiness.ready) {
     return {
@@ -288,29 +453,15 @@ export function buildCvrModel(developmentId, options = {}) {
       periodKey,
       ready: false,
       unavailable: true,
+      historic: false,
+      historicUnavailable: false,
       reason: readiness.reason || readiness.source,
       loadState: readiness.loadState,
       error: readiness.error || null,
       rows: [],
       totals: buildCvrTotals([]),
       developmentNotes: '',
-      summary: {
-        originalBudget: null,
-        currentBudget: null,
-        committed: null,
-        certified: null,
-        actualCost: null,
-        outstandingCertified: null,
-        systemForecast: null,
-        commercialAdjustment: null,
-        manualAccrual: null,
-        currentCost: null,
-        finalForecast: null,
-        forecastFinalCost: null,
-        variance: null,
-        costToComplete: null,
-        grossMargin: null,
-      },
+      summary: emptyCvrSummary(),
     };
   }
 
@@ -329,27 +480,13 @@ export function buildCvrModel(developmentId, options = {}) {
     periodKey,
     ready: true,
     unavailable: false,
+    historic: false,
+    historicUnavailable: false,
     ledgerReady,
     rows,
     totals,
     developmentNotes: getDevelopmentNotes(developmentId, periodKey),
-    summary: {
-      originalBudget: totals.originalBudget,
-      currentBudget: totals.currentBudget,
-      committed: totals.committed,
-      certified: totals.certified,
-      actualCost: ledgerReady ? totals.actualCost : null,
-      outstandingCertified: ledgerReady ? totals.outstandingCertified : null,
-      systemForecast: totals.systemForecast,
-      commercialAdjustment: totals.commercialAdjustment,
-      manualAccrual: totals.manualAccrual,
-      currentCost: ledgerReady ? totals.currentCost : null,
-      finalForecast: totals.finalForecast,
-      forecastFinalCost: totals.finalForecast,
-      variance: totals.variance,
-      costToComplete: ledgerReady ? totals.costToComplete : null,
-      grossMargin: null,
-    },
+    summary: summaryFromTotals(totals, ledgerReady),
   };
 }
 

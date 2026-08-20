@@ -1,6 +1,10 @@
 /**
- * BL-031B — Normalise CVR period/input server documents into client store shape.
+ * BL-031B / BL-031E.4 — Normalise CVR period/input/snapshot server documents
+ * into client store shape. Snapshot money is nested under `snapshot.totals`.
  */
+
+import { isCvrPeriodLocked } from './cvrPeriodStatus';
+import { normalizeServerCvrSnapshot } from './cvrSnapshotMapper';
 
 function emptyCommentary() {
   return {
@@ -38,13 +42,18 @@ function toNumber(value, fallback = 0) {
 export function normalizeServerCvrPeriod(document, inputs = []) {
   if (!document) return null;
   const commentary = commentaryOf(document.commentary || document.commercialCommentary);
+  const snapshot = normalizeServerCvrSnapshot(document.snapshot);
+  const status = document.status || 'draft';
+  const snapshotDeferred = snapshot
+    ? false
+    : document.snapshotDeferred !== false;
   return {
     id: document.id,
     developmentId: document.developmentId,
     periodKey: document.periodKey,
     periodLabel: document.periodLabel || document.periodKey,
     reportingMonth: document.reportingMonth || null,
-    status: document.status || 'draft',
+    status,
     version: Number(document.version) || 1,
     createdAt: document.createdAt || null,
     updatedAt: document.updatedAt || null,
@@ -60,8 +69,10 @@ export function normalizeServerCvrPeriod(document, inputs = []) {
     costCentres: Array.isArray(inputs)
       ? inputs.map(normalizeServerCvrCostCodeInput).filter(Boolean)
       : [],
-    snapshot: document.snapshot ?? null,
-    snapshotDeferred: document.snapshotDeferred !== false,
+    snapshot,
+    snapshotDeferred,
+    snapshotNote: document.snapshotNote || null,
+    historicUnavailable: isCvrPeriodLocked({ status }) && !snapshot,
   };
 }
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, and **BL-031A–D**. **BL-031D** Test Site 1 authority-on UAT **PASSED** and is banked. BL-031 is **not** complete: immutable CVR snapshots remain **BL-031E**. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
+This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, **BL-031A–D**, and **BL-031E.1–E.4** (banked). **BL-031E.4** client historic snapshot reads are banked; Test Site 1 lock/freeze UAT has **not** been run. BL-031E is **not** complete. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
 
 Historic Phase 0 / BL-006 schema notes remain in `docs/DATABASE.md` and `docs/phase0/`. Do not treat those files as the current programme.
 
@@ -18,10 +18,10 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | BL-030 Payment Certificate persistence (including BL-030C cutover and historical-freeze UAT) |
-| Last persistence slice implemented | **BL-031D banked** — CVR/ledger server-authority cutover + live commercial facts/forecast overlays; Test Site 1 authority-on UAT **PASSED** |
+| Last persistence slice implemented | **BL-031E.4 banked** — client historic snapshot reads. Test Site 1 lock/freeze UAT **not** run |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT after bank** | **BL-031E** — immutable CVR snapshot / period close. Do not start until instructed. |
+| **NEXT after bank** | Test Site 1 lock/freeze UAT for **BL-031E**. Do not Approve & Lock P01 until instructed. BL-031E is **not** complete. |
 
 ---
 
@@ -35,7 +35,7 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | BL-028B.3a | Isolated server test database | **Complete** — `TEST_DATABASE_URL` / `buildlite_test`; must not use `buildlite_clone` |
 | **BL-029** | Order Matrix Persistence | **Complete** — schema/API (BL-029A), cache/hydration (BL-029B), **server-authority cutover (BL-029D)** |
 | **BL-030** | Payment Certificate persistence & atomic approval | **Complete** — schema/API (BL-030A), cache/hydration (BL-030B), **server-authority cutover (BL-030C)**, historical-freeze UAT **PASSED**. |
-| **BL-031** | CVR & Ledger persistence | **In progress** — **BL-031A–D** banked (Test Site 1 CVR migration and BL-031D authority-on UAT **PASSED**). **BL-031E** (snapshots) not started. Repo flag defaults remain OFF. |
+| **BL-031** | CVR & Ledger persistence | **In progress** — **BL-031A–D** banked. **BL-031E.1–E.4** banked (schema + close engine + atomic snapshot persist + client historic reads). Test Site 1 lock/freeze UAT **not** run. BL-031E is **not** complete. |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. It does **not** freeze historic snapshots (**BL-031E**). Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -52,7 +52,8 @@ BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when lo
 - **Commercial Events** + CE audit (`006_commercial_events.sql`)
 - **Order matrices** (`007_package_order_matrices.sql`) — plot-stage structure, committed value, versioned PUT
 - **V1 Payment Certificates** (`008_package_payment_certificates.sql`) — draft progress, commercial/recovery lines, submit/reject/approve, frozen snapshots
-- **CVR periods + purchase ledger tables** (`009_cvr_and_purchase_ledger.sql`) — **BL-031A–D**. Runtime CVR/ledger use Postgres when `VITE_CVR_SERVER_AUTHORITY` / `VITE_LEDGER_SERVER_AUTHORITY` are ON. Approve/lock is workflow-only until **BL-031E** snapshots.
+- **CVR periods + purchase ledger tables** (`009_cvr_and_purchase_ledger.sql`) — **BL-031A–D**. Runtime CVR/ledger use Postgres when `VITE_CVR_SERVER_AUTHORITY` / `VITE_LEDGER_SERVER_AUTHORITY` are ON.
+- **CVR snapshots** (`010_cvr_period_snapshots.sql`) — **BL-031E.3B** persists an immutable snapshot atomically on Approve & Lock. **BL-031E.4 banked**: locked periods render from that snapshot (or explicit historic-unavailable if none). Test Site 1 lock/freeze UAT has **not** been run.
 - Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, `VITE_CERTIFICATE_SERVER_AUTHORITY`, `VITE_CVR_SERVER_AUTHORITY`, and `VITE_LEDGER_SERVER_AUTHORITY` for cutover (see `client/.env.example`). Repo defaults remain OFF. Local UAT uses `.env.local`. Do not commit `.env.local`.
 
 ### Browser / localStorage authority (not yet migrated)
@@ -276,9 +277,15 @@ UAT also covered worksheet Accrual / Current Cost columns, explicit **Save accru
 | Wipe certs 1–4 | locked 1625 / 375 / 250 / 0 (cert 4 net −£100) |
 | CE-0020 / CE-0021 | approved +£250 / approved −£100 recovery |
 
+## BL-031E.4 (client historic snapshot reads) — BANKED, UAT NOT RUN
+
+Client locked-period reads consume the E.3 immutable snapshot. Draft/submitted stay on the live BL-031D model. Locked with no snapshot is an explicit historic-unavailable state (no live PO/CE/cert/ledger fallback). Historic P01 does not depend on today's live source hydration.
+
+**Not done:** live Approve & Lock, Test Site 1 historic freeze UAT. Do **not** mark BL-031E complete. Do **not** claim Test Site 1 historic freeze passed. Clone snapshot counts remain 0.
+
 ## Next action
 
-**BL-031E** — immutable CVR snapshot / period close. Do **not** start until instructed. Do not Approve & Lock UAT P01. Do not create P02. Do not push unless asked. Do not alter Wipe certificates/matrix/CEs or Hawthorn Gardens.
+Test Site 1 lock/freeze UAT for **BL-031E**. Do not Approve & Lock Test Site 1 P01 until instructed. Do not create P02. Do not alter Wipe certificates/matrix/CEs or Hawthorn Gardens.
 
 ---
 

@@ -40,6 +40,10 @@ import {
 } from '../cvr/cvrStore';
 import { isCvrServerAuthorityEnabled } from '../cvr/cvrPeriodAuthority';
 import {
+  CVR_HISTORIC_SNAPSHOT_BANNER,
+  CVR_HISTORIC_UNAVAILABLE_MESSAGE,
+} from '../cvr/cvrHistoricConstants';
+import {
   ensureCvrPeriodAndInputsReady,
   getCvrPeriodReadiness,
 } from '../cvr/cvrPeriodServerCache';
@@ -345,19 +349,19 @@ export default function CVRWorkspace({
   }, [workspace?.rows]);
 
   const drawerPackages = useMemo(() => {
-    if (!selectedRow) return [];
+    if (!selectedRow || workspace?.historic || workspace?.historicUnavailable) return [];
     return buildPackagesForCostCentre(development.id, selectedRow.costCodeKey, pos);
-  }, [selectedRow, development.id, pos]);
+  }, [selectedRow, development.id, pos, workspace?.historic, workspace?.historicUnavailable]);
 
   const drawerLedgerRows = useMemo(() => {
-    if (!selectedRow) return [];
+    if (!selectedRow || workspace?.historic || workspace?.historicUnavailable) return [];
     return buildLedgerRowsForCostCentre(development.id, selectedRow.costCodeKey);
-  }, [selectedRow, development.id]);
+  }, [selectedRow, development.id, workspace?.historic, workspace?.historicUnavailable]);
 
   const drawerCertificates = useMemo(() => {
-    if (!selectedRow) return [];
+    if (!selectedRow || workspace?.historic || workspace?.historicUnavailable) return [];
     return buildCertificatesForCostCentre(development.id, selectedRow.costCodeKey, pos);
-  }, [selectedRow, development.id, pos]);
+  }, [selectedRow, development.id, pos, workspace?.historic, workspace?.historicUnavailable]);
 
   function refresh() {
     setLocalRefresh((value) => value + 1);
@@ -508,9 +512,13 @@ export default function CVRWorkspace({
   const ledgerReadiness = isLedgerServerAuthorityEnabled()
     ? getLedgerReadiness(development.id)
     : { ready: true, loadState: 'local', error: null };
-  const cvrUnresolved = Boolean(period?.unavailable || workspace.unavailable);
+  const cvrUnresolved = Boolean(
+    (period?.unavailable || workspace.unavailable) && !workspace.historicUnavailable
+  );
   const cvrError = cvrReadiness.loadState === 'error' || workspace.loadState === 'error';
   const ledgerError = ledgerReadiness.loadState === 'error';
+  const historic = Boolean(workspace.historic);
+  const historicUnavailable = Boolean(workspace.historicUnavailable);
 
   if (cvrUnresolved) {
     return (
@@ -639,19 +647,32 @@ export default function CVRWorkspace({
         </dl>
       </ApplicationPageHeader>
 
-      {certificatesError ? (
+      {historicUnavailable ? (
+        <div className="po-list-feedback po-list-feedback--warning" role="status">
+          {CVR_HISTORIC_UNAVAILABLE_MESSAGE}
+        </div>
+      ) : historic ? (
+        <div className="po-list-feedback po-list-feedback--info" role="status">
+          {CVR_HISTORIC_SNAPSHOT_BANNER}
+        </div>
+      ) : null}
+
+      {!historic && !historicUnavailable && certificatesError ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">
           Unable to load certificate data. {certificatesError}
         </div>
-      ) : certificatesLoading ? (
+      ) : !historic && !historicUnavailable && certificatesLoading ? (
         <p role="status">Loading certificate data…</p>
       ) : null}
 
-      {ledgerError ? (
+      {!historic && !historicUnavailable && ledgerError ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">
           Unable to load ledger data
         </div>
-      ) : isLedgerServerAuthorityEnabled() && !ledgerReadiness.ready ? (
+      ) : !historic &&
+        !historicUnavailable &&
+        isLedgerServerAuthorityEnabled() &&
+        !ledgerReadiness.ready ? (
         <p role="status">Loading ledger data…</p>
       ) : null}
 
@@ -677,29 +698,33 @@ export default function CVRWorkspace({
 
       <MemoCvrSummaryDashboard cards={workspace.summaryCards} />
 
-      <CVRTable
-        rows={displayedRows}
-        totals={activeHeadFilter ? displayedTotals : workspace.totals}
-        onRowSelect={setSelectedRow}
-        onBudgetChange={readOnly ? undefined : handleBudgetChange}
-        readOnly={readOnly}
-      />
-
-      <details className="dev-cvr__notes-panel">
-        <summary>Development Notes</summary>
-        <textarea
-          className="input dev-cvr__notes-input"
-          rows={3}
-          value={notes}
-          onChange={(event) => setNotes(event.target.value)}
-          onBlur={handleNotesBlur}
-          readOnly={readOnly}
-          placeholder="Summarise commercial position, risks and actions for this development."
+      {!historicUnavailable ? (
+        <CVRTable
+          rows={displayedRows}
+          totals={activeHeadFilter ? displayedTotals : workspace.totals}
+          onRowSelect={setSelectedRow}
+          onBudgetChange={readOnly ? undefined : handleBudgetChange}
+          readOnly={readOnly || historic}
         />
-      </details>
+      ) : null}
+
+      {!historicUnavailable ? (
+        <details className="dev-cvr__notes-panel">
+          <summary>Development Notes</summary>
+          <textarea
+            className="input dev-cvr__notes-input"
+            rows={3}
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            onBlur={handleNotesBlur}
+            readOnly={readOnly}
+            placeholder="Summarise commercial position, risks and actions for this development."
+          />
+        </details>
+      ) : null}
 
       <CostCentreDrawer
-        open={Boolean(selectedRow)}
+        open={Boolean(selectedRow) && !historicUnavailable}
         row={selectedRow}
         drawerBreadcrumbs={[
           ...(pageNavigation?.breadcrumbs || []),
@@ -710,7 +735,8 @@ export default function CVRWorkspace({
         certificates={drawerCertificates}
         ledgerReady={!isLedgerServerAuthorityEnabled() || ledgerReadiness.ready}
         ledgerError={ledgerError}
-        readOnly={readOnly}
+        readOnly={readOnly || historic}
+        historic={historic}
         onClose={() => setSelectedRow(null)}
         onSaveNotes={handleSaveNotes}
         onSaveCommercialAdjustment={handleSaveCommercialAdjustment}

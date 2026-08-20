@@ -125,6 +125,8 @@ function emptyPeriod(periodKey = CVR_DEFAULT_PERIOD_KEY) {
     costCentres: [],
     developmentNotes: '',
     commercialCommentary: emptyCommentary(),
+    snapshot: null,
+    snapshotDeferred: true,
     updatedAt: now,
   };
 }

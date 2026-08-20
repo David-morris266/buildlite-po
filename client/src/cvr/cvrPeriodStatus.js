@@ -34,6 +34,19 @@ export function isCvrPeriodLocked(period) {
   return status === 'locked' || status === 'approved';
 }
 
+export function hasCvrSnapshot(period) {
+  const snapshot = period?.snapshot;
+  return Boolean(snapshot && typeof snapshot === 'object');
+}
+
+export function isCvrHistoricSnapshotPeriod(period) {
+  return isCvrPeriodLocked(period) && hasCvrSnapshot(period);
+}
+
+export function isCvrLegacyLockedPeriod(period) {
+  return isCvrPeriodLocked(period) && !hasCvrSnapshot(period);
+}
+
 export function isCvrPeriodEditable(period) {
   return isCvrPeriodDraft(period);
 }

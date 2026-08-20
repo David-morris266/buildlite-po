@@ -315,7 +315,11 @@ export function patchCachedCvrPeriod(developmentId, periodId, patch = {}) {
   const existing = getCachedCvrPeriods(developmentId);
   const index = existing.findIndex((item) => item.id === periodId);
   if (index < 0) return null;
-  existing[index] = { ...existing[index], ...patch, id: periodId };
+  const merged = { ...existing[index], ...patch, id: periodId };
+  existing[index] = normalizeServerCvrPeriod(
+    merged,
+    merged.costCentres || getCachedCvrInputs(periodId)
+  );
   indexPeriods(developmentId, existing);
   return existing[index];
 }

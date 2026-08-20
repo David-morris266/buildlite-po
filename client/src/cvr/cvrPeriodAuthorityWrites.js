@@ -103,8 +103,8 @@ export async function approvePeriodOnServer(developmentId, periodKey) {
     ok: true,
     period: result.period,
     periodKey,
-    snapshot: result.snapshot ?? null,
-    snapshotDeferred: result.snapshotDeferred !== false,
+    snapshot: result.snapshot ?? result.period?.snapshot ?? null,
+    snapshotDeferred: Boolean(result.snapshotDeferred),
   };
 }
 

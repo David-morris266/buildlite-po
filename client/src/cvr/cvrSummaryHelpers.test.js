@@ -28,6 +28,7 @@ vi.mock('../payments/subcontractOrders.js', () => ({
 }));
 
 import { addCostCentre, updateCostCentre } from './costCentreStore';
+import { buildCvrModel } from './cvrEngine';
 import {
   approveCvrPeriod,
   createOrOpenDraftPeriod,
@@ -290,8 +291,20 @@ describe('buildCvrSummaryModel', () => {
 
   it('shows movement when locked period totals differ', () => {
     seedBudgetRows();
+    const liveP01 = buildCvrModel(DEV_ID, { pos: [], periodKey: 'P01' });
     submitCvrPeriod(DEV_ID, 'P01');
     approveCvrPeriod(DEV_ID, 'P01');
+    const raw = JSON.parse(localStorage.getItem('buildlite_cvr_v1'));
+    raw[DEV_ID].periods.P01.snapshot = {
+      id: 'snap-p01-local',
+      periodKey: 'P01',
+      totals: liveP01.totals,
+      rows: liveP01.rows,
+      commentary: {},
+      sourceReadiness: {},
+    };
+    raw[DEV_ID].periods.P01.snapshotDeferred = false;
+    localStorage.setItem('buildlite_cvr_v1', JSON.stringify(raw));
     createNextCvrPeriod(DEV_ID);
 
     const landCentre = addCostCentre(DEV_ID, {

@@ -127,6 +127,8 @@ function copyPeriodManualData(sourcePeriod, periodKey) {
       .filter((item) => item.active !== false)
       .map(copyCostCentreForRollForward),
     developmentNotes: sourcePeriod?.developmentNotes || '',
+    snapshot: null,
+    snapshotDeferred: true,
     commercialCommentary: {
       keyCommercialIssues: String(
         sourcePeriod?.commercialCommentary?.keyCommercialIssues || ''

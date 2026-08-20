@@ -257,13 +257,15 @@ function buildExecutiveKpis(summary, previousSummary) {
   ];
 }
 
-function buildFinancialPosition(summary) {
+function buildFinancialPosition(summary, { historic } = {}) {
   const finalForecast = summary.finalForecast;
   const committed = summary.committed;
   const certified = summary.certified;
   const actual = summary.actualCost;
   const committedNotCertified = calculateCommittedNotCertified(committed, certified);
-  const certifiedNotInLedger = calculateCertifiedNotInLedger(certified, actual);
+  const certifiedNotInLedger = historic
+    ? roundMoney(summary.outstandingCertified) ?? 0
+    : calculateCertifiedNotInLedger(certified, actual);
 
   const items = [
     { key: 'committed', label: 'Committed', value: committed },
@@ -351,7 +353,7 @@ export function buildTopCostVariances(rows, limit = 5) {
   return ranked.slice(0, limit);
 }
 
-export function buildCommercialExceptions(rows, summary) {
+export function buildCommercialExceptions(rows, summary, { historic } = {}) {
   const negativeCtcRows = rows.filter((row) => Number(row.costToComplete) < -0.005);
   const overBudgetRows = rows.filter((row) => Number(row.variance) < -0.005);
   const adjustmentRows = rows.filter(
@@ -364,10 +366,9 @@ export function buildCommercialExceptions(rows, summary) {
     return (budget == null || budget === 0) && (committed > 0.005 || actual > 0.005);
   });
 
-  const certifiedNotInLedger = calculateCertifiedNotInLedger(
-    summary.certified,
-    summary.actualCost
-  );
+  const certifiedNotInLedger = historic
+    ? roundMoney(summary.outstandingCertified) ?? 0
+    : calculateCertifiedNotInLedger(summary.certified, summary.actualCost);
   const adjustmentTotal = roundMoney(
     adjustmentRows.reduce((sum, row) => sum + (Number(row.commercialAdjustment) || 0), 0)
   );
@@ -635,9 +636,11 @@ export function buildCvrSummaryModel(development, options = {}) {
   const periodKey = options.periodKey;
   const pos = options.pos || [];
   const period = options.period || getCvrPeriod(developmentId, periodKey);
-  const model = buildCvrModel(developmentId, { pos, periodKey });
+  const model = buildCvrModel(developmentId, { pos, periodKey, period });
+  const historicUnavailable = Boolean(model.historicUnavailable);
+  const historic = Boolean(model.historic);
 
-  if (model.unavailable || period?.unavailable) {
+  if ((model.unavailable || period?.unavailable) && !historicUnavailable) {
     return {
       developmentId,
       developmentName: development.developmentName,
@@ -646,6 +649,8 @@ export function buildCvrSummaryModel(development, options = {}) {
       periodLabel: periodKey,
       ready: false,
       unavailable: true,
+      historic: false,
+      historicUnavailable: false,
       loadState: model.loadState || period?.loadState,
       error: model.error || period?.error || null,
       status: null,
@@ -691,20 +696,71 @@ export function buildCvrSummaryModel(development, options = {}) {
     };
   }
 
+  if (historicUnavailable) {
+    const status = getCvrPeriodStatusMeta(period?.status);
+    return {
+      developmentId,
+      developmentName: development.developmentName,
+      developmentNumber: development.jobNumber,
+      periodKey,
+      periodLabel: periodKey,
+      ready: false,
+      unavailable: true,
+      historic: false,
+      historicUnavailable: true,
+      loadState: 'loaded',
+      error: null,
+      status,
+      readOnly: true,
+      header: {
+        developmentName: development.developmentName,
+        developmentNumber: development.jobNumber || '—',
+        periodKey,
+        periodLabel: periodKey,
+        status,
+        createdLabel: period?.createdAt ? formatPoDate(period.createdAt) : '—',
+        submittedLabel: period?.submittedAt ? formatPoDate(period.submittedAt) : '—',
+        approvedLabel: period?.approvedAt ? formatPoDate(period.approvedAt) : '—',
+        approvedBy: period?.approvedBy || '—',
+        lastUpdatedLabel: formatPoDateTime(period?.updatedAt || period?.createdAt),
+        commercialManager: period?.submittedBy || period?.createdBy || '—',
+      },
+      workflow: buildWorkflowActions(period, developmentId),
+      kpis: [],
+      financialPosition: [],
+      developmentSummary: [],
+      topVariances: [],
+      commercialExceptions: [],
+      commercialCostSummary: [],
+      recentActivity: [],
+      commentary: getCvrPeriodCommentary(developmentId, periodKey),
+      rows: [],
+      summary: model.summary,
+      period,
+      previousLockedPeriodKey: null,
+    };
+  }
+
   const rows = model.rows.map(formatCvrRow);
   const summary = model.summary;
   const previousLocked = getPreviousLockedPeriod(developmentId, periodKey);
   const previousModel = previousLocked
     ? buildCvrModel(developmentId, { pos, periodKey: previousLocked.periodKey })
     : null;
-  const centres = model.rows
-    .map((row) => {
-      const manual = period.costCentres?.find(
-        (centre) => centre.costCodeKey === row.costCodeKey && centre.active !== false
-      );
-      return manual || null;
-    })
-    .filter(Boolean);
+  const previousSummary =
+    previousModel?.unavailable || previousModel?.historicUnavailable
+      ? null
+      : previousModel?.summary;
+  const centres = historic
+    ? rows
+    : model.rows
+        .map((row) => {
+          const manual = period.costCentres?.find(
+            (centre) => centre.costCodeKey === row.costCodeKey && centre.active !== false
+          );
+          return manual || null;
+        })
+        .filter(Boolean);
 
   const status = getCvrPeriodStatusMeta(period.status);
   const readOnly = !isCvrPeriodEditable(period);
@@ -717,6 +773,8 @@ export function buildCvrSummaryModel(development, options = {}) {
     periodLabel: periodKey,
     ready: true,
     unavailable: false,
+    historic,
+    historicUnavailable: false,
     status,
     readOnly,
     header: {
@@ -733,14 +791,14 @@ export function buildCvrSummaryModel(development, options = {}) {
       commercialManager: period.submittedBy || period.createdBy || '—',
     },
     workflow: buildWorkflowActions(period, developmentId),
-    kpis: buildExecutiveKpis(summary, previousModel?.summary),
-    financialPosition: buildFinancialPosition(summary),
-    developmentSummary: buildDevelopmentSummaryPanel(development, pos),
+    kpis: buildExecutiveKpis(summary, previousSummary),
+    financialPosition: buildFinancialPosition(summary, { historic }),
+    developmentSummary: buildDevelopmentSummaryPanel(development, historic ? [] : pos),
     topVariances: buildTopCostVariances(rows),
-    commercialExceptions: buildCommercialExceptions(rows, summary),
+    commercialExceptions: buildCommercialExceptions(rows, summary, { historic }),
     commercialCostSummary: buildCommercialCostSummary(
       rows,
-      period.costCentres || [],
+      historic ? rows : period.costCentres || centres,
       model.totals
     ),
     recentActivity: buildRecentCommercialActivity(period, rows),

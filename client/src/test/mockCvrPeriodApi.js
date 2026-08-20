@@ -204,8 +204,11 @@ export function buildServerCvrPeriodFixture(overrides = {}) {
     approvedAt: overrides.approvedAt || null,
     approvedBy: overrides.approvedBy || null,
     auditHistory: overrides.auditHistory || [],
-    snapshot: null,
-    snapshotDeferred: true,
+    snapshot: overrides.snapshot === undefined ? null : overrides.snapshot,
+    snapshotDeferred: overrides.snapshot
+      ? false
+      : overrides.snapshotDeferred !== false,
+    snapshotNote: overrides.snapshotNote || null,
   };
 }
 
@@ -234,6 +237,151 @@ export function buildServerCvrInputFixture(overrides = {}) {
     createdBy: overrides.createdBy || 'QS',
     updatedBy: overrides.updatedBy || 'QS',
   };
+}
+
+export function buildServerCvrSnapshotRowFixture(overrides = {}) {
+  const history = Array.isArray(overrides.adjustmentHistory)
+    ? overrides.adjustmentHistory
+    : [
+        {
+          id: 'adj-5231-1',
+          previousAdjustment: 0,
+          newAdjustment: 500,
+          reason: 'BL-031D UAT test adjustment',
+          user: 'QS',
+          date: '2026-04-01T09:00:00.000Z',
+        },
+      ];
+  return {
+    id: overrides.id || 'snap-row-5231',
+    snapshotId: overrides.snapshotId || 'snap-p01',
+    costCodeKey: overrides.costCodeKey || '5231',
+    costCodeLabel: overrides.costCodeLabel || '5231 — Cleaning',
+    description: overrides.description || 'Cleaning',
+    commercialHead: overrides.commercialHead || 'Subcontract',
+    commercialFamily: overrides.commercialFamily || '',
+    trade: overrides.trade || '',
+    active: overrides.active !== false,
+    originalBudget: overrides.originalBudget ?? 0,
+    currentBudget: overrides.currentBudget ?? 0,
+    commercialAdjustment: overrides.commercialAdjustment ?? 500,
+    adjustmentReason: overrides.adjustmentReason || 'BL-031D UAT test adjustment',
+    manualAccrual: overrides.manualAccrual ?? 100,
+    notes: overrides.notes || 'Frozen overlay',
+    committed: overrides.committed ?? 50250,
+    certified: overrides.certified ?? 2150,
+    actualCost: overrides.actualCost ?? 0,
+    currentCost: overrides.currentCost ?? 100,
+    systemForecast: overrides.systemForecast ?? 50250,
+    finalForecast: overrides.finalForecast ?? 50750,
+    costToComplete: overrides.costToComplete ?? 50650,
+    outstandingCertified: overrides.outstandingCertified ?? 2150,
+    variance: overrides.variance ?? -50750,
+    displayMetadata: {
+      adjustmentHistory: history,
+      ...(overrides.displayMetadata || {}),
+    },
+    adjustmentHistory: history,
+    ...overrides,
+  };
+}
+
+export function buildServerCvrSnapshotFixture(overrides = {}) {
+  const rows = Array.isArray(overrides.rows)
+    ? overrides.rows
+    : [buildServerCvrSnapshotRowFixture({ snapshotId: overrides.id || 'snap-p01' })];
+  return {
+    id: overrides.id || 'snap-p01',
+    clientId: overrides.clientId || 'client-1',
+    developmentId: overrides.developmentId || 'dev-cvr-b',
+    periodId: overrides.periodId || '11111111-2222-4333-8444-555555555555',
+    periodKey: overrides.periodKey || 'P01',
+    schemaVersion: overrides.schemaVersion ?? 1,
+    commentary: {
+      keyCommercialIssues: 'Locked P01 freeze',
+      commercialOpportunities: '',
+      financialRisks: '',
+      actionsBeforeNextCvr: '',
+      ...(overrides.commentary || {}),
+    },
+    sourceReadiness: {
+      ledgerReady: true,
+      ...(overrides.sourceReadiness || {}),
+    },
+    currentBudget: overrides.currentBudget ?? 0,
+    committed: overrides.committed ?? 2364873,
+    certified: overrides.certified ?? 2150,
+    actualCost: overrides.actualCost ?? 0,
+    manualAccrual: overrides.manualAccrual ?? 100,
+    currentCost: overrides.currentCost ?? 100,
+    systemForecast: overrides.systemForecast ?? 2364873,
+    commercialAdjustment: overrides.commercialAdjustment ?? 500,
+    finalForecast: overrides.finalForecast ?? 2365373,
+    costToComplete: overrides.costToComplete ?? 2365273,
+    outstandingCertified: overrides.outstandingCertified ?? 2150,
+    variance: overrides.variance ?? -2365373,
+    createdAt: overrides.createdAt || '2026-04-01T12:00:00.000Z',
+    createdBy: overrides.createdBy || 'migration',
+    rows,
+  };
+}
+
+function snapshotFromApprovedPeriod(existing) {
+  if (existing.snapshot) return existing.snapshot;
+  const inputs = store.inputsByPeriod.get(existing.id) || [];
+  const rows = inputs.map((input) =>
+    buildServerCvrSnapshotRowFixture({
+      id: `snap-row-${input.id}`,
+      snapshotId: `snap-${existing.id}`,
+      costCodeKey: input.costCodeKey,
+      costCodeLabel: input.costCodeLabel || input.costCodeKey,
+      description: input.description || '',
+      commercialHead: input.commercialHead || '',
+      commercialFamily: input.commercialFamily || '',
+      trade: input.trade || '',
+      originalBudget: input.originalBudget ?? null,
+      currentBudget: input.currentBudget ?? null,
+      commercialAdjustment: input.commercialAdjustment ?? 0,
+      adjustmentReason: input.adjustmentReason || input.commercialReason || '',
+      manualAccrual: input.manualAccrual ?? 0,
+      notes: input.notes || input.commercialNotes || '',
+      adjustmentHistory: input.adjustmentHistory || [],
+      displayMetadata: input.displayMetadata || {},
+      committed: 0,
+      certified: 0,
+      actualCost: 0,
+      currentCost: input.manualAccrual ?? 0,
+      systemForecast: 0,
+      finalForecast: input.commercialAdjustment ?? 0,
+      costToComplete: 0,
+      outstandingCertified: 0,
+      variance: 0,
+    })
+  );
+  return buildServerCvrSnapshotFixture({
+    id: `snap-${existing.id}`,
+    developmentId: existing.developmentId,
+    periodId: existing.id,
+    periodKey: existing.periodKey,
+    commentary: existing.commentary,
+    createdBy: 'migration',
+    rows,
+    currentBudget: 0,
+    committed: 0,
+    certified: 0,
+    actualCost: 0,
+    manualAccrual: rows.reduce((sum, row) => sum + (Number(row.manualAccrual) || 0), 0),
+    currentCost: rows.reduce((sum, row) => sum + (Number(row.currentCost) || 0), 0),
+    systemForecast: 0,
+    commercialAdjustment: rows.reduce(
+      (sum, row) => sum + (Number(row.commercialAdjustment) || 0),
+      0
+    ),
+    finalForecast: rows.reduce((sum, row) => sum + (Number(row.finalForecast) || 0), 0),
+    costToComplete: 0,
+    outstandingCertified: 0,
+    variance: 0,
+  });
 }
 
 export async function listCvrPeriodsForDevelopment(developmentId) {
@@ -375,6 +523,7 @@ export async function approveCvrPeriodForDevelopment(developmentId, periodId, pa
   if (existing.status !== 'submitted') {
     throw new CvrPeriodApiError('CVR period must be submitted to approve.', { status: 409 });
   }
+  const snapshot = snapshotFromApprovedPeriod(existing);
   const next = {
     ...existing,
     status: 'locked',
@@ -382,8 +531,9 @@ export async function approveCvrPeriodForDevelopment(developmentId, periodId, pa
     approvedAt: '2026-04-01T12:00:00.000Z',
     approvedBy: payload.actor || 'migration',
     updatedBy: payload.actor || existing.updatedBy,
-    snapshot: null,
-    snapshotDeferred: true,
+    snapshot,
+    snapshotDeferred: false,
+    snapshotNote: 'Immutable CVR snapshot created.',
   };
   return savePeriod(developmentId, next);
 }

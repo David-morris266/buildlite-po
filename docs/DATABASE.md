@@ -2,8 +2,8 @@
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
 **Last product slice fully complete:** BL-030 Payment Certificate persistence (including BL-030C server authority and passed historical-freeze UAT).  
-**Last persistence slice implemented:** **BL-031D banked** — CVR/ledger server-authority cutover + live commercial facts/forecast overlays; Test Site 1 authority-on UAT **PASSED**. BL-031 is **not** complete.  
-**NEXT:** Review/bank **BL-031E.3B** (atomic Approve & Lock snapshot persist). Then **BL-031E.4** client historic snapshot reads. BL-031E is **not** complete. Do not lock Test Site 1 until instructed.
+**Last persistence slice implemented:** **BL-031E.4 banked** — client historic snapshot reads. Test Site 1 lock/freeze UAT has **not** been run. BL-031E is **not** complete.  
+**NEXT:** Test Site 1 lock/freeze UAT for **BL-031E**. Do not lock Test Site 1 until instructed. BL-031E is **not** complete.
 
 ---
 
@@ -20,7 +20,7 @@ Postgres is already the authority for:
 | `007_package_order_matrices.sql` | `package_order_matrices` | BL-029 complete (schema/API + client server authority) |
 | `008_package_payment_certificates.sql` | `package_payment_certificates`, `package_payment_certificate_audit` | BL-030 fully complete (schema/API + client server authority; historical-freeze UAT passed). |
 | `009_cvr_and_purchase_ledger.sql` | `cvr_periods`, `cvr_period_audit`, `cvr_cost_code_inputs`, `ledger_import_batches`, `ledger_transactions` | **BL-031A–D**. Runtime CVR/ledger use Postgres when flags are ON. |
-| `010_cvr_period_snapshots.sql` | `cvr_period_snapshots`, `cvr_period_snapshot_rows` | **BL-031E.1** schema. **BL-031E.3B** persists a snapshot atomically on Approve & Lock for newly locked periods. Do not backfill legacy locked periods. Client historic reads are E.4. Local `buildlite_clone` already has 010 from E.3A; do not write snapshots onto Test Site 1 until instructed. |
+| `010_cvr_period_snapshots.sql` | `cvr_period_snapshots`, `cvr_period_snapshot_rows` | **BL-031E.1** schema. **BL-031E.3B** persists a snapshot atomically on Approve & Lock. **BL-031E.4 banked**: client historic reads from snapshot (or historic-unavailable). UAT not run. Do not backfill legacy locked periods. Local `buildlite_clone` already has 010; do not write snapshots onto Test Site 1 until instructed. |
 
 Still **browser/localStorage** (not yet Postgres authority):
 
@@ -263,7 +263,7 @@ Migration `010_cvr_period_snapshots.sql` adds:
 | `cvr_period_snapshots` | One frozen CVR close header per tenant period. Unique `(client_id, period_id)`. `period_id` is `ON DELETE RESTRICT` so deleting a CVR period cannot wipe history. |
 | `cvr_period_snapshot_rows` | Frozen per-cost-code commercial position. Unique `(snapshot_id, cost_code_key)`. Rows cascade when their snapshot is deleted. |
 
-The migration is additive and does **not** backfill locked periods. **BL-031E.3B** Approve & Lock now calculates the close candidate and INSERTs header + rows in the same Postgres transaction as `submitted → locked` and CVR audit. There is no UPDATE/UPSERT of historic snapshots. Legacy locked periods with no snapshot remain untouched; historic client reads are **BL-031E.4**. Local `buildlite_clone` already has 010 applied (E.3A); do not write a Test Site 1 snapshot until instructed.
+The migration is additive and does **not** backfill locked periods. **BL-031E.3B** Approve & Lock now calculates the close candidate and INSERTs header + rows in the same Postgres transaction as `submitted → locked` and CVR audit. There is no UPDATE/UPSERT of historic snapshots. **BL-031E.4** (banked) client historic reads render locked periods from the snapshot only; legacy locked periods with no snapshot are historic-unavailable and must not fall back to live commercial sources. Local `buildlite_clone` already has 010 applied; do not write a Test Site 1 snapshot until instructed. Test Site 1 historic freeze UAT has **not** been run.
 
 **Derived Summary labels:** BL-031D Summary “Certified Not in Ledger” is the same commercial value as Worksheet outstanding certified: `max(0, certified − actual)`. Historic Summary must derive that label from frozen `outstanding_certified`. Do **not** add a second money column. “Committed not certified” is likewise derived from frozen `committed` and `certified`.
 

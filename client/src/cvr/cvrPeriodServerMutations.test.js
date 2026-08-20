@@ -79,14 +79,15 @@ describe('CVR period server mutations (BL-031C)', () => {
     expect(result.period.status).toBe('draft');
   });
 
-  it('approve/lock is workflow-only with snapshot deferred', async () => {
+  it('approve/lock caches the returned snapshot', async () => {
     const created = await createServerCvrPeriod(DEV, { periodKey: 'P01' });
     await submitServerCvrPeriod(DEV, created.period.id);
     const result = await approveServerCvrPeriod(DEV, created.period.id);
     expect(result.ok).toBe(true);
     expect(result.period.status).toBe('locked');
-    expect(result.snapshot).toBeNull();
-    expect(result.snapshotDeferred).toBe(true);
+    expect(result.snapshot).toBeTruthy();
+    expect(result.snapshotDeferred).toBe(false);
+    expect(getCachedCvrPeriods(DEV)[0].snapshot).toBeTruthy();
   });
 
   it('creates and upserts cost-code inputs', async () => {

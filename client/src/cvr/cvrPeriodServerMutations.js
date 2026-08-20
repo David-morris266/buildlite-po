@@ -1,8 +1,8 @@
 /**
- * BL-031C/D — CVR period server mutation facade.
+ * BL-031C/D/E.4 — CVR period server mutation facade.
  *
  * Live UI calls these only when VITE_CVR_SERVER_AUTHORITY is ON.
- * Approve/lock is workflow-only; snapshots remain BL-031E.
+ * Approve & Lock returns the immutable snapshot; cache the mapped period.
  */
 
 import {
@@ -17,7 +17,6 @@ import {
   upsertCvrPeriodInputs,
 } from '../api/cvrPeriods';
 import {
-  patchCachedCvrPeriod,
   replaceCachedCvrInputs,
   upsertCachedCvrInput,
   upsertCachedCvrPeriod,
@@ -97,11 +96,13 @@ export async function rejectServerCvrPeriod(developmentId, periodId, payload = {
 export async function approveServerCvrPeriod(developmentId, periodId, payload = {}) {
   try {
     const period = await approveCvrPeriodForDevelopment(developmentId, periodId, payload);
-    if (period) {
-      patchCachedCvrPeriod(developmentId, periodId, period);
-      cachePeriod(developmentId, period);
-    }
-    return { ok: true, period, snapshot: null, snapshotDeferred: true };
+    const cached = cachePeriod(developmentId, period);
+    return {
+      ok: true,
+      period: cached,
+      snapshot: cached?.snapshot ?? null,
+      snapshotDeferred: !cached?.snapshot,
+    };
   } catch (error) {
     return mapApiError(error);
   }
