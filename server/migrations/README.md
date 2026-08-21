@@ -18,6 +18,7 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 | `010_cvr_period_snapshots.sql` | BL-031E.1: `cvr_period_snapshots` + `cvr_period_snapshot_rows` (additive; no backfill). BL-031E.3 persists snapshots atomically on Approve & Lock. BL-031E Test Site 1 UAT passed. |
 | `011_development_revenue_settings.sql` | BL-032A: `development_revenue_settings` (additive). COMPLETE. Default recognition policy `completion`. Applied on local `buildlite_clone`. Test Site 1 authority-on UAT **PASSED**. |
 | `012_cvr_period_snapshot_revenue.sql` | BL-032D: whole-CVR Revenue snapshot columns + `cvr_period_snapshot_plots` (additive; no default £0; no v1 backfill). COMPLETE. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 P03 lock/freeze UAT **PASSED**. |
+| `013_cost_code_classifications.sql` | BL-033B: tenant-level `cost_code_classifications` (additive; no backfill). IMPLEMENTED. Unmapped = UNCLASSIFIED + STANDARD_CVR (no row). Do **not** apply to `buildlite_clone` until the controlled classification UAT. |
 
 ## Before applying to production
 

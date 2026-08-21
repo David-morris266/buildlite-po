@@ -10,6 +10,20 @@ import {
   getActiveHeadNames,
   getActiveTradeNames,
 } from '../../admin/commercialStructureStore';
+import {
+  FORECAST_DRIVER_KEYS,
+  SEMANTIC_GROUP_KEYS,
+  forecastDriverLabel,
+  lookupClassification,
+  indexClassificationsByKey,
+  semanticGroupLabel,
+  unmappedClassification,
+} from '../../admin/costCodeClassification';
+import {
+  CostCodeClassificationApiError,
+  listCostCodeClassifications,
+  putCostCodeClassification,
+} from '../../api/costCodeClassifications';
 import AdminPageShell from './AdminPageShell';
 import {
   AdminButton,
@@ -56,9 +70,29 @@ export default function AdminCostCodesPage({ onBack }) {
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [isNew, setIsNew] = useState(false);
+  const [filterGroup, setFilterGroup] = useState('');
+  const [classificationsByKey, setClassificationsByKey] = useState(() => new Map());
+  const [classification, setClassification] = useState(() => unmappedClassification(''));
+  const [classificationError, setClassificationError] = useState('');
+  const [classificationSaving, setClassificationSaving] = useState(false);
+
+  async function loadClassifications() {
+    try {
+      const result = await listCostCodeClassifications();
+      setClassificationsByKey(indexClassificationsByKey(result?.classifications || []));
+      setClassificationError('');
+    } catch (err) {
+      setClassificationsByKey(new Map());
+      setClassificationError(
+        err instanceof CostCodeClassificationApiError
+          ? err.message
+          : 'Could not load BuildLite classifications.'
+      );
+    }
+  }
 
   useEffect(() => {
-    ensureCostCodeMasterSeeded()
+    Promise.all([ensureCostCodeMasterSeeded(), loadClassifications()])
       .then(() => setRefresh((value) => value + 1))
       .finally(() => setLoading(false));
   }, []);
@@ -76,8 +110,11 @@ export default function AdminCostCodesPage({ onBack }) {
     if (filterActive === 'active') items = items.filter((item) => item.active);
     if (filterActive === 'inactive') items = items.filter((item) => !item.active);
     if (filterOrderType !== 'all') items = items.filter((item) => item.defaultOrderType === filterOrderType);
+    if (filterGroup) {
+      items = items.filter((item) => lookupClassification(classificationsByKey, item.code).semanticGroup === filterGroup);
+    }
     return items;
-  }, [refresh, search, filterHead, filterTrade, filterActive, filterOrderType]);
+  }, [refresh, search, filterHead, filterTrade, filterActive, filterOrderType, filterGroup, classificationsByKey]);
 
   const heads = getActiveHeadNames();
   const tradeOptions = [...new Set(allRecords.map((item) => item.trade).filter(Boolean))].sort();
@@ -88,6 +125,7 @@ export default function AdminCostCodesPage({ onBack }) {
     setSelectedId(record.id);
     setIsNew(false);
     setForm({ ...record });
+    setClassification(lookupClassification(classificationsByKey, record.code));
   }
 
   function startNew() {
@@ -100,9 +138,10 @@ export default function AdminCostCodesPage({ onBack }) {
       commercialFamily: '',
       trade: '',
     });
+    setClassification(unmappedClassification(''));
   }
 
-  function saveRecord() {
+  async function saveRecord() {
     const result = isNew
       ? addCostCodeMasterRecord(form)
       : updateCostCodeMasterRecord(selectedId, form);
@@ -116,20 +155,54 @@ export default function AdminCostCodesPage({ onBack }) {
     setIsNew(false);
     setForm({ ...result.record });
     setRefresh((value) => value + 1);
+
+    setClassificationSaving(true);
+    try {
+      const saved = await putCostCodeClassification(result.record.code, {
+        version: classification.version || 0,
+        semanticGroup: classification.semanticGroup,
+        forecastDriver: classification.forecastDriver,
+      });
+      setClassification({
+        id: saved.id || null,
+        costCodeKey: saved.costCodeKey || result.record.code,
+        exists: Boolean(saved.exists),
+        semanticGroup: saved.semanticGroup,
+        forecastDriver: saved.forecastDriver,
+        version: saved.version || 0,
+      });
+      await loadClassifications();
+    } catch (err) {
+      const message =
+        err instanceof CostCodeClassificationApiError
+          ? err.message
+          : 'Could not save BuildLite classification.';
+      setClassificationError(message);
+      window.alert(message);
+    } finally {
+      setClassificationSaving(false);
+    }
   }
+
+  const unclassifiedCount = allRecords.filter(
+    (item) => lookupClassification(classificationsByKey, item.code).semanticGroup === 'UNCLASSIFIED'
+  ).length;
 
   return (
     <AdminPageShell
       title="Cost Codes"
-      lead="Master cost code records — the commercial backbone for purchase orders, CVR and reporting."
+      lead="Master cost code records remain the commercial identity. BuildLite Group is engine taxonomy only and does not change CVR until a later forecast-driver slice."
       onBack={onBack}
       actions={<AdminButton variant="primary" onClick={startNew}>Add Cost Code</AdminButton>}
     >
+      {classificationError ? (
+        <p className="admin-inline-warning" role="status">{classificationError}</p>
+      ) : null}
       <AdminKpiGrid
         items={[
           { label: 'Total Cost Codes', value: allRecords.length },
           { label: 'Active', value: allRecords.filter((item) => item.active).length, tone: 'success' },
-          { label: 'Inactive', value: allRecords.filter((item) => !item.active).length, tone: 'muted' },
+          { label: 'Unclassified', value: unclassifiedCount, tone: unclassifiedCount ? 'warning' : 'muted' },
           { label: 'Filtered', value: records.length },
         ]}
       />
@@ -161,6 +234,15 @@ export default function AdminCostCodesPage({ onBack }) {
               </select>
             </label>
             <label className="dev-form__field">
+              <span className="dev-form__label">BuildLite Group</span>
+              <select className="input" value={filterGroup} onChange={(e) => setFilterGroup(e.target.value)}>
+                <option value="">All groups</option>
+                {SEMANTIC_GROUP_KEYS.map((item) => (
+                  <option key={item} value={item}>{item} — {semanticGroupLabel(item)}</option>
+                ))}
+              </select>
+            </label>
+            <label className="dev-form__field">
               <span className="dev-form__label">Active</span>
               <select className="input" value={filterActive} onChange={(e) => setFilterActive(e.target.value)}>
                 <option value="all">All</option>
@@ -188,7 +270,10 @@ export default function AdminCostCodesPage({ onBack }) {
                 message="Adjust your search or filters, or add a new cost code."
               />
             ) : null}
-            {!loading && records.map((record) => (
+            {!loading && records.map((record) => {
+              const recordClassification = lookupClassification(classificationsByKey, record.code);
+              const unclassified = recordClassification.semanticGroup === 'UNCLASSIFIED';
+              return (
               <button
                 key={record.id}
                 type="button"
@@ -201,12 +286,16 @@ export default function AdminCostCodesPage({ onBack }) {
                 onClick={() => selectRecord(record)}
               >
                 <span className="admin-record-list__code">{record.code}</span>
-                <span className="admin-record-list__meta">{record.reportingGroup || record.trade}</span>
+                <span className="admin-record-list__meta">{record.description || record.reportingGroup || record.trade}</span>
+                <AdminStatusBadge tone={unclassified ? 'warning' : 'accent'}>
+                  {unclassified ? 'Unclassified' : recordClassification.semanticGroup}
+                </AdminStatusBadge>
                 <AdminStatusBadge tone={record.active ? 'success' : 'muted'}>
                   {record.active ? 'Active' : 'Inactive'}
                 </AdminStatusBadge>
               </button>
-            ))}
+              );
+            })}
           </div>
         </aside>
 
@@ -263,6 +352,49 @@ export default function AdminCostCodesPage({ onBack }) {
                   </select>
                 </label>
                 <label className="dev-form__field">
+                  <span className="dev-form__label">BuildLite Group</span>
+                  <select
+                    className="input"
+                    value={classification.semanticGroup}
+                    onChange={(e) => {
+                      const semanticGroup = e.target.value;
+                      setClassification((current) => ({
+                        ...current,
+                        semanticGroup,
+                        forecastDriver:
+                          semanticGroup === 'UNCLASSIFIED'
+                            ? 'STANDARD_CVR'
+                            : current.forecastDriver,
+                      }));
+                    }}
+                  >
+                    {SEMANTIC_GROUP_KEYS.map((item) => (
+                      <option key={item} value={item}>{item} — {semanticGroupLabel(item)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="dev-form__field">
+                  <span className="dev-form__label">Forecast Method</span>
+                  <select
+                    className="input"
+                    value={classification.forecastDriver}
+                    disabled={classification.semanticGroup === 'UNCLASSIFIED'}
+                    onChange={(e) => setClassification((current) => ({
+                      ...current,
+                      forecastDriver: e.target.value,
+                    }))}
+                  >
+                    {FORECAST_DRIVER_KEYS.map((item) => (
+                      <option key={item} value={item}>{item} — {forecastDriverLabel(item)}</option>
+                    ))}
+                  </select>
+                </label>
+                {classification.semanticGroup === 'UNCLASSIFIED' ? (
+                  <p className="admin-form__hint admin-form__field--wide">
+                    Unclassified codes keep Standard CVR forecasting. They are not treated as Other.
+                  </p>
+                ) : null}
+                <label className="dev-form__field">
                   <span className="dev-form__label">Reporting Order</span>
                   <input className="input" type="number" value={form.reportingOrder ?? 0} onChange={(e) => setForm((p) => ({ ...p, reportingOrder: Number(e.target.value) || 0 }))} />
                 </label>
@@ -309,7 +441,9 @@ export default function AdminCostCodesPage({ onBack }) {
               </div>
 
               <div className="admin-form__actions">
-                <AdminButton type="submit" variant="primary">Save Cost Code</AdminButton>
+                <AdminButton type="submit" variant="primary" disabled={classificationSaving}>
+                  {classificationSaving ? 'Saving…' : 'Save Cost Code'}
+                </AdminButton>
                 <AdminButton variant="secondary" onClick={() => { setSelectedId(null); setIsNew(false); }}>Close</AdminButton>
               </div>
             </form>

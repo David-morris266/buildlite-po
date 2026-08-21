@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, **BL-031A–F**, **BL-032A**, **BL-032B**, **BL-032C**, and **BL-032D**. **BL-031E is COMPLETE.** **BL-031F is COMPLETE.** **BL-032A is COMPLETE.** **BL-032B is COMPLETE.** **BL-032C is COMPLETE.** **BL-032D is COMPLETE.** Test Site 1 P03 is the first schema-v2 whole-CVR snapshot. P04 does **not** exist. `recognitionPolicy=exchange` is **not** live CVR/accounting behaviour. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
+This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, **BL-031A–F**, **BL-032A**, **BL-032B**, **BL-032C**, **BL-032D**, and **BL-033B**. **BL-031E is COMPLETE.** **BL-031F is COMPLETE.** **BL-032A is COMPLETE.** **BL-032B is COMPLETE.** **BL-032C is COMPLETE.** **BL-032D is COMPLETE.** **BL-033A design is ACCEPTED.** **BL-033B is IMPLEMENTED** (awaiting Test Site 1 classification UAT). Test Site 1 P03 is the first schema-v2 whole-CVR snapshot. P04 does **not** exist. `recognitionPolicy=exchange` is **not** live CVR/accounting behaviour. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
 
 Historic Phase 0 / BL-006 schema notes remain in `docs/DATABASE.md` and `docs/phase0/`. Do not treat those files as the current programme.
 
@@ -18,11 +18,11 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | **BL-032D — COMPLETE.** Whole-CVR schema-v2 Revenue-bearing snapshot. Test Site 1 P03 lock/freeze UAT **PASSED**. |
-| Last implemented product slice | **BL-032D — COMPLETE.** Same slice. |
-| Last persistence slice implemented | **BL-032D** (`012_cvr_period_snapshot_revenue.sql`). Additive Revenue columns + `cvr_period_snapshot_plots`. Applied on `buildlite_test` and local `buildlite_clone`. |
+| Last implemented product slice | **BL-033B — IMPLEMENTED.** Tenant-level cost-code semantic classification. Awaiting Test Site 1 classification UAT. Migration `013` must **not** be applied to `buildlite_clone` until that UAT. |
+| Last persistence slice implemented | **BL-033B** (`013_cost_code_classifications.sql`). Additive. Not applied to local `buildlite_clone`. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT** | **Do not create P04 in this slice.** Recommended later: Create Next Period P04 from locked P03 (v2→v2 Revenue movement). Deferred: CVR navigation UI/UX. |
+| **NEXT** | Do **not** apply `013` to clone in this slice. Do **not** classify 5231 yet. Do **not** create P04. Do **not** start BL-033C. Recommended later: classification UAT on Test Site 1 (5231 → PRELIMS + STANDARD_CVR; prove CVR money does not move). |
 
 ---
 
@@ -41,6 +41,8 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-032B** | Private plot revenue lifecycle / Secured Revenue | **COMPLETE.** Same-price and differing-price Plot 31 UATs **PASSED**. Available/Reserved forecast-only; Exchanged/Completed secured at contractual `sellingPrice`; Completion is not a second money event; differing exchange price substitutes forecast (−£5,100 proven). Dashboard: Forecast / Secured / Remaining. Payload dates `reservedAt` / `exchangedAt` / `completedAt`. Selling Price HTML `step` `0.01`. |
 | **BL-032C** | Live CVR Revenue + Gross Profit | **COMPLETE.** Live Draft/Submitted CVR Summary composes the existing Revenue engine with existing CVR `finalForecast`. Shows Forecast / Secured / Remaining Revenue, Forecast Cost, Gross Profit, Gross Margin % (1 d.p.), Plots Sold. GP = Forecast Revenue − `finalForecast`. Locked v1 P01/P02 remain Revenue/GP/Margin unavailable (no live fallback, no £0). Revenue/GP movement vs v1 previous is unavailable; cost movement continues. Submit is not blocked if Revenue is unavailable. Close-engine keys remain cost-only. Portfolio remains cost-only. Test Site 1 P03 Draft UAT **PASSED**. P03 was later locked under BL-032D. |
 | **BL-032D** | Whole-CVR Revenue-bearing snapshot | **COMPLETE.** New locks are schema **v2** or they do not lock. Server Revenue close + GP/Margin freeze into `cvr_period_snapshots` plus plot rows in `cvr_period_snapshot_plots`. Migration `012` additive; applied on `buildlite_test` and local `buildlite_clone`. Historic v1 remains Revenue unavailable. Historic v2 uses snapshot only. Portfolio remains cost-only. Test Site 1 P03 lock/freeze UAT **PASSED**. |
+| **BL-033A** | Prelims / semantic classification design | **ACCEPTED** with UNCLASSIFIED default and deferred adoption formula. Commercial Head remains tenant reporting hierarchy. Semantic Group is BuildLite engine taxonomy. |
+| **BL-033B** | Cost-code semantic classification | **IMPLEMENTED.** `cost_code_classifications` tenant mapping `(client_id, cost_code_key)` → `semantic_group` + `forecast_driver`. Unmapped = UNCLASSIFIED + STANDARD_CVR (no row). OTHER is explicit. No CVR formula change. No Prelims engine. Migration `013` not applied to clone. Classification UAT **not run**. |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -61,6 +63,7 @@ BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when lo
 - **CVR snapshots** (`010_cvr_period_snapshots.sql`) — **BL-031E COMPLETE**. Approve & Lock persists an immutable snapshot atomically. Locked periods render from that snapshot (or explicit historic-unavailable if none). Test Site 1 snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. **BL-031F COMPLETE**: P02 monthly-cycle UAT **PASSED** (two independent locked snapshots on Test Site 1).
 - **Development revenue settings** (`011_development_revenue_settings.sql`) — **BL-032A COMPLETE**. Typed strategy/settings row per development. Runtime uses Postgres only when `VITE_REVENUE_SERVER_AUTHORITY=true`. Default remains OFF. Migration `011` is applied on local `buildlite_clone` (additive; no backfill). Plot Master commercial fields stay on `developments.payload`.
 - **Whole-CVR Revenue snapshot** (`012_cvr_period_snapshot_revenue.sql`) — **BL-032D COMPLETE**. Additive nullable Revenue/GP columns on `cvr_period_snapshots` plus `cvr_period_snapshot_plots`. Applied on `buildlite_test` and local `buildlite_clone`. New Approve & Lock writes schema **v2** or does not lock. Historic v1 rows stay NULL (no default £0, no backfill). Test Site 1 P03 is the first v2 snapshot.
+- **Cost-code semantic classification** (`013_cost_code_classifications.sql`) — **BL-033B IMPLEMENTED**. Tenant-level mapping only. Unmapped codes resolve as UNCLASSIFIED + STANDARD_CVR without inserting a row. Not applied to local `buildlite_clone`. Does not enter CVR close or snapshots.
 - Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, `VITE_CERTIFICATE_SERVER_AUTHORITY`, `VITE_CVR_SERVER_AUTHORITY`, `VITE_LEDGER_SERVER_AUTHORITY`, and `VITE_REVENUE_SERVER_AUTHORITY` for cutover (see `client/.env.example`). Repo defaults remain OFF. Local UAT uses `.env.local`. Do not commit `.env.local`.
 
 ### Browser / localStorage authority (not yet migrated)
@@ -686,9 +689,39 @@ Not provided. Do **not** imply any of these are live:
 - `recognitionPolicy=exchange` as live CVR/accounting behaviour
 - CVR navigation redesign
 
+## BL-033A / BL-033B (semantic classification) — IMPLEMENTED, UAT NOT RUN
+
+BL-033A design is **ACCEPTED**. Client cost codes remain the commercial/accounting identity. Commercial Head / Family / Reporting Group remain the tenant reporting hierarchy and are **not** the engine taxonomy.
+
+Stable semantic groups: `UNCLASSIFIED` / `LAND` / `FEES` / `INFRASTRUCTURE` / `BUILD` / `PRELIMS` / `SELLING` / `OTHER`.
+
+Forecast-driver metadata (no calculations in this slice): `STANDARD_CVR` / `TIME` / `LUMP_SUM` / `QUANTITY` / `MILESTONE` / `PERCENTAGE` / `MANUAL`.
+
+Unmapped = `UNCLASSIFIED` + `STANDARD_CVR`. `OTHER` is explicit only. GET/default creates no row. A PRELIMS code may remain `forecastDriver = STANDARD_CVR` until a later engine slice.
+
+Adoption architecture is **deferred**. Do **not** treat `finalForecast = max(systemForecast, adoptedEngineFinal) + qsAdjustment` as an invariant. Conceptual future stack: System Forecast → Engine Recommended Forecast → Adopted Forecast → QS Adjustment → Final Forecast.
+
+BL-033B adds tenant-level `cost_code_classifications` only. No development-specific driver overrides, rates, dates, quantities, or programme fields. No Prelims forecast engine. No CVR formula change. No snapshot schema change.
+
+### What BL-033B does **not** do
+
+- Prelims forecast engine / TIME calculations
+- programme assumptions / monthly profiles
+- Review & Adopt
+- Selling Costs
+- automatic classification from Commercial Head labels
+- clone migration `013` / classifying Test Site 1 `5231`
+- P04 / P01–P03 mutation
+
 ## Next action
 
-**Do not create P04 in this banking task.** Recommended later controlled step: Create Next Period **P04** from locked P03 to prove v2→v2 Revenue movement. Deferred: CVR navigation UI/UX.
+Do **not** apply `013` to `buildlite_clone` in this slice. Do **not** classify 5231. Do **not** create P04. Do **not** start BL-033C.
+
+Proposed later Test Site 1 classification UAT (after review and clone migration):
+
+1. Classify `5231` Cleaning as PRELIMS + STANDARD_CVR.
+2. Prove live/historic CVR money for 5231 does not move merely because it is classified.
+3. Later engine slice may switch its driver metadata to TIME — BL-033B itself must not calculate a TIME forecast.
 
 Do not treat Hawthorn Gardens as started. Repo flag default remains OFF. Local UAT left `VITE_REVENUE_SERVER_AUTHORITY=true` in ignored `client/.env.local` (do not commit it). Test Site 1 has one `development_revenue_settings` row (version 2, OM 350, completion) as evidence — do not delete it. Do not delete locked P03 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`.
 
