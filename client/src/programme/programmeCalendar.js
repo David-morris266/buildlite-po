@@ -23,6 +23,12 @@ export function toYearMonth(value) {
   return `${parts.year}-${String(parts.month).padStart(2, '0')}`;
 }
 
+export function toIsoDate(value) {
+  const parts = parseIsoDateParts(value);
+  if (!parts) return null;
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+}
+
 export function addCalendarMonths(value, delta) {
   const parts = parseIsoDateParts(value);
   if (!parts || !Number.isInteger(delta)) return null;

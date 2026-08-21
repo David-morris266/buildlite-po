@@ -91,6 +91,9 @@ vi.mock('./PurchaseLedger', () => ({ default: () => <div>Ledger panel</div> }));
 vi.mock('./RevenueWorkspace', () => ({
   default: () => <div data-testid="revenue-panel">Revenue panel</div>,
 }));
+vi.mock('./DevelopmentPrelimsWorkspace', () => ({
+  default: () => <div data-testid="prelims-panel">Prelims panel</div>,
+}));
 vi.mock('./CVRRegister', () => ({ default: () => <div data-testid="cvr-panel">CVR panel</div> }));
 vi.mock('./CVRSummaryPage', () => ({ default: () => null }));
 vi.mock('./CVRWorkspace', () => ({ default: () => null }));

@@ -1,0 +1,77 @@
+/**
+ * BL-033D.1 — Development Prelims keys.
+ * TIME / LUMP_SUM only. STANDARD_CVR is the existing CVR path, not a Prelims line.
+ */
+
+const PRELIMS_DRIVERS = {
+  TIME: "TIME",
+  LUMP_SUM: "LUMP_SUM",
+};
+
+const PRELIMS_DRIVER_KEYS = Object.values(PRELIMS_DRIVERS);
+
+const PRELIMS_STATUSES = {
+  ACTIVE: "active",
+  COMPLETE: "complete",
+  CANCELLED: "cancelled",
+};
+
+const PRELIMS_STATUS_KEYS = Object.values(PRELIMS_STATUSES);
+
+const TIME_BASES = {
+  SITE_START: "SITE_START",
+  FIRST_COMPLETION: "FIRST_COMPLETION",
+  FINAL_COMPLETION: "FINAL_COMPLETION",
+  FIXED_DATE: "FIXED_DATE",
+};
+
+const TIME_BASIS_KEYS = Object.values(TIME_BASES);
+
+const PRELIMS_CALC_STATES = {
+  RESOLVED: "resolved",
+  UNRESOLVED: "unresolved",
+  INVALID: "invalid",
+};
+
+const PRELIMS_UNRESOLVED_REASONS = {
+  MISSING_PROGRAMME: "MISSING_PROGRAMME",
+  MISSING_SITE_START: "MISSING_SITE_START",
+  MISSING_FIRST_COMPLETION: "MISSING_FIRST_COMPLETION",
+  MISSING_FINAL_COMPLETION: "MISSING_FINAL_COMPLETION",
+  MISSING_FIXED_START_DATE: "MISSING_FIXED_START_DATE",
+  MISSING_FIXED_END_DATE: "MISSING_FIXED_END_DATE",
+  MISSING_REPORTING_MONTH: "MISSING_REPORTING_MONTH",
+  INVALID_SPAN: "INVALID_SPAN",
+  INVALID_RATE: "INVALID_RATE",
+  INVALID_AMOUNT: "INVALID_AMOUNT",
+};
+
+const MAX_COST_CODE_KEY_LENGTH = 64;
+const MAX_NAME_LENGTH = 120;
+
+const PRELIMS_UNRESOLVED_LABELS = {
+  MISSING_PROGRAMME: "Programme dates are not available.",
+  MISSING_SITE_START: "Site start is not available.",
+  MISSING_FIRST_COMPLETION: "First completion is not set.",
+  MISSING_FINAL_COMPLETION: "Final completion is not available.",
+  MISSING_FIXED_START_DATE: "A fixed start date is required.",
+  MISSING_FIXED_END_DATE: "A fixed end date is required.",
+  MISSING_REPORTING_MONTH: "No CVR reporting month is available. TIME will not invent today's date.",
+  INVALID_SPAN: "Start is after end.",
+  INVALID_RATE: "Monthly rate is invalid.",
+  INVALID_AMOUNT: "Lump-sum amount is invalid.",
+};
+
+module.exports = {
+  PRELIMS_DRIVERS,
+  PRELIMS_DRIVER_KEYS,
+  PRELIMS_STATUSES,
+  PRELIMS_STATUS_KEYS,
+  TIME_BASES,
+  TIME_BASIS_KEYS,
+  PRELIMS_CALC_STATES,
+  PRELIMS_UNRESOLVED_REASONS,
+  PRELIMS_UNRESOLVED_LABELS,
+  MAX_COST_CODE_KEY_LENGTH,
+  MAX_NAME_LENGTH,
+};

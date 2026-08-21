@@ -45,6 +45,7 @@ import CVRSummaryPage from './CVRSummaryPage';
 import CVRRegister from './CVRRegister';
 import CVRWorkspace from './CVRWorkspace';
 import RevenueWorkspace from './RevenueWorkspace';
+import DevelopmentPrelimsWorkspace from './DevelopmentPrelimsWorkspace';
 import SubcontractPackageWorkspace from './SubcontractPackageWorkspace';
 import PackageWorkspaceNotFound from './PackageWorkspaceNotFound';
 import POLoading from './POLoading';
@@ -858,7 +859,7 @@ export default function DevelopmentWorkspace({
         </div>
       ) : null}
 
-      {activeTab !== 'cvr' && activeTab !== 'revenue' && !isCvrPeriodOpen ? (
+      {activeTab !== 'cvr' && activeTab !== 'revenue' && activeTab !== 'prelims' && !isCvrPeriodOpen ? (
         <SummaryDashboard cards={model.summaryCards} />
       ) : null}
 
@@ -945,6 +946,10 @@ export default function DevelopmentWorkspace({
             refreshToken={revenueRefresh}
             onRevenueChanged={handleRevenueChanged}
           />
+        ) : null}
+
+        {activeTab === 'prelims' ? (
+          <DevelopmentPrelimsWorkspace developmentId={model.id} />
         ) : null}
 
         {activeTab === 'cvr' ? (

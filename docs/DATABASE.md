@@ -1,10 +1,10 @@
 # BuildLite Database Reference
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
-**Last product slice fully complete:** **BL-033C.1 — COMPLETE** (explicit CVR reporting-month selection; Test Site 1 reporting-month UAT **PASSED**).  
-**Last persistence slice implemented:** **BL-033C** (`014_development_programme.sql` applied on `buildlite_test` and local `buildlite_clone`). **BL-033C.1 COMPLETE** (no new migration). **BL-033A design ACCEPTED.**  
+**Last product slice fully complete:** **BL-033D.1 — COMPLETE** (calculation-only Development Prelims TIME / LUMP_SUM proposal; Test Site 1 Prelims UAT **PASSED**).  
+**Last persistence slice implemented:** **BL-033D.1** (`015_development_prelims_items.sql` applied on `buildlite_test` and local `buildlite_clone`). Clone is through **015**. **BL-033A design ACCEPTED.**  
 **CRITICAL:** P03 is **locked** with schema-v2 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. P04 is **Draft** `0f513191-cd25-4812-834f-37dcf66487e0` v1 with `reporting_month` **2026-08** and **no snapshot**. P01/P02/P03 `reporting_month` remain NULL. P05 does not exist.  
-**NEXT:** BL-033D is **not started**. Do not Submit or Approve & Lock P04. Do not create P05. Do not switch 5231 to TIME.
+**NEXT:** BL-033D.x company-level reusable Prelims templates (preflight). Do not Submit or Approve & Lock P04. Do not create P05. Do not switch 5231 to TIME. Do not implement Review & Adopt / CVR adoption. Do not start BL-033D.2 as a functional slice yet.
 
 ---
 
@@ -26,6 +26,7 @@ Postgres is already the authority for:
 | `012_cvr_period_snapshot_revenue.sql` | Revenue columns on `cvr_period_snapshots` + `cvr_period_snapshot_plots` | **BL-032D COMPLETE**. Additive. No default £0. No v1 backfill. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 P03 lock/freeze UAT **PASSED**. |
 | `013_cost_code_classifications.sql` | `cost_code_classifications` | **BL-033B COMPLETE**. Tenant-level semantic group + forecast-driver metadata. Unmapped = UNCLASSIFIED + STANDARD_CVR (no row). OTHER is explicit. Unique `(client_id, cost_code_key)`. No FK on the text key. No backfill. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 `5231` → PRELIMS + STANDARD_CVR. Not in CVR/snapshots. `forecast_driver` is a default/suggested driver only. |
 | `014_development_programme.sql` | `development_programme` | **BL-033C COMPLETE**. Typed site start / optional first completion / final completion / plot count + version. GET seeds from payload without write until PUT. Inclusive calendar months in application code. Test Site 1 programme UAT **PASSED** (one v1 row; 38 months; firstCompletion NULL). Applied on `buildlite_test` and local `buildlite_clone`. **BL-033C.1 COMPLETE**: Create Next requires an explicit YYYY-MM (`reportingMonth` is the CVR calendar month, distinct from the period key; no today default; no historic inference). Test Site 1 P04 Draft `reporting_month` **2026-08**; P01–P03 remain NULL. Not in CVR/snapshots. |
+| `015_development_prelims_items.sql` | `development_prelims_items` | **BL-033D.1 COMPLETE**. TIME / LUMP_SUM proposal lines. Calculated months/money are not stored. No FK on `cost_code_key`. No unique on `cost_code_key`. Applied on `buildlite_test` and local `buildlite_clone`. Does not enter CVR close or snapshots. Test Site 1 Prelims UAT **PASSED**. |
 
 Still **browser/localStorage** (not yet Postgres authority):
 
@@ -301,7 +302,9 @@ GET `/api/developments/:developmentId/revenue/settings` returns `exists: false` 
 
 **BL-032D COMPLETE (Test Site 1 P03 whole-CVR lock/freeze UAT PASSED).** Migration `012` applied to local `buildlite_clone`. P03 `804e7777-4249-41a4-9698-9431c8942ebc` is **locked** v3 with first schema-v2 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. Frozen: Forecast Revenue **£10,444,608** / Secured **£0** / Remaining **£10,444,608** / Plots Sold **0** / Remaining **31** / Forecast Cost **£2,365,423** / GP **£8,079,185** / Margin **77.3527%**; **9** cost rows; **31** Revenue plot rows. Frozen Plot 31 Available / forecast **£255,100** / sellingPrice NULL. Assumptions: settings `b2157b36-a243-414e-9169-2d192dad8301` version **2**, OM **350**, `completion`. P01/P02 remain schema-v1 with Revenue NULL and **0** plot rows. Clone totals **3** headers / **27** cost rows / **31** plot rows. Historic freeze **PASSED** (live Plot Master changed after lock; snapshot did not move). Live Revenue restored to Forecast £10,444,608 / Secured £0. Live Plot 31 Available / forecast £255,100 / dates empty; leftover live `sellingPrice` £255,100 does not move Available KPIs. At that UAT P04 did not exist.
 
-**BL-033C.1 COMPLETE (Test Site 1 reporting-month UAT PASSED).** Create Next requires an explicit YYYY-MM (`reportingMonth` is calendar meaning beside the period key; no today default; no period-key inference; no historic backfill). P04 Draft `0f513191-cd25-4812-834f-37dcf66487e0` v1, `reporting_month` **2026-08**, **9** QS rows, no snapshot. P01/P02/P03 `reporting_month` remain NULL. P05 does not exist. Future BL-033D TIME/LUMP_SUM may use open CVR `reportingMonth` as default `forecastAsAt`. No Prelims engine exists yet.
+**BL-033C.1 COMPLETE (Test Site 1 reporting-month UAT PASSED).** Create Next requires an explicit YYYY-MM (`reportingMonth` is calendar meaning beside the period key; no today default; no period-key inference; no historic backfill). P04 Draft `0f513191-cd25-4812-834f-37dcf66487e0` v1, `reporting_month` **2026-08**, **9** QS rows, no snapshot. P01/P02/P03 `reporting_month` remain NULL. P05 does not exist. BL-033D.1 TIME uses open CVR `reportingMonth` as `forecastAsAt`.
+
+**BL-033D.1 COMPLETE (Test Site 1 Prelims UAT PASSED).** Calculation-only TIME / LUMP_SUM proposal. Migration `015` applied on `buildlite_test` and local `buildlite_clone`. Three 5231 lines: LUMP_SUM £20,000 active; TIME SITE_START→FINAL_COMPLETION 38 months / £38,000; TIME FIRST_COMPLETION unresolved. Resolved active proposal **£58,000**. CVR money is unchanged. No Review & Adopt. Company-level reusable templates remain a future BL-033D.x requirement.
 
 ---
 
@@ -310,7 +313,7 @@ GET `/api/developments/:developmentId/revenue/settings` returns `exists: false` 
 From `server/`:
 
 ```bash
-npm run migrate    # apply pending SQL (001 → …). 010, 011 and 012 are already on local buildlite_clone. Test Site 1 P01, P02 and P03 snapshots already exist from BL-031E/F and BL-032D UAT; do not recreate them. P03 is locked; do not create P04 in this slice. Test Site 1 revenue settings row (version 2) is BL-032A UAT evidence; do not delete it.
+npm run migrate    # apply pending SQL (001 → …). 010–015 are already on local buildlite_clone. Test Site 1 P01, P02 and P03 snapshots already exist from BL-031E/F and BL-032D UAT; do not recreate them. P04 is Draft; do not Submit or Approve & Lock it in this slice. Test Site 1 revenue settings row (version 2) is BL-032A UAT evidence; do not delete it. Do not alter the three Test Site 1 Prelims UAT rows.
 npm run seed       # default client, cost codes, brand profile, client_id backfill
 npm start          # start API (calls db.init as fallback)
 ```

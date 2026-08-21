@@ -5,6 +5,7 @@ export const DEVELOPMENT_WORKSPACE_TABS = [
   { id: 'commercial', label: 'Commercial Events' },
   { id: 'ledger', label: 'Ledger' },
   { id: 'revenue', label: 'Revenue' },
+  { id: 'prelims', label: 'Prelims' },
   { id: 'cvr', label: 'CVR' },
 ];
 

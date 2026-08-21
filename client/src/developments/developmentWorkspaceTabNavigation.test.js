@@ -42,6 +42,7 @@ describe('developmentWorkspaceTabNavigation', () => {
       'commercial',
       'ledger',
       'revenue',
+      'prelims',
       'cvr',
     ]);
   });
