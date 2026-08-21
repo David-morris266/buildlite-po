@@ -1,10 +1,10 @@
 # BuildLite Database Reference
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
-**Last product slice fully complete:** **BL-032D — COMPLETE** (schema-v2 whole-CVR Revenue snapshot; Test Site 1 P03 lock/freeze UAT **PASSED**).  
-**Last persistence slice implemented:** **BL-033B** (`013_cost_code_classifications.sql` on `buildlite_test` only). **BL-033A design ACCEPTED.** Classification UAT **not run**.  
+**Last product slice fully complete:** **BL-033B — COMPLETE** (tenant cost-code semantic classification; Test Site 1 classification UAT **PASSED**).  
+**Last persistence slice implemented:** **BL-033B** (`013_cost_code_classifications.sql` applied on `buildlite_test` and local `buildlite_clone`). **BL-033A design ACCEPTED.**  
 **CRITICAL:** P03 is **locked** with schema-v2 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. **P04 does not exist.**  
-**NEXT:** Do not apply `013` to `buildlite_clone`. Do not classify 5231. Do not create P04. Do not start BL-033C.
+**NEXT:** Do not start BL-033C. Do not create P04. Do not switch 5231 to TIME.
 
 ---
 
@@ -24,7 +24,7 @@ Postgres is already the authority for:
 | `010_cvr_period_snapshots.sql` | `cvr_period_snapshots`, `cvr_period_snapshot_rows` | **BL-031E COMPLETE**. Schema (E.1), close engine (E.2), atomic persist on Approve & Lock (E.3), client historic reads (E.4). Test Site 1 snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. **BL-031F COMPLETE**: P02 monthly-cycle UAT **PASSED**. **BL-032D COMPLETE**: P03 is the first schema-v2 snapshot. Do not backfill legacy locked periods. |
 | `011_development_revenue_settings.sql` | `development_revenue_settings` | **BL-032A COMPLETE**. Typed development revenue strategy/settings. Additive. Default recognition policy `completion` (legacy BL-019 behaviour). `exchange` is stored only; not applied to pricing/CVR. Applied on local `buildlite_clone`. Authority-on UAT **PASSED**. No P01/P02 snapshot backfill. |
 | `012_cvr_period_snapshot_revenue.sql` | Revenue columns on `cvr_period_snapshots` + `cvr_period_snapshot_plots` | **BL-032D COMPLETE**. Additive. No default £0. No v1 backfill. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 P03 lock/freeze UAT **PASSED**. |
-| `013_cost_code_classifications.sql` | `cost_code_classifications` | **BL-033B IMPLEMENTED**. Tenant-level semantic group + forecast-driver metadata. Unmapped = UNCLASSIFIED + STANDARD_CVR (no row). OTHER is explicit. Unique `(client_id, cost_code_key)`. No FK on the text key. No backfill. Not applied to `buildlite_clone`. Not in CVR/snapshots. |
+| `013_cost_code_classifications.sql` | `cost_code_classifications` | **BL-033B COMPLETE**. Tenant-level semantic group + forecast-driver metadata. Unmapped = UNCLASSIFIED + STANDARD_CVR (no row). OTHER is explicit. Unique `(client_id, cost_code_key)`. No FK on the text key. No backfill. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 `5231` → PRELIMS + STANDARD_CVR. Not in CVR/snapshots. |
 
 Still **browser/localStorage** (not yet Postgres authority):
 
@@ -55,12 +55,12 @@ The remainder of this file is the Phase 0 / BL-006 production schema reference. 
 
 BuildLite uses a single Postgres database (`buildlite_po_db` on Render). Schema is managed via:
 
-- Versioned SQL migrations in `server/migrations/` (`001`–`013`; `001`–`003` are the BL-006 production baseline). **`013` must not be applied to `buildlite_clone` until the controlled classification UAT.** `011` and `012` are applied on local clone.
+- Versioned SQL migrations in `server/migrations/` (`001`–`013`; `001`–`003` are the BL-006 production baseline). `011`, `012`, and `013` are applied on local clone.
 - `schema_migrations` tracking table
 - `npm run migrate` and `npm run seed` scripts
 - `db.js` init aligned with production plus later Doc 67 tables (fallback when migrations have not run)
 
-**Production database was the source of truth for BL-006.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files. Later Doc 67 migrations (`004`–`013`) are additive and must also not be rewritten after apply. `013` is additive and **not applied** to local clone/UAT until the controlled classification UAT.
+**Production database was the source of truth for BL-006.** Migrations `001` and `002` are frozen; reconciliation is in `003_reconcile_production.sql`. Do not edit applied migration files. Later Doc 67 migrations (`004`–`013`) are additive and must also not be rewritten after apply. `013` is additive and **applied** on local `buildlite_clone`. Test Site 1 classification UAT **PASSED**.
 
 ---
 
