@@ -114,7 +114,7 @@ describe('Create Next Period navigation (BL-031F)', () => {
     });
   }
 
-  it('Summary success returns to the CVR Register', async () => {
+  it('Summary success returns to the CVR Register after a reporting month is chosen', async () => {
     const onBackToRegister = vi.fn();
     await act(async () => {
       root.render(
@@ -137,11 +137,62 @@ describe('Create Next Period navigation (BL-031F)', () => {
       button.click();
     });
     await flush();
-    expect(createNextCvrPeriod).toHaveBeenCalledWith(DEV.id);
+    expect(createNextCvrPeriod).not.toHaveBeenCalled();
+
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog).toBeTruthy();
+    const input = dialog.querySelector('input[type="month"]');
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    await act(async () => {
+      setter.call(input, '2026-09');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const create = [...dialog.querySelectorAll('button')].find((item) =>
+      /Create P02/i.test(item.textContent || '')
+    );
+    await act(async () => {
+      create.click();
+    });
+    await flush();
+    expect(createNextCvrPeriod).toHaveBeenCalledWith(DEV.id, { reportingMonth: '2026-09' });
     expect(onBackToRegister).toHaveBeenCalledTimes(1);
   });
 
-  it('Worksheet success returns to the CVR Register', async () => {
+  it('Summary cancel leaves the period uncreated', async () => {
+    const onBackToRegister = vi.fn();
+    await act(async () => {
+      root.render(
+        <CVRSummaryPage
+          development={DEV}
+          periodKey="P01"
+          certificatesReady
+          onBackToRegister={onBackToRegister}
+        />
+      );
+    });
+    await flush();
+    await flush();
+    const button = [...container.querySelectorAll('button')].find((item) =>
+      /Create Next Period/i.test(item.textContent || '')
+    );
+    await act(async () => {
+      button.click();
+    });
+    await flush();
+    const cancel = [...container.querySelectorAll('button')].find((item) =>
+      /^Cancel$/i.test(item.textContent || '')
+    );
+    await act(async () => {
+      cancel.click();
+    });
+    await flush();
+    expect(createNextCvrPeriod).not.toHaveBeenCalled();
+    expect(onBackToRegister).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('Worksheet success returns to the CVR Register after a reporting month is chosen', async () => {
     const onBackToRegister = vi.fn();
     const onBackToSummary = vi.fn();
     await act(async () => {
@@ -166,7 +217,23 @@ describe('Create Next Period navigation (BL-031F)', () => {
       button.click();
     });
     await flush();
-    expect(createNextCvrPeriod).toHaveBeenCalledWith(DEV.id);
+    expect(createNextCvrPeriod).not.toHaveBeenCalled();
+    const dialog = container.querySelector('[role="dialog"]');
+    const input = dialog.querySelector('input[type="month"]');
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    await act(async () => {
+      setter.call(input, '2026-09');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const create = [...dialog.querySelectorAll('button')].find((item) =>
+      /Create P02/i.test(item.textContent || '')
+    );
+    await act(async () => {
+      create.click();
+    });
+    await flush();
+    expect(createNextCvrPeriod).toHaveBeenCalledWith(DEV.id, { reportingMonth: '2026-09' });
     expect(onBackToRegister).toHaveBeenCalledTimes(1);
     expect(onBackToSummary).not.toHaveBeenCalled();
   });

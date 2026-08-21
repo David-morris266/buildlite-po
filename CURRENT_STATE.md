@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, **BL-031A–F**, **BL-032A**, **BL-032B**, **BL-032C**, **BL-032D**, **BL-033B**, and **BL-033C**. **BL-031E is COMPLETE.** **BL-031F is COMPLETE.** **BL-032A is COMPLETE.** **BL-032B is COMPLETE.** **BL-032C is COMPLETE.** **BL-032D is COMPLETE.** **BL-033A design is ACCEPTED.** **BL-033B is COMPLETE.** **BL-033C is COMPLETE.** Test Site 1 development programme UAT **PASSED**. Test Site 1 classification UAT **PASSED** (`5231` Cleaning → PRELIMS + STANDARD_CVR; CVR money unchanged). Test Site 1 P03 is the first schema-v2 whole-CVR snapshot. P04 does **not** exist. `recognitionPolicy=exchange` is **not** live CVR/accounting behaviour. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
+This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, **BL-031A–F**, **BL-032A**, **BL-032B**, **BL-032C**, **BL-032D**, **BL-033B**, **BL-033C**, and **BL-033C.1**. **BL-031E is COMPLETE.** **BL-031F is COMPLETE.** **BL-032A is COMPLETE.** **BL-032B is COMPLETE.** **BL-032C is COMPLETE.** **BL-032D is COMPLETE.** **BL-033A design is ACCEPTED.** **BL-033B is COMPLETE.** **BL-033C is COMPLETE.** **BL-033C.1 is COMPLETE.** Test Site 1 development programme UAT **PASSED**. Test Site 1 classification UAT **PASSED** (`5231` Cleaning → PRELIMS + STANDARD_CVR; CVR money unchanged). Test Site 1 P03 is the first schema-v2 whole-CVR snapshot. Test Site 1 reporting-month UAT **PASSED**: P04 is **Draft** v1 with explicit `reporting_month` **2026-08**; P01/P02/P03 remain NULL. `recognitionPolicy=exchange` is **not** live CVR/accounting behaviour. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
 
 Historic Phase 0 / BL-006 schema notes remain in `docs/DATABASE.md` and `docs/phase0/`. Do not treat those files as the current programme.
 
@@ -17,12 +17,12 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Branch | `buildlite-V1-1` |
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
-| Last completed product slice | **BL-033C — COMPLETE.** Typed `development_programme`. Test Site 1 programme UAT **PASSED**. |
-| Last implemented product slice | **BL-033C — COMPLETE.** Same slice. |
-| Last persistence slice implemented | **BL-033C** (`014_development_programme.sql`). Additive. Applied on `buildlite_test` and local `buildlite_clone`. |
+| Last completed product slice | **BL-033C.1 — COMPLETE.** Explicit CVR reporting-month selection. Test Site 1 reporting-month UAT **PASSED**. |
+| Last implemented product slice | **BL-033C.1 — COMPLETE.** Explicit YYYY-MM picker for new CVR periods. |
+| Last persistence slice implemented | **BL-033C** (`014_development_programme.sql`). Additive. Applied on `buildlite_test` and local `buildlite_clone`. BL-033C.1 adds no migration. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT** | **BL-033C.1** — explicit CVR reporting-month selection when Create Next has no safe suggestion. Do **not** start BL-033D until BL-033C.1 is complete. Do **not** create P04. Do **not** switch 5231 to TIME. Do **not** invent today or infer historic reporting months. |
+| **NEXT** | BL-033D (TIME / LUMP_SUM engine) is **not started**. Do **not** Submit or Approve & Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Historic P01/P02/P03 `reporting_month` remains NULL. |
 
 ---
 
@@ -43,7 +43,8 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-032D** | Whole-CVR Revenue-bearing snapshot | **COMPLETE.** New locks are schema **v2** or they do not lock. Server Revenue close + GP/Margin freeze into `cvr_period_snapshots` plus plot rows in `cvr_period_snapshot_plots`. Migration `012` additive; applied on `buildlite_test` and local `buildlite_clone`. Historic v1 remains Revenue unavailable. Historic v2 uses snapshot only. Portfolio remains cost-only. Test Site 1 P03 lock/freeze UAT **PASSED**. |
 | **BL-033A** | Prelims / semantic classification design | **ACCEPTED** with UNCLASSIFIED default and deferred adoption formula. Commercial Head remains tenant reporting hierarchy. Semantic Group is BuildLite engine taxonomy. |
 | **BL-033B** | Cost-code semantic classification | **COMPLETE.** `cost_code_classifications` tenant mapping `(client_id, cost_code_key)` → `semantic_group` + `forecast_driver`. Unmapped = UNCLASSIFIED + STANDARD_CVR (no row). OTHER is explicit. No CVR formula change. No Prelims engine. Migration `013` applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 classification UAT **PASSED**: `5231` Cleaning → PRELIMS + STANDARD_CVR; CVR money did not move. `forecast_driver` is a default/suggested driver only; a future Prelims line will own its actual driver. |
-| **BL-033C** | Development programme + calendar months | **COMPLETE.** Typed `development_programme` (GET seed from payload without write; PUT optimistic version). Inclusive calendar-month helpers (no proration). Test Site 1 programme UAT **PASSED**: one row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177` v1, site start 2026-09-01, first completion NULL, final completion 2029-10-01, 31 plots, 38 months. Payload unchanged. P01–P03 / 5231 / snapshots unchanged. Migration `014` applied on `buildlite_test` and local `buildlite_clone`. Reporting-month plumbing exists but is **not** a complete user workflow — **BL-033C.1** (explicit YYYY-MM picker when no suggestion) is required before BL-033D. |
+| **BL-033C** | Development programme + calendar months | **COMPLETE.** Typed `development_programme` (GET seed from payload without write; PUT optimistic version). Inclusive calendar-month helpers (no proration). Test Site 1 programme UAT **PASSED**: one row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177` v1, site start 2026-09-01, first completion NULL, final completion 2029-10-01, 31 plots, 38 months. Payload unchanged. P01–P03 / 5231 / snapshots unchanged. Migration `014` applied on `buildlite_test` and local `buildlite_clone`. |
+| **BL-033C.1** | Explicit CVR reporting-month selection | **COMPLETE.** Create Next shows a YYYY-MM dialog before creating a new period. Prefill previous+1 when safe; otherwise require an explicit choice. No today default. No period-key / historic inference. Selected month persists on the new period only. Test Site 1 reporting-month UAT **PASSED**: P04 Draft `0f513191-cd25-4812-834f-37dcf66487e0` v1, `reporting_month` **2026-08**; P01/P02/P03 remain NULL. No schema change. No Prelims / TIME engine. |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -65,7 +66,7 @@ BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when lo
 - **Development revenue settings** (`011_development_revenue_settings.sql`) — **BL-032A COMPLETE**. Typed strategy/settings row per development. Runtime uses Postgres only when `VITE_REVENUE_SERVER_AUTHORITY=true`. Default remains OFF. Migration `011` is applied on local `buildlite_clone` (additive; no backfill). Plot Master commercial fields stay on `developments.payload`.
 - **Whole-CVR Revenue snapshot** (`012_cvr_period_snapshot_revenue.sql`) — **BL-032D COMPLETE**. Additive nullable Revenue/GP columns on `cvr_period_snapshots` plus `cvr_period_snapshot_plots`. Applied on `buildlite_test` and local `buildlite_clone`. New Approve & Lock writes schema **v2** or does not lock. Historic v1 rows stay NULL (no default £0, no backfill). Test Site 1 P03 is the first v2 snapshot.
 - **Cost-code semantic classification** (`013_cost_code_classifications.sql`) — **BL-033B COMPLETE**. Tenant-level mapping only. Unmapped codes resolve as UNCLASSIFIED + STANDARD_CVR without inserting a row. Applied on `buildlite_test` and local `buildlite_clone`. Does not enter CVR close or snapshots. Test Site 1 `5231` is PRELIMS + STANDARD_CVR. `forecast_driver` is a default/suggested driver only.
-- **Development programme** (`014_development_programme.sql`) — **BL-033C COMPLETE**. Typed site start / first completion / final completion / plot count + version. GET seeds from `payload.startDate` / `targetCompletion` / `plotCount` without inserting until PUT. PUT is optimistic. Applied on `buildlite_test` and local `buildlite_clone`. Does not dual-write payload. Does not enter CVR close or snapshots. Test Site 1 has one programme row (version 1).
+- **Development programme** (`014_development_programme.sql`) — **BL-033C COMPLETE**. Typed site start / first completion / final completion / plot count + version. GET seeds from `payload.startDate` / `targetCompletion` / `plotCount` without inserting until PUT. PUT is optimistic. Applied on `buildlite_test` and local `buildlite_clone`. Does not dual-write payload. Does not enter CVR close or snapshots. Test Site 1 has one programme row (version 1). **BL-033C.1 COMPLETE** (no migration): Create Next requires an explicit YYYY-MM; Test Site 1 P04 is Draft with `reporting_month` **2026-08**.
 - Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, `VITE_CERTIFICATE_SERVER_AUTHORITY`, `VITE_CVR_SERVER_AUTHORITY`, `VITE_LEDGER_SERVER_AUTHORITY`, and `VITE_REVENUE_SERVER_AUTHORITY` for cutover (see `client/.env.example`). Repo defaults remain OFF. Local UAT uses `.env.local`. Do not commit `.env.local`.
 
 ### Browser / localStorage authority (not yet migrated)
@@ -357,7 +358,7 @@ Create Next Period now sources **persisted QS period inputs**, not the locked pe
 
 locked P01 → continued commercial activity → Create Next Period → Draft P02 → carried QS opening state → current live commercial facts → P02-specific QS judgement → movement vs frozen P01 → Submit → Approve & Lock → independent immutable P02 snapshot.
 
-P03 Draft UAT **PASSED** under BL-032C. P03 was later **locked** under BL-032D as the first schema-v2 whole-CVR snapshot. **P04 does not exist.**
+P03 Draft UAT **PASSED** under BL-032C. P03 was later **locked** under BL-032D as the first schema-v2 whole-CVR snapshot. P04 was later created under **BL-033C.1** as Draft with explicit `reporting_month` **2026-08**.
 
 ### Test Site 1 P02 monthly-cycle UAT (PASSED)
 
@@ -631,7 +632,7 @@ Live Draft/Submitted CVR Summary composes the existing Revenue engine with the e
 
 ### Test Site 1 P03 Draft UAT (PASSED)
 
-Create Next Period from locked P02 created **P03 Draft v1** (`804e7777-4249-41a4-9698-9431c8942ebc`). **P04 does not exist.** P03 has **no snapshot**. Live Revenue/GP values are Draft compose only and are **not** stored in a CVR snapshot.
+Create Next Period from locked P02 created **P03 Draft v1** (`804e7777-4249-41a4-9698-9431c8942ebc`). At that UAT P04 did not exist. P03 has **no snapshot** in this Draft record. Live Revenue/GP values are Draft compose only and are **not** stored in a CVR snapshot.
 
 **Carry-forward:** exactly **9** active QS rows copied from locked P02. Cost code **5231**: accrual **£120**; adjustment **+£520**; reason `BL-031F P02 monthly-cycle overlay`; notes empty; adjustment history **reset to empty**. P02 5231 overlay and its **£500 → £520** history entry were not altered.
 
@@ -677,7 +678,7 @@ New Approve & Lock persists schema **v2** whole-CVR snapshots: existing cost tot
 
 **Historic freeze:** human UI moved live Plot 31 after lock then restored status/dates/forecast. Plot Master `updated_at` **2026-08-21T07:35:07.993Z** is after lock. The temporary Exchanged/Reserved state is **not** retained in Postgres after restore. Locked P03 snapshot did not move. Live Revenue after restore is again Forecast **£10,444,608** / Secured **£0** / Remaining **£10,444,608** / Plots Sold **0**. Live Plot 31 is Available / forecast **£255,100** / dates empty. Live `sellingPrice` was left at **£255,100** (other 30 plots remain £0). Available KPIs ignore that leftover contractual price; frozen P03 Plot 31 sellingPrice remains NULL.
 
-**Historic protection:** P01 locked v5 snapshot `aa6839cc-eace-40dd-a011-6ca90afa7980` and P02 locked v3 snapshot `e8dea429-ff33-4218-81e6-5102bd110a7f` remain schema **v1** with all Revenue/GP fields **NULL** and **0** plot rows. Clone totals: **3** headers / **27** cost rows / **31** Revenue plot rows. CE 23 / certs 4 locked / ledger 1 batch + 2 txns / POs 10 / packages 10 unchanged. Settings row still version **2**. **P04 does not exist.**
+**Historic protection:** P01 locked v5 snapshot `aa6839cc-eace-40dd-a011-6ca90afa7980` and P02 locked v3 snapshot `e8dea429-ff33-4218-81e6-5102bd110a7f` remain schema **v1** with all Revenue/GP fields **NULL** and **0** plot rows. Clone totals at P03 lock: **3** headers / **27** cost rows / **31** Revenue plot rows. CE 23 / certs 4 locked / ledger 1 batch + 2 txns / POs 10 / packages 10 unchanged. Settings row still version **2**. P04 was later created under **BL-033C.1** as Draft.
 
 ### What BL-032D does **not** do
 
@@ -767,7 +768,7 @@ Future TIME bases accepted but **not calculated**: SITE_START / FIRST_COMPLETION
 
 `cvr_periods.reporting_month` is calendar meaning beside the period key, not a replacement for `P01`/`P02`/`P03`. Historic Test Site 1 P01/P02/P03 remain NULL and must stay so (no backfill, no today, no historic inference). New periods persist `reportingMonth` when supplied. Create Next copies previous reporting month + 1 calendar month when that previous month exists. When previous is NULL, the new period stays NULL unless the caller supplies a month.
 
-**TIME forecasting must not start until BL-033C.1 closes the reporting-month workflow.** When Create Next Period cannot safely suggest a reporting month, the user must explicitly choose a `YYYY-MM` month before the new CVR is created.
+**TIME forecasting must not start until BL-033D.** BL-033C.1 UAT **PASSED**. Create Next requires an explicit `YYYY-MM` reporting month (prefill previous+1 when safe).
 
 ### Test Site 1 programme UAT (PASSED)
 
@@ -795,18 +796,60 @@ Payload still `startDate=2026-09-01` / `targetCompletion=2029-10-01` / `plotCoun
 - monthly financial profiles / Prelims workspace / Review & Adopt
 - CVR formula or snapshot schema changes
 - Selling Costs / cash flow
-- P04 / reporting-month picker (**BL-033C.1**)
+- P04 / reporting-month picker (**BL-033C.1**) — **COMPLETE**; P04 Draft exists with `reporting_month` **2026-08**
 - switching 5231 to TIME
+
+## BL-033C.1 (explicit CVR reporting-month selection) — COMPLETE
+
+`reportingMonth` is explicit calendar meaning beside the period key (`P01` / `P02` / `P03` / `P04`). It is not inferred from today's date, from the period key, or from programme dates. Future BL-033D TIME/LUMP_SUM may use the open CVR `reportingMonth` as the default `forecastAsAt`. No Prelims / TIME engine exists yet.
+
+Create Next Period always shows a small reporting-month dialog before creating a **new** period:
+
+- If the latest period has a valid `reportingMonth`, the picker is prefilled with previous + 1 calendar month (December rolls to January). The user may change it.
+- If no safe suggestion exists (previous `reportingMonth` NULL), the picker is empty. No today default. No period-key inference. The user must explicitly choose YYYY-MM. Blank Create is disabled.
+- Cancel creates nothing.
+- Create `{nextPeriodKey}` persists the selected month on the **new** period only. Historic periods are not backfilled.
+
+Empty-draft recovery / Open Draft still opens the existing draft without inventing a month and without creating a duplicate period. Historic P01/P02/P03 remain NULL unless a separate explicit historic-correction feature is ever designed. API create may still omit `reportingMonth` for fixtures/tests; the standard Create Next UX cannot.
+
+No schema change. No Prelims engine. No TIME / LUMP_SUM calculations.
+
+### Test Site 1 reporting-month UAT (PASSED)
+
+`buildlite_clone` / Test Site 1 (`dev-1785599776666-zck5pl`). P04 is the first Test Site 1 CVR with explicit reporting-month semantics. The agreed commercial month was **user-selected** August 2026 (`2026-08`), not derived from today / P03 / P04 / programme.
+
+Cancel proof: first dialog opened empty; Create P04 disabled while blank; Cancel left P04 absent.
+
+Create: second dialog also empty; user selected **2026-08**; one Create P04 click.
+
+| Field | Value |
+|-------|-------|
+| id | `0f513191-cd25-4812-834f-37dcf66487e0` |
+| period_key | **P04** |
+| status | **draft** |
+| version | **1** |
+| reporting_month | **2026-08** |
+| submitted_at / approved_at | **NULL** |
+| snapshot | **none** |
+| QS rows | **9** active |
+
+Reporting months: P01 NULL, P02 NULL, P03 NULL, P04 **2026-08**. No historic backfill.
+
+P04 5231 carry-forward: accrual **£120**; adjustment **+£520**; reason `BL-031F P02 monthly-cycle overlay`; notes empty; adjustment history reset. P03 5231 `updated_at` remained `2026-08-20T17:37:49.233Z`. Classification still PRELIMS + STANDARD_CVR v1 (`131acfb1-d2e9-4d53-86b9-df5f4f8306b6`).
+
+Live P04 Draft (existing Cost/Revenue engines; no TIME calculation): Forecast Revenue **£10,444,608**; Forecast Cost **£2,365,423**; Gross Profit **£8,079,185**; Gross Margin **77.4%**; Cost To Complete **£2,365,303**; Forecast Variance **−£2,365,423**; Secured **£0**; Remaining Forecast **£10,444,608**.
+
+Programme unchanged: `9ff45e90-8412-4e3e-a6d9-45a0d6abd177` v1; site start 2026-09-01; first completion NULL; final 2029-10-01; 31 plots; 38 months. Snapshot totals remain **3** headers / **27** cost rows / **31** plot rows. P03 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a` schema v2 unchanged. **P05 absent.**
+
+If a later locked/current period has `reporting_month` **2026-08**, the next suggested month is **2026-09** (previous + 1 calendar month). Do not create P05 merely to prove this.
+
+Deferred UX (not fixed in this bank): Create Next can require scrolling after first interaction; `reporting_month` is persisted but not shown on the P04 Summary header.
 
 ## Next action
 
-**NEXT: BL-033C.1 — explicit CVR reporting-month selection.**
+**NEXT: BL-033D is not started.** P04 remains Draft. Do **not** Submit P04. Do **not** Approve & Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME.
 
-When Create Next Period has no safe `reportingMonth` suggestion, the user must choose a `YYYY-MM` month before the new period is created. No today-based default. No historic inference. Do **not** create P04 in that slice unless that slice’s brief says so.
-
-Only after BL-033C.1 may BL-033D TIME/LUMP_SUM forecasting start.
-
-Do **not** start BL-033D now. Do **not** create P04. Do **not** switch 5231 to TIME. Do **not** alter P01/P02/P03 `reporting_month`. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`.
+Do **not** alter P01/P02/P03 `reporting_month` except by a future explicit historic-correction feature. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`. Do not delete P04 `0f513191-cd25-4812-834f-37dcf66487e0` except by a later controlled commercial task.
 
 Do not treat Hawthorn Gardens as started. Repo flag default remains OFF. Local UAT left `VITE_REVENUE_SERVER_AUTHORITY=true` in ignored `client/.env.local` (do not commit it). Test Site 1 has one `development_revenue_settings` row (version 2, OM 350, completion) as evidence — do not delete it. Do not delete locked P03 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. Do not delete classification row `131acfb1-d2e9-4d53-86b9-df5f4f8306b6`.
 

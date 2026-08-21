@@ -58,16 +58,24 @@ function normaliseCostCodeKey(value) {
 function parseReportingMonth(value, errors) {
   if (value == null || value === "") return null;
   const raw = String(value).trim();
-  const monthMatch = raw.match(/^(\d{4})-(\d{2})$/);
-  const dateMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (monthMatch) {
-    return `${monthMatch[1]}-${monthMatch[2]}-01`;
+  const match = raw.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?$/);
+  if (!match) {
+    errors.push("reportingMonth must be YYYY-MM or YYYY-MM-DD.");
+    return null;
   }
-  if (dateMatch) {
-    return `${dateMatch[1]}-${dateMatch[2]}-01`;
+  const month = Number(match[2]);
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    errors.push("reportingMonth must be YYYY-MM or YYYY-MM-DD.");
+    return null;
   }
-  errors.push("reportingMonth must be YYYY-MM or YYYY-MM-DD.");
-  return null;
+  if (match[3]) {
+    const day = Number(match[3]);
+    if (!Number.isInteger(day) || day < 1 || day > 31) {
+      errors.push("reportingMonth must be YYYY-MM or YYYY-MM-DD.");
+      return null;
+    }
+  }
+  return `${match[1]}-${match[2]}-01`;
 }
 
 function normaliseCommentary(value, errors) {

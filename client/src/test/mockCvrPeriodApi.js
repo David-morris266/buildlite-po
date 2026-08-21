@@ -15,6 +15,7 @@ const store = {
   upsertShouldReject: false,
   upsertRejectError: null,
   lastUpsertPayload: null,
+  lastCreatePayload: null,
   seq: 0,
   listCallCount: 0,
   getCallCount: 0,
@@ -64,6 +65,7 @@ export function resetCvrPeriodApiStore() {
   store.upsertShouldReject = false;
   store.upsertRejectError = null;
   store.lastUpsertPayload = null;
+  store.lastCreatePayload = null;
   store.seq = 0;
   store.listCallCount = 0;
   store.getCallCount = 0;
@@ -164,6 +166,10 @@ export function setCvrUpsertInputsReject(error = null) {
 
 export function getLastUpsertPayload() {
   return store.lastUpsertPayload ? clone(store.lastUpsertPayload) : null;
+}
+
+export function getLastCreatePayload() {
+  return store.lastCreatePayload ? clone(store.lastCreatePayload) : null;
 }
 
 function newMockId() {
@@ -527,6 +533,7 @@ export async function listCvrPeriodInputs(developmentId, periodId) {
 
 export async function createCvrPeriodForDevelopment(developmentId, payload = {}) {
   store.createCallCount += 1;
+  store.lastCreatePayload = clone({ developmentId, payload });
   assertMutationAllowed();
   const open = listForDevelopment(developmentId).find((item) => isOpenStatus(item.status));
   if (open) {

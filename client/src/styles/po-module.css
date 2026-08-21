@@ -5849,6 +5849,16 @@
   color: var(--muted);
 }
 
+.dev-cvr-add__error {
+  margin: 12px 0 0;
+  color: var(--danger, #c0392b);
+}
+
+.dev-cvr-add input[type="month"] {
+  width: 100%;
+  max-width: 220px;
+}
+
 .dev-cvr-add__actions {
   margin-top: 16px;
 }

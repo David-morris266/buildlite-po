@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import SectionHeading from './layout/SectionHeading';
+import CvrReportingMonthDialog from './CvrReportingMonthDialog';
 import {
   buildCvrRegisterModel,
   createNextCvrPeriod,
   createOrOpenDraftPeriod,
 } from '../cvr/cvrPeriodHelpers';
+import { resolveCreateNextReportingMonthAction } from '../cvr/cvrCreateNextReportingMonth';
 import { isCvrServerAuthorityEnabled } from '../cvr/cvrPeriodAuthority';
 import {
   ensureCvrInputsReadyForPeriod,
@@ -34,6 +36,8 @@ export default function CVRRegister({
   certificatesError = '',
 }) {
   const [localRefresh, setLocalRefresh] = useState(0);
+  const [reportingMonthPrompt, setReportingMonthPrompt] = useState(null);
+  const [reportingMonthBusy, setReportingMonthBusy] = useState(false);
 
   useEffect(() => {
     if (!isCvrServerAuthorityEnabled()) return undefined;
@@ -82,22 +86,43 @@ export default function CVRRegister({
     onChanged?.();
   }
 
+  async function completeCreate(result) {
+    if (!result.ok) {
+      window.alert(result.errors?.[0] || 'Could not create CVR period.');
+      return false;
+    }
+    setReportingMonthPrompt(null);
+    refresh();
+    onOpenPeriod?.(result.periodKey);
+    return true;
+  }
+
   async function handleCreatePeriod() {
     if (!register.ready) return;
 
-    const result = await Promise.resolve(
-      register.canCreateNext
-        ? createNextCvrPeriod(development.id)
-        : createOrOpenDraftPeriod(development.id)
-    );
-
-    if (!result.ok) {
-      window.alert(result.errors?.[0] || 'Could not create CVR period.');
+    const action = resolveCreateNextReportingMonthAction(development.id);
+    if (action.kind === 'recover') {
+      const result = await Promise.resolve(createOrOpenDraftPeriod(development.id));
+      await completeCreate(result);
       return;
     }
+    if (action.kind === 'blocked') {
+      window.alert(action.reason || 'Could not create CVR period.');
+      return;
+    }
+    setReportingMonthPrompt(action);
+  }
 
-    refresh();
-    onOpenPeriod?.(result.periodKey);
+  async function handleConfirmReportingMonth(reportingMonth) {
+    setReportingMonthBusy(true);
+    try {
+      const result = await Promise.resolve(
+        createNextCvrPeriod(development.id, { reportingMonth })
+      );
+      await completeCreate(result);
+    } finally {
+      setReportingMonthBusy(false);
+    }
   }
 
   const primaryActionLabel = register.draftPeriodKey
@@ -122,6 +147,7 @@ export default function CVRRegister({
   }, [onPrimaryActionChange, primaryActionLabel, register.draftPeriodKey, register.ready]);
 
   return (
+    <>
     <div className="dev-cvr-register dev-cvr-workspace">
       <SectionHeading
         title="CVR Register"
@@ -205,5 +231,17 @@ export default function CVRRegister({
         </table>
       </div>
     </div>
+    <CvrReportingMonthDialog
+      open={Boolean(reportingMonthPrompt)}
+      nextPeriodKey={reportingMonthPrompt?.nextPeriodKey || ''}
+      suggestedMonth={reportingMonthPrompt?.suggestedMonth || ''}
+      busy={reportingMonthBusy}
+      onCancel={() => {
+        if (reportingMonthBusy) return;
+        setReportingMonthPrompt(null);
+      }}
+      onConfirm={handleConfirmReportingMonth}
+    />
+    </>
   );
 }

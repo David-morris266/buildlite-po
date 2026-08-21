@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, memo } from 'react';
 import ApplicationPageHeader from './layout/ApplicationPageHeader';
+import CvrReportingMonthDialog from './CvrReportingMonthDialog';
 import CVRTable from './CVRTable';
 import CostCentreDrawer from './CostCentreDrawer';
 import BudgetEditor from './BudgetEditor';
@@ -18,6 +19,7 @@ import {
   buildCvrPeriodHeaderMeta,
   createNextCvrPeriod,
 } from '../cvr/cvrPeriodHelpers';
+import { resolveCreateNextReportingMonthAction } from '../cvr/cvrCreateNextReportingMonth';
 import {
   approveCvrPeriod,
   getCvrPeriod,
@@ -228,6 +230,8 @@ export default function CVRWorkspace({
   const [notes, setNotes] = useState('');
   const [dialog, setDialog] = useState(null);
   const [rejectComment, setRejectComment] = useState('');
+  const [reportingMonthPrompt, setReportingMonthPrompt] = useState(null);
+  const [reportingMonthBusy, setReportingMonthBusy] = useState(false);
 
   const period = useMemo(() => {
     void refreshToken;
@@ -497,13 +501,40 @@ export default function CVRWorkspace({
   }
 
   async function handleCreateNextPeriod() {
-    const result = await Promise.resolve(createNextCvrPeriod(development.id));
-    if (!result.ok) {
-      window.alert(result.errors?.[0] || 'Could not create next CVR period.');
+    const action = resolveCreateNextReportingMonthAction(development.id);
+    if (action.kind === 'recover') {
+      const result = await Promise.resolve(createNextCvrPeriod(development.id));
+      if (!result.ok) {
+        window.alert(result.errors?.[0] || 'Could not create next CVR period.');
+        return;
+      }
+      refresh();
+      onBackToRegister?.();
       return;
     }
-    refresh();
-    onBackToRegister?.();
+    if (action.kind === 'blocked') {
+      window.alert(action.reason || 'Could not create next CVR period.');
+      return;
+    }
+    setReportingMonthPrompt(action);
+  }
+
+  async function handleConfirmReportingMonth(reportingMonth) {
+    setReportingMonthBusy(true);
+    try {
+      const result = await Promise.resolve(
+        createNextCvrPeriod(development.id, { reportingMonth })
+      );
+      if (!result.ok) {
+        window.alert(result.errors?.[0] || 'Could not create next CVR period.');
+        return;
+      }
+      setReportingMonthPrompt(null);
+      refresh();
+      onBackToRegister?.();
+    } finally {
+      setReportingMonthBusy(false);
+    }
   }
 
   if (!workspace) return null;
@@ -798,6 +829,18 @@ export default function CVRWorkspace({
           </label>
         </WorkflowDialog>
       ) : null}
+
+      <CvrReportingMonthDialog
+        open={Boolean(reportingMonthPrompt)}
+        nextPeriodKey={reportingMonthPrompt?.nextPeriodKey || ''}
+        suggestedMonth={reportingMonthPrompt?.suggestedMonth || ''}
+        busy={reportingMonthBusy}
+        onCancel={() => {
+          if (reportingMonthBusy) return;
+          setReportingMonthPrompt(null);
+        }}
+        onConfirm={handleConfirmReportingMonth}
+      />
     </div>
   );
 }

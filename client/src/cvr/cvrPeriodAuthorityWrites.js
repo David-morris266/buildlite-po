@@ -25,6 +25,7 @@ import {
 } from './cvrPeriodServerMutations';
 import { formatNextPeriodKey } from './cvrPeriodStatus';
 import { reportingMonthForNextCvrPeriod } from './cvrReportingMonth';
+import { toYearMonth } from '../programme/programmeCalendar';
 
 function periodNotFound() {
   return { ok: false, errors: ['CVR period not found.'] };
@@ -235,7 +236,15 @@ export async function createDraftPeriodOnServer(developmentId, {
 
   const nextKey = formatNextPeriodKey(periodKeys || []);
   const commentary = mapLocalCommentary(sourcePeriod?.commercialCommentary);
-  const nextReportingMonth = reportingMonthForNextCvrPeriod(sourcePeriod, reportingMonth);
+  let nextReportingMonth = null;
+  if (reportingMonth != null && String(reportingMonth).trim() !== '') {
+    nextReportingMonth = toYearMonth(reportingMonth);
+    if (!nextReportingMonth) {
+      return { ok: false, errors: ['Reporting month must be YYYY-MM.'] };
+    }
+  } else {
+    nextReportingMonth = reportingMonthForNextCvrPeriod(sourcePeriod);
+  }
   const created = await createServerCvrPeriod(developmentId, {
     periodKey: nextKey,
     periodLabel: nextKey,

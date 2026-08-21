@@ -289,3 +289,4 @@ export function buildCvrPortfolioModel(pos = []) {
 }
 
 export { createOrOpenDraftPeriod, createNextCvrPeriod };
+export { resolveCreateNextReportingMonthAction } from './cvrCreateNextReportingMonth';

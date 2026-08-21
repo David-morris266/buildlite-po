@@ -18,8 +18,17 @@ describe('BL-033C programme calendar helpers', () => {
     expect(toYearMonth('2026-09-15')).toBe('2026-09');
   });
 
+  it('does not prorate and rejects inverted spans', () => {
+    expect(inclusiveCalendarMonthCount('2029-10-01', '2026-09-01')).toBeNull();
+    expect(toYearMonth('2026-09-15')).toBe('2026-09');
+  });
+
   it('does not invent today as the next reporting month', () => {
     expect(suggestNextReportingMonth('2026-01-01')).toBe('2026-02');
     expect(suggestNextReportingMonth(null)).toBeNull();
+  });
+
+  it('rolls December into January of the next year', () => {
+    expect(suggestNextReportingMonth('2026-12')).toBe('2027-01');
   });
 });

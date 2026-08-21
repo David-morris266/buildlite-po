@@ -47,6 +47,10 @@ describe('BL-033C CVR, snapshot, and classification non-interference', () => {
       const source = readFileSync(join(dir, file), 'utf8');
       expect(source).not.toMatch(/calculateTimeForecast|calculateLumpSumForecast|development_prelims_items/);
     }
+    const reportingMonth = readFileSync(join(dir, 'cvrReportingMonth.js'), 'utf8');
+    const createNext = readFileSync(join(dir, 'cvrCreateNextReportingMonth.js'), 'utf8');
+    expect(reportingMonth).not.toMatch(/calculateTimeForecast|calculateLumpSumForecast|development_prelims_items/);
+    expect(createNext).not.toMatch(/calculateTimeForecast|calculateLumpSumForecast|development_prelims_items/);
   });
 
   it('keeps P01/P02 v1 snapshots cost-only and P03 v2 Revenue snapshots intact', () => {

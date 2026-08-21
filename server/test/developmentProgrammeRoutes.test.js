@@ -374,6 +374,29 @@ if (!isDbConfigured()) {
     assert.ok(untouched.rows.every((row) => row.reporting_month == null));
   });
 
+  test("invalid reportingMonth is rejected and omitted reportingMonth stays null", async () => {
+    const active = await getActiveClient();
+    const invalidId = await createDevelopment(active, testSite1Payload());
+    const invalid = await request(app)
+      .post(`/api/developments/${invalidId}/cvr/periods`)
+      .send({ periodKey: "P01", reportingMonth: "2026-13" });
+    assert.equal(invalid.status, 400);
+    assert.match(String(invalid.body?.message || invalid.body?.errors || ""), /reportingMonth/i);
+
+    const keyId = await createDevelopment(active, testSite1Payload());
+    const fromKey = await request(app)
+      .post(`/api/developments/${keyId}/cvr/periods`)
+      .send({ periodKey: "P03", reportingMonth: "P03" });
+    assert.equal(fromKey.status, 400);
+
+    const omittedId = await createDevelopment(active, testSite1Payload());
+    const omitted = await request(app)
+      .post(`/api/developments/${omittedId}/cvr/periods`)
+      .send({ periodKey: "P01" });
+    assert.equal(omitted.status, 201);
+    assert.equal(omitted.body.reportingMonth, null);
+  });
+
   test("programme writes do not create snapshot rows", async () => {
     const active = await getActiveClient();
     const developmentId = await createDevelopment(active, testSite1Payload());

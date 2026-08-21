@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, memo } from 'react';
 import ApplicationPageHeader from './layout/ApplicationPageHeader';
+import CvrReportingMonthDialog from './CvrReportingMonthDialog';
 import { listPOs } from '../api';
 import { subscribeCommercialChanged } from '../commercial/commercialEvents';
 import { buildCvrSummaryModel } from '../cvr/cvrSummaryHelpers';
@@ -11,6 +12,7 @@ import {
   saveCvrPeriodCommentary,
   submitCvrPeriod,
 } from '../cvr/cvrPeriodStore';
+import { resolveCreateNextReportingMonthAction } from '../cvr/cvrCreateNextReportingMonth';
 import {
   updateCostCentre,
   upsertAutoCostCentre,
@@ -172,6 +174,8 @@ export default function CVRSummaryPage({
   const [localRefresh, setLocalRefresh] = useState(0);
   const [selectedRow, setSelectedRow] = useState(null);
   const [rejectOpen, setRejectOpen] = useState(false);
+  const [reportingMonthPrompt, setReportingMonthPrompt] = useState(null);
+  const [reportingMonthBusy, setReportingMonthBusy] = useState(false);
   const [commentary, setCommentary] = useState({
     keyCommercialIssues: '',
     commercialOpportunities: '',
@@ -299,13 +303,40 @@ export default function CVRSummaryPage({
   }
 
   async function handleCreateNextPeriod() {
-    const result = await Promise.resolve(createNextCvrPeriod(development.id));
-    if (!result.ok) {
-      window.alert(result.errors?.[0] || 'Could not create next CVR period.');
+    const action = resolveCreateNextReportingMonthAction(development.id);
+    if (action.kind === 'recover') {
+      const result = await Promise.resolve(createNextCvrPeriod(development.id));
+      if (!result.ok) {
+        window.alert(result.errors?.[0] || 'Could not create next CVR period.');
+        return;
+      }
+      refresh();
+      onBackToRegister?.();
       return;
     }
-    refresh();
-    onBackToRegister?.();
+    if (action.kind === 'blocked') {
+      window.alert(action.reason || 'Could not create next CVR period.');
+      return;
+    }
+    setReportingMonthPrompt(action);
+  }
+
+  async function handleConfirmReportingMonth(reportingMonth) {
+    setReportingMonthBusy(true);
+    try {
+      const result = await Promise.resolve(
+        createNextCvrPeriod(development.id, { reportingMonth })
+      );
+      if (!result.ok) {
+        window.alert(result.errors?.[0] || 'Could not create next CVR period.');
+        return;
+      }
+      setReportingMonthPrompt(null);
+      refresh();
+      onBackToRegister?.();
+    } finally {
+      setReportingMonthBusy(false);
+    }
   }
 
   async function handleCommentaryBlur(field) {
@@ -846,6 +877,17 @@ export default function CVRSummaryPage({
         open={rejectOpen}
         onCancel={() => setRejectOpen(false)}
         onConfirm={handleReject}
+      />
+      <CvrReportingMonthDialog
+        open={Boolean(reportingMonthPrompt)}
+        nextPeriodKey={reportingMonthPrompt?.nextPeriodKey || ''}
+        suggestedMonth={reportingMonthPrompt?.suggestedMonth || ''}
+        busy={reportingMonthBusy}
+        onCancel={() => {
+          if (reportingMonthBusy) return;
+          setReportingMonthPrompt(null);
+        }}
+        onConfirm={handleConfirmReportingMonth}
       />
     </div>
   );
