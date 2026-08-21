@@ -67,6 +67,7 @@ export const ADMIN_VIEWS = [
   'clients',
   'users',
   'approval-settings',
+  'prelims-templates',
   'developer-tools',
 ];
 
@@ -89,6 +90,7 @@ export function getAdminViewTitle(view) {
     clients: 'Clients',
     users: 'Users',
     'approval-settings': 'Approval Settings',
+    'prelims-templates': 'Prelims Templates',
     'developer-tools': 'Developer Tools',
   };
   return titles[view] || 'Administration';

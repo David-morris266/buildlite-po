@@ -15,6 +15,7 @@ import AdminSuppliersPage from './AdminSuppliersPage';
 import AdminClientsPage from './AdminClientsPage';
 import AdminUsersPage from './AdminUsersPage';
 import AdminApprovalSettingsPage from './AdminApprovalSettingsPage';
+import AdminPrelimsTemplatesPage from './AdminPrelimsTemplatesPage';
 import AdminSetupDataImportPage from './AdminSetupDataImportPage';
 
 const showDeveloperTools = !import.meta.env.PROD;
@@ -143,6 +144,13 @@ export default function AdministrationModule({
     return (
       <AdministrationWorkspace>
         <AdminApprovalSettingsPage onBack={goToDashboard} />
+      </AdministrationWorkspace>
+    );
+  }
+  if (view === 'prelims-templates') {
+    return (
+      <AdministrationWorkspace>
+        <AdminPrelimsTemplatesPage onBack={goToDashboard} />
       </AdministrationWorkspace>
     );
   }

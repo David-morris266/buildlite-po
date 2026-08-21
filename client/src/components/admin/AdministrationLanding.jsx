@@ -34,6 +34,13 @@ const CARD_META = {
     accent: 'company',
     status: 'Placeholder',
   },
+  'prelims-templates': {
+    icon: '📐',
+    title: 'Prelims Templates',
+    description: 'BuildLite Standard and company-owned Prelims structures.',
+    accent: 'commercial',
+    status: 'Foundation',
+  },
   'commercial-structure': {
     icon: '🧭',
     title: 'Commercial Cost Structure',
@@ -98,6 +105,7 @@ const GROUPS = [
       'commercial-structure',
       'cost-codes',
       'commercial-behaviour',
+      'prelims-templates',
       'reporting-preview',
       'validation-dashboard',
     ],

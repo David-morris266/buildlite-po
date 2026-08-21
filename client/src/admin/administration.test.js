@@ -216,6 +216,7 @@ describe('admin navigation helpers', () => {
     expect(ADMIN_VIEWS).toContain('reporting-preview');
     expect(ADMIN_VIEWS).toContain('setup-data-import');
     expect(ADMIN_VIEWS).toContain('setup-assistant');
+    expect(ADMIN_VIEWS).toContain('prelims-templates');
     expect(isAdminView('suppliers')).toBe(true);
     expect(isAdminView('unknown')).toBe(false);
   });

@@ -21,6 +21,7 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 | `013_cost_code_classifications.sql` | BL-033B: tenant-level `cost_code_classifications` (additive; no backfill). COMPLETE. Unmapped = UNCLASSIFIED + STANDARD_CVR (no row). Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 classification UAT **PASSED** (`5231` → PRELIMS + STANDARD_CVR; CVR money unchanged). |
 | `014_development_programme.sql` | BL-033C: typed `development_programme` (additive; no payload backfill). COMPLETE. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 programme UAT **PASSED**. Does not alter CVR periods, snapshots, or `013`. **BL-033C.1 COMPLETE** (no new migration): Create Next reporting-month picker; Test Site 1 P04 Draft `reporting_month` **2026-08**. |
 | `015_development_prelims_items.sql` | BL-033D.1: `development_prelims_items` TIME / LUMP_SUM proposal lines (additive; no calculated-money columns). COMPLETE. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 Prelims UAT **PASSED**. Does not alter CVR, snapshots, programme, or classification. |
+| `016_client_prelims_templates.sql` | BL-033D.x.1: tenant-owned company Prelims templates + lines (additive). IMPLEMENTED — awaiting company-template UAT. Applied on `buildlite_test` only. **Do not apply to clone.** Does not alter CVR, snapshots, programme, classification, or `development_prelims_items`. BuildLite Standard is a product-owned application definition, not tenant rows. |
 
 ## Before applying to production
 
