@@ -205,7 +205,9 @@ export function buildServerCvrPeriodFixture(overrides = {}) {
     developmentId: overrides.developmentId || 'dev-cvr-b',
     periodKey: overrides.periodKey || 'P01',
     periodLabel: overrides.periodLabel || 'P01',
-    reportingMonth: overrides.reportingMonth || '2026-01-01',
+    reportingMonth: Object.prototype.hasOwnProperty.call(overrides, 'reportingMonth')
+      ? overrides.reportingMonth
+      : '2026-01-01',
     status: overrides.status || 'draft',
     version: overrides.version ?? 1,
     commentary: {

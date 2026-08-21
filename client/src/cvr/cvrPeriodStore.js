@@ -249,7 +249,7 @@ function sourcePeriodForNextDraft(developmentId) {
   return getLatestLockedCvrPeriod(developmentId) || periods[periods.length - 1] || null;
 }
 
-async function createOrOpenDraftPeriodOnServer(developmentId) {
+async function createOrOpenDraftPeriodOnServer(developmentId, options = {}) {
   const existingDraft = findDraftCvrPeriod(developmentId);
   if (existingDraft) {
     return recoverOrOpenDraftPeriodOnServer(developmentId, {
@@ -261,16 +261,17 @@ async function createOrOpenDraftPeriodOnServer(developmentId) {
   return createDraftPeriodOnServer(developmentId, {
     periodKeys: periods.map((item) => item.periodKey),
     sourcePeriod: sourcePeriodForNextDraft(developmentId),
+    reportingMonth: options.reportingMonth,
   });
 }
 
-export function createOrOpenDraftPeriod(developmentId) {
+export function createOrOpenDraftPeriod(developmentId, options = {}) {
   const blocked = assertCvrPeriodReadsReady(developmentId);
   if (!blocked.ok) return blocked;
 
   if (isCvrServerAuthorityEnabled()) {
     return withDraftCreateLock(developmentId, () =>
-      createOrOpenDraftPeriodOnServer(developmentId)
+      createOrOpenDraftPeriodOnServer(developmentId, options)
     );
   }
   const existingDraft = findDraftCvrPeriod(developmentId);
@@ -300,7 +301,7 @@ export function createOrOpenDraftPeriod(developmentId) {
   return { ok: true, periodKey: nextKey, opened: false };
 }
 
-export function createNextCvrPeriod(developmentId) {
+export function createNextCvrPeriod(developmentId, options = {}) {
   const blocked = assertCvrPeriodReadsReady(developmentId);
   if (!blocked.ok) return blocked;
 
@@ -311,7 +312,7 @@ export function createNextCvrPeriod(developmentId) {
       if (!gate.ok && !gate.draftPeriodKey) {
         return { ok: false, errors: [gate.reason] };
       }
-      return createOrOpenDraftPeriodOnServer(developmentId);
+      return createOrOpenDraftPeriodOnServer(developmentId, options);
     });
   }
   const periods = listCvrPeriods(developmentId);
@@ -326,7 +327,7 @@ export function createNextCvrPeriod(developmentId) {
     return { ok: false, errors: [gate.reason] };
   }
 
-  return createOrOpenDraftPeriod(developmentId);
+  return createOrOpenDraftPeriod(developmentId, options);
 }
 
 export function __resetCvrDraftCreateLockForTests() {

@@ -19,6 +19,7 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 | `011_development_revenue_settings.sql` | BL-032A: `development_revenue_settings` (additive). COMPLETE. Default recognition policy `completion`. Applied on local `buildlite_clone`. Test Site 1 authority-on UAT **PASSED**. |
 | `012_cvr_period_snapshot_revenue.sql` | BL-032D: whole-CVR Revenue snapshot columns + `cvr_period_snapshot_plots` (additive; no default £0; no v1 backfill). COMPLETE. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 P03 lock/freeze UAT **PASSED**. |
 | `013_cost_code_classifications.sql` | BL-033B: tenant-level `cost_code_classifications` (additive; no backfill). COMPLETE. Unmapped = UNCLASSIFIED + STANDARD_CVR (no row). Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 classification UAT **PASSED** (`5231` → PRELIMS + STANDARD_CVR; CVR money unchanged). |
+| `014_development_programme.sql` | BL-033C: typed `development_programme` (additive; no payload backfill). IMPLEMENTED, awaiting programme UAT. **Not COMPLETE.** Applied on `buildlite_test` via tests. **Next controlled step: apply to `buildlite_clone` only.** Does not alter CVR periods, snapshots, or `013`. Reporting-month picker (**BL-033C.1**) is still required before TIME forecasting. |
 
 ## Before applying to production
 

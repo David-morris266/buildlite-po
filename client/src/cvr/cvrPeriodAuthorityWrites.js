@@ -24,6 +24,7 @@ import {
   upsertServerCvrPeriodInputs,
 } from './cvrPeriodServerMutations';
 import { formatNextPeriodKey } from './cvrPeriodStatus';
+import { reportingMonthForNextCvrPeriod } from './cvrReportingMonth';
 
 function periodNotFound() {
   return { ok: false, errors: ['CVR period not found.'] };
@@ -225,6 +226,7 @@ export async function recoverOrOpenDraftPeriodOnServer(developmentId, {
 export async function createDraftPeriodOnServer(developmentId, {
   periodKeys,
   sourcePeriod,
+  reportingMonth,
 } = {}) {
   if (sourcePeriod?.id) {
     const source = await loadPersistedQsInputs(developmentId, sourcePeriod);
@@ -233,10 +235,12 @@ export async function createDraftPeriodOnServer(developmentId, {
 
   const nextKey = formatNextPeriodKey(periodKeys || []);
   const commentary = mapLocalCommentary(sourcePeriod?.commercialCommentary);
+  const nextReportingMonth = reportingMonthForNextCvrPeriod(sourcePeriod, reportingMonth);
   const created = await createServerCvrPeriod(developmentId, {
     periodKey: nextKey,
     periodLabel: nextKey,
     commentary,
+    ...(nextReportingMonth ? { reportingMonth: nextReportingMonth } : {}),
   });
   if (!created.ok) return created;
 
