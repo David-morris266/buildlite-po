@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, **BL-031A–F**, **BL-032A**, **BL-032B**, **BL-032C**, and **BL-032D implementation**. **BL-031E is COMPLETE.** **BL-031F is COMPLETE.** **BL-032A is COMPLETE.** **BL-032B is COMPLETE.** **BL-032C is COMPLETE.** **BL-032D is IMPLEMENTED / awaiting P03 lock/freeze UAT.** Do **not** call BL-032D COMPLETE until human P03 Submit / Approve & Lock / freeze UAT passes. P03 remains **Draft** with **no snapshot**. Do **not** Submit / Approve & Lock P03 until that UAT. Do **not** apply migration `012` to `buildlite_clone` until the controlled clone step. `recognitionPolicy=exchange` is **not** live CVR/accounting behaviour. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
+This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, **BL-031A–F**, **BL-032A**, **BL-032B**, **BL-032C**, and **BL-032D**. **BL-031E is COMPLETE.** **BL-031F is COMPLETE.** **BL-032A is COMPLETE.** **BL-032B is COMPLETE.** **BL-032C is COMPLETE.** **BL-032D is COMPLETE.** Test Site 1 P03 is the first schema-v2 whole-CVR snapshot. P04 does **not** exist. `recognitionPolicy=exchange` is **not** live CVR/accounting behaviour. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
 
 Historic Phase 0 / BL-006 schema notes remain in `docs/DATABASE.md` and `docs/phase0/`. Do not treat those files as the current programme.
 
@@ -17,12 +17,12 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Branch | `buildlite-V1-1` |
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
-| Last completed product slice | **BL-032C — COMPLETE.** Live Draft/Submitted CVR Revenue + Gross Profit. Test Site 1 P03 Draft UAT **PASSED**. |
-| Last implemented product slice | **BL-032D — IMPLEMENTED / awaiting P03 lock/freeze UAT.** Whole-CVR schema-v2 Revenue-bearing snapshot. Tests/build passed. Do **not** mark COMPLETE until human P03 lock/freeze UAT. P03 remains Draft with no snapshot. |
-| Last persistence slice implemented | **BL-032D implementation** (`012_cvr_period_snapshot_revenue.sql`). Additive Revenue columns + `cvr_period_snapshot_plots`. Applied on `buildlite_test` only. **Not applied** to local `buildlite_clone`. BL-032A `011` remains applied on clone. |
+| Last completed product slice | **BL-032D — COMPLETE.** Whole-CVR schema-v2 Revenue-bearing snapshot. Test Site 1 P03 lock/freeze UAT **PASSED**. |
+| Last implemented product slice | **BL-032D — COMPLETE.** Same slice. |
+| Last persistence slice implemented | **BL-032D** (`012_cvr_period_snapshot_revenue.sql`). Additive Revenue columns + `cvr_period_snapshot_plots`. Applied on `buildlite_test` and local `buildlite_clone`. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT** | **Controlled clone apply of migration 012**, then **P03 Submit / Approve & Lock / freeze UAT**. Do **not** Submit / Approve & Lock P03 until 012 is on clone. Do **not** create P04. Deferred: CVR navigation UI/UX. |
+| **NEXT** | **Do not create P04 in this slice.** Recommended later: Create Next Period P04 from locked P03 (v2→v2 Revenue movement). Deferred: CVR navigation UI/UX. |
 
 ---
 
@@ -39,8 +39,8 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-031** | CVR & Ledger persistence | **BL-031A–F complete.** Authority-on live CVR/ledger (**D**), immutable snapshots (**E**), next-period carry-forward (**F**). Snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. P02 monthly-cycle UAT **PASSED**. P03 Draft UAT **PASSED** under BL-032C. |
 | **BL-032A** | Revenue settings persistence (foundation) | **COMPLETE.** `development_revenue_settings` + GET/PUT. Authority-on UAT **PASSED** on Test Site 1. `VITE_REVENUE_SERVER_AUTHORITY` default OFF. Plot commercial fields remain on `developments.payload`. Categories remain local. Not in CVR. `recognitionPolicy=exchange` is stored only; it is not live behaviour. |
 | **BL-032B** | Private plot revenue lifecycle / Secured Revenue | **COMPLETE.** Same-price and differing-price Plot 31 UATs **PASSED**. Available/Reserved forecast-only; Exchanged/Completed secured at contractual `sellingPrice`; Completion is not a second money event; differing exchange price substitutes forecast (−£5,100 proven). Dashboard: Forecast / Secured / Remaining. Payload dates `reservedAt` / `exchangedAt` / `completedAt`. Selling Price HTML `step` `0.01`. |
-| **BL-032C** | Live CVR Revenue + Gross Profit | **COMPLETE.** Live Draft/Submitted CVR Summary composes the existing Revenue engine with existing CVR `finalForecast`. Shows Forecast / Secured / Remaining Revenue, Forecast Cost, Gross Profit, Gross Margin % (1 d.p.), Plots Sold. GP = Forecast Revenue − `finalForecast`. Locked v1 P01/P02 remain Revenue/GP/Margin unavailable (no live fallback, no £0). Revenue/GP movement vs v1 previous is unavailable; cost movement continues. Submit is not blocked if Revenue is unavailable. Snapshot schema stays v1. Close-engine keys remain cost-only. Portfolio remains cost-only. Test Site 1 P03 Draft UAT **PASSED**. P03 remains Draft with no snapshot. |
-| **BL-032D** | Whole-CVR Revenue-bearing snapshot | **IMPLEMENTED / awaiting P03 lock/freeze UAT.** New locks are schema **v2** or they do not lock. Server Revenue close + GP/Margin freeze into `cvr_period_snapshots` plus plot rows in `cvr_period_snapshot_plots`. Migration `012` additive; **not applied** to `buildlite_clone`. Historic v1 remains Revenue unavailable. Historic v2 uses snapshot only. Portfolio remains cost-only. Do **not** mark COMPLETE until P03 lock/freeze UAT. |
+| **BL-032C** | Live CVR Revenue + Gross Profit | **COMPLETE.** Live Draft/Submitted CVR Summary composes the existing Revenue engine with existing CVR `finalForecast`. Shows Forecast / Secured / Remaining Revenue, Forecast Cost, Gross Profit, Gross Margin % (1 d.p.), Plots Sold. GP = Forecast Revenue − `finalForecast`. Locked v1 P01/P02 remain Revenue/GP/Margin unavailable (no live fallback, no £0). Revenue/GP movement vs v1 previous is unavailable; cost movement continues. Submit is not blocked if Revenue is unavailable. Close-engine keys remain cost-only. Portfolio remains cost-only. Test Site 1 P03 Draft UAT **PASSED**. P03 was later locked under BL-032D. |
+| **BL-032D** | Whole-CVR Revenue-bearing snapshot | **COMPLETE.** New locks are schema **v2** or they do not lock. Server Revenue close + GP/Margin freeze into `cvr_period_snapshots` plus plot rows in `cvr_period_snapshot_plots`. Migration `012` additive; applied on `buildlite_test` and local `buildlite_clone`. Historic v1 remains Revenue unavailable. Historic v2 uses snapshot only. Portfolio remains cost-only. Test Site 1 P03 lock/freeze UAT **PASSED**. |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -60,13 +60,13 @@ BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when lo
 - **CVR periods + purchase ledger tables** (`009_cvr_and_purchase_ledger.sql`) — **BL-031A–D**. Runtime CVR/ledger use Postgres when `VITE_CVR_SERVER_AUTHORITY` / `VITE_LEDGER_SERVER_AUTHORITY` are ON.
 - **CVR snapshots** (`010_cvr_period_snapshots.sql`) — **BL-031E COMPLETE**. Approve & Lock persists an immutable snapshot atomically. Locked periods render from that snapshot (or explicit historic-unavailable if none). Test Site 1 snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. **BL-031F COMPLETE**: P02 monthly-cycle UAT **PASSED** (two independent locked snapshots on Test Site 1).
 - **Development revenue settings** (`011_development_revenue_settings.sql`) — **BL-032A COMPLETE**. Typed strategy/settings row per development. Runtime uses Postgres only when `VITE_REVENUE_SERVER_AUTHORITY=true`. Default remains OFF. Migration `011` is applied on local `buildlite_clone` (additive; no backfill). Plot Master commercial fields stay on `developments.payload`.
-- **Whole-CVR Revenue snapshot** (`012_cvr_period_snapshot_revenue.sql`) — **BL-032D IMPLEMENTED / awaiting P03 lock/freeze UAT**. Additive nullable Revenue/GP columns on `cvr_period_snapshots` plus `cvr_period_snapshot_plots`. Applied on `buildlite_test` only. **Not applied** to local `buildlite_clone`. New Approve & Lock writes schema **v2** or does not lock. Historic v1 rows stay NULL (no default £0, no backfill).
+- **Whole-CVR Revenue snapshot** (`012_cvr_period_snapshot_revenue.sql`) — **BL-032D COMPLETE**. Additive nullable Revenue/GP columns on `cvr_period_snapshots` plus `cvr_period_snapshot_plots`. Applied on `buildlite_test` and local `buildlite_clone`. New Approve & Lock writes schema **v2** or does not lock. Historic v1 rows stay NULL (no default £0, no backfill). Test Site 1 P03 is the first v2 snapshot.
 - Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, `VITE_CERTIFICATE_SERVER_AUTHORITY`, `VITE_CVR_SERVER_AUTHORITY`, `VITE_LEDGER_SERVER_AUTHORITY`, and `VITE_REVENUE_SERVER_AUTHORITY` for cutover (see `client/.env.example`). Repo defaults remain OFF. Local UAT uses `.env.local`. Do not commit `.env.local`.
 
 ### Browser / localStorage authority (not yet migrated)
 
 - CVR periods / cost centres (`buildlite_cvr_v1`) and purchase ledger (`buildlite_purchase_ledgers_v1`) — backup/rollback evidence after BL-031D. Runtime uses Postgres when the CVR/ledger flags are ON (no localStorage fallback or dual-write).
-- Also still local: revenue categories / administration master data, setup drafts, Commercial Assistant dispositions. Development revenue **strategy/settings** use Postgres when `VITE_REVENUE_SERVER_AUTHORITY=true` (no localStorage fallback). They remain localStorage (`buildlite_revenue_v1`) when the flag is OFF. Plot-level commercial fields remain on Plot Master / `developments.payload` (including BL-032B lifecycle dates). Dashboard Secured Revenue is status/`sellingPrice` derived and is **not** driven by `recognitionPolicy`. Internal `calculateRecognisedRevenue` remains Completed-only for compatibility. `recognitionPolicy=exchange` is not live CVR/accounting behaviour. Live Draft/Submitted CVR shows Revenue/GP (BL-032C COMPLETE). New locked snapshots are schema v2 whole-CVR (BL-032D implemented; P03 lock/freeze UAT outstanding). Locked v1 snapshots do not store Revenue.
+- Also still local: revenue categories / administration master data, setup drafts, Commercial Assistant dispositions. Development revenue **strategy/settings** use Postgres when `VITE_REVENUE_SERVER_AUTHORITY=true` (no localStorage fallback). They remain localStorage (`buildlite_revenue_v1`) when the flag is OFF. Plot-level commercial fields remain on Plot Master / `developments.payload` (including BL-032B lifecycle dates). Dashboard Secured Revenue is status/`sellingPrice` derived and is **not** driven by `recognitionPolicy`. Internal `calculateRecognisedRevenue` remains Completed-only for compatibility. `recognitionPolicy=exchange` is not live CVR/accounting behaviour. Live Draft/Submitted CVR shows Revenue/GP (BL-032C COMPLETE). New locked snapshots are schema v2 whole-CVR (BL-032D COMPLETE). Locked v1 snapshots do not store Revenue.
 
 `buildlite_order_matrices_v1` is backup/rollback evidence only after BL-029D. Runtime matrix reads/writes use Postgres when `VITE_MATRIX_SERVER_AUTHORITY=true`.
 
@@ -153,7 +153,7 @@ See `docs/test-data/README.md`.
 | Pack | Role |
 |------|------|
 | **Hawthorn Gardens** (`docs/test-data/Hawthorn Gardens UAT/`) | Intended **clean fictional known-answer** end-to-end UAT development. Permanent regression/UAT material. Not yet the imported live UAT model; import is a later task, not BL-029. |
-| **Test Site 1** (`docs/test-data/Test Site 1/`) | **Legacy / current historical test evidence.** Keep. Do not treat as the new clean commercial test model. Used for BL-029D, BL-030C, BL-031C–F (including **BL-031E** snapshot/freeze UAT and **BL-031F** P02 monthly-cycle UAT) and **BL-032C** P03 Draft UAT. |
+| **Test Site 1** (`docs/test-data/Test Site 1/`) | **Legacy / current historical test evidence.** Keep. Do not treat as the new clean commercial test model. Used for BL-029D, BL-030C, BL-031C–F (including **BL-031E** snapshot/freeze UAT and **BL-031F** P02 monthly-cycle UAT), **BL-032C** P03 Draft UAT, and **BL-032D** P03 whole-CVR lock/freeze UAT. |
 
 ---
 
@@ -189,7 +189,7 @@ Login remains mock (`localStorage` identity). No production-grade authentication
 | Packages / order matrices | Working — package identity and **order matrices are server-backed** after BL-029D |
 | Commercial Events | Working — **server authority** after BL-028B.3 |
 | V1 Payment Certificates | Working — **server authority** after BL-030C when `VITE_CERTIFICATE_SERVER_AUTHORITY=true`. Historical freeze vs later matrix replacement **PASSED**. |
-| CVR / ledger / revenue | Working — **CVR/ledger server authority** after BL-031D when flags are ON. **Historic locked CVRs** render from immutable snapshots after BL-031E. **Create Next Period** copies persisted QS inputs after BL-031F. Revenue is not in the Doc 67 persistence sequence. |
+| CVR / ledger / revenue | Working — **CVR/ledger server authority** after BL-031D when flags are ON. **Historic locked CVRs** render from immutable snapshots after BL-031E. **Create Next Period** copies persisted QS inputs after BL-031F. Live Draft/Submitted Revenue/GP after BL-032C. New locks freeze schema-v2 whole-CVR Revenue after BL-032D. |
 | Administration / Setup Assistant | Working — largely localStorage master data |
 | Commercial Assistant | Working foundation — local dispositions |
 | User login / RBAC | Mock only |
@@ -352,7 +352,7 @@ Create Next Period now sources **persisted QS period inputs**, not the locked pe
 
 locked P01 → continued commercial activity → Create Next Period → Draft P02 → carried QS opening state → current live commercial facts → P02-specific QS judgement → movement vs frozen P01 → Submit → Approve & Lock → independent immutable P02 snapshot.
 
-P03 Draft UAT has **PASSED** under BL-032C. P03 remains **Draft v1** with no snapshot. BL-032D implementation is ready; do **not** Submit / Approve & Lock P03 until migration `012` is on clone and lock/freeze UAT is run.
+P03 Draft UAT **PASSED** under BL-032C. P03 was later **locked** under BL-032D as the first schema-v2 whole-CVR snapshot. **P04 does not exist.**
 
 ### Test Site 1 P02 monthly-cycle UAT (PASSED)
 
@@ -642,36 +642,55 @@ Create Next Period from locked P02 created **P03 Draft v1** (`804e7777-4249-41a4
 
 Revenue settings evidence row unchanged: `b2157b36-a243-414e-9169-2d192dad8301`, version **2**, OM **350**, `recognition_policy` **completion**. Plot Master remains the restored BL-032B baseline: **31** plots, all **Available**; Plot 31 forecast **£255,100**, sellingPrice **£0**, lifecycle dates empty.
 
-### CRITICAL CURRENT RESTRICTION
+## BL-032D (whole-CVR Revenue-bearing snapshot) — COMPLETE
 
-**P03 MUST NOT be Submitted / Approved & Locked until migration `012` is applied to `buildlite_clone` and P03 lock/freeze UAT is run.**
+Implementation was banked at `50c09ab26debd4ae1250d6c3350b0df523a5b439` (*BL-032D - Add revenue-bearing CVR snapshots*). Migration `012_cvr_period_snapshot_revenue.sql` was applied to local `buildlite_clone`. Test Site 1 P03 whole-CVR lock/freeze UAT **PASSED**.
 
-BL-032D implementation is in the repo and tested on `buildlite_test`. Clone still has schema-v1 snapshot tables only. Locking P03 on clone before `012` would fail closed (missing Revenue columns / plot table). After `012`, a successful lock freezes the complete schema-v2 whole-CVR position.
+### What BL-032D does
 
-Do **not** create P04.
+New Approve & Lock persists schema **v2** whole-CVR snapshots: existing cost totals/rows plus Forecast/Secured/Remaining Revenue, Plots Sold/Remaining, Gross Profit, Gross Margin (NULL when Forecast Revenue is effectively zero), frozen `revenue_assumptions` JSON, settings id/version evidence, and plot Revenue rows in `cvr_period_snapshot_plots`. Server-derived only. Submit remains allowed if Revenue is unavailable; Approve & Lock fails closed until cost + Revenue are complete. Invalid Exchanged/Completed `sellingPrice <= 0` blocks lock and lists plot numbers. Historic v1 stays NULL/unavailable. Historic v2 reads snapshot only. Portfolio remains cost-only.
+
+### Test Site 1 P03 whole-CVR lock/freeze UAT (PASSED)
+
+`buildlite_clone` / Test Site 1 (`dev-1785599776666-zck5pl`). P03 `804e7777-4249-41a4-9698-9431c8942ebc` **locked** v3. First schema-v2 snapshot: `0ad18cb8-0b1a-469a-8fa0-10216728150a`.
+
+| Check | Result |
+|-------|--------|
+| Lifecycle | Draft v1 (created 2026-08-20) → submitted 2026-08-21T07:30:10.192Z → locked/approved 2026-08-21T07:30:29.768Z |
+| Audit | `created`, `inputs_upserted`, `submitted`, `approved`, `locked` |
+| Snapshot | **1** header, schema **v2**, 9 cost rows, **31** Revenue plot rows |
+| Forecast Revenue | **£10,444,608** |
+| Secured / Remaining | **£0** / **£10,444,608** |
+| Plots Sold / Remaining | **0** / **31** |
+| Forecast Cost (`finalForecast`) | **£2,365,423** |
+| Gross Profit | **£8,079,185** (= Forecast Revenue − finalForecast) |
+| Gross Margin | **77.3527%** stored (GP / Forecast Revenue × 100) |
+| Frozen 5231 | committed **£50,280**; certified **£2,150**; actual **£0**; accrual **£120**; current cost **£120**; adjustment **+£520**; final forecast **£50,800**; CTC **£50,680** |
+| Frozen Plot 31 | Available; forecast **£255,100**; secured **£0**; remaining **£255,100**; sellingPrice NULL; NIA 686 ft²; premium **£15,000**; source House Type; dates empty |
+| Assumptions | settings `b2157b36-a243-414e-9169-2d192dad8301` version **2**; OM **£350/ft²**; `completion`; AH 58/72/70/65/70/100; garage 0/12500/22500; empty house-type pricing / adjustments / recognitionSettings |
+| QS inputs | **9** P03 overlays still present; 5231 unchanged; lock did not rewrite them |
+
+**Historic freeze:** human UI moved live Plot 31 after lock then restored status/dates/forecast. Plot Master `updated_at` **2026-08-21T07:35:07.993Z** is after lock. The temporary Exchanged/Reserved state is **not** retained in Postgres after restore. Locked P03 snapshot did not move. Live Revenue after restore is again Forecast **£10,444,608** / Secured **£0** / Remaining **£10,444,608** / Plots Sold **0**. Live Plot 31 is Available / forecast **£255,100** / dates empty. Live `sellingPrice` was left at **£255,100** (other 30 plots remain £0). Available KPIs ignore that leftover contractual price; frozen P03 Plot 31 sellingPrice remains NULL.
+
+**Historic protection:** P01 locked v5 snapshot `aa6839cc-eace-40dd-a011-6ca90afa7980` and P02 locked v3 snapshot `e8dea429-ff33-4218-81e6-5102bd110a7f` remain schema **v1** with all Revenue/GP fields **NULL** and **0** plot rows. Clone totals: **3** headers / **27** cost rows / **31** Revenue plot rows. CE 23 / certs 4 locked / ledger 1 batch + 2 txns / POs 10 / packages 10 unchanged. Settings row still version **2**. **P04 does not exist.**
+
+### What BL-032D does **not** do
+
+Not provided. Do **not** imply any of these are live:
+
+- HA / package Revenue
+- extras / incentives / discounts
+- selling costs / prelims / overhead / finance / PBT
+- plot cost allocation / profitability
+- P04 / Create Next Period from P03
+- `recognitionPolicy=exchange` as live CVR/accounting behaviour
+- CVR navigation redesign
 
 ## Next action
 
-**Controlled apply of migration `012` to `buildlite_clone`**, then **P03 Submit / Approve & Lock / freeze UAT**.
+**Do not create P04 in this banking task.** Recommended later controlled step: Create Next Period **P04** from locked P03 to prove v2→v2 Revenue movement. Deferred: CVR navigation UI/UX.
 
-Do **not** mark BL-032D COMPLETE until that UAT passes.
-
-After `012` on clone, verify read-only first:
-
-- P01/P02 Revenue columns remain NULL
-- no plot snapshot rows for v1
-- P03 still Draft / no snapshot
-- P04 absent
-
-Then Submit P03, Approve & Lock, and prove the frozen v2 snapshot (Forecast Revenue £10,444,608 / Forecast Cost £2,365,423 / GP £8,079,185 / Margin 77.4% / Secured £0 / Remaining £10,444,608 / Plots Sold 0) plus historic plot table from snapshot rows only.
-
-P03 remains the live Draft test vehicle.
-
-Do **not** Submit P03. Do **not** Approve & Lock P03. Do **not** create P04. Do **not** apply `012` to clone until the controlled step.
-
-Do not treat Hawthorn Gardens as started. Repo flag default remains OFF. Local UAT left `VITE_REVENUE_SERVER_AUTHORITY=true` in ignored `client/.env.local` (do not commit it). Test Site 1 has one `development_revenue_settings` row (version 2, OM 350, completion) as evidence — do not delete it.
-
-Optional later UAT (same freeze proof BL-031E already gave for P01): a post-lock live CE must move live commercial and leave frozen P02 unchanged.
+Do not treat Hawthorn Gardens as started. Repo flag default remains OFF. Local UAT left `VITE_REVENUE_SERVER_AUTHORITY=true` in ignored `client/.env.local` (do not commit it). Test Site 1 has one `development_revenue_settings` row (version 2, OM 350, completion) as evidence — do not delete it. Do not delete locked P03 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`.
 
 ---
 
