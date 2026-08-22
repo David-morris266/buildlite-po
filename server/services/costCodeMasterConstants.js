@@ -1,0 +1,51 @@
+/**
+ * BL-033D.x.2A.1 — Tenant Cost Code Master constants.
+ * Identity is (client_id, code) as entered. Do not use CVR key normalisation.
+ */
+
+const MAX_COST_CODE_LENGTH = 64;
+const MAX_DESCRIPTION_LENGTH = 200;
+const MAX_HIERARCHY_NAME_LENGTH = 120;
+const MAX_NOTES_LENGTH = 2000;
+
+const HIERARCHY_MODES = {
+  TWO_LEVEL: "two-level",
+  THREE_LEVEL: "three-level",
+  THREE_LEVEL_DEFAULT_FAMILY: "three-level-default-family",
+};
+
+const HIERARCHY_MODE_KEYS = Object.values(HIERARCHY_MODES);
+
+const VAT_TREATMENTS = {
+  STANDARD: "Standard",
+  ZERO_RATED: "Zero Rated",
+  REVERSE_CHARGE: "Reverse Charge",
+};
+
+const VAT_TREATMENT_KEYS = Object.values(VAT_TREATMENTS);
+
+const ORDER_TYPES = {
+  MATERIALS: "M",
+  SUBCONTRACT: "S",
+  PLANT: "P",
+};
+
+const ORDER_TYPE_KEYS = Object.values(ORDER_TYPES);
+
+const DEFAULT_VAT_TREATMENT = VAT_TREATMENTS.STANDARD;
+const DEFAULT_ORDER_TYPE = ORDER_TYPES.SUBCONTRACT;
+
+module.exports = {
+  DEFAULT_ORDER_TYPE,
+  DEFAULT_VAT_TREATMENT,
+  HIERARCHY_MODE_KEYS,
+  HIERARCHY_MODES,
+  MAX_COST_CODE_LENGTH,
+  MAX_DESCRIPTION_LENGTH,
+  MAX_HIERARCHY_NAME_LENGTH,
+  MAX_NOTES_LENGTH,
+  ORDER_TYPE_KEYS,
+  ORDER_TYPES,
+  VAT_TREATMENT_KEYS,
+  VAT_TREATMENTS,
+};

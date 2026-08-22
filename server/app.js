@@ -20,6 +20,7 @@ const developmentProgrammeRoutes = require("./routes/developmentProgrammeRoutes"
 const prelimsItemRoutes = require("./routes/prelimsItemRoutes");
 const prelimsTemplateRoutes = require("./routes/prelimsTemplateRoutes");
 const costCodeClassificationRoutes = require("./routes/costCodeClassificationRoutes");
+const costCodeMasterRoutes = require("./routes/costCodeMasterRoutes");
 
 function createApp() {
   const app = express();
@@ -48,6 +49,7 @@ function createApp() {
   app.use("/api/developments/:developmentId", prelimsItemRoutes);
   app.use("/api/prelims-templates", prelimsTemplateRoutes);
   app.use("/api/cost-code-classifications", costCodeClassificationRoutes);
+  app.use("/api/cost-codes", costCodeMasterRoutes);
   app.use("/api/packages", packageRoutes);
   app.use("/api/commercial-events", commercialEventRoutes);
 
