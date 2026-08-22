@@ -2,9 +2,9 @@
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
 **Last product slice fully complete:** **BL-033D.x.1 — COMPLETE** (company Prelims templates + BuildLite Standard v1; company-template UAT **PASSED**).  
-**Last persistence slice implemented:** **BL-033D.x.2A.2 IMPLEMENTED AND BANKED.** Admin can use server authority behind `VITE_COST_CODE_SERVER_AUTHORITY`; flag remains OFF. `017` is on `buildlite_test` only; **not** on `buildlite_clone`. Awaiting controlled x.2A.3 cutover/UAT. **BL-033A design ACCEPTED.**  
+**Last persistence slice implemented:** **BL-033D.x.2A.3 COMPLETE.** Test Site 1 Cost Code Master cutover UAT **PASSED**. `017` applied on `buildlite_clone`. Server master is 98 rows (97 canonical + UAT-CC-001). Repo `VITE_COST_CODE_SERVER_AUTHORITY` default remains OFF. **BL-033A design ACCEPTED.**  
 **CRITICAL:** P03 is **locked** with schema-v2 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. P04 is **Draft** `0f513191-cd25-4812-834f-37dcf66487e0` v1 with `reporting_month` **2026-08** and **no snapshot**. P01/P02/P03 `reporting_month` remain NULL. P05 does not exist.  
-**NEXT:** BL-033D.x.2A.3 (controlled Test Site 1 Cost Code Master cutover). Do not apply 017 to clone in x.2A.2. Do not migrate the browser master yet. Do not turn authority ON against the current thin clone. D.x.2 mapping remains blocked. Do not Submit or Approve & Lock P04. Do not create P05. Do not switch 5231 to TIME. Do not implement Review & Adopt / CVR adoption. Do not start D.x.3 instantiation.
+**NEXT:** BL-033D.x.2 (company Prelims template tailoring + cost-code mapping). Do not Submit or Approve & Lock P04. Do not create P05. Do not switch 5231 to TIME. Do not implement Review & Adopt / CVR adoption. Do not start D.x.3 instantiation. Do not Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog.
 
 ---
 
@@ -28,14 +28,14 @@ Postgres is already the authority for:
 | `014_development_programme.sql` | `development_programme` | **BL-033C COMPLETE**. Typed site start / optional first completion / final completion / plot count + version. GET seeds from payload without write until PUT. Inclusive calendar months in application code. Test Site 1 programme UAT **PASSED** (one v1 row; 38 months; firstCompletion NULL). Applied on `buildlite_test` and local `buildlite_clone`. **BL-033C.1 COMPLETE**: Create Next requires an explicit YYYY-MM (`reportingMonth` is the CVR calendar month, distinct from the period key; no today default; no historic inference). Test Site 1 P04 Draft `reporting_month` **2026-08**; P01–P03 remain NULL. Not in CVR/snapshots. |
 | `015_development_prelims_items.sql` | `development_prelims_items` | **BL-033D.1 COMPLETE**. TIME / LUMP_SUM proposal lines. Calculated months/money are not stored. No FK on `cost_code_key`. No unique on `cost_code_key`. Applied on `buildlite_test` and local `buildlite_clone`. Does not enter CVR close or snapshots. Test Site 1 Prelims UAT **PASSED**. |
 | `016_client_prelims_templates.sql` | `client_prelims_templates`, `client_prelims_template_lines` | **BL-033D.x.1 COMPLETE**. Multiple named company templates per client. At most one default (partial unique index). Unique `(template_id, template_key)`. No unique on `cost_code_key` — multiple template lines may map to the same customer cost code. Applied on `buildlite_test` and local `buildlite_clone`. Company-template UAT **PASSED** (one Standard v1 copy, 25 unmapped lines, no £ defaults). Does not write `development_prelims_items`. BuildLite Standard is not stored as tenant rows. |
-| `017_cost_codes_tenant_master.sql` | Additive columns on `cost_codes` | **BL-033D.x.2A.1 IMPLEMENTED AND BANKED.** Admin-master fields + `version` + unique `(client_id, lower(btrim(code)))`. No backfill. Applied on `buildlite_test` by tests. **Not** applied to `buildlite_clone`. **BL-033D.x.2A.2 IMPLEMENTED AND BANKED:** Admin UI can use `/api/cost-codes` when the flag is ON. Flag default OFF. ON against current clone is not the approved cutover. Commercial Structure catalog remains browser-local. |
+| `017_cost_codes_tenant_master.sql` | Additive columns on `cost_codes` | **BL-033D.x.2A.3 COMPLETE.** Admin-master fields + `version` + unique `(client_id, lower(btrim(code)))`. Applied on `buildlite_test` by tests and on local `buildlite_clone` by the controlled cutover. Test Site 1: 98 rows / 98 active / 0 collisions. **BL-033D.x.2A.2:** Admin UI uses `/api/cost-codes` when the flag is ON. Flag default OFF. Commercial Structure catalog remains browser-local. |
 
 Still **browser/localStorage** (not yet Postgres authority):
 
 - Revenue **categories** / administration master data, setup drafts, Commercial Assistant dispositions
 - Development revenue **strategy/settings** (`buildlite_revenue_v1`) unless `VITE_REVENUE_SERVER_AUTHORITY=true` (BL-032A COMPLETE; default OFF; Test Site 1 authority-on UAT **PASSED**)
 - Plot-level commercial fields remain on `developments.payload` (not moved in BL-032A). BL-032B stores `reservedAt` / `exchangedAt` / `completedAt` on that payload only.
-- Cost-code **master records** remain browser `buildlite_cost_codes_master_v1` while `VITE_COST_CODE_SERVER_AUTHORITY` is OFF (default). BL-033D.x.2A.2 wired Admin Cost Codes to the server API when the flag is ON. `017` is on `buildlite_test` only. Browser master has not been migrated. Clone has not received 017. ON against current clone is not the approved cutover. Commercial Structure catalog remains browser-local. D.x.2 mapping remains blocked until x.2A.3. BL-033B classification metadata is **server-authoritative** (`cost_code_classifications`) and is not stored in that master.
+- Cost-code **master records** use Postgres when `VITE_COST_CODE_SERVER_AUTHORITY=true` (**BL-033D.x.2A.3 COMPLETE** on Test Site 1 clone). They remain browser `buildlite_cost_codes_master_v1` while the flag is OFF (repo default). The leftover 95-row browser master was not rewritten by flag-ON UAT and is not authoritative while ON. Commercial Structure catalog remains browser-local — do not Save migrated Admin rows whose server `reporting_group` is absent from that local dropdown. BL-033B classification metadata is **server-authoritative** (`cost_code_classifications`) and is not stored in that master.
 
 CVR periods/cost centres and purchase ledger are server-authoritative when `VITE_CVR_SERVER_AUTHORITY=true` and `VITE_LEDGER_SERVER_AUTHORITY=true`. Order matrices are server-authoritative when `VITE_MATRIX_SERVER_AUTHORITY=true`. V1 payment certificates are server-authoritative when `VITE_CERTIFICATE_SERVER_AUTHORITY=true`. Development revenue settings are server-authoritative when `VITE_REVENUE_SERVER_AUTHORITY=true` (default OFF). Do not commit `.env.local`.
 
@@ -155,9 +155,9 @@ Seed inserts `(client_id)` only; all other columns are nullable.
 | `created_at` / `updated_at` | TIMESTAMPTZ | **017** |
 | `created_by` / `updated_by` | TEXT | **017** |
 
-Unique `(client_id, code)` remains. **017** adds unique `(client_id, lower(btrim(code)))`. Canonical identity is the stored `code` string. `017` is on `buildlite_test` only until x.2A.3; clone/production still match the thin BL-006 shape until then.
+Unique `(client_id, code)` remains. **017** adds unique `(client_id, lower(btrim(code)))`. Canonical identity is the stored `code` string. **BL-033D.x.2A.3 COMPLETE:** `017` is applied on `buildlite_test` (by tests) and on local `buildlite_clone` (controlled cutover). Test Site 1 clone has 98 rows (97 canonical + `UAT-CC-001` evidence). Production/Render still needs a separate controlled apply.
 
-Production clone currently does **not** have the 017 columns.
+Local `buildlite_clone` has the 017 columns. Do not assume Render production has them until that environment is migrated.
 
 ---
 
