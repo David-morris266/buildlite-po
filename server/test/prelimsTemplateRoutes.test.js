@@ -129,15 +129,21 @@ if (!isDbConfigured()) {
         version: 1,
         templateKey: line.templateKey,
         name: "Site Manager (company)",
+        description: "Company guidance only",
         forecastDriver: "TIME",
         startBasis: "SITE_START",
         endBasis: "FINAL_COMPLETION",
-        monthlyRate: 4500,
       });
     assert.equal(updated.status, 200);
     assert.equal(updated.body.name, "Site Manager (company)");
-    assert.equal(updated.body.monthlyRate, 4500);
+    assert.equal(updated.body.description, "Company guidance only");
+    assert.equal(updated.body.monthlyRate, null);
+    assert.equal(updated.body.lumpSumAmount, null);
     assert.equal(getBuildLiteStandardPrelimsTemplate().lines[0].name, "Site Manager");
+    assert.match(
+      getBuildLiteStandardPrelimsTemplate().lines[0].description,
+      /site manager for the duration/i
+    );
 
     const blank = await request(app)
       .post("/api/prelims-templates")
@@ -231,9 +237,9 @@ if (!isDbConfigured()) {
         forecastDriver: "TIME",
         startBasis: "SITE_START",
         endBasis: "FINAL_COMPLETION",
-        monthlyRate: 1000,
       });
     assert.equal(staleLine.status, 200);
+    assert.equal(staleLine.body.monthlyRate, null);
     const lineConflict = await request(app)
       .put(`/api/prelims-templates/${blank.body.id}/lines/${one.body.id}`)
       .send({

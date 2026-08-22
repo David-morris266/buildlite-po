@@ -39,7 +39,7 @@ const CARD_META = {
     title: 'Prelims Templates',
     description: 'BuildLite Standard and company-owned Prelims structures.',
     accent: 'commercial',
-    status: 'Foundation',
+    status: 'Tailoring',
   },
   'commercial-structure': {
     icon: '🧭',

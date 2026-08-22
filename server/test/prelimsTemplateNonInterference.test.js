@@ -29,4 +29,9 @@ test("company templates do not enter D.1 engine, CVR, snapshot, programme, or cl
   const dx1 = fs.readFileSync(path.join(ROOT, "services/prelimsTemplateRepository.js"), "utf8");
   assert.equal(/INSERT INTO development_prelims_items/.test(dx1), false);
   assert.equal(/Review & Adopt/.test(dx1), false);
+  assert.equal(/UPDATE cost_codes/.test(dx1), false);
+  assert.equal(/INSERT INTO cost_code_classifications/.test(dx1), false);
+  const routes = fs.readFileSync(path.join(ROOT, "routes/prelimsTemplateRoutes.js"), "utf8");
+  assert.equal(/Review & Adopt/.test(routes), false);
+  assert.equal(/Setup from Template/.test(routes), false);
 });

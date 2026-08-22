@@ -82,3 +82,29 @@ export async function updatePrelimsTemplate(templateId, payload = {}) {
   });
   return handleJson(res);
 }
+
+export async function createPrelimsTemplateLine(templateId, payload = {}) {
+  const res = await fetch(
+    buildUrl(`/api/prelims-templates/${encodeURIComponent(templateId)}/lines`),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(withActor(payload)),
+    }
+  );
+  return handleJson(res);
+}
+
+export async function updatePrelimsTemplateLine(templateId, lineId, payload = {}) {
+  const res = await fetch(
+    buildUrl(
+      `/api/prelims-templates/${encodeURIComponent(templateId)}/lines/${encodeURIComponent(lineId)}`
+    ),
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(withActor(payload)),
+    }
+  );
+  return handleJson(res);
+}

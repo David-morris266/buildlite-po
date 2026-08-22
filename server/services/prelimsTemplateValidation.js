@@ -1,10 +1,16 @@
 /**
- * BL-033D.x.1 — Company Prelims template validation.
- * Company lines may hold default rates/bases. They must not hold development dates.
+ * BL-033D.x.2 — Company Prelims template validation.
+ * Company lines hold driver/bases/mapping. They must not hold development dates
+ * or monetary defaults. Custom keys are co.prelims.*; bl.prelims.* is product-owned.
  */
 
+const { randomUUID } = require("crypto");
+const { looksLikeDisplayLabel } = require("./costCodeMasterValidation");
 const { preserveCostCodeKey } = require("./prelimsItemValidation");
 const { PRELIMS_DRIVER_KEYS, PRELIMS_DRIVERS } = require("./prelimsConstants");
+
+const PRODUCT_TEMPLATE_KEY_PREFIX = "bl.prelims.";
+const COMPANY_TEMPLATE_KEY_PREFIX = "co.prelims.";
 
 const TEMPLATE_ORIGINS = {
   BUILDLITE_STANDARD: "buildlite_standard",
@@ -45,16 +51,6 @@ function parseBoolean(value, field, errors) {
   return null;
 }
 
-function parseOptionalMoney(value, field, errors) {
-  if (value == null || value === "") return null;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    errors.push(`${field} must be a non-negative number.`);
-    return null;
-  }
-  return Math.round((parsed + Number.EPSILON) * 100) / 100;
-}
-
 function parseOptionalBasis(value, field, errors) {
   if (value == null || value === "") return null;
   const basis = String(value).trim();
@@ -69,10 +65,21 @@ function parseOptionalBasis(value, field, errors) {
   return basis;
 }
 
-function parseTemplateKey(value, errors) {
+function generateCompanyTemplateKey() {
+  return `${COMPANY_TEMPLATE_KEY_PREFIX}${randomUUID()}`;
+}
+
+function isProductStandardTemplateKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .startsWith(PRODUCT_TEMPLATE_KEY_PREFIX);
+}
+
+function parseTemplateKey(value, errors, { required = true } = {}) {
   const key = String(value || "").trim();
   if (!key) {
-    errors.push("templateKey is required.");
+    if (required) errors.push("templateKey is required.");
     return "";
   }
   if (key.length > MAX_KEY_LENGTH) {
@@ -115,14 +122,19 @@ function validateUpdateTemplateBody(body = {}) {
   return { ok: true, expectedVersion, value: { name, isDefault } };
 }
 
-function validateTemplateLineBody(body = {}, { requireVersion = false } = {}) {
+function validateTemplateLineBody(
+  body = {},
+  { requireVersion = false, allowMissingKey = false } = {}
+) {
   const errors = [];
   const expectedVersion = parseExpectedVersion(body.version);
   if (expectedVersion == null || (requireVersion && expectedVersion < 1)) {
     errors.push("version must be a non-negative integer.");
   }
 
-  const templateKey = parseTemplateKey(body.templateKey, errors);
+  const templateKey = parseTemplateKey(body.templateKey, errors, {
+    required: !allowMissingKey,
+  });
   const name = parseName(body.name, errors);
   const description =
     body.description == null || body.description === ""
@@ -135,7 +147,12 @@ function validateTemplateLineBody(body = {}, { requireVersion = false } = {}) {
 
   let costCodeKey = null;
   if (body.costCodeKey != null && body.costCodeKey !== "") {
-    costCodeKey = preserveCostCodeKey(body.costCodeKey) || null;
+    const incoming = preserveCostCodeKey(body.costCodeKey);
+    if (looksLikeDisplayLabel(incoming)) {
+      errors.push("costCodeKey must be the canonical customer code, not a display label.");
+    } else {
+      costCodeKey = incoming || null;
+    }
   }
 
   const forecastDriver = String(body.forecastDriver || "").trim();
@@ -147,15 +164,17 @@ function validateTemplateLineBody(body = {}, { requireVersion = false } = {}) {
 
   let startBasis = null;
   let endBasis = null;
-  let monthlyRate = parseOptionalMoney(body.monthlyRate, "monthlyRate", errors);
-  let lumpSumAmount = parseOptionalMoney(body.lumpSumAmount, "lumpSumAmount", errors);
+  if (body.monthlyRate != null && body.monthlyRate !== "") {
+    errors.push("Company templates cannot store monetary defaults.");
+  }
+  if (body.lumpSumAmount != null && body.lumpSumAmount !== "") {
+    errors.push("Company templates cannot store monetary defaults.");
+  }
 
   if (forecastDriver === PRELIMS_DRIVERS.TIME) {
     startBasis = parseOptionalBasis(body.startBasis, "startBasis", errors);
     endBasis = parseOptionalBasis(body.endBasis, "endBasis", errors);
-    lumpSumAmount = null;
   } else if (forecastDriver === PRELIMS_DRIVERS.LUMP_SUM) {
-    monthlyRate = null;
     startBasis = null;
     endBasis = null;
   }
@@ -202,8 +221,8 @@ function validateTemplateLineBody(body = {}, { requireVersion = false } = {}) {
       forecastDriver,
       startBasis,
       endBasis,
-      monthlyRate,
-      lumpSumAmount,
+      monthlyRate: null,
+      lumpSumAmount: null,
       displayOrder,
       enabled: enabled !== false,
     },
@@ -211,9 +230,13 @@ function validateTemplateLineBody(body = {}, { requireVersion = false } = {}) {
 }
 
 module.exports = {
+  COMPANY_TEMPLATE_KEY_PREFIX,
+  PRODUCT_TEMPLATE_KEY_PREFIX,
   TEMPLATE_ORIGINS,
   TEMPLATE_ORIGIN_KEYS,
   TEMPLATE_TIME_BASES,
+  generateCompanyTemplateKey,
+  isProductStandardTemplateKey,
   parseExpectedVersion,
   validateCreateTemplateBody,
   validateUpdateTemplateBody,

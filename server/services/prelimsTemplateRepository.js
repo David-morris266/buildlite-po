@@ -1,6 +1,7 @@
 /**
- * BL-033D.x.1 — Tenant-owned company Prelims templates.
- * Does not write development_prelims_items, programme, classification, or CVR.
+ * BL-033D.x.2 — Tenant-owned company Prelims templates.
+ * Does not write development_prelims_items, programme, classification, Cost Code
+ * Master hierarchy, or CVR. Custom lines use co.prelims.* keys. Rates stay NULL.
  */
 
 const { pool, query } = require("../db");
@@ -10,6 +11,8 @@ const {
 const { templateLineRowToDocument, templateRowToDocument } = require("./prelimsTemplateMapper");
 const {
   TEMPLATE_ORIGINS,
+  generateCompanyTemplateKey,
+  isProductStandardTemplateKey,
   validateCreateTemplateBody,
   validateTemplateLineBody,
   validateUpdateTemplateBody,
@@ -279,7 +282,7 @@ async function createTemplateLine(clientId, templateId, body = {}, { actor } = {
   if (!isUuid(templateId)) {
     return { ok: false, status: 400, message: "templateId must be a valid UUID." };
   }
-  const validated = validateTemplateLineBody(body);
+  const validated = validateTemplateLineBody(body, { allowMissingKey: true });
   if (!validated.ok) {
     return { ok: false, status: 400, errors: validated.errors, message: validated.errors.join(" ") };
   }
@@ -289,6 +292,15 @@ async function createTemplateLine(clientId, templateId, body = {}, { actor } = {
 
   const header = await findTemplateRow(clientId, templateId);
   if (!header) return { ok: false, status: 404, message: "Prelims template not found." };
+
+  const templateKey = validated.value.templateKey || generateCompanyTemplateKey();
+  if (isProductStandardTemplateKey(templateKey)) {
+    return {
+      ok: false,
+      status: 400,
+      message: "Custom company lines cannot use bl.prelims. keys.",
+    };
+  }
 
   try {
     const inserted = await query(
@@ -310,7 +322,7 @@ async function createTemplateLine(clientId, templateId, body = {}, { actor } = {
       [
         clientId,
         templateId,
-        validated.value.templateKey,
+        templateKey,
         validated.value.name,
         validated.value.description,
         validated.value.category,
@@ -318,8 +330,8 @@ async function createTemplateLine(clientId, templateId, body = {}, { actor } = {
         validated.value.forecastDriver,
         validated.value.startBasis,
         validated.value.endBasis,
-        validated.value.monthlyRate,
-        validated.value.lumpSumAmount,
+        null,
+        null,
         validated.value.displayOrder,
         validated.value.enabled,
         actor || null,
@@ -393,8 +405,8 @@ async function updateTemplateLine(clientId, templateId, lineId, body = {}, { act
         validated.value.forecastDriver,
         validated.value.startBasis,
         validated.value.endBasis,
-        validated.value.monthlyRate,
-        validated.value.lumpSumAmount,
+        null,
+        null,
         validated.value.displayOrder,
         validated.value.enabled,
         actor || null,

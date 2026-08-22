@@ -1,12 +1,14 @@
 /**
- * BL-033D.x.1 — Company Prelims templates API
- * GET  /api/prelims-templates/standard
+ * BL-033D.x.2 — Company Prelims templates API
+ * GET  /api/prelims-templates/standard   (product Standard, GET-only)
  * GET  /api/prelims-templates
  * POST /api/prelims-templates
  * GET  /api/prelims-templates/:templateId
  * PUT  /api/prelims-templates/:templateId
  * POST /api/prelims-templates/:templateId/lines
  * PUT  /api/prelims-templates/:templateId/lines/:lineId
+ *
+ * Product Standard cannot be mutated. Mapping persists cost_code_key only.
  */
 
 const express = require("express");
@@ -49,6 +51,16 @@ async function withActiveClient(req, res) {
     return null;
   }
   return active;
+}
+
+function rejectProductStandardMutation(req, res) {
+  if (String(req.params.templateId || "").toLowerCase() === "standard") {
+    res.status(405).json({
+      message: "BuildLite Standard is product-owned and cannot be edited.",
+    });
+    return true;
+  }
+  return false;
 }
 
 router.get("/standard", async (req, res) => {
@@ -102,6 +114,7 @@ router.get("/:templateId", async (req, res) => {
 
 router.put("/:templateId", async (req, res) => {
   try {
+    if (rejectProductStandardMutation(req, res)) return;
     const active = await withActiveClient(req, res);
     if (!active) return;
     const body = req.body || {};
@@ -117,6 +130,7 @@ router.put("/:templateId", async (req, res) => {
 
 router.post("/:templateId/lines", async (req, res) => {
   try {
+    if (rejectProductStandardMutation(req, res)) return;
     const active = await withActiveClient(req, res);
     if (!active) return;
     const body = req.body || {};
@@ -132,6 +146,7 @@ router.post("/:templateId/lines", async (req, res) => {
 
 router.put("/:templateId/lines/:lineId", async (req, res) => {
   try {
+    if (rejectProductStandardMutation(req, res)) return;
     const active = await withActiveClient(req, res);
     if (!active) return;
     const body = req.body || {};

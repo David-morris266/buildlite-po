@@ -7846,6 +7846,17 @@
   background: rgba(124, 255, 107, 0.04);
 }
 
+.admin-table__guidance {
+  max-width: 28ch;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.admin-table__row--muted td {
+  opacity: 0.72;
+}
+
 .admin-hierarchy-tree {
   display: grid;
   gap: 16px;

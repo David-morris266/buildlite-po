@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, **BL-031A–F**, **BL-032A**, **BL-032B**, **BL-032C**, **BL-032D**, **BL-033B**, **BL-033C**, **BL-033C.1**, **BL-033D.1**, **BL-033D.x.1**, **BL-033D.x.2A.1**, **BL-033D.x.2A.2**, and **BL-033D.x.2A.3**. **BL-031E is COMPLETE.** **BL-031F is COMPLETE.** **BL-032A is COMPLETE.** **BL-032B is COMPLETE.** **BL-032C is COMPLETE.** **BL-032D is COMPLETE.** **BL-033A design is ACCEPTED.** **BL-033B is COMPLETE.** **BL-033C is COMPLETE.** **BL-033C.1 is COMPLETE.** **BL-033D.1 is COMPLETE.** **BL-033D.x.1 is COMPLETE.** **BL-033D.x.2A.1 is IMPLEMENTED AND BANKED.** **BL-033D.x.2A.2 is IMPLEMENTED AND BANKED.** **BL-033D.x.2A.3 is COMPLETE** (Test Site 1 Cost Code Master cutover UAT **PASSED**). Test Site 1 development programme UAT **PASSED**. Test Site 1 classification UAT **PASSED** (`5231` Cleaning → PRELIMS + STANDARD_CVR; CVR money unchanged). Test Site 1 P03 is the first schema-v2 whole-CVR snapshot. Test Site 1 reporting-month UAT **PASSED**: P04 is **Draft** v1 with explicit `reporting_month` **2026-08**; P01/P02/P03 remain NULL. Test Site 1 Prelims UAT **PASSED**: calculation-only TIME / LUMP_SUM proposal, multiple lines per cost code, unresolved FIRST_COMPLETION, no CVR adoption. Company-template UAT **PASSED**: one company-owned copy of BuildLite Standard v1 (25 lines, unmapped, no £ defaults). `recognitionPolicy=exchange` is **not** live CVR/accounting behaviour. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
+This document is the in-repo status snapshot for a clean Cursor session. It records the actual position after **Doc 67 persistence migration** through **BL-030**, **BL-ASUS-001**, **BL-031A–F**, **BL-032A**, **BL-032B**, **BL-032C**, **BL-032D**, **BL-033B**, **BL-033C**, **BL-033C.1**, **BL-033D.1**, **BL-033D.x.1**, **BL-033D.x.2A.1**, **BL-033D.x.2A.2**, **BL-033D.x.2A.3**, and **BL-033D.x.2**. **BL-031E is COMPLETE.** **BL-031F is COMPLETE.** **BL-032A is COMPLETE.** **BL-032B is COMPLETE.** **BL-032C is COMPLETE.** **BL-032D is COMPLETE.** **BL-033A design is ACCEPTED.** **BL-033B is COMPLETE.** **BL-033C is COMPLETE.** **BL-033C.1 is COMPLETE.** **BL-033D.1 is COMPLETE.** **BL-033D.x.1 is COMPLETE.** **BL-033D.x.2A.1 is IMPLEMENTED AND BANKED.** **BL-033D.x.2A.2 is IMPLEMENTED AND BANKED.** **BL-033D.x.2A.3 is COMPLETE** (Test Site 1 Cost Code Master cutover UAT **PASSED**). **BL-033D.x.2 is COMPLETE** (company template mapping UAT **PASSED**). Test Site 1 development programme UAT **PASSED**. Test Site 1 classification UAT **PASSED** (`5231` Cleaning → PRELIMS + STANDARD_CVR; CVR money unchanged). Test Site 1 P03 is the first schema-v2 whole-CVR snapshot. Test Site 1 reporting-month UAT **PASSED**: P04 is **Draft** v1 with explicit `reporting_month` **2026-08**; P01/P02/P03 remain NULL. Test Site 1 Prelims UAT **PASSED**: calculation-only TIME / LUMP_SUM proposal, multiple lines per cost code, unresolved FIRST_COMPLETION, no CVR adoption. Company-template UAT **PASSED**: one company-owned copy of BuildLite Standard v1, now tailored/mapped (**26** lines / **2** mapped to canonical `5231`, no £ defaults). `recognitionPolicy=exchange` is **not** live CVR/accounting behaviour. Repo authority-flag defaults remain OFF; local UAT used `client/.env.local` (do not commit it).
 
 Historic Phase 0 / BL-006 schema notes remain in `docs/DATABASE.md` and `docs/phase0/`. Do not treat those files as the current programme.
 
@@ -17,11 +17,11 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Branch | `buildlite-V1-1` |
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
-| Last completed product slice | **BL-033D.x.1 — COMPLETE.** Company Prelims templates + BuildLite Standard v1. Company-template UAT **PASSED**. |
+| Last completed product slice | **BL-033D.x.2 COMPLETE.** Company template tailoring + canonical cost-code mapping. Mapping UAT **PASSED**. Live Test Site 1 template is **26 lines / 2 mapped** to `5231`. No new migration. |
 | Last persistence slice implemented | **BL-033D.x.2A.3 COMPLETE.** Test Site 1 Cost Code Master cutover UAT **PASSED**. `017` applied on `buildlite_clone`. Server master is 98 rows (97 canonical + UAT-CC-001 evidence). Repo flag default remains OFF. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT** | **BL-033D.x.2** — company Prelims template tailoring + cost-code mapping. Do **not** Submit or Approve & Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** implement Review & Adopt / CVR adoption. Do **not** start D.x.3 development instantiation. Do **not** Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog. Historic P01/P02/P03 `reporting_month` remains NULL. |
+| **NEXT** | **BL-033D.x.3** — Development Prelims setup from company template. Do **not** Submit or Approve & Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** implement Review & Adopt / CVR adoption. Do **not** Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog. Historic P01/P02/P03 `reporting_month` remains NULL. |
 
 ---
 
@@ -49,6 +49,7 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-033D.x.2A.1** | Tenant Cost Code Master server foundation | **IMPLEMENTED AND BANKED.** Additive `017_cost_codes_tenant_master.sql` evolves existing `cost_codes`. `VITE_COST_CODE_SERVER_AUTHORITY` default OFF. Cutover/UAT is **BL-033D.x.2A.3 COMPLETE**. |
 | **BL-033D.x.2A.2** | Admin Cost Codes server-authority UI | **IMPLEMENTED AND BANKED.** Flag-controlled Admin path. Default **OFF**. ON uses `/api/cost-codes` only (no localStorage fallback/dual-write). Commercial Structure catalog remains browser-local. Cutover/UAT is **BL-033D.x.2A.3 COMPLETE**. |
 | **BL-033D.x.2A.3** | Cost Code Master cutover UAT | **COMPLETE.** Test Site 1 clone: `017` applied; 98 rows / 98 active / 0 collisions; 1110 and 2300 added from proven commercial use; historic strings untouched; flag-ON Admin and second-session UAT **PASSED**. Repo default remains OFF. Local `.env.local` may leave the flag ON. |
+| **BL-033D.x.2** | Company Prelims template tailoring + cost-code mapping | **COMPLETE.** Mapping UAT **PASSED**. No migration 018. Uses existing 016 APIs. Many lines may map to one canonical code. Mapping persists `cost_code_key` only. PRELIMS classification warns but does not block. Custom `co.prelims.*` lines and non-destructive disable/re-enable proven. No money defaults. No development instantiation. No CVR adoption. Live Test Site 1 template is **26 lines / 2 mapped** to `5231`. |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -72,7 +73,7 @@ BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when lo
 - **Cost-code semantic classification** (`013_cost_code_classifications.sql`) — **BL-033B COMPLETE**. Tenant-level mapping only. Unmapped codes resolve as UNCLASSIFIED + STANDARD_CVR without inserting a row. Applied on `buildlite_test` and local `buildlite_clone`. Does not enter CVR close or snapshots. Test Site 1 `5231` is PRELIMS + STANDARD_CVR. `forecast_driver` is a default/suggested driver only.
 - **Development programme** (`014_development_programme.sql`) — **BL-033C COMPLETE**. Typed site start / first completion / final completion / plot count + version. GET seeds from `payload.startDate` / `targetCompletion` / `plotCount` without inserting until PUT. PUT is optimistic. Applied on `buildlite_test` and local `buildlite_clone`. Does not dual-write payload. Does not enter CVR close or snapshots. Test Site 1 has one programme row (version 1). **BL-033C.1 COMPLETE** (no migration): Create Next requires an explicit YYYY-MM; Test Site 1 P04 is Draft with `reporting_month` **2026-08**.
 - **Development Prelims items** (`015_development_prelims_items.sql`) — **BL-033D.1 COMPLETE**. TIME / LUMP_SUM proposal lines beside the CVR. Applied on `buildlite_test` and local `buildlite_clone`. GET does not mutate programme, CVR, or classification. Calculated months/money are derived live. Not adopted into the CVR.
-- **Company Prelims templates** (`016_client_prelims_templates.sql`) — **BL-033D.x.1 COMPLETE**. Tenant-owned headers + lines. BuildLite Standard is a product-owned application definition, not tenant rows. Applied on `buildlite_test` and local `buildlite_clone`. Company-template UAT **PASSED**. Does not write `development_prelims_items`. Does not enter CVR.
+- **Company Prelims templates** (`016_client_prelims_templates.sql`) — **BL-033D.x.1 COMPLETE**. Tenant-owned headers + lines. BuildLite Standard is a product-owned application definition, not tenant rows. Applied on `buildlite_test` and local `buildlite_clone`. Company-template UAT **PASSED**. Does not write `development_prelims_items`. Does not enter CVR. **BL-033D.x.2 COMPLETE** (no schema change): company header/line tailoring, custom `co.prelims.*` lines, enable/disable, and canonical `cost_code_key` mapping against `/api/cost-codes`. Mapping UAT **PASSED**. Live Test Site 1 copy is **26 lines / 2 mapped** to canonical `5231`.
 - **Tenant Cost Code Master columns** (`017_cost_codes_tenant_master.sql`) — **BL-033D.x.2A.3 COMPLETE.** Additive Admin-master fields on existing `cost_codes`. Unique `(client_id, lower(btrim(code)))`. Applied on `buildlite_test` by tests and on local `buildlite_clone` by the controlled cutover. Test Site 1: **98** rows / **98** active / **0** `lower(btrim(code))` collisions (97 canonical + `UAT-CC-001` evidence). **BL-033D.x.2A.2** wired Admin Cost Codes to this table when `VITE_COST_CODE_SERVER_AUTHORITY=true`. Repo default remains OFF. Local Test Site 1 UAT left the flag ON in ignored `.env.local`. Browser `buildlite_cost_codes_master_v1` remains 95-row leftover evidence and is not authoritative while the flag is ON.
 - Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, `VITE_CERTIFICATE_SERVER_AUTHORITY`, `VITE_CVR_SERVER_AUTHORITY`, `VITE_LEDGER_SERVER_AUTHORITY`, `VITE_REVENUE_SERVER_AUTHORITY`, and `VITE_COST_CODE_SERVER_AUTHORITY` for cutover (see `client/.env.example`). Repo defaults remain OFF. Local UAT uses `.env.local`. Do not commit `.env.local`.
 
@@ -942,9 +943,53 @@ Commercial non-interference unchanged: P01 locked v5 / P02 locked v3 / P03 locke
 
 Deferred UX/architecture: Commercial Structure catalog remains browser-local. Admin should not Save migrated rows whose server `reporting_group` is absent from the local dropdown catalog until that dependency is resolved.
 
+## BL-033D.x.2 (Company Prelims template tailoring + cost-code mapping) — COMPLETE
+
+Company-owned templates are a practical tenant-level setup tool. Administration → Prelims Templates supports rename/default, line name/guidance/driver/TIME bases, enable/disable, custom `co.prelims.*` lines, and mapping to the shared server Cost Code Master. No schema migration 018. Existing 016 APIs with optimistic versions. Human mapping UAT **PASSED** on `buildlite_clone`.
+
+Proven commercial rules:
+
+- Company template lines are independently tailorable (copied Standard guidance remains visible; product Standard stays GET-only).
+- Many lines may map to one client cost code. Duplicate mappings are allowed and shown as shared-code context, not an error.
+- Mapping persists canonical `cost_code_key` only (`5231`). There is no display-label column; picker labels are display-only.
+- PRELIMS classification is normal. UNCLASSIFIED and other groups warn and do not block. Classification is not inferred or written.
+- Company custom lines are supported. Server generates `co.prelims.*`; `bl.prelims.*` custom keys are rejected.
+- Disable/re-enable is non-destructive: the row is retained, `enabled` flips, version increments, same id.
+- No company monetary defaults (`monthly_rate` / `lump_sum_amount` stay NULL).
+- No development instantiation. No Review & Adopt. No CVR adoption.
+- Mapping does not rewrite Cost Code Master hierarchy (`reporting_group` / Commercial Head / family). Commercial Structure catalog remains browser-local/deferred.
+
+### Company template mapping UAT — PASSED
+
+One company-owned copy, client `7e23d356-63b6-4bea-b4eb-065c9977ac03`, template `57d780fc-dac3-48ac-bbd0-03cf99bb8646`:
+
+| Field | Value |
+|-------|--------|
+| name | BuildLite Standard Prelims |
+| origin | `buildlite_standard` |
+| source_standard_version | 1 |
+| is_default | true |
+| header version | 1 (rename skipped) |
+| lines | **26** (25 Standard-copied + 1 custom UAT) |
+| mapped | **2**, both canonical `5231` |
+| monthly_rate / lump_sum_amount | all NULL |
+
+Mapped Standard-copied lines:
+
+| id | template_key | name | driver | version | cost_code_key |
+|----|--------------|------|--------|---------|---------------|
+| `202c027e-2747-44f7-b5f0-d49fe57d9c84` | `bl.prelims.v1.cleaning_ongoing` | Ongoing Site Cleaning | TIME | 2 | `5231` |
+| `e71f84bb-4bd1-42e6-bfa6-535275550c9d` | `bl.prelims.v1.cleaning_final` | Final Clean | LUMP_SUM | 2 | `5231` |
+
+Custom UAT line left in place: `52b5b8f3-4768-4f7c-bdf2-f6f4e1a43983` / `co.prelims.78e08146-6f9f-483e-b352-3258c01098cf` / **BL-033D.x.2 CUSTOM UAT** / LUMP_SUM / unmapped / enabled / version 1 / no money.
+
+Disable/re-enable proof: Site Manager `ebff81ba-8cbe-47fb-bb71-50c9f8629168` / `bl.prelims.v1.site_manager` retained, **enabled=true**, version **3**. Temporary UNCLASSIFIED warning used Site Supervisor `d5a79d79-b967-4ea9-8485-ec130c111bad` → `UAT-CC-001` then cleared; mapping is NULL, version 3.
+
+Product Standard v1 unchanged (25 `bl.prelims.v1.*` lines; no tenant mutation). Cost Code Master still **98 / 98 active**. Only classification row: `131acfb1-d2e9-4d53-86b9-df5f4f8306b6` — `5231` PRELIMS + STANDARD_CVR v1. `UAT-CC-001` remains unclassified. No `development_prelims_items` created from the company template. D.1 remains three rows / resolved **£58,000** + unresolved FIRST_COMPLETION. P01/P02/P03 snapshots unchanged. P04 Draft v1 / `reporting_month` **2026-08** / no snapshot. P05 absent. CVR freeze unchanged: 5231 `finalForecast` **£50,800**; Forecast Cost **£2,365,423** / Revenue **£10,444,608** / GP **£8,079,185**.
+
 ## Next action
 
-**NEXT: BL-033D.x.2** — company Prelims template tailoring + cost-code mapping. Do **not** implement D.x.3 development instantiation. Do **not** implement Review & Adopt. Do **not** adopt Prelims into the CVR. P04 remains Draft. Do **not** Submit P04. Do **not** Approve & Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** alter the three Test Site 1 Prelims UAT rows. Do **not** alter the 25-line BuildLite Standard v1. Do **not** Save migrated Admin cost-code rows from a browser whose Commercial Structure catalog lacks the server `reporting_group` values.
+**NEXT: BL-033D.x.3 — Development Prelims setup from company template.** Do **not** implement Review & Adopt. Do **not** adopt Prelims into the CVR. P04 remains Draft. Do **not** Submit P04. Do **not** Approve & Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** alter the three Test Site 1 Prelims UAT rows. Do **not** alter the 25-line BuildLite Standard v1. Do **not** Save migrated Admin cost-code rows from a browser whose Commercial Structure catalog lacks the server `reporting_group` values.
 
 Do **not** alter P01/P02/P03 `reporting_month` except by a future explicit historic-correction feature. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`. Do not delete P04 `0f513191-cd25-4812-834f-37dcf66487e0` except by a later controlled commercial task.
 

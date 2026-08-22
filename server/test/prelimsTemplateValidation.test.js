@@ -1,10 +1,12 @@
 /**
- * BL-033D.x.1 — company template body validation (no database).
+ * BL-033D.x.2 — company template body validation (no database).
  */
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  generateCompanyTemplateKey,
+  isProductStandardTemplateKey,
   validateCreateTemplateBody,
   validateTemplateLineBody,
 } = require("../services/prelimsTemplateValidation");
@@ -43,7 +45,7 @@ test("company lines reject FIXED_DATE, STANDARD_CVR, and development dates", () 
   assert.equal(dates.ok, false);
 });
 
-test("unmapped cost_code_key and nullable rates are valid; customer key identity is preserved", () => {
+test("unmapped cost_code_key is valid; rates stay null; customer key identity is preserved", () => {
   const line = validateTemplateLineBody({
     version: 0,
     templateKey: "custom.cleaning",
@@ -51,12 +53,12 @@ test("unmapped cost_code_key and nullable rates are valid; customer key identity
     forecastDriver: "TIME",
     startBasis: "SITE_START",
     endBasis: "FINAL_COMPLETION",
-    monthlyRate: 1000,
     costCodeKey: " 5231 ",
   });
   assert.equal(line.ok, true);
   assert.equal(line.value.costCodeKey, "5231");
-  assert.equal(line.value.monthlyRate, 1000);
+  assert.equal(line.value.monthlyRate, null);
+  assert.equal(line.value.lumpSumAmount, null);
 
   const unmapped = validateTemplateLineBody({
     templateKey: "custom.unmapped",
@@ -66,4 +68,68 @@ test("unmapped cost_code_key and nullable rates are valid; customer key identity
   assert.equal(unmapped.ok, true);
   assert.equal(unmapped.value.costCodeKey, null);
   assert.equal(unmapped.value.lumpSumAmount, null);
+});
+
+test("D.x.2 rejects monetary defaults and display-label cost codes; preserves hyphenated keys", () => {
+  const money = validateTemplateLineBody({
+    templateKey: "custom.money",
+    name: "Cleaning",
+    forecastDriver: "TIME",
+    startBasis: "SITE_START",
+    endBasis: "FINAL_COMPLETION",
+    monthlyRate: 1000,
+  });
+  assert.equal(money.ok, false);
+  assert.ok(money.errors.some((error) => /monetary defaults/.test(error)));
+
+  const lump = validateTemplateLineBody({
+    templateKey: "custom.lump",
+    name: "Final Clean",
+    forecastDriver: "LUMP_SUM",
+    lumpSumAmount: 20000,
+  });
+  assert.equal(lump.ok, false);
+
+  const label = validateTemplateLineBody({
+    templateKey: "custom.label",
+    name: "Cleaning",
+    forecastDriver: "LUMP_SUM",
+    costCodeKey: "5231 — Cleaning",
+  });
+  assert.equal(label.ok, false);
+
+  const hyphen = validateTemplateLineBody({
+    templateKey: "custom.hyphen",
+    name: "Site manager",
+    forecastDriver: "TIME",
+    startBasis: "SITE_START",
+    endBasis: "FINAL_COMPLETION",
+    costCodeKey: "P100-SM",
+  });
+  assert.equal(hyphen.ok, true);
+  assert.equal(hyphen.value.costCodeKey, "P100-SM");
+});
+
+test("custom keys generate co.prelims.* and cannot collide with bl.prelims.*", () => {
+  const missing = validateTemplateLineBody(
+    { name: "Custom welfare", forecastDriver: "LUMP_SUM" },
+    { allowMissingKey: true }
+  );
+  assert.equal(missing.ok, true);
+  assert.equal(missing.value.templateKey, "");
+
+  const required = validateTemplateLineBody({
+    name: "Custom welfare",
+    forecastDriver: "LUMP_SUM",
+  });
+  assert.equal(required.ok, false);
+
+  const one = generateCompanyTemplateKey();
+  const two = generateCompanyTemplateKey();
+  assert.match(one, /^co\.prelims\./);
+  assert.match(two, /^co\.prelims\./);
+  assert.notEqual(one, two);
+  assert.equal(isProductStandardTemplateKey(one), false);
+  assert.equal(isProductStandardTemplateKey("bl.prelims.v1.site_manager"), true);
+  assert.equal(isProductStandardTemplateKey("BL.PRELIMS.forged"), true);
 });
