@@ -1,10 +1,10 @@
 # BuildLite Database Reference
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
-**Last product slice fully complete:** **BL-033D.1 — COMPLETE** (calculation-only Development Prelims TIME / LUMP_SUM proposal; Test Site 1 Prelims UAT **PASSED**).  
-**Last persistence slice implemented:** **BL-033D.x.1** (`016_client_prelims_templates.sql` on `buildlite_test` only). **Not COMPLETE.** Clone remains through **015**. **BL-033A design ACCEPTED.**  
+**Last product slice fully complete:** **BL-033D.x.1 — COMPLETE** (company Prelims templates + BuildLite Standard v1; company-template UAT **PASSED**).  
+**Last persistence slice implemented:** **BL-033D.x.1** (`016_client_prelims_templates.sql` applied on `buildlite_test` and local `buildlite_clone`). **BL-033A design ACCEPTED.**  
 **CRITICAL:** P03 is **locked** with schema-v2 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. P04 is **Draft** `0f513191-cd25-4812-834f-37dcf66487e0` v1 with `reporting_month` **2026-08** and **no snapshot**. P01/P02/P03 `reporting_month` remain NULL. P05 does not exist.  
-**NEXT:** Controlled company-template UAT for BL-033D.x.1. Do not apply `016` to clone. Do not Submit or Approve & Lock P04. Do not create P05. Do not switch 5231 to TIME. Do not implement Review & Adopt / CVR adoption. Do not start BL-033D.x.2 mapping or D.x.3 instantiation.
+**NEXT:** BL-033D.x.2 preflight (company-template tailoring + cost-code mapping). Do not implement until accepted. Do not Submit or Approve & Lock P04. Do not create P05. Do not switch 5231 to TIME. Do not implement Review & Adopt / CVR adoption. Do not start D.x.3 instantiation.
 
 ---
 
@@ -27,7 +27,7 @@ Postgres is already the authority for:
 | `013_cost_code_classifications.sql` | `cost_code_classifications` | **BL-033B COMPLETE**. Tenant-level semantic group + forecast-driver metadata. Unmapped = UNCLASSIFIED + STANDARD_CVR (no row). OTHER is explicit. Unique `(client_id, cost_code_key)`. No FK on the text key. No backfill. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 `5231` → PRELIMS + STANDARD_CVR. Not in CVR/snapshots. `forecast_driver` is a default/suggested driver only. |
 | `014_development_programme.sql` | `development_programme` | **BL-033C COMPLETE**. Typed site start / optional first completion / final completion / plot count + version. GET seeds from payload without write until PUT. Inclusive calendar months in application code. Test Site 1 programme UAT **PASSED** (one v1 row; 38 months; firstCompletion NULL). Applied on `buildlite_test` and local `buildlite_clone`. **BL-033C.1 COMPLETE**: Create Next requires an explicit YYYY-MM (`reportingMonth` is the CVR calendar month, distinct from the period key; no today default; no historic inference). Test Site 1 P04 Draft `reporting_month` **2026-08**; P01–P03 remain NULL. Not in CVR/snapshots. |
 | `015_development_prelims_items.sql` | `development_prelims_items` | **BL-033D.1 COMPLETE**. TIME / LUMP_SUM proposal lines. Calculated months/money are not stored. No FK on `cost_code_key`. No unique on `cost_code_key`. Applied on `buildlite_test` and local `buildlite_clone`. Does not enter CVR close or snapshots. Test Site 1 Prelims UAT **PASSED**. |
-| `016_client_prelims_templates.sql` | `client_prelims_templates`, `client_prelims_template_lines` | **BL-033D.x.1 IMPLEMENTED — awaiting company-template UAT**. Multiple named company templates per client. At most one default (partial unique index). `client_id` on lines for tenant isolation. Unique `(template_id, template_key)`. No FK on `cost_code_key`. No unique on cost code. Applied on `buildlite_test` only. **Do not apply to clone.** Does not write `development_prelims_items`. BuildLite Standard is not stored as tenant rows. |
+| `016_client_prelims_templates.sql` | `client_prelims_templates`, `client_prelims_template_lines` | **BL-033D.x.1 COMPLETE**. Multiple named company templates per client. At most one default (partial unique index). Unique `(template_id, template_key)`. No unique on `cost_code_key` — multiple template lines may map to the same customer cost code. Applied on `buildlite_test` and local `buildlite_clone`. Company-template UAT **PASSED** (one Standard v1 copy, 25 unmapped lines, no £ defaults). Does not write `development_prelims_items`. BuildLite Standard is not stored as tenant rows. |
 
 Still **browser/localStorage** (not yet Postgres authority):
 
@@ -307,7 +307,7 @@ GET `/api/developments/:developmentId/revenue/settings` returns `exists: false` 
 
 **BL-033D.1 COMPLETE (Test Site 1 Prelims UAT PASSED).** Calculation-only TIME / LUMP_SUM proposal. Migration `015` applied on `buildlite_test` and local `buildlite_clone`. Three 5231 lines: LUMP_SUM £20,000 active; TIME SITE_START→FINAL_COMPLETION 38 months / £38,000; TIME FIRST_COMPLETION unresolved. Resolved active proposal **£58,000**. CVR money is unchanged. No Review & Adopt.
 
-**BL-033D.x.1 IMPLEMENTED — awaiting company-template UAT.** Product-owned BuildLite Standard v1; tenant-owned company templates; multiple named templates; optional/default template with at most one default per client. Migration `016` on `buildlite_test` only. **Do not apply to clone.** No silent Standard upgrades. No development instantiation. No CVR adoption.
+**BL-033D.x.1 COMPLETE (company-template UAT PASSED).** Product-owned BuildLite Standard v1 (25 commercially reviewed lines). Tenant-owned copy `57d780fc-dac3-48ac-bbd0-03cf99bb8646` named BuildLite Standard Prelims, origin `buildlite_standard`, source version 1, default true, 25 unmapped lines, no £ defaults. Template lines are forecast assumptions/behaviours, not a prescribed client cost-code structure; multiple lines may later map to the same customer cost code. Migration `016` applied on `buildlite_test` and local `buildlite_clone`. No development instantiation. No CVR adoption.
 
 ---
 
