@@ -120,8 +120,22 @@ export async function getServerCostCode(id) {
 export async function createServerCostCode(payload = {}) {
   store.postCallCount += 1;
   store.lastWritePayload = payload;
+  const code = String(payload.code || '').trim();
+  if (/[—]/.test(code) || / – /.test(code) || / - /.test(code)) {
+    throw new CostCodeApiError(
+      'code must be the customer cost-code identity, not a display label.',
+      { status: 400 }
+    );
+  }
+  const duplicate = store.costCodes.some(
+    (row) => String(row.code || '').trim().toLowerCase() === code.toLowerCase()
+  );
+  if (duplicate) {
+    throw new CostCodeApiError('Cost code already exists.', { status: 409 });
+  }
   const created = buildServerCostCodeFixture({
     ...payload,
+    code,
     id: payload.id || `cc-new-${store.postCallCount}`,
     version: 1,
   });

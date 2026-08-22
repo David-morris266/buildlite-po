@@ -19,6 +19,8 @@ import { getActiveFamilyNames, getActiveHeadNames, getActiveTradeNames } from '.
 import { newAdminId, readAdminStore, writeAdminStore } from './adminStorage';
 
 import { notifyMasterDataChanged } from './masterDataEvents';
+import { isCostCodeServerAuthorityEnabled } from './costCodeAuthority';
+import { ensureCostCodesReady } from './costCodeServerCache';
 
 
 
@@ -243,6 +245,12 @@ export function ensureCostCodeMasterMigrated() {
 
 
 export async function ensureCostCodeMasterSeeded() {
+
+  if (isCostCodeServerAuthorityEnabled()) {
+
+    throw new Error('Cost code server authority is on; do not seed the browser master.');
+
+  }
 
   ensureCostCodeMasterMigrated();
 
@@ -576,6 +584,8 @@ export function toCostCodeSelectShape(record) {
 
     id: record.id,
 
+    value: record.code,
+
     code: record.code,
 
     subHeading: record.commercialFamily,
@@ -615,6 +625,14 @@ export function toCostCodeSelectShape(record) {
 
 
 export async function listActiveCostCodesForSelect() {
+
+  if (isCostCodeServerAuthorityEnabled()) {
+
+    const rows = await ensureCostCodesReady();
+
+    return (rows || []).filter((item) => item.active !== false).map(toCostCodeSelectShape);
+
+  }
 
   await ensureCostCodeMasterSeeded();
 

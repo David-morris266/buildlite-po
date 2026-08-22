@@ -1,6 +1,7 @@
 /**
- * BL-033D.x.2A.1 — Server Cost Code Master mutations.
- * Live Admin does not call these in this slice. Tests prove no dual-write when ON.
+ * BL-033D.x.2A.2 — Server Cost Code Master mutations.
+ * Used by Admin when VITE_COST_CODE_SERVER_AUTHORITY=true.
+ * No localStorage writes.
  */
 
 import {
@@ -11,6 +12,7 @@ import {
 } from '../api/costCodes';
 import { isCostCodeServerAuthorityEnabled } from './costCodeAuthority';
 import { CostCodeCacheError, replaceCachedCostCode, requireCachedCostCodes } from './costCodeServerCache';
+import { notifyMasterDataChanged } from './masterDataEvents';
 
 function wrap(error, fallbackMessage) {
   if (error instanceof CostCodeCacheError) return error;
@@ -36,6 +38,7 @@ export async function createCostCodeOnServer(payload = {}) {
   try {
     const document = await createServerCostCode(payload);
     replaceCachedCostCode(document);
+    notifyMasterDataChanged('cost-codes');
     return { ok: true, costCode: document };
   } catch (error) {
     const wrapped = wrap(error, 'Failed to create cost code.');
@@ -54,6 +57,7 @@ export async function updateCostCodeOnServer(id, payload = {}) {
   try {
     const document = await updateServerCostCode(id, payload);
     replaceCachedCostCode(document);
+    notifyMasterDataChanged('cost-codes');
     return { ok: true, costCode: document };
   } catch (error) {
     const wrapped = wrap(error, 'Failed to save cost code.');
@@ -72,6 +76,7 @@ export async function setCostCodeActiveOnServer(id, payload = {}) {
   try {
     const document = await setServerCostCodeActive(id, payload);
     replaceCachedCostCode(document);
+    notifyMasterDataChanged('cost-codes');
     return { ok: true, costCode: document };
   } catch (error) {
     const wrapped = wrap(error, 'Failed to update cost code active state.');

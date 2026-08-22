@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  addCostCodeMasterRecord,
-  ensureCostCodeMasterSeeded,
-  searchCostCodeMasterRecords,
-  updateCostCodeMasterRecord,
-} from '../../admin/costCodeMasterStore';
-import {
   getActiveFamilyNames,
   getActiveHeadNames,
   getActiveTradeNames,
@@ -19,6 +13,15 @@ import {
   semanticGroupLabel,
   unmappedClassification,
 } from '../../admin/costCodeClassification';
+import {
+  ensureAdminCostCodesReady,
+  getAdminCostCodeReadiness,
+  isAdminCostCodeServerAuthority,
+  listAdminCostCodeRecords,
+  retryAdminCostCodes,
+  saveAdminCostCode,
+  searchAdminCostCodeRecords,
+} from '../../admin/costCodeAdminService';
 import {
   CostCodeClassificationApiError,
   listCostCodeClassifications,
@@ -48,6 +51,7 @@ const EMPTY_FORM = {
   allowLedgerImport: true,
   allowForecastAdjustment: true,
   notes: '',
+  version: 1,
 };
 
 function boolSelect(value, onChange) {
@@ -60,6 +64,7 @@ function boolSelect(value, onChange) {
 }
 
 export default function AdminCostCodesPage({ onBack }) {
+  const serverAuthority = isAdminCostCodeServerAuthority();
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -75,6 +80,9 @@ export default function AdminCostCodesPage({ onBack }) {
   const [classification, setClassification] = useState(() => unmappedClassification(''));
   const [classificationError, setClassificationError] = useState('');
   const [classificationSaving, setClassificationSaving] = useState(false);
+  const [masterError, setMasterError] = useState('');
+  const [partialSaveMessage, setPartialSaveMessage] = useState('');
+  const [conflict, setConflict] = useState(false);
 
   async function loadClassifications() {
     try {
@@ -91,22 +99,41 @@ export default function AdminCostCodesPage({ onBack }) {
     }
   }
 
+  async function loadMaster() {
+    setLoading(true);
+    setMasterError('');
+    setConflict(false);
+    try {
+      await ensureAdminCostCodesReady();
+      setRefresh((value) => value + 1);
+    } catch (err) {
+      if (serverAuthority) {
+        setMasterError(err?.message || 'Could not load cost codes.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
-    Promise.all([ensureCostCodeMasterSeeded(), loadClassifications()])
-      .then(() => setRefresh((value) => value + 1))
-      .finally(() => setLoading(false));
+    Promise.all([loadMaster(), loadClassifications()]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial mount only
   }, []);
 
+  const readiness = getAdminCostCodeReadiness();
   const allRecords = useMemo(() => {
     void refresh;
-    return searchCostCodeMasterRecords('');
+    return listAdminCostCodeRecords();
   }, [refresh]);
+  const masterUnresolved = serverAuthority && allRecords == null;
+  const masterLoadedEmpty = serverAuthority && Array.isArray(allRecords) && allRecords.length === 0;
 
   const records = useMemo(() => {
     void refresh;
-    let items = searchCostCodeMasterRecords(search);
+    let items = searchAdminCostCodeRecords(search, allRecords);
+    if (items == null) return null;
     if (filterHead) items = items.filter((item) => item.commercialHead === filterHead);
-    if (filterTrade) items = items.filter((item) => item.trade === filterTrade);
+    if (filterTrade) items = items.filter((item) => (item.reportingGroup || item.trade) === filterTrade);
     if (filterActive === 'active') items = items.filter((item) => item.active);
     if (filterActive === 'inactive') items = items.filter((item) => !item.active);
     if (filterOrderType !== 'all') items = items.filter((item) => item.defaultOrderType === filterOrderType);
@@ -114,18 +141,28 @@ export default function AdminCostCodesPage({ onBack }) {
       items = items.filter((item) => lookupClassification(classificationsByKey, item.code).semanticGroup === filterGroup);
     }
     return items;
-  }, [refresh, search, filterHead, filterTrade, filterActive, filterOrderType, filterGroup, classificationsByKey]);
+  }, [refresh, search, filterHead, filterTrade, filterActive, filterOrderType, filterGroup, classificationsByKey, allRecords]);
 
   const heads = getActiveHeadNames();
-  const tradeOptions = [...new Set(allRecords.map((item) => item.trade).filter(Boolean))].sort();
+  const tradeOptions = [...new Set((allRecords || []).map((item) => item.reportingGroup || item.trade).filter(Boolean))].sort();
   const families = getActiveFamilyNames(form.commercialHead);
   const trades = getActiveTradeNames(form.commercialHead, form.commercialFamily);
+  const showLoading = loading || (serverAuthority && readiness.loadState === 'loading');
+  const showError = serverAuthority && (readiness.loadState === 'error' || Boolean(masterError)) && masterUnresolved;
+  const listRecords = records || [];
 
   function selectRecord(record) {
     setSelectedId(record.id);
     setIsNew(false);
-    setForm({ ...record });
+    setForm({
+      ...EMPTY_FORM,
+      ...record,
+      trade: record.reportingGroup || record.trade || '',
+    });
     setClassification(lookupClassification(classificationsByKey, record.code));
+    setPartialSaveMessage('');
+    setConflict(false);
+    setMasterError('');
   }
 
   function startNew() {
@@ -139,73 +176,132 @@ export default function AdminCostCodesPage({ onBack }) {
       trade: '',
     });
     setClassification(unmappedClassification(''));
+    setPartialSaveMessage('');
+    setConflict(false);
+    setMasterError('');
   }
 
-  async function saveRecord() {
-    const result = isNew
-      ? addCostCodeMasterRecord(form)
-      : updateCostCodeMasterRecord(selectedId, form);
-
-    if (!result.ok) {
-      window.alert(result.errors?.[0]);
-      return;
-    }
-
-    setSelectedId(result.record.id);
-    setIsNew(false);
-    setForm({ ...result.record });
-    setRefresh((value) => value + 1);
-
+  async function saveClassificationForCode(code) {
     setClassificationSaving(true);
     try {
-      const saved = await putCostCodeClassification(result.record.code, {
+      const saved = await putCostCodeClassification(code, {
         version: classification.version || 0,
         semanticGroup: classification.semanticGroup,
         forecastDriver: classification.forecastDriver,
       });
       setClassification({
         id: saved.id || null,
-        costCodeKey: saved.costCodeKey || result.record.code,
+        costCodeKey: saved.costCodeKey || code,
         exists: Boolean(saved.exists),
         semanticGroup: saved.semanticGroup,
         forecastDriver: saved.forecastDriver,
         version: saved.version || 0,
       });
       await loadClassifications();
+      return { ok: true };
     } catch (err) {
       const message =
         err instanceof CostCodeClassificationApiError
           ? err.message
           : 'Could not save BuildLite classification.';
       setClassificationError(message);
-      window.alert(message);
+      return { ok: false, message };
     } finally {
       setClassificationSaving(false);
     }
   }
 
-  const unclassifiedCount = allRecords.filter(
+  async function saveRecord() {
+    setPartialSaveMessage('');
+    setMasterError('');
+    setConflict(false);
+    const previous = isNew ? null : (allRecords || []).find((item) => item.id === selectedId) || null;
+    const result = await saveAdminCostCode({
+      isNew,
+      id: selectedId,
+      form,
+      previous,
+    });
+
+    if (!result.ok) {
+      const message = result.message || result.errors?.[0] || 'Could not save cost code.';
+      setMasterError(message);
+      setConflict(Boolean(result.conflict));
+      if (result.record) setForm({ ...EMPTY_FORM, ...result.record, trade: result.record.reportingGroup || result.record.trade || '' });
+      if (!serverAuthority) window.alert(message);
+      return;
+    }
+
+    setSelectedId(result.record.id);
+    setIsNew(false);
+    setForm({
+      ...EMPTY_FORM,
+      ...result.record,
+      trade: result.record.reportingGroup || result.record.trade || '',
+    });
+    setRefresh((value) => value + 1);
+
+    const classified = await saveClassificationForCode(result.record.code);
+    if (!classified.ok) {
+      const message = `Cost code saved, but classification could not be saved. ${classified.message}`;
+      setPartialSaveMessage(message);
+      if (!serverAuthority) window.alert(classified.message);
+    }
+  }
+
+  const unclassifiedCount = (allRecords || []).filter(
     (item) => lookupClassification(classificationsByKey, item.code).semanticGroup === 'UNCLASSIFIED'
   ).length;
+  const codeLocked = serverAuthority && !isNew;
 
   return (
     <AdminPageShell
       title="Cost Codes"
       lead="Master cost code records remain the commercial identity. BuildLite Group is engine taxonomy only and does not change CVR until a later forecast-driver slice."
       onBack={onBack}
-      actions={<AdminButton variant="primary" onClick={startNew}>Add Cost Code</AdminButton>}
+      actions={<AdminButton variant="primary" onClick={startNew} disabled={showError}>Add Cost Code</AdminButton>}
     >
       {classificationError ? (
         <p className="admin-inline-warning" role="status">{classificationError}</p>
       ) : null}
-      <AdminKpiGrid
-        items={[
-          { label: 'Total Cost Codes', value: allRecords.length },
-          { label: 'Active', value: allRecords.filter((item) => item.active).length, tone: 'success' },
-          { label: 'Unclassified', value: unclassifiedCount, tone: unclassifiedCount ? 'warning' : 'muted' },
-          { label: 'Filtered', value: records.length },
-        ]}
-      />
+      {partialSaveMessage ? (
+        <p className="admin-inline-warning" role="status">{partialSaveMessage}</p>
+      ) : null}
+      {masterError ? (
+        <p className="admin-inline-warning" role="alert">{masterError}</p>
+      ) : null}
+      {conflict ? (
+        <p className="admin-inline-warning" role="status">
+          This cost code was updated elsewhere. Reload and try again rather than overwriting.
+        </p>
+      ) : null}
+
+      {showError ? (
+        <AdminEmptyState
+          icon="⚠"
+          title="Could not load cost codes"
+          message={masterError || readiness.error?.message || 'The Cost Code Master is unavailable. This is not an empty tenant.'}
+          tone="warning"
+        />
+      ) : null}
+      {showError ? (
+        <div className="admin-form__actions">
+          <AdminButton variant="primary" onClick={() => retryAdminCostCodes().then(loadMaster).catch((err) => setMasterError(err?.message || 'Could not load cost codes.'))}>
+            Retry
+          </AdminButton>
+        </div>
+      ) : null}
+
+      {!showError && !masterUnresolved ? (
+        <AdminKpiGrid
+          items={[
+            { label: 'Total Cost Codes', value: (allRecords || []).length },
+            { label: 'Active', value: (allRecords || []).filter((item) => item.active).length, tone: 'success' },
+            { label: 'Unclassified', value: unclassifiedCount, tone: unclassifiedCount ? 'warning' : 'muted' },
+            { label: 'Filtered', value: listRecords.length },
+          ]}
+        />
+      ) : null}
 
       <div className="admin-split-layout">
         <aside className="admin-split-layout__sidebar po-module-card">
@@ -217,6 +313,7 @@ export default function AdminCostCodesPage({ onBack }) {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Code, description, reporting group, family or head"
+                disabled={showError}
               />
             </label>
             <label className="dev-form__field">
@@ -262,15 +359,22 @@ export default function AdminCostCodesPage({ onBack }) {
           </div>
 
           <div className="admin-record-list">
-            {loading ? <AdminSkeleton rows={6} /> : null}
-            {!loading && records.length === 0 ? (
+            {showLoading ? <AdminSkeleton rows={6} /> : null}
+            {showError ? (
+              <p className="admin-form__hint">Cost codes are not shown because the server master has not loaded.</p>
+            ) : null}
+            {!showLoading && !showError && !masterUnresolved && listRecords.length === 0 ? (
               <AdminEmptyState
                 icon="📋"
-                title="No cost codes found"
-                message="Adjust your search or filters, or add a new cost code."
+                title={masterLoadedEmpty && !search && !filterHead && !filterTrade && filterActive === 'all' ? 'No cost codes' : 'No cost codes found'}
+                message={
+                  masterLoadedEmpty && !search
+                    ? 'This tenant has no cost codes on the server yet. This is a genuine empty master.'
+                    : 'Adjust your search or filters, or add a new cost code.'
+                }
               />
             ) : null}
-            {!loading && records.map((record) => {
+            {!showLoading && !showError && listRecords.map((record) => {
               const recordClassification = lookupClassification(classificationsByKey, record.code);
               const unclassified = recordClassification.semanticGroup === 'UNCLASSIFIED';
               return (
@@ -300,7 +404,7 @@ export default function AdminCostCodesPage({ onBack }) {
         </aside>
 
         <section className="admin-split-layout__detail po-module-card admin-property-panel">
-          {selectedId ? (
+          {selectedId && !showError ? (
             <form className="admin-property-form" onSubmit={(e) => { e.preventDefault(); saveRecord(); }}>
               <header className="admin-property-panel__header">
                 <h2>{isNew ? 'New Cost Code' : form.code || 'Cost Code'}</h2>
@@ -310,7 +414,17 @@ export default function AdminCostCodesPage({ onBack }) {
               <div className="admin-form__grid">
                 <label className="dev-form__field">
                   <span className="dev-form__label">Cost Code</span>
-                  <input className="input" value={form.code} onChange={(e) => setForm((p) => ({ ...p, code: e.target.value }))} />
+                  <input
+                    className="input"
+                    value={form.code}
+                    readOnly={codeLocked}
+                    disabled={codeLocked}
+                    aria-readonly={codeLocked ? 'true' : undefined}
+                    onChange={(e) => {
+                      if (codeLocked) return;
+                      setForm((p) => ({ ...p, code: e.target.value }));
+                    }}
+                  />
                 </label>
                 <label className="dev-form__field">
                   <span className="dev-form__label">Description</span>
@@ -346,7 +460,7 @@ export default function AdminCostCodesPage({ onBack }) {
                 </label>
                 <label className="dev-form__field">
                   <span className="dev-form__label">Reporting Group</span>
-                  <select className="input" value={form.trade} onChange={(e) => setForm((p) => ({ ...p, trade: e.target.value }))}>
+                  <select className="input" value={form.trade} onChange={(e) => setForm((p) => ({ ...p, trade: e.target.value, reportingGroup: e.target.value }))}>
                     <option value="">Select reporting group</option>
                     {trades.map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
@@ -444,7 +558,16 @@ export default function AdminCostCodesPage({ onBack }) {
                 <AdminButton type="submit" variant="primary" disabled={classificationSaving}>
                   {classificationSaving ? 'Saving…' : 'Save Cost Code'}
                 </AdminButton>
-                <AdminButton variant="secondary" onClick={() => { setSelectedId(null); setIsNew(false); }}>Close</AdminButton>
+                {conflict ? (
+                  <AdminButton
+                    variant="secondary"
+                    type="button"
+                    onClick={() => retryAdminCostCodes().then(loadMaster)}
+                  >
+                    Reload
+                  </AdminButton>
+                ) : null}
+                <AdminButton variant="secondary" type="button" onClick={() => { setSelectedId(null); setIsNew(false); }}>Close</AdminButton>
               </div>
             </form>
           ) : (
