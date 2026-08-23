@@ -17,6 +17,7 @@ import {
   TIME_BASIS_LABELS,
 } from '../prelims/prelimsConstants';
 import { suggestedPrelimsDriver } from '../prelims/prelimsForecastEngine';
+import DevelopmentPrelimsSetupWorksheet from './DevelopmentPrelimsSetupWorksheet';
 
 const EMPTY_ADD_FORM = {
   id: null,
@@ -134,6 +135,7 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [workspaceView, setWorkspaceView] = useState('lines');
   const isEditMode = mode === 'edit' && Boolean(form.id);
 
   const load = useCallback(async () => {
@@ -317,6 +319,30 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
           {error}
         </p>
       ) : null}
+
+      {workspaceView === 'setup' ? (
+        <DevelopmentPrelimsSetupWorksheet
+          developmentId={developmentId}
+          onCancel={() => setWorkspaceView('lines')}
+          onApplied={async () => {
+            setWorkspaceView('lines');
+            await load();
+          }}
+        />
+      ) : (
+        <>
+      <div className="dev-prelims__actions">
+        <button
+          className="btn"
+          type="button"
+          onClick={() => {
+            setError('');
+            setWorkspaceView('setup');
+          }}
+        >
+          Set up site Prelims
+        </button>
+      </div>
 
       <form
         className={`dev-prelims__form${isEditMode ? ' dev-prelims__form--edit' : ''}`}
@@ -527,6 +553,8 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
           </article>
         );
       })}
+        </>
+      )}
     </section>
   );
 }

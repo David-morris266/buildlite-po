@@ -6,6 +6,7 @@ import {
   aggregatePrelimsLines,
   calculateLumpSumLine,
   calculateTimeLine,
+  resolveTimeSpan,
 } from './prelimsForecastEngine';
 import { PRELIMS_UNRESOLVED_REASONS } from './prelimsConstants';
 
@@ -28,6 +29,18 @@ function timeLine(overrides = {}) {
 }
 
 describe('BL-033D.1 Prelims TIME and LUMP_SUM calculations', () => {
+  it('resolves TIME duration against the programme before a rate is entered', () => {
+    const span = resolveTimeSpan(timeLine({ monthlyRate: null }), TEST_SITE_1);
+    expect(span.state).toBe('resolved');
+    expect(span.totalMonths).toBe(38);
+    expect(span.resolvedStart).toBe('2026-09-01');
+    expect(span.resolvedEnd).toBe('2029-10-01');
+    expect(calculateTimeLine(timeLine({ monthlyRate: null }), {
+      programme: TEST_SITE_1,
+      reportingMonth: '2026-08',
+    }).reason).toBe(PRELIMS_UNRESOLVED_REASONS.INVALID_RATE);
+  });
+
   it('calculates Test Site 1 SITE_START → FINAL_COMPLETION as 38 months at P04 2026-08', () => {
     const calc = calculateTimeLine(timeLine(), {
       programme: TEST_SITE_1,

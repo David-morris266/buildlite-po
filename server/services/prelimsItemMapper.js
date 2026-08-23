@@ -45,6 +45,11 @@ function prelimsRowToPersisted(row) {
     endBasis: row.end_basis || null,
     endFixedDate: toDateOnly(row.end_fixed_date),
     lumpSumAmount: toNumberOrNull(row.lump_sum_amount),
+    sourceTemplateId: row.source_template_id || null,
+    sourceTemplateVersion:
+      row.source_template_version == null ? null : Number(row.source_template_version),
+    sourceTemplateLineId: row.source_template_line_id || null,
+    sourceTemplateKey: row.source_template_key || null,
     version: Number(row.version) || 1,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),

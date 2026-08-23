@@ -143,6 +143,72 @@ function applyStatusToAssumption(calculation, status, assumptionAmount) {
   };
 }
 
+function resolveTimeSpan(line = {}, programme = null) {
+  if (String(line.forecastDriver || "").trim() !== PRELIMS_DRIVERS.TIME) {
+    return {
+      state: PRELIMS_CALC_STATES.RESOLVED,
+      reason: null,
+      resolvedStart: null,
+      resolvedEnd: null,
+      totalMonths: null,
+    };
+  }
+
+  if (!programme || (!programme.siteStart && !programme.finalCompletion && !programme.firstCompletion)) {
+    const needsProgramme =
+      line.startBasis !== TIME_BASES.FIXED_DATE || line.endBasis !== TIME_BASES.FIXED_DATE;
+    if (needsProgramme) {
+      return {
+        state: PRELIMS_CALC_STATES.UNRESOLVED,
+        reason: PRELIMS_UNRESOLVED_REASONS.MISSING_PROGRAMME,
+        resolvedStart: null,
+        resolvedEnd: null,
+        totalMonths: null,
+      };
+    }
+  }
+
+  const resolvedStart = resolveBasisDate(line.startBasis, line.startFixedDate, programme || {});
+  if (!resolvedStart) {
+    return {
+      state: PRELIMS_CALC_STATES.UNRESOLVED,
+      reason: unresolvedReasonForBasis(line.startBasis, "start"),
+      resolvedStart: null,
+      resolvedEnd: null,
+      totalMonths: null,
+    };
+  }
+  const resolvedEnd = resolveBasisDate(line.endBasis, line.endFixedDate, programme || {});
+  if (!resolvedEnd) {
+    return {
+      state: PRELIMS_CALC_STATES.UNRESOLVED,
+      reason: unresolvedReasonForBasis(line.endBasis, "end"),
+      resolvedStart,
+      resolvedEnd: null,
+      totalMonths: null,
+    };
+  }
+
+  const totalMonths = inclusiveCalendarMonthCount(resolvedStart, resolvedEnd);
+  if (totalMonths == null) {
+    return {
+      state: PRELIMS_CALC_STATES.INVALID,
+      reason: PRELIMS_UNRESOLVED_REASONS.INVALID_SPAN,
+      resolvedStart,
+      resolvedEnd,
+      totalMonths: null,
+    };
+  }
+
+  return {
+    state: PRELIMS_CALC_STATES.RESOLVED,
+    reason: null,
+    resolvedStart,
+    resolvedEnd,
+    totalMonths,
+  };
+}
+
 function calculateTimeLine(line = {}, { programme = null, reportingMonth = null } = {}) {
   const rate = roundMoney(line.monthlyRate);
   if (rate == null || rate < 0) {
@@ -154,30 +220,20 @@ function calculateTimeLine(line = {}, { programme = null, reportingMonth = null 
     return unresolved(PRELIMS_UNRESOLVED_REASONS.MISSING_REPORTING_MONTH);
   }
 
-  if (!programme || (!programme.siteStart && !programme.finalCompletion && !programme.firstCompletion)) {
-    const needsProgramme =
-      line.startBasis !== TIME_BASES.FIXED_DATE || line.endBasis !== TIME_BASES.FIXED_DATE;
-    if (needsProgramme) {
-      return unresolved(PRELIMS_UNRESOLVED_REASONS.MISSING_PROGRAMME);
-    }
+  const span = resolveTimeSpan({ ...line, forecastDriver: PRELIMS_DRIVERS.TIME }, programme);
+  if (span.state !== PRELIMS_CALC_STATES.RESOLVED) {
+    return span.state === PRELIMS_CALC_STATES.INVALID
+      ? invalid(span.reason, {
+          resolvedStart: span.resolvedStart,
+          resolvedEnd: span.resolvedEnd,
+        })
+      : unresolved(span.reason, {
+          resolvedStart: span.resolvedStart,
+          resolvedEnd: span.resolvedEnd,
+        });
   }
 
-  const resolvedStart = resolveBasisDate(line.startBasis, line.startFixedDate, programme || {});
-  if (!resolvedStart) {
-    return unresolved(unresolvedReasonForBasis(line.startBasis, "start"));
-  }
-  const resolvedEnd = resolveBasisDate(line.endBasis, line.endFixedDate, programme || {});
-  if (!resolvedEnd) {
-    return unresolved(unresolvedReasonForBasis(line.endBasis, "end"));
-  }
-
-  const totalMonths = inclusiveCalendarMonthCount(resolvedStart, resolvedEnd);
-  if (totalMonths == null) {
-    return invalid(PRELIMS_UNRESOLVED_REASONS.INVALID_SPAN, {
-      resolvedStart,
-      resolvedEnd,
-    });
-  }
+  const { resolvedStart, resolvedEnd, totalMonths } = span;
 
   const elapsedMonths = elapsedCalendarMonths(resolvedStart, resolvedEnd, asAt);
   const remainingMonths = totalMonths - elapsedMonths;
@@ -334,6 +390,7 @@ function suggestedPrelimsDriver(classificationDriver) {
 module.exports = {
   roundMoney,
   resolveBasisDate,
+  resolveTimeSpan,
   elapsedCalendarMonths,
   calculateTimeLine,
   calculateLumpSumLine,

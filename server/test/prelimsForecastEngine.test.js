@@ -9,6 +9,7 @@ const {
   calculateLumpSumLine,
   calculatePrelimsLine,
   calculateTimeLine,
+  resolveTimeSpan,
   suggestedPrelimsDriver,
 } = require("../services/prelimsForecastEngine");
 const { attachPrelimsCalculation } = require("../services/prelimsItemMapper");
@@ -33,6 +34,19 @@ function timeLine(overrides = {}) {
     ...overrides,
   };
 }
+
+test("TIME duration resolves against the programme before a monthly rate is entered", () => {
+  const span = resolveTimeSpan(timeLine({ monthlyRate: null }), TEST_SITE_1);
+  assert.equal(span.state, "resolved");
+  assert.equal(span.totalMonths, 38);
+  assert.equal(span.resolvedStart, "2026-09-01");
+  assert.equal(span.resolvedEnd, "2029-10-01");
+  const calc = calculateTimeLine(timeLine({ monthlyRate: null }), {
+    programme: TEST_SITE_1,
+    reportingMonth: P04,
+  });
+  assert.equal(calc.reason, PRELIMS_UNRESOLVED_REASONS.INVALID_RATE);
+});
 
 test("Test Site 1 SITE_START → FINAL_COMPLETION at P04 2026-08 is 38 months elapsed 0", () => {
   const calc = calculateTimeLine(timeLine(), { programme: TEST_SITE_1, reportingMonth: P04 });

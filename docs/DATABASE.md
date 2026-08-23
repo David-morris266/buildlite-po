@@ -1,10 +1,10 @@
 # BuildLite Database Reference
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
-**Last product slice fully complete:** **BL-033D.x.2 — COMPLETE** (company template tailoring + canonical cost-code mapping; mapping UAT **PASSED**; 26 lines / 2 mapped to `5231`; no money defaults; no development instantiation).  
-**Last persistence slice implemented:** **BL-033D.x.2A.3 COMPLETE.** Test Site 1 Cost Code Master cutover UAT **PASSED**. `017` applied on `buildlite_clone`. Server master is 98 rows (97 canonical + UAT-CC-001). Repo `VITE_COST_CODE_SERVER_AUTHORITY` default remains OFF. **BL-033A design ACCEPTED.**  
+**Last product slice fully complete:** **BL-033D.x.3 — COMPLETE** (development Prelims setup from company template; Test Site 1 setup UAT **PASSED**; four development Prelims rows; resolved proposal **£59,000** + unresolved FIRST_COMPLETION; no CVR adoption).  
+**Last persistence slice implemented:** **BL-033D.x.3 COMPLETE.** Additive `018` provenance on `development_prelims_items`. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 setup UAT **PASSED**.  
 **CRITICAL:** P03 is **locked** with schema-v2 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. P04 is **Draft** `0f513191-cd25-4812-834f-37dcf66487e0` v1 with `reporting_month` **2026-08** and **no snapshot**. P01/P02/P03 `reporting_month` remain NULL. P05 does not exist.  
-**NEXT:** BL-033D.x.3 — Development Prelims setup from company template. Do not Submit or Approve & Lock P04. Do not create P05. Do not switch 5231 to TIME. Do not implement Review & Adopt / CVR adoption. Do not Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog.
+**NEXT:** BL-033D.x.4 — Review & Adopt design preflight (do not implement CVR adoption yet). Do not Submit or Approve & Lock P04. Do not create P05. Do not switch 5231 to TIME. Do not Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog.
 
 ---
 
@@ -29,6 +29,7 @@ Postgres is already the authority for:
 | `015_development_prelims_items.sql` | `development_prelims_items` | **BL-033D.1 COMPLETE**. TIME / LUMP_SUM proposal lines. Calculated months/money are not stored. No FK on `cost_code_key`. No unique on `cost_code_key`. Applied on `buildlite_test` and local `buildlite_clone`. Does not enter CVR close or snapshots. Test Site 1 Prelims UAT **PASSED**. |
 | `016_client_prelims_templates.sql` | `client_prelims_templates`, `client_prelims_template_lines` | **BL-033D.x.1 COMPLETE**. Multiple named company templates per client. At most one default (partial unique index). Unique `(template_id, template_key)`. No unique on `cost_code_key` — multiple template lines may map to the same customer cost code. Applied on `buildlite_test` and local `buildlite_clone`. Company-template UAT **PASSED**. Does not write `development_prelims_items`. BuildLite Standard is not stored as tenant rows. **BL-033D.x.2 COMPLETE** (no 018): company tailoring + canonical `cost_code_key` mapping. Mapping UAT **PASSED**. Mapping does not rewrite Cost Code Master hierarchy. Only `cost_code_key` is persisted (no display-label column). Commercial Structure catalog remains browser-local. Live Test Site 1 copy is **26 lines / 2 mapped** to canonical `5231`. |
 | `017_cost_codes_tenant_master.sql` | Additive columns on `cost_codes` | **BL-033D.x.2A.3 COMPLETE.** Admin-master fields + `version` + unique `(client_id, lower(btrim(code)))`. Applied on `buildlite_test` by tests and on local `buildlite_clone` by the controlled cutover. Test Site 1: 98 rows / 98 active / 0 collisions. **BL-033D.x.2A.2:** Admin UI uses `/api/cost-codes` when the flag is ON. Flag default OFF. Commercial Structure catalog remains browser-local. |
+| `018_development_prelims_item_provenance.sql` | Additive provenance on `development_prelims_items` | **BL-033D.x.3 COMPLETE.** Nullable template provenance + partial unique `(development_id, source_template_id, source_template_key)`. No unique on `cost_code_key`. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 setup UAT **PASSED**. Existing D.1 manual rows stay NULL; fourth template-instantiated row has provenance. |
 
 Still **browser/localStorage** (not yet Postgres authority):
 

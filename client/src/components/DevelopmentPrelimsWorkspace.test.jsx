@@ -24,6 +24,8 @@ vi.mock('../api/developmentPrelimsItems', () => ({
   listDevelopmentPrelimsItems,
   createDevelopmentPrelimsItem,
   updateDevelopmentPrelimsItem,
+  previewDevelopmentPrelimsSetup: vi.fn(),
+  applyDevelopmentPrelimsSetup: vi.fn(),
   DevelopmentPrelimsApiError: PrelimsApiError,
 }));
 
@@ -221,11 +223,12 @@ describe('DevelopmentPrelimsWorkspace add vs edit', () => {
     vi.clearAllMocks();
   });
 
-  it('shows a proposal-only banner and no Review & Adopt control', async () => {
+  it('shows a proposal-only banner, a setup worksheet entry, and no Review & Adopt control', async () => {
     await renderWorkspace();
     expect(container.textContent).toMatch(/Forecast proposal \/ assumption only/);
     expect(container.textContent).toMatch(/not adopted into the CVR/i);
     expect(container.textContent).not.toMatch(/Review & Adopt/);
+    expect(container.textContent).toMatch(/Set up site Prelims/);
     expect(container.textContent).toMatch(/CVR reporting month 2026-08/);
     expect(container.querySelector('form').getAttribute('data-mode')).toBe('add');
   });

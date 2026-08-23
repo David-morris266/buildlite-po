@@ -84,3 +84,30 @@ export async function updateDevelopmentPrelimsItem(developmentId, itemId, payloa
   });
   return handleJson(res);
 }
+
+export async function previewDevelopmentPrelimsSetup(
+  developmentId,
+  { templateId, reportingMonth } = {}
+) {
+  const params = new URLSearchParams();
+  if (templateId) params.set('templateId', templateId);
+  if (reportingMonth) params.set('reportingMonth', reportingMonth);
+  const query = params.toString();
+  const path = `/api/developments/${encodeURIComponent(developmentId)}/prelims-setup/preview${
+    query ? `?${query}` : ''
+  }`;
+  const res = await fetch(buildUrl(path));
+  return handleJson(res);
+}
+
+export async function applyDevelopmentPrelimsSetup(developmentId, payload = {}) {
+  const res = await fetch(
+    buildUrl(`/api/developments/${encodeURIComponent(developmentId)}/prelims-setup/apply`),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(withActor(payload)),
+    }
+  );
+  return handleJson(res);
+}

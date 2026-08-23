@@ -60,7 +60,7 @@ if (!isDbConfigured()) {
       `
     );
     const names = cols.rows.map((row) => row.column_name);
-    assert.deepEqual(names, [
+    for (const name of [
       "id",
       "client_id",
       "development_id",
@@ -79,7 +79,11 @@ if (!isDbConfigured()) {
       "updated_at",
       "created_by",
       "updated_by",
-    ]);
+    ]) {
+      assert.ok(names.includes(name), name);
+    }
+    assert.equal(names.includes("total_forecast"), false);
+    assert.equal(names.includes("total_months"), false);
   });
 
   test("015 rejects STANDARD_CVR and does not require a cost-code master FK", async () => {

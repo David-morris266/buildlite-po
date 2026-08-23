@@ -9836,3 +9836,99 @@
   margin-bottom: 0.65rem;
 }
 
+.dev-prelims-setup {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.dev-prelims-setup__intro h3 {
+  margin: 0 0 0.35rem;
+}
+
+.dev-prelims-setup__intro p,
+.dev-prelims-setup__meta {
+  margin: 0;
+  color: #5c6570;
+  font-size: 0.9rem;
+}
+
+.dev-prelims-setup__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem 1.25rem;
+  align-items: end;
+}
+
+.dev-prelims-setup__toolbar label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.dev-prelims-setup__table-wrap {
+  overflow: auto;
+  border: 1px solid #d9dee5;
+  border-radius: 8px;
+}
+
+.dev-prelims-setup__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.dev-prelims-setup__table th,
+.dev-prelims-setup__table td {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid #edf0f3;
+  vertical-align: top;
+  text-align: left;
+}
+
+.dev-prelims-setup__table th {
+  background: #f6f8fa;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dev-prelims-setup__table td strong {
+  display: block;
+}
+
+.dev-prelims-setup__guidance {
+  display: block;
+  color: #5c6570;
+  font-size: 0.75rem;
+  font-weight: 400;
+  margin-top: 0.15rem;
+}
+
+.dev-prelims-setup__table .input {
+  min-width: 6.5rem;
+  max-width: 8.5rem;
+}
+
+.dev-prelims-setup__chip {
+  display: block;
+  font-size: 0.72rem;
+  color: #5c6570;
+}
+
+.dev-prelims-setup__chip--ok {
+  color: #1f6b3a;
+}
+
+.dev-prelims-setup__chip--warn {
+  color: #8a4b08;
+}
+
+.dev-prelims-setup__row--disabled td,
+.dev-prelims-setup__row--applied td {
+  color: #7a828c;
+  background: #f7f8fa;
+}
+
+.dev-prelims-setup__row--overlap td:nth-child(6) {
+  background: #fff8dc;
+}
+
