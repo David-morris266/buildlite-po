@@ -43,6 +43,22 @@ function moneyLabel(value) {
   return formatCvrMoney(value);
 }
 
+function unresolvedLineLabel(count) {
+  if (!count || count <= 0) return null;
+  return count === 1 ? '1 unresolved line' : `${count} unresolved lines`;
+}
+
+function formatResolvedProposalText(activeProposal, unresolvedCount = 0) {
+  const amount =
+    activeProposal == null && unresolvedCount > 0
+      ? '—'
+      : activeProposal == null
+        ? 'Unresolved'
+        : moneyLabel(activeProposal);
+  const unresolved = unresolvedLineLabel(unresolvedCount);
+  return unresolved ? `Resolved proposal ${amount} · ${unresolved}` : `Resolved proposal ${amount}`;
+}
+
 function groupByCostCode(items = []) {
   const groups = [];
   const index = new Map();
@@ -282,8 +298,11 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
   return (
     <section className="dev-prelims" aria-label="Development Prelims">
       <div className="dev-prelims__banner" role="note">
-        <strong>Forecast proposal / assumption only.</strong> These lines are not adopted into
-        the CVR. Worksheet forecast values stay on the existing Standard CVR path.
+        <strong>Prelims proposal only</strong>
+        <p>
+          These forecasts have not yet been adopted into the CVR. The CVR forecast remains
+          unchanged.
+        </p>
       </div>
 
       {collection ? (
@@ -303,12 +322,12 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
             </dd>
           </div>
           <div>
-            <dt>Active proposal total</dt>
+            <dt>Proposal summary</dt>
             <dd>
-              {summary?.development?.hasUnresolved && summary?.development?.activeProposal == null
-                ? 'Unresolved'
-                : moneyLabel(summary?.development?.activeProposal)}
-              {summary?.development?.hasUnresolved ? ' (includes unresolved lines)' : ''}
+              {formatResolvedProposalText(
+                summary?.development?.activeProposal,
+                summary?.development?.unresolvedCount
+              )}
             </dd>
           </div>
         </dl>
@@ -524,11 +543,7 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
             <header>
               <h3>Cost code {group.costCodeKey}</h3>
               <p>
-                Active proposal:{' '}
-                {bucket?.hasUnresolved && bucket?.activeProposal == null
-                  ? 'Unresolved'
-                  : moneyLabel(bucket?.activeProposal)}
-                {bucket?.hasUnresolved ? ' · unresolved lines present' : ''}
+                {formatResolvedProposalText(bucket?.activeProposal, bucket?.unresolvedCount)}
               </p>
             </header>
             {group.items.map((item) => (

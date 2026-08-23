@@ -379,4 +379,57 @@ describe('Admin Prelims Templates', () => {
     expect(source).not.toMatch(/putCostCodeClassification|updateServerCostCode|saveRecord/);
     expect(source).not.toMatch(/buildlite_cost_codes_master_v1/);
   });
+
+  it('opens the edit form inline beneath the selected template line', async () => {
+    await act(async () => {
+      root.render(<AdminPrelimsTemplatesPage onBack={() => {}} />);
+    });
+    await flush();
+    await clickNamed(container, 'Housebuilding Prelims');
+    await flush();
+
+    const siteManagerIndex = container.textContent.indexOf('Site Manager');
+    const ongoingCleaningIndex = container.textContent.indexOf('Ongoing Site Cleaning');
+    expect(siteManagerIndex).toBeGreaterThan(-1);
+    expect(ongoingCleaningIndex).toBeGreaterThan(siteManagerIndex);
+
+    const editButtons = Array.from(container.querySelectorAll('button')).filter((btn) =>
+      btn.textContent.trim() === 'Edit'
+    );
+    await act(async () => {
+      editButtons[0].click();
+    });
+    await flush();
+
+    expect(container.textContent).toMatch(/Editing: Site Manager/);
+    const editForm = container.querySelector('[aria-label="Edit template line"]');
+    expect(editForm).toBeTruthy();
+
+    const selectedSection = container.querySelector('[aria-label="Selected Prelims template"]');
+    const tableRows = selectedSection.querySelectorAll('tbody tr');
+    expect(tableRows.length).toBeGreaterThan(2);
+    expect(tableRows[0].textContent).toContain('Site Manager');
+    expect(tableRows[1].querySelector('[aria-label="Edit template line"]')).toBeTruthy();
+    expect(tableRows[2].textContent).toContain('Ongoing Site Cleaning');
+  });
+
+  it('shows the add-line form above the template table', async () => {
+    await act(async () => {
+      root.render(<AdminPrelimsTemplatesPage onBack={() => {}} />);
+    });
+    await flush();
+    await clickNamed(container, 'Housebuilding Prelims');
+    await flush();
+    await clickNamed(container, 'Add template line');
+    await flush();
+
+    const addForm = container.querySelector('[aria-label="Add template line"]');
+    expect(addForm).toBeTruthy();
+    expect(container.textContent).toMatch(/Add template line/);
+
+    const addFormPosition = container.textContent.indexOf('Add template line');
+    const siteManagerPosition = container.textContent.indexOf('Site Manager');
+    expect(addFormPosition).toBeLessThan(siteManagerPosition);
+    expect(container.querySelector('.admin-prelims-line-form--add')).toBeTruthy();
+  });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { listCostCodeClassifications } from '../../api/costCodeClassifications';
 import {
   PrelimsTemplateApiError,
@@ -78,6 +78,153 @@ function linePayload(form) {
   return payload;
 }
 
+function TemplateLineForm({
+  form,
+  busy,
+  codeQuery,
+  mappingOptions,
+  classificationFor,
+  costCodes,
+  onSubmit,
+  onCancel,
+  onUpdateForm,
+  onCodeQueryChange,
+}) {
+  return (
+    <form
+      className="dev-prelims__form admin-prelims-line-form"
+      aria-label={form.id ? 'Edit template line' : 'Add template line'}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      <h3>
+        {form.id ? `Editing: ${form.name || 'Template line'}` : 'Add template line'}
+      </h3>
+      <p className="admin-panel__lead">
+        {form.id
+          ? 'Company copy only. This does not change BuildLite Standard or the Cost Code Master hierarchy.'
+          : 'The server assigns a company-owned key. Custom lines cannot use bl.prelims. keys.'}
+      </p>
+      <label>
+        Name
+        <input
+          className="input"
+          value={form.name}
+          onChange={(event) => onUpdateForm('name', event.target.value)}
+          aria-label="Template line name"
+          required
+        />
+      </label>
+      <label>
+        Guidance
+        <textarea
+          className="input"
+          rows={3}
+          value={form.description}
+          onChange={(event) => onUpdateForm('description', event.target.value)}
+          aria-label="Template line guidance"
+        />
+      </label>
+      <label>
+        Forecast driver
+        <select
+          className="input"
+          value={form.forecastDriver}
+          onChange={(event) => onUpdateForm('forecastDriver', event.target.value)}
+          aria-label="Template line driver"
+        >
+          <option value="TIME">TIME</option>
+          <option value="LUMP_SUM">LUMP_SUM</option>
+        </select>
+      </label>
+      {form.forecastDriver === 'TIME' ? (
+        <>
+          <label>
+            TIME start
+            <select
+              className="input"
+              value={form.startBasis}
+              onChange={(event) => onUpdateForm('startBasis', event.target.value)}
+              aria-label="TIME start basis"
+            >
+              {TIME_BASES.map((basis) => (
+                <option key={basis} value={basis}>
+                  {basis}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            TIME end
+            <select
+              className="input"
+              value={form.endBasis}
+              onChange={(event) => onUpdateForm('endBasis', event.target.value)}
+              aria-label="TIME end basis"
+            >
+              {TIME_BASES.map((basis) => (
+                <option key={basis} value={basis}>
+                  {basis}
+                </option>
+              ))}
+            </select>
+          </label>
+        </>
+      ) : null}
+      <label>
+        Search cost codes
+        <input
+          className="input"
+          value={codeQuery}
+          onChange={(event) => onCodeQueryChange(event.target.value)}
+          aria-label="Search cost codes"
+          placeholder="Code, description or reporting group"
+        />
+      </label>
+      <label>
+        Mapped cost code
+        <select
+          className="input"
+          value={form.costCodeKey}
+          onChange={(event) => onUpdateForm('costCodeKey', event.target.value)}
+          aria-label="Mapped cost code"
+        >
+          <option value="">Unmapped</option>
+          {mappingOptions.map((option) => (
+            <option key={option.code} value={option.code}>
+              {mappingOptionLabel(option)}
+            </option>
+          ))}
+        </select>
+      </label>
+      {form.costCodeKey ? (
+        <p className="admin-form__hint" role="status">
+          {classificationFor(form.costCodeKey).message ||
+            `Mapped code ${form.costCodeKey} is classified PRELIMS.`}
+        </p>
+      ) : (
+        <p className="admin-form__hint">Leave unmapped until the customer cost code is known.</p>
+      )}
+      {!costCodes.length ? (
+        <p className="admin-form__hint">
+          Mapping uses the server Cost Code Master. Enable server authority and reload if the list
+          is empty.
+        </p>
+      ) : null}
+      <div className="dev-prelims__actions">
+        <AdminButton type="submit" disabled={busy || !form.name.trim()}>
+          {form.id ? 'Save line' : 'Add line'}
+        </AdminButton>
+        <AdminButton variant="secondary" disabled={busy} onClick={onCancel}>
+          Cancel
+        </AdminButton>
+      </div>
+    </form>
+  );
+}
+
 export default function AdminPrelimsTemplatesPage({ onBack }) {
   const [templates, setTemplates] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -89,6 +236,9 @@ export default function AdminPrelimsTemplatesPage({ onBack }) {
   const [codeQuery, setCodeQuery] = useState('');
   const [costCodes, setCostCodes] = useState([]);
   const [classifications, setClassifications] = useState([]);
+  const lineFormRef = useRef(null);
+  const isAddForm = Boolean(form && !form.id);
+  const editingLineId = form?.id || null;
 
   const classificationByKey = useMemo(() => {
     const map = {};
@@ -246,6 +396,44 @@ export default function AdminPrelimsTemplatesPage({ onBack }) {
     return classifyTemplateMapping(code, row?.semanticGroup || 'UNCLASSIFIED');
   }
 
+  function scrollLineFormIntoView() {
+    requestAnimationFrame(() => {
+      lineFormRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+    });
+  }
+
+  function openEditForm(line) {
+    setForm(lineToForm(line));
+    setCodeQuery('');
+    scrollLineFormIntoView();
+  }
+
+  function openAddForm() {
+    const nextOrder =
+      Math.max(0, ...(selected?.lines || []).map((line) => line.displayOrder || 0)) + 1;
+    setForm(emptyLineForm(nextOrder));
+    setCodeQuery('');
+    scrollLineFormIntoView();
+  }
+
+  function cancelLineForm() {
+    setForm(null);
+    setCodeQuery('');
+  }
+
+  const lineFormProps = {
+    form,
+    busy,
+    codeQuery,
+    mappingOptions,
+    classificationFor,
+    costCodes,
+    onSubmit: handleSaveLine,
+    onCancel: cancelLineForm,
+    onUpdateForm: updateForm,
+    onCodeQueryChange: setCodeQuery,
+  };
+
   return (
     <AdminPageShell
       title="Prelims Templates"
@@ -375,23 +563,20 @@ export default function AdminPrelimsTemplatesPage({ onBack }) {
                 Clear default
               </AdminButton>
             )}
-            <AdminButton
-              disabled={busy}
-              variant="secondary"
-              onClick={() => {
-                const nextOrder =
-                  Math.max(0, ...(selected.lines || []).map((line) => line.displayOrder || 0)) + 1;
-                setForm(emptyLineForm(nextOrder));
-                setCodeQuery('');
-              }}
-            >
+            <AdminButton disabled={busy} variant="secondary" onClick={openAddForm}>
               Add template line
             </AdminButton>
           </div>
 
+          {isAddForm ? (
+            <div ref={lineFormRef} className="admin-prelims-line-form--add">
+              <TemplateLineForm {...lineFormProps} />
+            </div>
+          ) : null}
+
           {!selected.lines?.length && !form ? (
             <p>This blank template has no lines yet.</p>
-          ) : (
+          ) : selected.lines?.length ? (
             <AdminDataTable>
               <thead>
                 <tr>
@@ -409,203 +594,77 @@ export default function AdminPrelimsTemplatesPage({ onBack }) {
                 {(selected.lines || []).map((line) => {
                   const mapping = classificationFor(line.costCodeKey);
                   const shared = line.costCodeKey ? sharedCounts[line.costCodeKey] || 0 : 0;
+                  const isEditing = editingLineId === line.id;
+                  const rowClass = [
+                    line.enabled ? '' : 'admin-table__row--muted',
+                    isEditing ? 'admin-table__row--editing' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ');
                   return (
-                    <tr key={line.id} className={line.enabled ? '' : 'admin-table__row--muted'}>
-                      <td>{line.enabled ? 'Yes' : 'Disabled'}</td>
-                      <td>{line.name}</td>
-                      <td className="admin-table__guidance">{line.description || '—'}</td>
-                      <td>{line.forecastDriver}</td>
-                      <td>
-                        {line.forecastDriver === 'TIME'
-                          ? `${line.startBasis || '—'} → ${line.endBasis || '—'}`
-                          : '—'}
-                      </td>
-                      <td>
-                        {line.costCodeKey ? mappingContext(line.costCodeKey) : 'Unmapped'}
-                        {shared > 1 ? (
-                          <div>
-                            <AdminStatusBadge tone="accent">
-                              Also used on {shared - 1} other line{shared - 1 === 1 ? '' : 's'}
-                            </AdminStatusBadge>
+                    <Fragment key={line.id}>
+                      <tr className={rowClass || undefined}>
+                        <td>{line.enabled ? 'Yes' : 'Disabled'}</td>
+                        <td>{line.name}</td>
+                        <td className="admin-table__guidance">{line.description || '—'}</td>
+                        <td>{line.forecastDriver}</td>
+                        <td>
+                          {line.forecastDriver === 'TIME'
+                            ? `${line.startBasis || '—'} → ${line.endBasis || '—'}`
+                            : '—'}
+                        </td>
+                        <td>
+                          {line.costCodeKey ? mappingContext(line.costCodeKey) : 'Unmapped'}
+                          {shared > 1 ? (
+                            <div>
+                              <AdminStatusBadge tone="accent">
+                                Also used on {shared - 1} other line{shared - 1 === 1 ? '' : 's'}
+                              </AdminStatusBadge>
+                            </div>
+                          ) : null}
+                        </td>
+                        <td>
+                          {!line.costCodeKey ? (
+                            '—'
+                          ) : mapping.tone === 'normal' ? (
+                            <AdminStatusBadge tone="success">PRELIMS</AdminStatusBadge>
+                          ) : (
+                            <span className="admin-form__hint" role="status">
+                              {mapping.message}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <div className="dev-prelims__actions">
+                            <AdminButton
+                              variant="secondary"
+                              disabled={busy}
+                              onClick={() => openEditForm(line)}
+                            >
+                              Edit
+                            </AdminButton>
+                            <AdminButton
+                              variant="secondary"
+                              disabled={busy}
+                              onClick={() => handleToggleEnabled(line)}
+                            >
+                              {line.enabled ? 'Disable' : 'Enable'}
+                            </AdminButton>
                           </div>
-                        ) : null}
-                      </td>
-                      <td>
-                        {!line.costCodeKey ? (
-                          '—'
-                        ) : mapping.tone === 'normal' ? (
-                          <AdminStatusBadge tone="success">PRELIMS</AdminStatusBadge>
-                        ) : (
-                          <span className="admin-form__hint" role="status">
-                            {mapping.message}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        <div className="dev-prelims__actions">
-                          <AdminButton
-                            variant="secondary"
-                            disabled={busy}
-                            onClick={() => {
-                              setForm(lineToForm(line));
-                              setCodeQuery('');
-                            }}
-                          >
-                            Edit
-                          </AdminButton>
-                          <AdminButton
-                            variant="secondary"
-                            disabled={busy}
-                            onClick={() => handleToggleEnabled(line)}
-                          >
-                            {line.enabled ? 'Disable' : 'Enable'}
-                          </AdminButton>
-                        </div>
-                      </td>
-                    </tr>
+                        </td>
+                      </tr>
+                      {isEditing ? (
+                        <tr className="admin-prelims-line-form-row">
+                          <td colSpan={8} ref={lineFormRef}>
+                            <TemplateLineForm {...lineFormProps} />
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
                   );
                 })}
               </tbody>
             </AdminDataTable>
-          )}
-
-          {form ? (
-            <form
-              className="dev-prelims__form"
-              aria-label={form.id ? 'Edit template line' : 'Add template line'}
-              onSubmit={(event) => {
-                event.preventDefault();
-                handleSaveLine();
-              }}
-            >
-              <h3>{form.id ? 'Edit template line' : 'Add template line'}</h3>
-              <p className="admin-panel__lead">
-                {form.id
-                  ? 'Company copy only. This does not change BuildLite Standard or the Cost Code Master hierarchy.'
-                  : 'The server assigns a company-owned key. Custom lines cannot use bl.prelims. keys.'}
-              </p>
-              <label>
-                Name
-                <input
-                  className="input"
-                  value={form.name}
-                  onChange={(event) => updateForm('name', event.target.value)}
-                  aria-label="Template line name"
-                  required
-                />
-              </label>
-              <label>
-                Guidance
-                <textarea
-                  className="input"
-                  rows={3}
-                  value={form.description}
-                  onChange={(event) => updateForm('description', event.target.value)}
-                  aria-label="Template line guidance"
-                />
-              </label>
-              <label>
-                Forecast driver
-                <select
-                  className="input"
-                  value={form.forecastDriver}
-                  onChange={(event) => updateForm('forecastDriver', event.target.value)}
-                  aria-label="Template line driver"
-                >
-                  <option value="TIME">TIME</option>
-                  <option value="LUMP_SUM">LUMP_SUM</option>
-                </select>
-              </label>
-              {form.forecastDriver === 'TIME' ? (
-                <>
-                  <label>
-                    TIME start
-                    <select
-                      className="input"
-                      value={form.startBasis}
-                      onChange={(event) => updateForm('startBasis', event.target.value)}
-                      aria-label="TIME start basis"
-                    >
-                      {TIME_BASES.map((basis) => (
-                        <option key={basis} value={basis}>
-                          {basis}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    TIME end
-                    <select
-                      className="input"
-                      value={form.endBasis}
-                      onChange={(event) => updateForm('endBasis', event.target.value)}
-                      aria-label="TIME end basis"
-                    >
-                      {TIME_BASES.map((basis) => (
-                        <option key={basis} value={basis}>
-                          {basis}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </>
-              ) : null}
-              <label>
-                Search cost codes
-                <input
-                  className="input"
-                  value={codeQuery}
-                  onChange={(event) => setCodeQuery(event.target.value)}
-                  aria-label="Search cost codes"
-                  placeholder="Code, description or reporting group"
-                />
-              </label>
-              <label>
-                Mapped cost code
-                <select
-                  className="input"
-                  value={form.costCodeKey}
-                  onChange={(event) => updateForm('costCodeKey', event.target.value)}
-                  aria-label="Mapped cost code"
-                >
-                  <option value="">Unmapped</option>
-                  {mappingOptions.map((option) => (
-                    <option key={option.code} value={option.code}>
-                      {mappingOptionLabel(option)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {form.costCodeKey ? (
-                <p className="admin-form__hint" role="status">
-                  {classificationFor(form.costCodeKey).message ||
-                    `Mapped code ${form.costCodeKey} is classified PRELIMS.`}
-                </p>
-              ) : (
-                <p className="admin-form__hint">Leave unmapped until the customer cost code is known.</p>
-              )}
-              {!costCodes.length ? (
-                <p className="admin-form__hint">
-                  Mapping uses the server Cost Code Master. Enable server authority and reload if
-                  the list is empty.
-                </p>
-              ) : null}
-              <div className="dev-prelims__actions">
-                <AdminButton type="submit" disabled={busy || !form.name.trim()}>
-                  {form.id ? 'Save line' : 'Add line'}
-                </AdminButton>
-                <AdminButton
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => {
-                    setForm(null);
-                    setCodeQuery('');
-                  }}
-                >
-                  Cancel
-                </AdminButton>
-              </div>
-            </form>
           ) : null}
         </section>
       ) : null}

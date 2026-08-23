@@ -225,12 +225,53 @@ describe('DevelopmentPrelimsWorkspace add vs edit', () => {
 
   it('shows a proposal-only banner, a setup worksheet entry, and no Review & Adopt control', async () => {
     await renderWorkspace();
-    expect(container.textContent).toMatch(/Forecast proposal \/ assumption only/);
-    expect(container.textContent).toMatch(/not adopted into the CVR/i);
+    expect(container.textContent).toMatch(/Prelims proposal only/);
+    expect(container.textContent).toMatch(/not yet been adopted into the CVR/i);
+    expect(container.textContent).toMatch(/CVR forecast remains unchanged/i);
     expect(container.textContent).not.toMatch(/Review & Adopt/);
     expect(container.textContent).toMatch(/Set up site Prelims/);
     expect(container.textContent).toMatch(/CVR reporting month 2026-08/);
     expect(container.querySelector('form').getAttribute('data-mode')).toBe('add');
+  });
+
+  it('shows resolved proposal and unresolved count separately', async () => {
+    stored = [
+      timeItem(),
+      lumpItem(),
+      timeItem({
+        id: 'time-unresolved',
+        name: 'Unresolved FIRST_COMPLETION',
+        calculation: {
+          state: 'unresolved',
+          reason: 'FIRST_COMPLETION',
+          reasonLabel: 'First completion date missing',
+          includedInActiveProposal: false,
+        },
+      }),
+    ];
+    listDevelopmentPrelimsItems.mockResolvedValueOnce({
+      ...collectionFor(stored),
+      summary: {
+        byCostCode: [
+          {
+            costCodeKey: '5231',
+            lineCount: 3,
+            activeProposal: 58000,
+            hasUnresolved: true,
+            unresolvedCount: 1,
+          },
+        ],
+        development: {
+          activeProposal: 58000,
+          hasUnresolved: true,
+          unresolvedCount: 1,
+        },
+      },
+    });
+    await renderWorkspace();
+    expect(container.textContent).toMatch(/Resolved proposal £58,000\.00 · 1 unresolved line/);
+    expect(container.textContent).not.toMatch(/includes unresolved lines/i);
+    expect(container.textContent).not.toMatch(/Active proposal total/i);
   });
 
   it('creates a TIME line with POST, returns to Add mode, and does not PUT', async () => {
