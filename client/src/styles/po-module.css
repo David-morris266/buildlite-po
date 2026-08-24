@@ -9842,6 +9842,33 @@
 .dev-prelims__actions {
   display: flex;
   gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.dev-prelims__primary {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.35rem 0 0.85rem;
+}
+
+.dev-prelims__primary-copy p {
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+.dev-prelims__actions--primary {
+  margin: 0;
+}
+
+.dev-prelims__secondary {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.15rem;
+}
+
+.dev-prelims__secondary > .dev-workspace__section-support {
+  margin: 0;
 }
 
 .dev-prelims__group {

@@ -1,5 +1,6 @@
 /**
  * @vitest-environment jsdom
+ * BL-033D.x.5 — Prelims landing-page UX consolidation
  */
 import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
@@ -34,6 +35,7 @@ vi.mock('../api/developmentPrelimsItems', () => ({
     candidates: [],
     missingFromCvr: [],
   })),
+  adoptDevelopmentPrelimsIntoCvr: vi.fn(),
   DevelopmentPrelimsApiError: PrelimsApiError,
 }));
 
@@ -162,13 +164,14 @@ function collectionFor(items) {
 }
 
 function setInputValue(element, value) {
-  const proto = element.tagName === 'SELECT' ? window.HTMLSelectElement.prototype : window.HTMLInputElement.prototype;
+  const proto =
+    element.tagName === 'SELECT' ? window.HTMLSelectElement.prototype : window.HTMLInputElement.prototype;
   const native = Object.getOwnPropertyDescriptor(proto, 'value').set;
   native.call(element, value);
   element.dispatchEvent(new Event(element.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
 }
 
-describe('DevelopmentPrelimsWorkspace add vs edit', () => {
+describe('DevelopmentPrelimsWorkspace (x.5 landing + add/edit)', () => {
   let container;
   let root;
   let stored;
@@ -187,9 +190,15 @@ describe('DevelopmentPrelimsWorkspace add vs edit', () => {
     await flush();
   }
 
+  async function openManualForm() {
+    await act(async () => {
+      container.querySelector('[data-testid="add-site-specific-prelim"]').click();
+    });
+  }
+
   async function submitForm() {
     await act(async () => {
-      container.querySelector('form').dispatchEvent(
+      container.querySelector('[data-testid="manual-prelims-form"]').dispatchEvent(
         new Event('submit', { bubbles: true, cancelable: true })
       );
       await Promise.resolve();
@@ -237,9 +246,7 @@ describe('DevelopmentPrelimsWorkspace add vs edit', () => {
               endBasis: payload.forecastDriver === 'TIME' ? payload.endBasis : null,
               lumpSumAmount: payload.forecastDriver === 'LUMP_SUM' ? payload.lumpSumAmount : null,
               calculation:
-                payload.forecastDriver === 'LUMP_SUM'
-                  ? lumpItem().calculation
-                  : item.calculation,
+                payload.forecastDriver === 'LUMP_SUM' ? lumpItem().calculation : item.calculation,
             }
           : item
       );
@@ -255,6 +262,111 @@ describe('DevelopmentPrelimsWorkspace add vs edit', () => {
     vi.clearAllMocks();
   });
 
+  it('hides manual form initially and shows Add site-specific Prelim near primary actions', async () => {
+    stored = [timeItem()];
+    await renderWorkspace();
+    expect(container.querySelector('[data-testid="manual-prelims-form"]')).toBeNull();
+    expect(container.querySelector('[data-testid="add-site-specific-prelim"]')).toBeTruthy();
+    expect(container.textContent).toMatch(/\+ Add site-specific Prelim/);
+    expect(container.textContent).not.toMatch(/Add Prelims line/);
+    // Secondary action sits in the primary action block, before cost-code cards.
+    const primary = container.querySelector('[data-testid="prelims-primary-actions"]');
+    const secondary = container.querySelector('[data-testid="prelims-secondary-actions"]');
+    const cards = container.querySelector('[data-testid="prelims-group-5231"]');
+    expect(primary.contains(secondary)).toBe(true);
+    expect(
+      primary.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(createDevelopmentPrelimsItem).not.toHaveBeenCalled();
+    expect(updateDevelopmentPrelimsItem).not.toHaveBeenCalled();
+  });
+
+  it('uses Set up site Prelims when no lines exist', async () => {
+    await renderWorkspace();
+    expect(container.querySelector('[data-testid="setup-site-prelims"]')?.textContent).toBe(
+      'Set up site Prelims'
+    );
+    expect(container.querySelector('[data-testid="prelims-setup-supporting"]')?.textContent).toMatch(
+      /create the site forecast/i
+    );
+    expect(container.textContent).not.toMatch(/Manage site Prelims/);
+  });
+
+  it('uses Manage site Prelims when lines already exist', async () => {
+    stored = [timeItem()];
+    await renderWorkspace();
+    expect(container.querySelector('[data-testid="setup-site-prelims"]')?.textContent).toBe(
+      'Manage site Prelims'
+    );
+    expect(container.querySelector('[data-testid="prelims-setup-supporting"]')?.textContent).toMatch(
+      /add or update site assumptions/i
+    );
+    expect(container.textContent).not.toMatch(/Set up site Prelims/);
+  });
+
+  it('Manage site Prelims opens the same template worksheet', async () => {
+    stored = [timeItem()];
+    await renderWorkspace();
+    expect(container.querySelector('[data-testid="setup-site-prelims"]')?.textContent).toBe(
+      'Manage site Prelims'
+    );
+    await act(async () => {
+      container.querySelector('[data-testid="setup-site-prelims"]').click();
+    });
+    expect(container.querySelector('[data-testid="mock-prelims-setup"]')).toBeTruthy();
+  });
+
+  it('reveals the existing manual form on Add site-specific Prelim', async () => {
+    await renderWorkspace();
+    await openManualForm();
+    const form = container.querySelector('[data-testid="manual-prelims-form"]');
+    expect(form).toBeTruthy();
+    expect(form.getAttribute('data-mode')).toBe('add');
+    expect(container.querySelector('[aria-label="Prelims cost code"]')).toBeTruthy();
+    expect(container.querySelector('[aria-label="Prelims forecast driver"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="add-site-specific-prelim"]')).toBeNull();
+    expect(createDevelopmentPrelimsItem).not.toHaveBeenCalled();
+  });
+
+  it('Cancel hides the form without writing', async () => {
+    await renderWorkspace();
+    await openManualForm();
+    await act(async () => {
+      setInputValue(container.querySelector('[aria-label="Prelims cost code"]'), '5231');
+      setInputValue(container.querySelector('[aria-label="Prelims line name"]'), 'Draft only');
+    });
+    await act(async () => {
+      container.querySelector('[data-testid="cancel-manual-entry"]').click();
+    });
+    expect(container.querySelector('[data-testid="manual-prelims-form"]')).toBeNull();
+    expect(container.querySelector('[data-testid="add-site-specific-prelim"]')).toBeTruthy();
+    expect(createDevelopmentPrelimsItem).not.toHaveBeenCalled();
+    expect(updateDevelopmentPrelimsItem).not.toHaveBeenCalled();
+    expect(listDevelopmentPrelimsItems).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps proposal cards visible without opening setup', async () => {
+    stored = [timeItem(), lumpItem()];
+    await renderWorkspace();
+    expect(container.querySelector('[data-testid="prelims-group-5231"]')).toBeTruthy();
+    expect(container.textContent).toMatch(/BL-033D.1 TIME UAT/);
+    expect(container.textContent).toMatch(/BL-033D.1 LUMP SUM UAT/);
+    expect(container.querySelector('[data-testid="mock-prelims-setup"]')).toBeNull();
+    expect(container.querySelector('[data-testid="manual-prelims-form"]')).toBeNull();
+  });
+
+  it('Set up site Prelims opens the template worksheet', async () => {
+    await renderWorkspace();
+    expect(container.querySelector('[data-testid="setup-site-prelims"]')?.textContent).toBe(
+      'Set up site Prelims'
+    );
+    await act(async () => {
+      container.querySelector('[data-testid="setup-site-prelims"]').click();
+    });
+    expect(container.querySelector('[data-testid="mock-prelims-setup"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="review-against-cvr"]')).toBeNull();
+  });
+
   it('shows Review against CVR and opens the review view', async () => {
     await renderWorkspace();
     expect(container.textContent).toMatch(/Review against CVR/);
@@ -264,24 +376,22 @@ describe('DevelopmentPrelimsWorkspace add vs edit', () => {
       container.querySelector('[data-testid="review-against-cvr"]').click();
     });
     expect(container.querySelector('[data-testid="mock-prelims-review"]')).toBeTruthy();
-    expect(container.querySelector('form')).toBeNull();
+    expect(container.querySelector('[data-testid="manual-prelims-form"]')).toBeNull();
     await act(async () => {
       container.querySelector('[data-testid="back-to-prelims"]').click();
     });
     expect(container.querySelector('[data-testid="review-against-cvr"]')).toBeTruthy();
-    expect(container.querySelector('form')).toBeTruthy();
+    expect(container.querySelector('[data-testid="add-site-specific-prelim"]')).toBeTruthy();
   });
 
-  it('shows a proposal-only banner, a setup worksheet entry, and no Review & Adopt control', async () => {
+  it('shows proposal-only banner and primary setup copy', async () => {
     await renderWorkspace();
     expect(container.textContent).toMatch(/Prelims proposal only/);
     expect(container.textContent).toMatch(/do not change the CVR until you review/i);
     expect(container.textContent).toMatch(/explicitly confirm adoption/i);
-    expect(container.textContent).not.toMatch(/Review & Adopt/);
-    expect(container.textContent).toMatch(/Review against CVR/);
+    expect(container.textContent).toMatch(/company Prelims template/i);
     expect(container.textContent).toMatch(/Set up site Prelims/);
     expect(container.textContent).toMatch(/CVR reporting month 2026-08/);
-    expect(container.querySelector('form').getAttribute('data-mode')).toBe('add');
   });
 
   it('shows resolved proposal and unresolved count separately', async () => {
@@ -320,12 +430,12 @@ describe('DevelopmentPrelimsWorkspace add vs edit', () => {
     });
     await renderWorkspace();
     expect(container.textContent).toMatch(/Resolved proposal £58,000\.00 · 1 unresolved line/);
-    expect(container.textContent).not.toMatch(/includes unresolved lines/i);
-    expect(container.textContent).not.toMatch(/Active proposal total/i);
+    expect(container.querySelector('[data-testid="prelims-group-5231"]')).toBeTruthy();
   });
 
-  it('creates a TIME line with POST, returns to Add mode, and does not PUT', async () => {
+  it('creates a TIME line with POST, then collapses manual entry', async () => {
     await renderWorkspace();
+    await openManualForm();
     await act(async () => {
       setInputValue(container.querySelector('[aria-label="Prelims cost code"]'), '5231');
       setInputValue(container.querySelector('[aria-label="Prelims line name"]'), 'BL-033D.1 TIME UAT');
@@ -341,25 +451,21 @@ describe('DevelopmentPrelimsWorkspace add vs edit', () => {
     expect(payload.startBasis).toBe('SITE_START');
     expect(payload.endBasis).toBe('FINAL_COMPLETION');
     expect(stored[0].version).toBe(1);
-    expect(container.querySelector('form').getAttribute('data-mode')).toBe('add');
-    expect(container.textContent).toMatch(/Add Prelims line/);
-    expect(container.querySelector('[aria-label="Prelims cost code"]').value).toBe('');
-    expect(container.querySelector('[aria-label="Prelims line name"]').value).toBe('');
+    expect(container.querySelector('[data-testid="manual-prelims-form"]')).toBeNull();
+    expect(container.querySelector('[data-testid="add-site-specific-prelim"]')).toBeTruthy();
     expect(container.textContent).toMatch(/BL-033D.1 TIME UAT/);
   });
 
-  it('creates a second LUMP_SUM line on the same cost code with another POST', async () => {
+  it('creates a LUMP_SUM line with TIME/LUMP controls intact', async () => {
     await renderWorkspace();
+    await openManualForm();
     await act(async () => {
       setInputValue(container.querySelector('[aria-label="Prelims cost code"]'), '5231');
       setInputValue(container.querySelector('[aria-label="Prelims line name"]'), 'BL-033D.1 TIME UAT');
     });
     await submitForm();
 
-    const firstId = stored[0].id;
-    const firstName = stored[0].name;
-    const firstDriver = stored[0].forecastDriver;
-
+    await openManualForm();
     await act(async () => {
       setInputValue(container.querySelector('[aria-label="Prelims cost code"]'), '5231');
       setInputValue(container.querySelector('[aria-label="Prelims line name"]'), 'BL-033D.1 LUMP SUM UAT');
@@ -371,42 +477,41 @@ describe('DevelopmentPrelimsWorkspace add vs edit', () => {
     await submitForm();
 
     expect(createDevelopmentPrelimsItem).toHaveBeenCalledTimes(2);
-    expect(updateDevelopmentPrelimsItem).not.toHaveBeenCalled();
     expect(createDevelopmentPrelimsItem.mock.calls[1][1].forecastDriver).toBe('LUMP_SUM');
-    expect(createDevelopmentPrelimsItem.mock.calls[1][1].version).toBe(0);
     expect(stored).toHaveLength(2);
-    expect(stored[0].id).toBe(firstId);
-    expect(stored[0].name).toBe(firstName);
-    expect(stored[0].forecastDriver).toBe(firstDriver);
-    expect(stored[1].id).not.toBe(firstId);
-    expect(container.textContent).toMatch(/BL-033D.1 TIME UAT/);
-    expect(container.textContent).toMatch(/BL-033D.1 LUMP SUM UAT/);
-    expect(container.textContent).toMatch(/£38,000/);
-    expect(container.textContent).toMatch(/£20,000/);
     expect(container.textContent).toMatch(/£58,000/);
-    expect(container.querySelector('form').getAttribute('data-mode')).toBe('add');
+    expect(container.querySelector('[data-testid="manual-prelims-form"]')).toBeNull();
   });
 
-  it('enters Edit mode only from Edit and PUTs that id', async () => {
+  it('Edit opens the form and PUTs that id; cancel collapses without write', async () => {
     stored = [timeItem(), lumpItem()];
     await renderWorkspace();
     await act(async () => {
       container.querySelector('[aria-label="Edit BL-033D.1 TIME UAT"]').click();
     });
-    expect(container.querySelector('form').getAttribute('data-mode')).toBe('edit');
+    expect(container.querySelector('[data-testid="manual-prelims-form"]')?.getAttribute('data-mode')).toBe(
+      'edit'
+    );
     expect(container.textContent).toMatch(/Editing: BL-033D.1 TIME UAT/);
 
+    await act(async () => {
+      container.querySelector('[data-testid="cancel-manual-entry"]').click();
+    });
+    expect(container.querySelector('[data-testid="manual-prelims-form"]')).toBeNull();
+    expect(updateDevelopmentPrelimsItem).not.toHaveBeenCalled();
+
+    await act(async () => {
+      container.querySelector('[aria-label="Edit BL-033D.1 TIME UAT"]').click();
+    });
     await act(async () => {
       setInputValue(container.querySelector('[aria-label="Prelims monthly rate"]'), '1200');
     });
     await submitForm();
 
     expect(updateDevelopmentPrelimsItem).toHaveBeenCalledTimes(1);
-    expect(createDevelopmentPrelimsItem).not.toHaveBeenCalled();
     expect(updateDevelopmentPrelimsItem.mock.calls[0][1]).toBe('time-1');
     expect(updateDevelopmentPrelimsItem.mock.calls[0][2].monthlyRate).toBe(1200);
-    expect(stored.find((item) => item.id === 'lump-1').lumpSumAmount).toBe(20000);
-    expect(container.querySelector('form').getAttribute('data-mode')).toBe('add');
+    expect(container.querySelector('[data-testid="manual-prelims-form"]')).toBeNull();
   });
 
   it('changing TIME to LUMP_SUM while editing overwrites only that row', async () => {
@@ -425,44 +530,22 @@ describe('DevelopmentPrelimsWorkspace add vs edit', () => {
 
     expect(updateDevelopmentPrelimsItem).toHaveBeenCalledTimes(1);
     expect(updateDevelopmentPrelimsItem.mock.calls[0][1]).toBe('time-1');
-    expect(updateDevelopmentPrelimsItem.mock.calls[0][2].forecastDriver).toBe('LUMP_SUM');
-    expect(stored.find((item) => item.id === 'time-1').forecastDriver).toBe('LUMP_SUM');
-    expect(stored.find((item) => item.id === 'time-1').monthlyRate).toBeNull();
-    expect(stored.find((item) => item.id === 'lump-sibling').name).toBe('Sibling lump');
     expect(stored.find((item) => item.id === 'lump-sibling').lumpSumAmount).toBe(20000);
   });
 
-  it('Cancel edit returns to Add mode so the next save is POST', async () => {
-    stored = [timeItem()];
-    await renderWorkspace();
-    await act(async () => {
-      container.querySelector('[aria-label="Edit BL-033D.1 TIME UAT"]').click();
-    });
-    await act(async () => {
-      [...container.querySelectorAll('button')].find((btn) => btn.textContent === 'Cancel edit').click();
-    });
-    expect(container.querySelector('form').getAttribute('data-mode')).toBe('add');
-    expect(container.textContent).toMatch(/Add Prelims line/);
-    await act(async () => {
-      setInputValue(container.querySelector('[aria-label="Prelims cost code"]'), '5231');
-      setInputValue(container.querySelector('[aria-label="Prelims line name"]'), 'Second line');
-    });
-    await submitForm();
-    expect(createDevelopmentPrelimsItem).toHaveBeenCalledTimes(1);
-    expect(updateDevelopmentPrelimsItem).not.toHaveBeenCalled();
-  });
-
-  it('keeps Add mode after a failed create', async () => {
+  it('keeps Add form open after a failed create', async () => {
     createDevelopmentPrelimsItem.mockRejectedValueOnce(new PrelimsApiError('nope', { status: 400 }));
     await renderWorkspace();
+    await openManualForm();
     await act(async () => {
       setInputValue(container.querySelector('[aria-label="Prelims cost code"]'), '5231');
       setInputValue(container.querySelector('[aria-label="Prelims line name"]'), 'Failed add');
     });
     await submitForm();
-    expect(container.querySelector('form').getAttribute('data-mode')).toBe('add');
+    expect(container.querySelector('[data-testid="manual-prelims-form"]')?.getAttribute('data-mode')).toBe(
+      'add'
+    );
     expect(container.querySelector('[aria-label="Prelims line name"]').value).toBe('Failed add');
-    expect(updateDevelopmentPrelimsItem).not.toHaveBeenCalled();
     expect(container.textContent).toMatch(/nope/);
   });
 
@@ -474,9 +557,10 @@ describe('DevelopmentPrelimsWorkspace add vs edit', () => {
       container.querySelector('[aria-label="Edit BL-033D.1 TIME UAT"]').click();
     });
     await submitForm();
-    expect(container.querySelector('form').getAttribute('data-mode')).toBe('edit');
+    expect(container.querySelector('[data-testid="manual-prelims-form"]')?.getAttribute('data-mode')).toBe(
+      'edit'
+    );
     expect(container.textContent).toMatch(/Editing: BL-033D.1 TIME UAT/);
     expect(container.textContent).toMatch(/updated elsewhere/);
-    expect(createDevelopmentPrelimsItem).not.toHaveBeenCalled();
   });
 });

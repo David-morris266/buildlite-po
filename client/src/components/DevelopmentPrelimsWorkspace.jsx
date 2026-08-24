@@ -155,7 +155,10 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [workspaceView, setWorkspaceView] = useState('lines');
+  /** BL-033D.x.5 — manual add is secondary; collapsed until deliberately opened. */
+  const [manualEntryOpen, setManualEntryOpen] = useState(false);
   const isEditMode = mode === 'edit' && Boolean(form.id);
+  const showManualForm = isEditMode || manualEntryOpen;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -221,6 +224,12 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
 
   const grouped = useMemo(() => groupByCostCode(collection?.items || []), [collection]);
   const summary = collection?.summary;
+  const hasSitePrelims = (collection?.items || []).length > 0;
+  const setupActionLabel = hasSitePrelims ? 'Manage site Prelims' : 'Set up site Prelims';
+  const setupSupportingCopy = hasSitePrelims
+    ? 'Use your company Prelims template to add or update site assumptions.'
+    : 'Use your company Prelims template to create the site forecast.';
+
   const formTimeSpan = useMemo(() => {
     if (form.forecastDriver !== PRELIMS_DRIVERS.TIME) {
       return { resolvedStart: null, resolvedEnd: null, totalMonths: null, outsideProgramme: false };
@@ -255,8 +264,19 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
     setError('');
   }
 
+  function openManualEntry() {
+    enterAddMode();
+    setManualEntryOpen(true);
+  }
+
+  function closeManualEntry() {
+    enterAddMode();
+    setManualEntryOpen(false);
+  }
+
   function startEdit(item) {
     setMode('edit');
+    setManualEntryOpen(true);
     setClassificationHint('');
     setForm({
       id: item.id,
@@ -313,7 +333,7 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
       } else {
         await createDevelopmentPrelimsItem(developmentId, payload);
       }
-      enterAddMode();
+      closeManualEntry();
       await load();
     } catch (err) {
       const message =
@@ -386,167 +406,195 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
         />
       ) : (
         <>
-      <div className="dev-prelims__actions">
-        <button
-          className="btn"
-          type="button"
-          onClick={() => {
-            setError('');
-            setWorkspaceView('setup');
-          }}
-        >
-          Set up site Prelims
-        </button>
-        <button
-          className="btn btn--primary"
-          type="button"
-          data-testid="review-against-cvr"
-          onClick={() => {
-            setError('');
-            setWorkspaceView('review');
-          }}
-        >
-          Review against CVR
-        </button>
-      </div>
-
-      <form
-        className={`dev-prelims__form${isEditMode ? ' dev-prelims__form--edit' : ''}`}
-        onSubmit={handleSave}
-        data-mode={isEditMode ? 'edit' : 'add'}
-      >
-        <h3>
-          {isEditMode ? `Editing: ${form.name || 'Prelims line'}` : 'Add Prelims line'}
-        </h3>
-        <label>
-          Cost code
-          <input
-            className="input"
-            list="dev-prelims-cost-codes"
-            value={form.costCodeKey}
-            onChange={(event) => updateField('costCodeKey', event.target.value)}
-            required
-            aria-label="Prelims cost code"
-          />
-        </label>
-        <datalist id="dev-prelims-cost-codes">
-          {costCodes.map((row) => {
-            const key = row.code || row.costCodeKey || row.key;
-            if (!key) return null;
-            return (
-              <option key={key} value={key}>
-                {row.description || row.name || key}
-              </option>
-            );
-          })}
-        </datalist>
-        {classificationHint ? <p className="dev-prelims__hint">{classificationHint}</p> : null}
-        <label>
-          Line name
-          <input
-            className="input"
-            value={form.name}
-            onChange={(event) => updateField('name', event.target.value)}
-            required
-            aria-label="Prelims line name"
-          />
-        </label>
-        <label>
-          Driver
-          <select
-            className="input"
-            value={form.forecastDriver}
-            onChange={(event) => updateField('forecastDriver', event.target.value)}
-            aria-label="Prelims forecast driver"
-          >
-            <option value={PRELIMS_DRIVERS.TIME}>TIME</option>
-            <option value={PRELIMS_DRIVERS.LUMP_SUM}>LUMP_SUM</option>
-          </select>
-        </label>
-        <label>
-          Status
-          <select
-            className="input"
-            value={form.status}
-            onChange={(event) => updateField('status', event.target.value)}
-            aria-label="Prelims line status"
-          >
-            <option value={PRELIMS_STATUSES.ACTIVE}>Active</option>
-            <option value={PRELIMS_STATUSES.COMPLETE}>Complete</option>
-            <option value={PRELIMS_STATUSES.CANCELLED}>Cancelled</option>
-          </select>
-        </label>
-        {form.forecastDriver === PRELIMS_DRIVERS.TIME ? (
-          <>
-            <label>
-              Monthly rate
-              <input
-                className="input"
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.monthlyRate}
-                onChange={(event) => updateField('monthlyRate', event.target.value)}
-                required
-                aria-label="Prelims monthly rate"
-              />
-            </label>
-            <div className="dev-prelims__form-time">
-              <PrelimsTimeSpanFields
-                namePrefix="Prelims"
-                startBasis={form.startBasis}
-                startOffsetMonths={form.startOffsetMonths}
-                startFixedDate={form.startFixedDate}
-                endBasis={form.endBasis}
-                endOffsetMonths={form.endOffsetMonths}
-                endFixedDate={form.endFixedDate}
-                resolvedStart={formTimeSpan.resolvedStart}
-                resolvedEnd={formTimeSpan.resolvedEnd}
-                totalMonths={formTimeSpan.totalMonths}
-                outsideProgramme={formTimeSpan.outsideProgramme}
-                onChange={updateField}
-              />
-            </div>
-          </>
-        ) : (
-          <label>
-            Lump-sum amount
-            <input
-              className="input"
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.lumpSumAmount}
-              onChange={(event) => updateField('lumpSumAmount', event.target.value)}
-              required
-              aria-label="Prelims lump-sum amount"
-            />
-          </label>
-        )}
-        <div className="dev-prelims__actions">
-          <button className="btn btn--primary" type="submit" disabled={saving}>
-            {isEditMode ? 'Save line' : 'Create line'}
-          </button>
-          {isEditMode ? (
-            <button className="btn" type="button" onClick={enterAddMode}>
-              Cancel edit
-            </button>
-          ) : null}
+      <div className="dev-prelims__primary" data-testid="prelims-primary-actions">
+        <div className="dev-prelims__primary-copy">
+          <p data-testid="prelims-setup-supporting">{setupSupportingCopy}</p>
         </div>
-      </form>
+        <div className="dev-prelims__actions dev-prelims__actions--primary">
+          <button
+            className="btn btn--primary"
+            type="button"
+            data-testid="setup-site-prelims"
+            onClick={() => {
+              setError('');
+              setWorkspaceView('setup');
+            }}
+          >
+            {setupActionLabel}
+          </button>
+          <button
+            className="btn btn--primary"
+            type="button"
+            data-testid="review-against-cvr"
+            onClick={() => {
+              setError('');
+              setWorkspaceView('review');
+            }}
+          >
+            Review against CVR
+          </button>
+        </div>
+
+        <div className="dev-prelims__secondary" data-testid="prelims-secondary-actions">
+          {!showManualForm ? (
+            <button
+              className="btn"
+              type="button"
+              data-testid="add-site-specific-prelim"
+              onClick={openManualEntry}
+            >
+              + Add site-specific Prelim
+            </button>
+          ) : (
+            <form
+              className={`dev-prelims__form${isEditMode ? ' dev-prelims__form--edit' : ''}`}
+              onSubmit={handleSave}
+              data-mode={isEditMode ? 'edit' : 'add'}
+              data-testid="manual-prelims-form"
+            >
+              <h3>
+                {isEditMode ? `Editing: ${form.name || 'Prelims line'}` : 'Add site-specific Prelim'}
+              </h3>
+              <label>
+                Cost code
+                <input
+                  className="input"
+                  list="dev-prelims-cost-codes"
+                  value={form.costCodeKey}
+                  onChange={(event) => updateField('costCodeKey', event.target.value)}
+                  required
+                  aria-label="Prelims cost code"
+                />
+              </label>
+              <datalist id="dev-prelims-cost-codes">
+                {costCodes.map((row) => {
+                  const key = row.code || row.costCodeKey || row.key;
+                  if (!key) return null;
+                  return (
+                    <option key={key} value={key}>
+                      {row.description || row.name || key}
+                    </option>
+                  );
+                })}
+              </datalist>
+              {classificationHint ? <p className="dev-prelims__hint">{classificationHint}</p> : null}
+              <label>
+                Line name
+                <input
+                  className="input"
+                  value={form.name}
+                  onChange={(event) => updateField('name', event.target.value)}
+                  required
+                  aria-label="Prelims line name"
+                />
+              </label>
+              <label>
+                Driver
+                <select
+                  className="input"
+                  value={form.forecastDriver}
+                  onChange={(event) => updateField('forecastDriver', event.target.value)}
+                  aria-label="Prelims forecast driver"
+                >
+                  <option value={PRELIMS_DRIVERS.TIME}>TIME</option>
+                  <option value={PRELIMS_DRIVERS.LUMP_SUM}>LUMP_SUM</option>
+                </select>
+              </label>
+              <label>
+                Status
+                <select
+                  className="input"
+                  value={form.status}
+                  onChange={(event) => updateField('status', event.target.value)}
+                  aria-label="Prelims line status"
+                >
+                  <option value={PRELIMS_STATUSES.ACTIVE}>Active</option>
+                  <option value={PRELIMS_STATUSES.COMPLETE}>Complete</option>
+                  <option value={PRELIMS_STATUSES.CANCELLED}>Cancelled</option>
+                </select>
+              </label>
+              {form.forecastDriver === PRELIMS_DRIVERS.TIME ? (
+                <>
+                  <label>
+                    Monthly rate
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={form.monthlyRate}
+                      onChange={(event) => updateField('monthlyRate', event.target.value)}
+                      required
+                      aria-label="Prelims monthly rate"
+                    />
+                  </label>
+                  <div className="dev-prelims__form-time">
+                    <PrelimsTimeSpanFields
+                      namePrefix="Prelims"
+                      startBasis={form.startBasis}
+                      startOffsetMonths={form.startOffsetMonths}
+                      startFixedDate={form.startFixedDate}
+                      endBasis={form.endBasis}
+                      endOffsetMonths={form.endOffsetMonths}
+                      endFixedDate={form.endFixedDate}
+                      resolvedStart={formTimeSpan.resolvedStart}
+                      resolvedEnd={formTimeSpan.resolvedEnd}
+                      totalMonths={formTimeSpan.totalMonths}
+                      outsideProgramme={formTimeSpan.outsideProgramme}
+                      onChange={updateField}
+                    />
+                  </div>
+                </>
+              ) : (
+                <label>
+                  Lump-sum amount
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.lumpSumAmount}
+                    onChange={(event) => updateField('lumpSumAmount', event.target.value)}
+                    required
+                    aria-label="Prelims lump-sum amount"
+                  />
+                </label>
+              )}
+              <div className="dev-prelims__actions">
+                <button className="btn btn--primary" type="submit" disabled={saving}>
+                  {isEditMode ? 'Save line' : 'Create line'}
+                </button>
+                <button
+                  className="btn"
+                  type="button"
+                  data-testid="cancel-manual-entry"
+                  onClick={closeManualEntry}
+                >
+                  {isEditMode ? 'Cancel edit' : 'Cancel'}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
 
       {loading ? <p className="dev-workspace__section-lead">Loading Prelims lines…</p> : null}
 
       {!loading && !grouped.length ? (
-        <p className="dev-workspace__section-support">
-          No Prelims assumption lines yet. Multiple lines can share the same customer cost code.
+        <p className="dev-workspace__section-support" data-testid="prelims-empty-state">
+          No Prelims assumption lines yet. {setupActionLabel} from your company template, or add a
+          site-specific Prelim if needed.
         </p>
       ) : null}
 
       {grouped.map((group) => {
         const bucket = summary?.byCostCode?.find((row) => row.costCodeKey === group.costCodeKey);
         return (
-          <article key={group.costCodeKey} className="dev-prelims__group">
+          <article
+            key={group.costCodeKey}
+            className="dev-prelims__group"
+            data-testid={`prelims-group-${group.costCodeKey}`}
+          >
             <header>
               <h3>Cost code {group.costCodeKey}</h3>
               <p>

@@ -17,11 +17,11 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Branch | `buildlite-V1-1` |
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
-| Last completed product slice | **BL-033D.x.4C.2 COMPLETE** (Prelims Adopt UI). Human UAT **PASSED**. Forensic clone UAT **PASSED**. Controlled Test Site 1 adoption of 5231 into Draft P04 proven (+£520 → +£7,720; final £58,000; accrual £120). |
-| Last persistence slice implemented | **BL-033D.x.3R.** Additive `019` signed month offsets on `development_prelims_items`. Applied on `buildlite_test` and local `buildlite_clone` (controlled UAT). Existing rows default `0/0`. x.4B/x.4C added **no** migration. |
+| Last completed product slice | **BL-033D.x.5 COMPLETE** (Prelims landing UX consolidation). Human visual UAT **PASSED**. Template/Manage primary; site-specific add secondary; forecast landing retained. |
+| Last persistence slice implemented | **BL-033D.x.3R.** Additive `019` signed month offsets on `development_prelims_items`. Applied on `buildlite_test` and local `buildlite_clone` (controlled UAT). Existing rows default `0/0`. x.4B/x.4C/x.5 added **no** migration. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT** | Do **not** mark whole **BL-033D.x.4C** complete until any remaining x.4C closure is explicit. Do **not** Submit or Approve & Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog. Historic P01/P02/P03 `reporting_month` remains NULL. |
+| **NEXT** | Keep P04 Draft. Do **not** mark whole **BL-033D.x.4C** complete unless explicitly closed. Do **not** Submit or Approve & Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog. Historic P01/P02/P03 `reporting_month` remains NULL. |
 
 ---
 
@@ -1067,9 +1067,9 @@ Test Site 1 human UAT (leave in place):
 | P04 after review | **Draft** unchanged; no snapshot; no metadata write |
 | P05 | **absent** |
 
-### Deferred UX (not this slice)
+### Deferred UX (resolved by x.5)
 
-**PRELIMS UX FOLLOW-UP:** The main Prelims page still prominently exposes the original “Add Prelims line” form from before the company-template / “Set up site Prelims” workflow. Human UAT found the journey disjointed. Future UX review should make template/site setup the primary setup path while retaining manual site-specific Prelim creation as a secondary action (for example “Add site-specific Prelim”) rather than a permanently expanded primary form. Do **not** implement that follow-up in x.4C unless explicitly instructed.
+**PRELIMS UX FOLLOW-UP:** Implemented as **BL-033D.x.5** — company-template / “Set up site Prelims” is primary; manual “Add site-specific Prelim” is secondary/collapsed.
 
 ## BL-033D.x.4C.1 (Server Prelims → Draft CVR adoption contract) — BANKED
 
@@ -1103,9 +1103,24 @@ Test Site 1 / P04 / 5231 Cleaning: deliberate select → confirm with unresolved
 
 Status: **COMPLETE** (human UAT **PASSED**; forensic DB UAT **PASSED**). Do not mark whole **x.4C** complete yet unless explicitly closed.
 
+## BL-033D.x.5 (Prelims landing-page UX consolidation) — COMPLETE
+
+Client-only hierarchy tidy on Development → Prelims. No commercial maths, adoption, schema, or clone mutation.
+
+Design decision:
+
+- Company-template / “Set up site Prelims” (or **Manage site Prelims** when lines already exist) is the **primary** setup workflow
+- Manual individual creation is retained for exceptions / site-specific items
+- Manual creation is **secondary / collapsed** (not permanently expanded)
+- Main Prelims page remains the day-to-day forecast landing (not the template worksheet)
+
+Landing structure: proposal summary → primary actions (Set up/Manage + Review against CVR) with secondary “+ Add site-specific Prelim” beside them → live cost-code cards. Manual form expands only when requested (Cancel collapses; successful create collapses).
+
+Status: **COMPLETE** (human visual UAT **PASSED**).
+
 ## Next action
 
-**NEXT:** Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Do **not** Save migrated Admin cost-code rows from a browser whose Commercial Structure catalog lacks the server `reporting_group` values.
+**NEXT:** Keep P04 Draft. Do **not** mark whole **BL-033D.x.4C** complete unless explicitly closed. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Do **not** Save migrated Admin cost-code rows from a browser whose Commercial Structure catalog lacks the server `reporting_group` values.
 
 Do **not** alter P01/P02/P03 `reporting_month` except by a future explicit historic-correction feature. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`. Do not delete P04 `0f513191-cd25-4812-834f-37dcf66487e0` except by a later controlled commercial task.
 
