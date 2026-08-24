@@ -38,6 +38,21 @@ export function addCalendarMonths(value, delta) {
   return `${year}-${String(month).padStart(2, '0')}`;
 }
 
+export function coerceOffsetMonths(value) {
+  if (value == null || value === '') return 0;
+  if (typeof value === 'string' && value.trim() === '') return 0;
+  const n = Number(value);
+  return Number.isInteger(n) ? n : 0;
+}
+
+export function applyCalendarMonthOffset(isoDate, offsetMonths) {
+  const base = toIsoDate(isoDate);
+  if (!base) return null;
+  const offset = coerceOffsetMonths(offsetMonths);
+  if (offset === 0) return base;
+  return toIsoDate(addCalendarMonths(base, offset));
+}
+
 export function inclusiveCalendarMonthCount(startDate, endDate) {
   const start = parseIsoDateParts(startDate);
   const end = parseIsoDateParts(endDate);

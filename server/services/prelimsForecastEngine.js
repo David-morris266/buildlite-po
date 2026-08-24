@@ -5,6 +5,7 @@
  */
 
 const {
+  applyCalendarMonthOffset,
   inclusiveCalendarMonthCount,
   toIsoDate,
   toYearMonth,
@@ -69,6 +70,26 @@ function isComplete(status) {
 
 function isCancelled(status) {
   return String(status) === PRELIMS_STATUSES.CANCELLED;
+}
+
+function isOutsideProgramme(resolvedStart, resolvedEnd, programme = {}) {
+  const startYm = toYearMonth(resolvedStart);
+  const endYm = toYearMonth(resolvedEnd);
+  const siteYm = toYearMonth(programme.siteStart);
+  const finalYm = toYearMonth(programme.finalCompletion);
+  if (!startYm || !endYm) return false;
+  if (siteYm && startYm < siteYm) return true;
+  if (finalYm && endYm > finalYm) return true;
+  return false;
+}
+
+function resolveOffsetDate(basis, fixedDate, programme, offsetMonths) {
+  const base = resolveBasisDate(basis, fixedDate, programme);
+  if (!base) return null;
+  if (String(basis || "").trim() === TIME_BASES.FIXED_DATE) {
+    return base;
+  }
+  return applyCalendarMonthOffset(base, offsetMonths);
 }
 
 function resolveBasisDate(basis, fixedDate, programme = {}) {
@@ -151,6 +172,7 @@ function resolveTimeSpan(line = {}, programme = null) {
       resolvedStart: null,
       resolvedEnd: null,
       totalMonths: null,
+      outsideProgramme: false,
     };
   }
 
@@ -164,11 +186,17 @@ function resolveTimeSpan(line = {}, programme = null) {
         resolvedStart: null,
         resolvedEnd: null,
         totalMonths: null,
+        outsideProgramme: false,
       };
     }
   }
 
-  const resolvedStart = resolveBasisDate(line.startBasis, line.startFixedDate, programme || {});
+  const resolvedStart = resolveOffsetDate(
+    line.startBasis,
+    line.startFixedDate,
+    programme || {},
+    line.startOffsetMonths
+  );
   if (!resolvedStart) {
     return {
       state: PRELIMS_CALC_STATES.UNRESOLVED,
@@ -176,9 +204,15 @@ function resolveTimeSpan(line = {}, programme = null) {
       resolvedStart: null,
       resolvedEnd: null,
       totalMonths: null,
+      outsideProgramme: false,
     };
   }
-  const resolvedEnd = resolveBasisDate(line.endBasis, line.endFixedDate, programme || {});
+  const resolvedEnd = resolveOffsetDate(
+    line.endBasis,
+    line.endFixedDate,
+    programme || {},
+    line.endOffsetMonths
+  );
   if (!resolvedEnd) {
     return {
       state: PRELIMS_CALC_STATES.UNRESOLVED,
@@ -186,6 +220,7 @@ function resolveTimeSpan(line = {}, programme = null) {
       resolvedStart,
       resolvedEnd: null,
       totalMonths: null,
+      outsideProgramme: false,
     };
   }
 
@@ -197,6 +232,7 @@ function resolveTimeSpan(line = {}, programme = null) {
       resolvedStart,
       resolvedEnd,
       totalMonths: null,
+      outsideProgramme: isOutsideProgramme(resolvedStart, resolvedEnd, programme || {}),
     };
   }
 
@@ -206,6 +242,7 @@ function resolveTimeSpan(line = {}, programme = null) {
     resolvedStart,
     resolvedEnd,
     totalMonths,
+    outsideProgramme: isOutsideProgramme(resolvedStart, resolvedEnd, programme || {}),
   };
 }
 
@@ -233,7 +270,7 @@ function calculateTimeLine(line = {}, { programme = null, reportingMonth = null 
         });
   }
 
-  const { resolvedStart, resolvedEnd, totalMonths } = span;
+  const { resolvedStart, resolvedEnd, totalMonths, outsideProgramme } = span;
 
   const elapsedMonths = elapsedCalendarMonths(resolvedStart, resolvedEnd, asAt);
   const remainingMonths = totalMonths - elapsedMonths;
@@ -255,6 +292,7 @@ function calculateTimeLine(line = {}, { programme = null, reportingMonth = null 
     assumptionAmount: totalForecast,
     remainingExposure: forecastToComplete,
     includedInActiveProposal: false,
+    outsideProgramme: Boolean(outsideProgramme),
   };
   return applyStatusToAssumption(resolved, line.status, totalForecast);
 }
@@ -392,6 +430,7 @@ module.exports = {
   resolveBasisDate,
   resolveTimeSpan,
   elapsedCalendarMonths,
+  isOutsideProgramme,
   calculateTimeLine,
   calculateLumpSumLine,
   calculatePrelimsLine,

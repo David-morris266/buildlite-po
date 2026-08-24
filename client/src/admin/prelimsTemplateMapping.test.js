@@ -4,8 +4,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyTemplateMapping,
+  filterCostCodeSearchOptions,
   filterMappingOptions,
   mappingOptionLabel,
+  mappingOptionPrimaryLabel,
+  mappingOptionSecondaryLabel,
   sharedCostCodeCounts,
 } from './prelimsTemplateMapping';
 
@@ -49,5 +52,37 @@ describe('prelims template mapping helpers', () => {
         'p100'
       ).map((row) => row.code)
     ).toEqual(['P100-SM']);
+  });
+
+  it('searches setup codes by code/description first and does not flood on reporting group', () => {
+    const options = [
+      {
+        code: '5210',
+        description: 'Site management',
+        reportingGroup: 'Prelim & Supervision Costs - 53',
+      },
+      {
+        code: '5305',
+        description: 'Supervision / Management',
+        reportingGroup: 'Prelim & Supervision Costs - 53',
+      },
+      {
+        code: '1110',
+        description: 'VAT on Land Purchase',
+        reportingGroup: 'Land Costs - 11',
+      },
+    ];
+    expect(filterCostCodeSearchOptions(options, '5305').map((row) => row.code)).toEqual(['5305']);
+    expect(filterCostCodeSearchOptions(options, 'supervision').map((row) => row.code)).toEqual([
+      '5305',
+    ]);
+    expect(filterCostCodeSearchOptions(options, 'SUPERVISION').map((row) => row.code)).toEqual([
+      '5305',
+    ]);
+    expect(
+      filterCostCodeSearchOptions(options, 'Prelim & Supervision').map((row) => row.code)
+    ).toEqual(['5210', '5305']);
+    expect(mappingOptionPrimaryLabel(options[1])).toBe('5305 — Supervision / Management');
+    expect(mappingOptionSecondaryLabel(options[1])).toBe('Prelim & Supervision Costs - 53');
   });
 });

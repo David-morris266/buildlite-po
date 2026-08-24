@@ -193,6 +193,18 @@ describe('BL-033D.x.4A Prelims adoption compare engine', () => {
 
     expect(same).toBe(base);
     expect(changed).not.toBe(base);
+
+    const offsetShifted = buildProposalFingerprint({
+      developmentId: DEV_ID,
+      periodKey: PERIOD_KEY,
+      reportingMonth: REPORTING_MONTH,
+      lines: enriched.map((line) =>
+        line.id === 'da5b67be-8432-454e-b6a5-37e163078f1c'
+          ? { ...line, startOffsetMonths: 3, endOffsetMonths: 3 }
+          : line
+      ),
+    });
+    expect(offsetShifted).not.toBe(base);
   });
 
   it('reports up to date when fingerprint and adopted final match', () => {

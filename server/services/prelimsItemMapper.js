@@ -42,8 +42,14 @@ function prelimsRowToPersisted(row) {
     monthlyRate: toNumberOrNull(row.monthly_rate),
     startBasis: row.start_basis || null,
     startFixedDate: toDateOnly(row.start_fixed_date),
+    startOffsetMonths: Number.isInteger(Number(row.start_offset_months))
+      ? Number(row.start_offset_months)
+      : 0,
     endBasis: row.end_basis || null,
     endFixedDate: toDateOnly(row.end_fixed_date),
+    endOffsetMonths: Number.isInteger(Number(row.end_offset_months))
+      ? Number(row.end_offset_months)
+      : 0,
     lumpSumAmount: toNumberOrNull(row.lump_sum_amount),
     sourceTemplateId: row.source_template_id || null,
     sourceTemplateVersion:

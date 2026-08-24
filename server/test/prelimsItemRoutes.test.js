@@ -30,6 +30,12 @@ const MIGRATION_015 = path.join(
   "migrations",
   "015_development_prelims_items.sql"
 );
+const MIGRATION_019 = path.join(
+  __dirname,
+  "..",
+  "migrations",
+  "019_development_prelims_time_offsets.sql"
+);
 
 const testDevelopmentIds = [];
 const testTenantIds = [];
@@ -46,6 +52,7 @@ async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_009, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_014, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_015, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_019, "utf8"));
 }
 
 async function cleanup() {
@@ -349,6 +356,50 @@ if (!isDbConfigured()) {
     assert.equal(listed.body.items[0].calculation.totalForecast, null);
     assert.equal(listed.body.summary.development.activeProposal, null);
     assert.equal(listed.body.summary.development.hasUnresolved, true);
+  });
+
+  test("TIME offsets persist on create/update and keep zero-default money identical", async () => {
+    const active = await getActiveClient();
+    const developmentId = await createDevelopment(active);
+    await request(app)
+      .put(`/api/developments/${developmentId}/programme`)
+      .send({
+        version: 0,
+        siteStart: "2026-09-01",
+        finalCompletion: "2029-10-01",
+        totalPlots: 31,
+      });
+
+    const baseline = await request(app)
+      .post(`/api/developments/${developmentId}/prelims-items`)
+      .send(timeBody({ reportingMonth: "2026-08" }));
+    assert.equal(baseline.status, 201);
+    assert.equal(baseline.body.startOffsetMonths, 0);
+    assert.equal(baseline.body.endOffsetMonths, 0);
+    assert.equal(baseline.body.calculation.totalMonths, 38);
+    assert.equal(baseline.body.calculation.totalForecast, 38000);
+
+    const offset = await request(app)
+      .put(`/api/developments/${developmentId}/prelims-items/${baseline.body.id}`)
+      .send({
+        ...timeBody({
+          monthlyRate: 5500,
+          startOffsetMonths: 3,
+          endOffsetMonths: 0,
+          reportingMonth: "2026-08",
+        }),
+        version: 1,
+      });
+    assert.equal(offset.status, 200);
+    assert.equal(offset.body.startOffsetMonths, 3);
+    assert.equal(offset.body.calculation.totalMonths, 35);
+    assert.equal(offset.body.calculation.totalForecast, 192500);
+    assert.equal(offset.body.calculation.resolvedStart, "2026-12-01");
+
+    const rejected = await request(app)
+      .post(`/api/developments/${developmentId}/prelims-items`)
+      .send(timeBody({ startOffsetMonths: 61, name: "Too large" }));
+    assert.equal(rejected.status, 400);
   });
 
   test("programme writes and Prelims GET do not create snapshots or change close-engine sources", async () => {

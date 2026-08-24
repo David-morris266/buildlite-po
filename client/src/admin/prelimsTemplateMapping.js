@@ -24,12 +24,40 @@ export function sharedCostCodeCounts(lines = []) {
   return counts;
 }
 
-export function mappingOptionLabel(option) {
+export function mappingOptionPrimaryLabel(option) {
   const code = option?.code || option?.value || '';
   const description = option?.description || option?.element || '';
-  const reportingGroup = option?.reportingGroup || option?.trade || '';
-  const core = [code, description].filter(Boolean).join(' — ');
+  return [code, description].filter(Boolean).join(' — ');
+}
+
+export function mappingOptionSecondaryLabel(option) {
+  return String(option?.reportingGroup || option?.trade || '').trim();
+}
+
+export function mappingOptionLabel(option) {
+  const core = mappingOptionPrimaryLabel(option);
+  const reportingGroup = mappingOptionSecondaryLabel(option);
   return reportingGroup ? `${core} (${reportingGroup})` : core;
+}
+
+function optionIdentity(option) {
+  return String(option?.code || option?.value || '').trim();
+}
+
+function textIncludes(parts, needle) {
+  return parts
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .includes(needle);
+}
+
+function prependCurrent(options, matched, current) {
+  if (current && !matched.some((option) => optionIdentity(option) === current)) {
+    const existing = (options || []).find((option) => optionIdentity(option) === current);
+    if (existing) return [existing, ...matched];
+  }
+  return matched;
 }
 
 export function filterMappingOptions(options = [], query = '', currentCode = '') {
@@ -37,25 +65,33 @@ export function filterMappingOptions(options = [], query = '', currentCode = '')
   const current = String(currentCode || '').trim();
   const matched = (options || []).filter((option) => {
     if (!needle) return true;
-    const haystack = [
-      option.code,
-      option.value,
-      option.description,
-      option.element,
-      option.reportingGroup,
-      option.trade,
-      option.label,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase();
-    return haystack.includes(needle);
-  });
-  if (current && !matched.some((option) => option.code === current || option.value === current)) {
-    const existing = (options || []).find(
-      (option) => option.code === current || option.value === current
+    return textIncludes(
+      [
+        option.code,
+        option.value,
+        option.description,
+        option.element,
+        option.reportingGroup,
+        option.trade,
+        option.label,
+      ],
+      needle
     );
-    if (existing) return [existing, ...matched];
-  }
-  return matched;
+  });
+  return prependCurrent(options, matched, current);
+}
+
+/** Setup worksheet search: code + description first; reporting group is fallback only. */
+export function filterCostCodeSearchOptions(options = [], query = '', currentCode = '') {
+  const needle = String(query || '').trim().toLowerCase();
+  const current = String(currentCode || '').trim();
+  if (!needle) return prependCurrent(options, options || [], current);
+  const primary = (options || []).filter((option) =>
+    textIncludes([option.code, option.value, option.description, option.element], needle)
+  );
+  if (primary.length) return prependCurrent(options, primary, current);
+  const fallback = (options || []).filter((option) =>
+    textIncludes([option.reportingGroup, option.trade], needle)
+  );
+  return prependCurrent(options, fallback, current);
 }

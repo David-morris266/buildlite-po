@@ -176,6 +176,18 @@ test("fingerprint is deterministic and changes when proposal inputs change", () 
 
   assert.equal(first, second);
   assert.notEqual(first, changed);
+
+  const offsetShifted = buildProposalFingerprint({
+    developmentId: DEV_ID,
+    periodKey: PERIOD_KEY,
+    reportingMonth: REPORTING_MONTH,
+    lines: lines.map((line) =>
+      line.id === "da5b67be-8432-454e-b6a5-37e163078f1c"
+        ? { ...line, startOffsetMonths: 3, endOffsetMonths: 3 }
+        : line
+    ),
+  });
+  assert.notEqual(first, offsetShifted);
 });
 
 test("drift states cover up to date, proposal changed, CVR drift, and superseded", () => {

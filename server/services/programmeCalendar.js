@@ -39,6 +39,21 @@ function addCalendarMonths(value, delta) {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
 
+function coerceOffsetMonths(value) {
+  if (value == null || value === "") return 0;
+  if (typeof value === "string" && value.trim() === "") return 0;
+  const n = Number(value);
+  return Number.isInteger(n) ? n : 0;
+}
+
+function applyCalendarMonthOffset(isoDate, offsetMonths) {
+  const base = toIsoDate(isoDate);
+  if (!base) return null;
+  const offset = coerceOffsetMonths(offsetMonths);
+  if (offset === 0) return base;
+  return toIsoDate(addCalendarMonths(base, offset));
+}
+
 function inclusiveCalendarMonthCount(startDate, endDate) {
   const start = parseIsoDateParts(startDate);
   const end = parseIsoDateParts(endDate);
@@ -63,6 +78,8 @@ module.exports = {
   toYearMonth,
   toIsoDate,
   addCalendarMonths,
+  coerceOffsetMonths,
+  applyCalendarMonthOffset,
   inclusiveCalendarMonthCount,
   monthNumberFromSiteStart,
   suggestNextReportingMonth,

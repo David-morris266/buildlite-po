@@ -45,7 +45,53 @@ test("rejects STANDARD_CVR, QUANTITY, and inverted fixed dates", () => {
   assert.equal(inverted.ok, false);
 });
 
-test("accepts TIME mixed bases and LUMP_SUM", () => {
+test("accepts TIME offsets and rejects ±61 while forcing FIXED_DATE offsets to 0", () => {
+  const ok = validatePrelimsItemBody({
+    version: 0,
+    costCodeKey: "5231",
+    name: "Site management",
+    forecastDriver: "TIME",
+    monthlyRate: 1000,
+    startBasis: "SITE_START",
+    startOffsetMonths: 3,
+    endBasis: "FINAL_COMPLETION",
+    endOffsetMonths: -6,
+  });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.value.startOffsetMonths, 3);
+  assert.equal(ok.value.endOffsetMonths, -6);
+
+  const tooLarge = validatePrelimsItemBody({
+    version: 0,
+    costCodeKey: "5231",
+    name: "Too far",
+    forecastDriver: "TIME",
+    monthlyRate: 1000,
+    startBasis: "SITE_START",
+    startOffsetMonths: 61,
+    endBasis: "FINAL_COMPLETION",
+  });
+  assert.equal(tooLarge.ok, false);
+
+  const fixed = validatePrelimsItemBody({
+    version: 0,
+    costCodeKey: "5231",
+    name: "Fixed",
+    forecastDriver: "TIME",
+    monthlyRate: 1000,
+    startBasis: "FIXED_DATE",
+    startFixedDate: "2027-01-01",
+    startOffsetMonths: 4,
+    endBasis: "FIXED_DATE",
+    endFixedDate: "2028-12-01",
+    endOffsetMonths: -2,
+  });
+  assert.equal(fixed.ok, true);
+  assert.equal(fixed.value.startOffsetMonths, 0);
+  assert.equal(fixed.value.endOffsetMonths, 0);
+});
+
+test("accepts TIME mixed bases and LUMP_SUM with default offsets", () => {
   const time = validatePrelimsItemBody({
     version: 0,
     costCodeKey: "5231",
@@ -57,6 +103,8 @@ test("accepts TIME mixed bases and LUMP_SUM", () => {
   });
   assert.equal(time.ok, true);
   assert.equal(time.value.startFixedDate, null);
+  assert.equal(time.value.startOffsetMonths, 0);
+  assert.equal(time.value.endOffsetMonths, 0);
 
   const lump = validatePrelimsItemBody({
     version: 0,
@@ -68,4 +116,5 @@ test("accepts TIME mixed bases and LUMP_SUM", () => {
   });
   assert.equal(lump.ok, true);
   assert.equal(lump.value.lumpSumAmount, 20000);
+  assert.equal(lump.value.startOffsetMonths, 0);
 });

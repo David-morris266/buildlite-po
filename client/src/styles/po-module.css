@@ -9880,7 +9880,7 @@
 .dev-prelims-setup__intro p,
 .dev-prelims-setup__meta {
   margin: 0;
-  color: #5c6570;
+  color: var(--muted, #9aa4b2);
   font-size: 0.9rem;
 }
 
@@ -9899,28 +9899,146 @@
 
 .dev-prelims-setup__table-wrap {
   overflow: auto;
-  border: 1px solid #d9dee5;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
   border-radius: 8px;
 }
 
 .dev-prelims-setup__table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
   font-size: 0.82rem;
 }
 
 .dev-prelims-setup__table th,
 .dev-prelims-setup__table td {
-  padding: 0.45rem 0.5rem;
-  border-bottom: 1px solid #edf0f3;
-  vertical-align: top;
+  padding: 0.4rem 0.55rem;
+  border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  vertical-align: middle;
   text-align: left;
 }
 
 .dev-prelims-setup__table th {
-  background: #f6f8fa;
+  background: #12181b;
+  color: rgba(255, 255, 255, 0.92);
   font-weight: 600;
   white-space: nowrap;
+  box-shadow: 0 1px 0 var(--line, rgba(255, 255, 255, 0.12));
+}
+
+/* Primary commercial columns: keep scan width tight but separate money fields. */
+.dev-prelims-setup__table th:nth-child(1),
+.dev-prelims-setup__primary td:nth-child(1) {
+  width: 2.4rem;
+  padding-left: 0.45rem;
+  padding-right: 0.25rem;
+}
+
+.dev-prelims-setup__table th:nth-child(2),
+.dev-prelims-setup__primary td:nth-child(2) {
+  width: 18%;
+}
+
+.dev-prelims-setup__table th:nth-child(3),
+.dev-prelims-setup__primary td:nth-child(3) {
+  width: 6.75rem;
+}
+
+.dev-prelims-setup__table th:nth-child(4),
+.dev-prelims-setup__primary td:nth-child(4) {
+  width: 24%;
+  min-width: 12.5rem;
+}
+
+.dev-prelims-setup__table th:nth-child(5),
+.dev-prelims-setup__primary td:nth-child(5) {
+  width: 7.75rem;
+  padding-right: 0.9rem;
+}
+
+.dev-prelims-setup__table th:nth-child(6),
+.dev-prelims-setup__primary td:nth-child(6) {
+  width: 7.75rem;
+  text-align: right;
+  padding-left: 0.9rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.dev-prelims-setup__table th:nth-child(7),
+.dev-prelims-setup__primary td:nth-child(7) {
+  width: 7.25rem;
+  padding-left: 0.65rem;
+}
+
+.dev-prelims-setup__primary td {
+  border-bottom: none;
+  vertical-align: top;
+}
+
+.dev-prelims-setup__primary .input {
+  height: 2rem;
+  min-height: 2rem;
+}
+
+.dev-prelims-setup__detail td {
+  padding-top: 0.15rem;
+  padding-bottom: 0.7rem;
+  vertical-align: top;
+  color: var(--muted, #9aa4b2);
+}
+
+.dev-prelims-setup__detail .dev-prelims-time--compact {
+  display: grid;
+  grid-template-columns: minmax(13.5rem, 1fr) minmax(13.5rem, 1fr) minmax(6.75rem, 0.55fr);
+  gap: 0.45rem 1rem;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  align-items: start;
+}
+
+.dev-prelims-setup__detail .dev-prelims-time__side {
+  display: grid;
+  grid-template-rows: 1.05rem auto 1.05rem;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.dev-prelims-setup__detail .dev-prelims-time__controls {
+  display: grid;
+  grid-template-columns: minmax(8.25rem, 1fr) 4.35rem;
+  gap: 0.4rem;
+  align-items: start;
+}
+
+.dev-prelims-setup__detail .dev-prelims-time__duration-side .dev-prelims-time__controls {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  min-height: 2rem;
+}
+
+.dev-prelims-setup__detail .dev-prelims-time__offset {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.dev-prelims-setup__detail .dev-prelims-time__offset .input,
+.dev-prelims-setup__detail .dev-prelims-time__controls input[type='date'] {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: 2rem;
+}
+
+.dev-prelims-setup__detail .dev-prelims-time__controls .input {
+  height: 2rem;
+}
+
+.dev-prelims-setup__detail .dev-prelims-time__chips,
+.dev-prelims-setup__detail .dev-prelims-setup__chips {
+  margin-top: 0.45rem;
 }
 
 .dev-prelims-setup__table td strong {
@@ -9929,38 +10047,207 @@
 
 .dev-prelims-setup__guidance {
   display: block;
-  color: #5c6570;
+  color: var(--muted, #9aa4b2);
   font-size: 0.75rem;
   font-weight: 400;
   margin-top: 0.15rem;
 }
 
 .dev-prelims-setup__table .input {
-  min-width: 6.5rem;
-  max-width: 8.5rem;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.dev-prelims-setup__chip {
+.dev-prelims-setup__primary td:nth-child(3) .input {
+  max-width: 6.25rem;
+}
+
+.dev-prelims-setup__primary td:nth-child(5) .input {
+  max-width: 7rem;
+}
+
+.dev-prelims-setup__cost-code-picker {
+  position: relative;
+  display: grid;
+  gap: 0.25rem;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+.dev-prelims-setup__cost-code-picker .input {
+  min-width: 0;
+  max-width: none;
+  width: 100%;
+}
+
+.dev-prelims-setup__cost-code-selected {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  color: var(--text, rgba(255, 255, 255, 0.87));
+}
+
+.dev-prelims-setup__cost-code-selected--empty {
+  color: var(--muted, #9aa4b2);
+}
+
+.dev-prelims-setup__cost-code-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.94);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+
+.dev-prelims-setup__cost-code-empty {
+  padding: 0.55rem 0.65rem;
+  font-size: 0.75rem;
+  color: var(--muted, #9aa4b2);
+}
+
+.dev-prelims-setup__cost-code-option {
+  display: grid;
+  gap: 0.12rem;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent;
+  color: inherit;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.dev-prelims-setup__cost-code-primary {
+  font-weight: 600;
+}
+
+.dev-prelims-setup__cost-code-secondary {
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: var(--muted, #9aa4b2);
+}
+
+.dev-prelims-setup__cost-code-option.is-active,
+.dev-prelims-setup__cost-code-option:hover {
+  background: rgba(120, 255, 120, 0.12);
+}
+
+.dev-prelims-setup__state {
+  min-width: 7.5rem;
+  max-width: 11rem;
+}
+
+.dev-prelims-setup__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.dev-prelims-time {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.dev-prelims-time--compact {
+  min-width: 0;
+  max-width: none;
+}
+
+.dev-prelims-time__side-label,
+.dev-prelims-time__resolved,
+.dev-prelims-time__duration {
   display: block;
   font-size: 0.72rem;
   color: #5c6570;
 }
 
-.dev-prelims-setup__chip--ok {
-  color: #1f6b3a;
+.dev-prelims-time__controls {
+  display: grid;
+  grid-template-columns: minmax(7rem, 1fr) minmax(5.5rem, 0.9fr);
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.dev-prelims-time__offset {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.7rem;
+  color: #5c6570;
+}
+
+.dev-prelims-time__offset .input {
+  min-width: 4.5rem;
+  max-width: 5.5rem;
+}
+
+.dev-prelims-time__duration {
+  margin: 0;
+  font-weight: 600;
+  color: inherit;
+}
+
+.dev-prelims__form-time {
+  grid-column: 1 / -1;
+}
+
+.dev-prelims__form-time .dev-prelims-time__controls {
+  grid-template-columns: minmax(10rem, 1fr) minmax(7rem, 0.8fr);
+}
+
+.dev-prelims-setup__chip {
+  display: inline-block;
+  font-size: 0.68rem;
+  line-height: 1.2;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  color: var(--muted, #9aa4b2);
+  background: transparent;
+  white-space: nowrap;
+}
+
+.dev-prelims-setup__chip--quiet {
+  color: var(--muted, #9aa4b2);
+  border-color: transparent;
+  background: transparent;
+  opacity: 0.75;
+}
+
+.dev-prelims-setup__chip--muted {
+  color: var(--muted, #9aa4b2);
+}
+
+.dev-prelims-setup__chip--info {
+  color: #c9d4e3;
+  border-color: rgba(201, 212, 227, 0.28);
+  background: rgba(201, 212, 227, 0.08);
 }
 
 .dev-prelims-setup__chip--warn {
-  color: #8a4b08;
+  color: #f0c674;
+  border-color: rgba(240, 198, 116, 0.35);
+  background: rgba(240, 198, 116, 0.1);
 }
 
 .dev-prelims-setup__row--disabled td,
 .dev-prelims-setup__row--applied td {
-  color: #7a828c;
-  background: #f7f8fa;
+  color: var(--muted, #9aa4b2);
+  opacity: 0.78;
 }
 
-.dev-prelims-setup__row--overlap td:nth-child(6) {
-  background: #fff8dc;
+.dev-prelims-setup__row--overlap td.dev-prelims-setup__state {
+  background: transparent;
 }
 

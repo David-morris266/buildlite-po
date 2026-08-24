@@ -4,11 +4,22 @@
  */
 
 const { parseExpectedVersion, preserveCostCodeKey } = require("./prelimsItemValidation");
+const { PRELIMS_DRIVER_KEYS } = require("./prelimsConstants");
 
 function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     String(value || "")
   );
+}
+
+function parseOptionalDriver(value, index, errors) {
+  if (value == null || value === "") return null;
+  const driver = String(value).trim();
+  if (!PRELIMS_DRIVER_KEYS.includes(driver)) {
+    errors.push(`lines[${index}].forecastDriver must be TIME or LUMP_SUM.`);
+    return null;
+  }
+  return driver;
 }
 
 function validatePrelimsSetupApplyBody(body = {}) {
@@ -40,8 +51,15 @@ function validatePrelimsSetupApplyBody(body = {}) {
     selected.push({
       templateLineId,
       costCodeKey: preserveCostCodeKey(line.costCodeKey),
+      forecastDriver: parseOptionalDriver(line.forecastDriver, index, errors),
       monthlyRate: line.monthlyRate,
       lumpSumAmount: line.lumpSumAmount,
+      startBasis: line.startBasis,
+      startOffsetMonths: line.startOffsetMonths,
+      startFixedDate: line.startFixedDate,
+      endBasis: line.endBasis,
+      endOffsetMonths: line.endOffsetMonths,
+      endFixedDate: line.endFixedDate,
     });
   }
 

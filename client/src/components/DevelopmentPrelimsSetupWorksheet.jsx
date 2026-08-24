@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { listCostCodes } from '../api';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getCostCodeClassification } from '../api/costCodeClassifications';
 import {
   applyDevelopmentPrelimsSetup,
@@ -7,19 +6,23 @@ import {
   previewDevelopmentPrelimsSetup,
 } from '../api/developmentPrelimsItems';
 import { listPrelimsTemplates } from '../api/prelimsTemplates';
+import { listCostCodesForTemplateMapping } from '../admin/prelimsTemplateCostCodes';
 import { formatCvrMoney } from '../cvr/cvrHelpers';
 import { PRELIMS_DRIVERS, PRELIMS_UNRESOLVED_LABELS } from '../prelims/prelimsConstants';
 import {
   applyPayloadFromDrafts,
-  basisLabel,
   classificationForDraft,
   computeOverlap,
+  draftAfterDriverChange,
   draftsFromPreview,
-  durationLabel,
+  effectiveDriver,
   isLineReady,
   livePreviewCalculation,
   readyStateLabel,
+  setupStateChips,
 } from '../prelims/prelimsSetupWorksheet';
+import PrelimsCostCodePicker from './PrelimsCostCodePicker';
+import PrelimsTimeSpanFields from './PrelimsTimeSpanFields';
 
 function moneyLabel(value) {
   if (value == null) return '—';
@@ -83,9 +86,9 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
 
   useEffect(() => {
     let cancelled = false;
-    listCostCodes()
+    listCostCodesForTemplateMapping()
       .then((rows) => {
-        if (!cancelled) setCostCodes(Array.isArray(rows) ? rows : rows?.items || []);
+        if (!cancelled) setCostCodes(Array.isArray(rows) ? rows : []);
       })
       .catch(() => {
         if (!cancelled) setCostCodes([]);
@@ -129,14 +132,36 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
 
   const readyCount = useMemo(() => {
     if (!preview) return 0;
-    return preview.lines.filter((line) => isLineReady(line, draftById.get(line.templateLineId))).length;
+    return preview.lines.filter((line) =>
+      isLineReady(line, draftById.get(line.templateLineId), preview.programme)
+    ).length;
   }, [preview, draftById]);
+
+  const canonicalCostCodeOptions = useMemo(
+    () =>
+      (costCodes || [])
+        .map((row) => ({
+          ...row,
+          code: String(row.code || row.value || row.costCodeKey || '').trim(),
+          description: row.description || row.element || '',
+        }))
+        .filter((row) => Boolean(row.code)),
+    [costCodes]
+  );
 
   function updateDraft(templateLineId, field, value) {
     setDrafts((current) =>
-      current.map((draft) =>
-        draft.templateLineId === templateLineId ? { ...draft, [field]: value } : draft
-      )
+      current.map((draft) => {
+        if (draft.templateLineId !== templateLineId) return draft;
+        if (field === 'forecastDriver') {
+          const line = preview?.lines?.find((row) => row.templateLineId === templateLineId) || {};
+          return draftAfterDriverChange(draft, value, line);
+        }
+        const next = { ...draft, [field]: value };
+        if (field === 'startBasis' && value === 'FIXED_DATE') next.startOffsetMonths = 0;
+        if (field === 'endBasis' && value === 'FIXED_DATE') next.endOffsetMonths = 0;
+        return next;
+      })
     );
   }
 
@@ -232,9 +257,7 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
                 <th>Sel</th>
                 <th>Prelim</th>
                 <th>Driver</th>
-                <th>Duration</th>
                 <th>Cost code</th>
-                <th>State</th>
                 <th>Assumption</th>
                 <th>Forecast</th>
                 <th>Ready</th>
@@ -246,9 +269,11 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
                   templateLineId: line.templateLineId,
                   selected: false,
                   costCodeKey: '',
+                  forecastDriver: line.forecastDriver,
                   monthlyRate: '',
                   lumpSumAmount: '',
                 };
+                const driver = effectiveDriver(line, draft);
                 const overlapInfo = computeOverlap(line, draft, preview, drafts);
                 const live = livePreviewCalculation(
                   line,
@@ -268,135 +293,154 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
                   .filter(Boolean)
                   .join(' ');
                 const forecastUnresolved = live.calc.state !== 'resolved';
+                const timeUnresolvedLabel =
+                  driver === PRELIMS_DRIVERS.TIME && live.span.state !== 'resolved'
+                    ? live.span.reasonLabel ||
+                      PRELIMS_UNRESOLVED_LABELS[live.span.reason] ||
+                      'Unresolved programme'
+                    : null;
+                const stateChips = setupStateChips({
+                  classification,
+                  overlapInfo,
+                  outsideProgramme: Boolean(live.span.outsideProgramme),
+                  timeUnresolvedLabel,
+                }).filter((chip) => chip.tone !== 'quiet');
+                const isTime = driver === PRELIMS_DRIVERS.TIME;
+                const showDetail = isTime || stateChips.length > 0;
                 return (
-                  <tr key={line.templateLineId} className={rowClass}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(draft.selected) && line.selectable}
-                        disabled={!line.selectable || saving}
-                        onChange={(event) =>
-                          updateDraft(line.templateLineId, 'selected', event.target.checked)
-                        }
-                        aria-label={`Select ${line.name}`}
-                      />
-                    </td>
-                    <td>
-                      <strong>{line.name}</strong>
-                      {line.guidance ? (
-                        <span className="dev-prelims-setup__guidance">{line.guidance}</span>
-                      ) : null}
-                    </td>
-                    <td>{line.forecastDriver}</td>
-                    <td>
-                      <span>{durationLabel(line, live.span)}</span>
-                      {line.forecastDriver === PRELIMS_DRIVERS.TIME ? (
-                        <span className="dev-prelims-setup__guidance">{basisLabel(line)}</span>
-                      ) : null}
-                    </td>
-                    <td>
-                      <input
-                        className="input"
-                        list="dev-prelims-setup-cost-codes"
-                        value={draft.costCodeKey}
-                        disabled={!line.selectable || saving}
-                        onChange={(event) =>
-                          updateDraft(line.templateLineId, 'costCodeKey', event.target.value)
-                        }
-                        aria-label={`${line.name} cost code`}
-                      />
-                    </td>
-                    <td>
-                      {classification.tone === 'unmapped' ? (
-                        <span className="dev-prelims-setup__chip">Unmapped</span>
-                      ) : null}
-                      {classification.tone === 'normal' ? (
-                        <span className="dev-prelims-setup__chip dev-prelims-setup__chip--ok">
-                          PRELIMS
-                        </span>
-                      ) : null}
-                      {classification.tone === 'warning' ? (
-                        <span className="dev-prelims-setup__chip dev-prelims-setup__chip--warn">
-                          {classification.message}
-                        </span>
-                      ) : null}
-                      {overlapInfo.overlap ? (
-                        <span className="dev-prelims-setup__chip dev-prelims-setup__chip--warn">
-                          Overlap
-                          {overlapInfo.existingNames.length
-                            ? ` with ${overlapInfo.existingNames.join(', ')}`
-                            : ''}
-                        </span>
-                      ) : null}
-                      {live.span.state !== 'resolved' &&
-                      line.forecastDriver === PRELIMS_DRIVERS.TIME ? (
-                        <span className="dev-prelims-setup__chip dev-prelims-setup__chip--warn">
-                          {live.span.reasonLabel ||
-                            PRELIMS_UNRESOLVED_LABELS[live.span.reason] ||
-                            'Unresolved programme'}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td>
-                      {line.forecastDriver === PRELIMS_DRIVERS.TIME ? (
+                  <Fragment key={line.templateLineId}>
+                    <tr className={`dev-prelims-setup__primary ${rowClass}`.trim()}>
+                      <td>
                         <input
-                          className="input"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={draft.monthlyRate}
+                          type="checkbox"
+                          checked={Boolean(draft.selected) && line.selectable}
                           disabled={!line.selectable || saving}
                           onChange={(event) =>
-                            updateDraft(line.templateLineId, 'monthlyRate', event.target.value)
+                            updateDraft(line.templateLineId, 'selected', event.target.checked)
                           }
-                          aria-label={`${line.name} monthly rate`}
-                          placeholder="£/month"
+                          aria-label={`Select ${line.name}`}
                         />
-                      ) : (
-                        <input
+                      </td>
+                      <td>
+                        <strong>{line.name}</strong>
+                        {line.guidance ? (
+                          <span className="dev-prelims-setup__guidance">{line.guidance}</span>
+                        ) : null}
+                      </td>
+                      <td>
+                        <select
                           className="input"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={draft.lumpSumAmount}
+                          value={driver}
                           disabled={!line.selectable || saving}
                           onChange={(event) =>
-                            updateDraft(line.templateLineId, 'lumpSumAmount', event.target.value)
+                            updateDraft(line.templateLineId, 'forecastDriver', event.target.value)
                           }
-                          aria-label={`${line.name} lump-sum amount`}
-                          placeholder="£ amount"
+                          aria-label={`${line.name} forecast driver`}
+                        >
+                          <option value={PRELIMS_DRIVERS.TIME}>TIME</option>
+                          <option value={PRELIMS_DRIVERS.LUMP_SUM}>LUMP_SUM</option>
+                        </select>
+                      </td>
+                      <td>
+                        <PrelimsCostCodePicker
+                          name={line.name}
+                          options={canonicalCostCodeOptions}
+                          value={draft.costCodeKey}
+                          disabled={!line.selectable || saving}
+                          onChange={(code) => updateDraft(line.templateLineId, 'costCodeKey', code)}
                         />
-                      )}
-                    </td>
-                    <td>
-                      {forecastUnresolved
-                        ? hasAssumptionDisplay(line, draft)
-                          ? live.calc.reasonLabel ||
-                            PRELIMS_UNRESOLVED_LABELS[live.calc.reason] ||
-                            'Unresolved'
-                          : '—'
-                        : moneyLabel(live.calc.totalForecast)}
-                    </td>
-                    <td>{readyStateLabel(line, draft, overlapInfo.overlap)}</td>
-                  </tr>
+                      </td>
+                      <td>
+                        {isTime ? (
+                          <input
+                            className="input"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={draft.monthlyRate}
+                            disabled={!line.selectable || saving}
+                            onChange={(event) =>
+                              updateDraft(line.templateLineId, 'monthlyRate', event.target.value)
+                            }
+                            aria-label={`${line.name} monthly rate`}
+                            placeholder="£/month"
+                          />
+                        ) : (
+                          <input
+                            className="input"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={draft.lumpSumAmount}
+                            disabled={!line.selectable || saving}
+                            onChange={(event) =>
+                              updateDraft(line.templateLineId, 'lumpSumAmount', event.target.value)
+                            }
+                            aria-label={`${line.name} lump-sum amount`}
+                            placeholder="£ amount"
+                          />
+                        )}
+                      </td>
+                      <td>
+                        {forecastUnresolved
+                          ? hasAssumptionDisplay(line, draft)
+                            ? live.calc.reasonLabel ||
+                              PRELIMS_UNRESOLVED_LABELS[live.calc.reason] ||
+                              'Unresolved'
+                            : '—'
+                          : moneyLabel(live.calc.totalForecast)}
+                      </td>
+                      <td>{readyStateLabel(line, draft, overlapInfo.overlap)}</td>
+                    </tr>
+                    {showDetail ? (
+                      <tr
+                        className={`dev-prelims-setup__detail ${rowClass}`.trim()}
+                        aria-label={`${line.name} line detail`}
+                      >
+                        <td />
+                        <td colSpan={6}>
+                          {isTime ? (
+                            <PrelimsTimeSpanFields
+                              compact
+                              disabled={!line.selectable || saving}
+                              namePrefix={line.name}
+                              startBasis={draft.startBasis}
+                              startOffsetMonths={draft.startOffsetMonths}
+                              startFixedDate={draft.startFixedDate}
+                              endBasis={draft.endBasis}
+                              endOffsetMonths={draft.endOffsetMonths}
+                              endFixedDate={draft.endFixedDate}
+                              resolvedStart={live.span.resolvedStart}
+                              resolvedEnd={live.span.resolvedEnd}
+                              totalMonths={live.span.totalMonths}
+                              outsideProgramme={live.span.outsideProgramme}
+                              onChange={(field, value) =>
+                                updateDraft(line.templateLineId, field, value)
+                              }
+                            />
+                          ) : null}
+                          {stateChips.length ? (
+                            <div className="dev-prelims-setup__chips">
+                              {stateChips.map((chip) => (
+                                <span
+                                  key={`${chip.tone}-${chip.text}`}
+                                  className={`dev-prelims-setup__chip dev-prelims-setup__chip--${chip.tone}`}
+                                >
+                                  {chip.text}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 );
               })}
             </tbody>
           </table>
         </div>
       ) : null}
-
-      <datalist id="dev-prelims-setup-cost-codes">
-        {costCodes.map((row) => {
-          const key = row.code || row.costCodeKey || row.key;
-          if (!key) return null;
-          return (
-            <option key={key} value={key}>
-              {row.description || row.name || key}
-            </option>
-          );
-        })}
-      </datalist>
 
       <div className="dev-prelims__actions">
         <button
@@ -416,6 +460,8 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
 }
 
 function hasAssumptionDisplay(line, draft) {
-  if (line.forecastDriver === PRELIMS_DRIVERS.TIME) return String(draft.monthlyRate || '').trim() !== '';
+  if (effectiveDriver(line, draft) === PRELIMS_DRIVERS.TIME) {
+    return String(draft.monthlyRate || '').trim() !== '';
+  }
   return String(draft.lumpSumAmount || '').trim() !== '';
 }

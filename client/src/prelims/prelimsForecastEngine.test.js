@@ -108,6 +108,47 @@ describe('BL-033D.1 Prelims TIME and LUMP_SUM calculations', () => {
     vi.useRealTimers();
   });
 
+  it('resolves signed calendar-month offsets for Test Site 1 worked examples', () => {
+    expect(resolveTimeSpan(timeLine({ startOffsetMonths: 3 }), TEST_SITE_1).totalMonths).toBe(35);
+    expect(resolveTimeSpan(timeLine({ startOffsetMonths: 3 }), TEST_SITE_1).resolvedStart).toBe(
+      '2026-12-01'
+    );
+    expect(
+      resolveTimeSpan(timeLine({ startOffsetMonths: 9, endOffsetMonths: -6 }), TEST_SITE_1)
+        .totalMonths
+    ).toBe(23);
+    expect(
+      resolveTimeSpan(timeLine({ startOffsetMonths: 4, endOffsetMonths: -8 }), TEST_SITE_1)
+        .totalMonths
+    ).toBe(26);
+    expect(
+      calculateTimeLine(timeLine({ startOffsetMonths: 3, monthlyRate: 5500 }), {
+        programme: TEST_SITE_1,
+        reportingMonth: '2026-08',
+      }).totalForecast
+    ).toBe(192500);
+  });
+
+  it('keeps FIRST_COMPLETION offset unresolved and ignores FIXED_DATE offsets', () => {
+    expect(
+      resolveTimeSpan(timeLine({ startBasis: 'FIRST_COMPLETION', startOffsetMonths: -2 }), TEST_SITE_1)
+        .state
+    ).toBe('unresolved');
+    const fixed = resolveTimeSpan(
+      timeLine({
+        startBasis: 'FIXED_DATE',
+        startFixedDate: '2027-01-01',
+        startOffsetMonths: 5,
+        endBasis: 'FIXED_DATE',
+        endFixedDate: '2028-12-01',
+        endOffsetMonths: -3,
+      }),
+      TEST_SITE_1
+    );
+    expect(fixed.totalMonths).toBe(24);
+    expect(fixed.resolvedStart).toBe('2027-01-01');
+  });
+
   it('marks start after end as invalid', () => {
     const calc = calculateTimeLine(
       timeLine({

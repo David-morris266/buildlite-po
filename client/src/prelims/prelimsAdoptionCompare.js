@@ -71,6 +71,12 @@ function fingerprintLineEntry(line = {}) {
     endBasis: line.endBasis || null,
     startFixedDate: line.startFixedDate || null,
     endFixedDate: line.endFixedDate || null,
+    startOffsetMonths: Number.isInteger(Number(line.startOffsetMonths))
+      ? Number(line.startOffsetMonths)
+      : 0,
+    endOffsetMonths: Number.isInteger(Number(line.endOffsetMonths))
+      ? Number(line.endOffsetMonths)
+      : 0,
     totalForecast: roundMoney(calc.totalForecast),
     includedInActiveProposal: Boolean(calc.includedInActiveProposal),
     calcState: calc.state || null,

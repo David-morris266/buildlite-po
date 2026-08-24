@@ -17,8 +17,8 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Branch | `buildlite-V1-1` |
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
-| Last completed product slice | **BL-033D.x.4A COMPLETE.** Prelims adoption compare engine + metadata contract (pure logic; no CVR writes). Cost-code grain; fingerprint drift detection. |
-| Last persistence slice implemented | **BL-033D.x.3 COMPLETE.** Additive `018` provenance on `development_prelims_items`. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 setup UAT **PASSED**. |
+| Last completed product slice | **BL-033D.x.3R COMPLETE.** Flexible Prelims timing + setup UX (offsets, FIXED_DATE, driver override, searchable cost-code picker, compact worksheet). Human UAT **PASSED**. |
+| Last persistence slice implemented | **BL-033D.x.3R.** Additive `019` signed month offsets on `development_prelims_items`. Applied on `buildlite_test` and local `buildlite_clone` (controlled UAT). Existing rows default `0/0`. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
 | **NEXT** | **BL-033D.x.4B — Review & Adopt preview UI only** (no CVR apply). Do **not** Submit or Approve & Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog. Historic P01/P02/P03 `reporting_month` remains NULL. |
@@ -51,7 +51,8 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-033D.x.2A.3** | Cost Code Master cutover UAT | **COMPLETE.** Test Site 1 clone: `017` applied; 98 rows / 98 active / 0 collisions; 1110 and 2300 added from proven commercial use; historic strings untouched; flag-ON Admin and second-session UAT **PASSED**. Repo default remains OFF. Local `.env.local` may leave the flag ON. |
 | **BL-033D.x.2** | Company Prelims template tailoring + cost-code mapping | **COMPLETE.** Mapping UAT **PASSED**. No migration 018. Uses existing 016 APIs. Many lines may map to one canonical code. Mapping persists `cost_code_key` only. PRELIMS classification warns but does not block. Custom `co.prelims.*` lines and non-destructive disable/re-enable proven. No money defaults. No development instantiation. No CVR adoption. Live Test Site 1 template is **26 lines / 2 mapped** to `5231`. |
 | **BL-033D.x.3** | Development Prelims setup from company template | **COMPLETE.** Additive `018` provenance + read-only preview + transactional apply + commercial setup worksheet. Test Site 1 setup UAT **PASSED** on `buildlite_clone`. Four development Prelims rows. No CVR adoption. |
-| **BL-033D.x.4A** | Prelims adoption compare engine | **COMPLETE.** Pure cost-code compare + fingerprint + `display_metadata.prelimsAdoption` contract. No UI. No CVR writes. |
+| **BL-033D.x.3R** | Flexible Prelims timing + setup UX | **COMPLETE.** Development-owned signed calendar-month offsets (`019`); FIXED_DATE setup overrides; development TIME↔LUMP_SUM driver override (template unchanged); searchable canonical Cost Code Master picker; compact two-tier setup worksheet. Human UAT **PASSED**. Deferred: basis-select text can clip slightly at some viewport widths. |
+| **BL-033D.x.4A** | Prelims adoption compare engine | **COMPLETE.** Pure cost-code compare + fingerprint + `display_metadata.prelimsAdoption` contract. Fingerprint includes offsets. No UI. No CVR writes. |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -78,6 +79,7 @@ BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when lo
 - **Company Prelims templates** (`016_client_prelims_templates.sql`) — **BL-033D.x.1 COMPLETE**. Tenant-owned headers + lines. BuildLite Standard is a product-owned application definition, not tenant rows. Applied on `buildlite_test` and local `buildlite_clone`. Company-template UAT **PASSED**. Does not write `development_prelims_items`. Does not enter CVR. **BL-033D.x.2 COMPLETE** (no schema change): company header/line tailoring, custom `co.prelims.*` lines, enable/disable, and canonical `cost_code_key` mapping against `/api/cost-codes`. Mapping UAT **PASSED**. Live Test Site 1 copy is **26 lines / 2 mapped** to canonical `5231`.
 - **Tenant Cost Code Master columns** (`017_cost_codes_tenant_master.sql`) — **BL-033D.x.2A.3 COMPLETE.** Additive Admin-master fields on existing `cost_codes`. Unique `(client_id, lower(btrim(code)))`. Applied on `buildlite_test` by tests and on local `buildlite_clone` by the controlled cutover. Test Site 1: **98** rows / **98** active / **0** `lower(btrim(code))` collisions (97 canonical + `UAT-CC-001` evidence). **BL-033D.x.2A.2** wired Admin Cost Codes to this table when `VITE_COST_CODE_SERVER_AUTHORITY=true`. Repo default remains OFF. Local Test Site 1 UAT left the flag ON in ignored `.env.local`. Browser `buildlite_cost_codes_master_v1` remains 95-row leftover evidence and is not authoritative while the flag is ON.
 - **Development Prelims template provenance** (`018_development_prelims_item_provenance.sql`) — **BL-033D.x.3 COMPLETE.** Nullable `source_template_id` / `source_template_version` / `source_template_line_id` / `source_template_key` on `development_prelims_items`. Partial unique `(development_id, source_template_id, source_template_key)` where provenance is present. No unique on `cost_code_key`. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 setup UAT **PASSED**. Existing D.1 manual rows stay NULL; fourth template-instantiated row has provenance.
+- **Development Prelims TIME offsets** (`019_development_prelims_time_offsets.sql`) — **BL-033D.x.3R COMPLETE.** Additive `start_offset_months` / `end_offset_months` INTEGER NOT NULL DEFAULT 0 with CHECK −60…60 on `development_prelims_items` only. Existing rows remain commercially identical at `0/0`. Applied on `buildlite_test` and local `buildlite_clone` (controlled UAT prep). Company template schema unchanged.
 - Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, `VITE_CERTIFICATE_SERVER_AUTHORITY`, `VITE_CVR_SERVER_AUTHORITY`, `VITE_LEDGER_SERVER_AUTHORITY`, `VITE_REVENUE_SERVER_AUTHORITY`, and `VITE_COST_CODE_SERVER_AUTHORITY` for cutover (see `client/.env.example`). Repo defaults remain OFF. Local UAT uses `.env.local`. Do not commit `.env.local`.
 
 ### Browser / localStorage authority (not yet migrated)
@@ -1018,6 +1020,22 @@ Test Site 1 setup UAT proof:
 - Custom company line preview-mapped to `UAT-CC-001`; **£1,000** LUMP_SUM development line created (`c67ee4db-7f7f-4813-8cbf-d289781c2efa`) with full template provenance.
 - Resolved proposal moved **£58,000 → £59,000**; unresolved FIRST_COMPLETION remains.
 - Second apply skipped as already applied. Company template remains **26 / 2 mapped / 0 money**. Cost Code Master **98/98**. CVR freeze unchanged.
+
+## BL-033D.x.3R (Flexible Prelims timing + setup UX) — COMPLETE
+
+Banks x.3Q–x.3T.2 as one TIME-flexibility / setup-UX slice. Human commercial UAT **PASSED**.
+
+Proven rules:
+
+- Development-owned signed whole calendar-month offsets on TIME lines (`SITE_START +3`, `FINAL_COMPLETION −6`, etc.).
+- FIXED_DATE remains a development override; offset forced to 0 on that side; missing fixed date blocks ready/save.
+- Company template driver is a default only; setup/Add/Edit may override TIME ↔ LUMP_SUM for the development without writing the template.
+- Setup cost-code search uses Cost Code Master; primary match is code + description (reporting group is secondary/fallback only); persists canonical code.
+- Compact two-tier setup worksheet: primary commercial columns + TIME detail sub-grid; LUMP_SUM stays single-row; warnings as compact chips.
+- x.4A fingerprint includes `startOffsetMonths` / `endOffsetMonths`.
+- Deferred UX note: some basis-select text can clip slightly at the current viewport width (do not block banking).
+
+No CVR adoption. No P04 Submit/Approve. No P05. Four Test Site 1 Prelims rows remain commercially identical at offsets `0/0`.
 
 ## Next action
 

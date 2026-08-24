@@ -151,18 +151,65 @@ test("missing reportingMonth is unresolved and does not use today", () => {
   }
 });
 
-test("start after end is invalid", () => {
-  const calc = calculateTimeLine(
+test("signed calendar-month offsets resolve Test Site 1 worked examples", () => {
+  const programme = TEST_SITE_1;
+  const cases = [
+    [{ startOffsetMonths: 0, endOffsetMonths: 0 }, 38, "2026-09-01", "2029-10-01"],
+    [{ startOffsetMonths: 3, endOffsetMonths: 0 }, 35, "2026-12-01", "2029-10-01"],
+    [{ startOffsetMonths: 9, endOffsetMonths: -6 }, 23, "2027-06-01", "2029-04-01"],
+    [{ startOffsetMonths: 4, endOffsetMonths: -8 }, 26, "2027-01-01", "2029-02-01"],
+  ];
+  for (const [offsets, months, start, end] of cases) {
+    const span = resolveTimeSpan(timeLine(offsets), programme);
+    assert.equal(span.state, "resolved");
+    assert.equal(span.totalMonths, months);
+    assert.equal(span.resolvedStart, start);
+    assert.equal(span.resolvedEnd, end);
+  }
+  const money = calculateTimeLine(timeLine({ startOffsetMonths: 3, monthlyRate: 5500 }), {
+    programme,
+    reportingMonth: P04,
+  });
+  assert.equal(money.totalMonths, 35);
+  assert.equal(money.totalForecast, 192500);
+});
+
+test("FIRST_COMPLETION offset stays unresolved and FIXED_DATE ignores offset", () => {
+  const unresolved = resolveTimeSpan(
+    timeLine({ startBasis: "FIRST_COMPLETION", startOffsetMonths: -2 }),
+    TEST_SITE_1
+  );
+  assert.equal(unresolved.state, "unresolved");
+  assert.equal(unresolved.reason, PRELIMS_UNRESOLVED_REASONS.MISSING_FIRST_COMPLETION);
+
+  const fixed = resolveTimeSpan(
     timeLine({
       startBasis: "FIXED_DATE",
-      startFixedDate: "2029-11-01",
-      endBasis: "FINAL_COMPLETION",
+      startFixedDate: "2027-01-01",
+      startOffsetMonths: 9,
+      endBasis: "FIXED_DATE",
+      endFixedDate: "2028-12-01",
+      endOffsetMonths: -4,
     }),
-    { programme: TEST_SITE_1, reportingMonth: P04 }
+    TEST_SITE_1
   );
-  assert.equal(calc.state, "invalid");
-  assert.equal(calc.reason, PRELIMS_UNRESOLVED_REASONS.INVALID_SPAN);
-  assert.equal(calc.totalForecast, null);
+  assert.equal(fixed.totalMonths, 24);
+  assert.equal(fixed.resolvedStart, "2027-01-01");
+  assert.equal(fixed.resolvedEnd, "2028-12-01");
+});
+
+test("outside programme is allowed and inverted span is invalid", () => {
+  const early = resolveTimeSpan(timeLine({ startOffsetMonths: -2 }), TEST_SITE_1);
+  assert.equal(early.state, "resolved");
+  assert.equal(early.outsideProgramme, true);
+  assert.equal(early.totalMonths, 40);
+
+  const inverted = resolveTimeSpan(
+    timeLine({ startOffsetMonths: 40, endOffsetMonths: 0 }),
+    TEST_SITE_1
+  );
+  assert.equal(inverted.state, "invalid");
+  assert.equal(inverted.reason, PRELIMS_UNRESOLVED_REASONS.INVALID_SPAN);
 });
 
 test("active LUMP_SUM assumption is authoritative and ignores spend fields", () => {

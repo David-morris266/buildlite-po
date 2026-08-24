@@ -171,8 +171,10 @@ function insertParams(clientId, developmentId, value, actor) {
     value.monthlyRate,
     value.startBasis,
     value.startFixedDate,
+    value.startOffsetMonths,
     value.endBasis,
     value.endFixedDate,
+    value.endOffsetMonths,
     value.lumpSumAmount,
     actor || null,
   ];
@@ -181,7 +183,8 @@ function insertParams(clientId, developmentId, value, actor) {
 async function createPrelimsItem(clientId, developmentId, body = {}, { actor } = {}) {
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
-  const validated = validatePrelimsItemBody(body);
+  const programme = await loadProgrammeDocument(clientId, developmentId, scoped.development);
+  const validated = validatePrelimsItemBody(body, { programme });
   if (!validated.ok) {
     return { ok: false, status: 400, errors: validated.errors, message: validated.errors.join(" ") };
   }
@@ -193,15 +196,15 @@ async function createPrelimsItem(clientId, developmentId, body = {}, { actor } =
     `
       INSERT INTO development_prelims_items (
         client_id, development_id, cost_code_key, name, forecast_driver, status,
-        monthly_rate, start_basis, start_fixed_date, end_basis, end_fixed_date,
+        monthly_rate, start_basis, start_fixed_date, start_offset_months,
+        end_basis, end_fixed_date, end_offset_months,
         lump_sum_amount, version, created_by, updated_by
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1, $13, $13)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 1, $15, $15)
       RETURNING *
     `,
     insertParams(clientId, developmentId, validated.value, actor)
   );
-  const programme = await loadProgrammeDocument(clientId, developmentId, scoped.development);
   const reporting = await resolveReportingMonth(clientId, developmentId, body.reportingMonth);
   return {
     ok: true,
@@ -219,7 +222,15 @@ async function updatePrelimsItem(clientId, developmentId, itemId, body = {}, { a
   if (!isUuid(itemId)) {
     return { ok: false, status: 400, message: "itemId must be a valid UUID." };
   }
-  const validated = validatePrelimsItemBody(body, { requireVersion: true });
+  const programmeForValidation = await loadProgrammeDocument(
+    clientId,
+    developmentId,
+    scoped.development
+  );
+  const validated = validatePrelimsItemBody(body, {
+    requireVersion: true,
+    programme: programmeForValidation,
+  });
   if (!validated.ok) {
     return { ok: false, status: 400, errors: validated.errors, message: validated.errors.join(" ") };
   }
@@ -258,13 +269,15 @@ async function updatePrelimsItem(clientId, developmentId, itemId, body = {}, { a
           monthly_rate = $5,
           start_basis = $6,
           start_fixed_date = $7,
-          end_basis = $8,
-          end_fixed_date = $9,
-          lump_sum_amount = $10,
+          start_offset_months = $8,
+          end_basis = $9,
+          end_fixed_date = $10,
+          end_offset_months = $11,
+          lump_sum_amount = $12,
           version = version + 1,
           updated_at = NOW(),
-          updated_by = $11
-        WHERE client_id = $12 AND development_id = $13 AND id = $14 AND version = $15
+          updated_by = $13
+        WHERE client_id = $14 AND development_id = $15 AND id = $16 AND version = $17
         RETURNING *
       `,
       [
@@ -275,8 +288,10 @@ async function updatePrelimsItem(clientId, developmentId, itemId, body = {}, { a
         validated.value.monthlyRate,
         validated.value.startBasis,
         validated.value.startFixedDate,
+        validated.value.startOffsetMonths,
         validated.value.endBasis,
         validated.value.endFixedDate,
+        validated.value.endOffsetMonths,
         validated.value.lumpSumAmount,
         actor || null,
         clientId,

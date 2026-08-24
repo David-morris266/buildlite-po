@@ -12,8 +12,11 @@ const {
   PRELIMS_STATUSES,
   TIME_BASIS_KEYS,
   TIME_BASES,
+  TIME_OFFSET_MAX_MONTHS,
+  TIME_OFFSET_MIN_MONTHS,
 } = require("./prelimsConstants");
 const { toIsoDate } = require("./programmeCalendar");
+const { resolveTimeSpan } = require("./prelimsForecastEngine");
 
 function parseExpectedVersion(value) {
   if (value == null || value === "") return 0;
@@ -54,6 +57,22 @@ function parseBasis(value, field, errors, { required = false } = {}) {
   return basis;
 }
 
+function parseOffsetMonths(value, field, errors) {
+  if (value == null || value === "") return 0;
+  if (typeof value === "string" && value.trim() === "") return 0;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) {
+    errors.push(`${field} must be a whole number of months.`);
+    return 0;
+  }
+  if (parsed < TIME_OFFSET_MIN_MONTHS || parsed > TIME_OFFSET_MAX_MONTHS) {
+    errors.push(
+      `${field} must be between ${TIME_OFFSET_MIN_MONTHS} and ${TIME_OFFSET_MAX_MONTHS} months.`
+    );
+  }
+  return parsed;
+}
+
 function parseOptionalDate(value, field, errors) {
   if (value == null || value === "") return null;
   const iso = toIsoDate(value);
@@ -64,7 +83,7 @@ function parseOptionalDate(value, field, errors) {
   return iso;
 }
 
-function validatePrelimsItemBody(body = {}, { requireVersion = false } = {}) {
+function validatePrelimsItemBody(body = {}, { requireVersion = false, programme = null } = {}) {
   const errors = [];
   const expectedVersion = parseExpectedVersion(body.version);
   if (expectedVersion == null || (requireVersion && expectedVersion < 1)) {
@@ -98,8 +117,10 @@ function validatePrelimsItemBody(body = {}, { requireVersion = false } = {}) {
   let monthlyRate = null;
   let startBasis = null;
   let startFixedDate = null;
+  let startOffsetMonths = 0;
   let endBasis = null;
   let endFixedDate = null;
+  let endOffsetMonths = 0;
   let lumpSumAmount = null;
 
   if (forecastDriver === PRELIMS_DRIVERS.TIME) {
@@ -108,6 +129,8 @@ function validatePrelimsItemBody(body = {}, { requireVersion = false } = {}) {
     endBasis = parseBasis(body.endBasis, "endBasis", errors, { required: true });
     startFixedDate = parseOptionalDate(body.startFixedDate, "startFixedDate", errors);
     endFixedDate = parseOptionalDate(body.endFixedDate, "endFixedDate", errors);
+    startOffsetMonths = parseOffsetMonths(body.startOffsetMonths, "startOffsetMonths", errors);
+    endOffsetMonths = parseOffsetMonths(body.endOffsetMonths, "endOffsetMonths", errors);
     if (startBasis === TIME_BASES.FIXED_DATE && !startFixedDate) {
       errors.push("startFixedDate is required when startBasis is FIXED_DATE.");
     }
@@ -116,6 +139,8 @@ function validatePrelimsItemBody(body = {}, { requireVersion = false } = {}) {
     }
     if (startBasis !== TIME_BASES.FIXED_DATE) startFixedDate = null;
     if (endBasis !== TIME_BASES.FIXED_DATE) endFixedDate = null;
+    if (startBasis === TIME_BASES.FIXED_DATE) startOffsetMonths = 0;
+    if (endBasis === TIME_BASES.FIXED_DATE) endOffsetMonths = 0;
     if (
       startBasis === TIME_BASES.FIXED_DATE &&
       endBasis === TIME_BASES.FIXED_DATE &&
@@ -127,32 +152,46 @@ function validatePrelimsItemBody(body = {}, { requireVersion = false } = {}) {
     }
   } else if (forecastDriver === PRELIMS_DRIVERS.LUMP_SUM) {
     lumpSumAmount = parseMoney(body.lumpSumAmount, "lumpSumAmount", errors, { required: true });
+    startOffsetMonths = 0;
+    endOffsetMonths = 0;
   }
 
   if (errors.length) {
     return { ok: false, errors };
   }
 
+  const value = {
+    costCodeKey,
+    name,
+    forecastDriver,
+    status,
+    monthlyRate,
+    startBasis,
+    startFixedDate,
+    startOffsetMonths,
+    endBasis,
+    endFixedDate,
+    endOffsetMonths,
+    lumpSumAmount,
+  };
+
+  if (forecastDriver === PRELIMS_DRIVERS.TIME && programme) {
+    const span = resolveTimeSpan({ ...value, forecastDriver: PRELIMS_DRIVERS.TIME }, programme);
+    if (span.state === "invalid") {
+      return { ok: false, errors: ["Resolved start is after resolved end."] };
+    }
+  }
+
   return {
     ok: true,
     expectedVersion,
-    value: {
-      costCodeKey,
-      name,
-      forecastDriver,
-      status,
-      monthlyRate,
-      startBasis,
-      startFixedDate,
-      endBasis,
-      endFixedDate,
-      lumpSumAmount,
-    },
+    value,
   };
 }
 
 module.exports = {
   parseExpectedVersion,
   preserveCostCodeKey,
+  parseOffsetMonths,
   validatePrelimsItemBody,
 };

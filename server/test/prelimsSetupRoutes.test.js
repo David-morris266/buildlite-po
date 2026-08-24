@@ -22,6 +22,7 @@ const MIGRATION_014 = path.join(ROOT, "migrations", "014_development_programme.s
 const MIGRATION_015 = path.join(ROOT, "migrations", "015_development_prelims_items.sql");
 const MIGRATION_016 = path.join(ROOT, "migrations", "016_client_prelims_templates.sql");
 const MIGRATION_018 = path.join(ROOT, "migrations", "018_development_prelims_item_provenance.sql");
+const MIGRATION_019 = path.join(ROOT, "migrations", "019_development_prelims_time_offsets.sql");
 
 const testDevelopmentIds = [];
 const createdTemplateIds = [];
@@ -42,6 +43,7 @@ async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_015, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_016, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_018, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_019, "utf8"));
 }
 
 async function cleanup() {
@@ -349,6 +351,10 @@ if (!isDbConfigured()) {
             selected: true,
             costCodeKey: "5210",
             monthlyRate: 5500,
+            startBasis: "SITE_START",
+            startOffsetMonths: 3,
+            endBasis: "FINAL_COMPLETION",
+            endOffsetMonths: 0,
           },
           {
             templateLineId: cleaning.id,
@@ -376,8 +382,11 @@ if (!isDbConfigured()) {
     assert.equal(createdSite.sourceTemplateId, template.id);
     assert.equal(createdSite.sourceTemplateKey, siteManager.templateKey);
     assert.equal(createdSite.monthlyRate, 5500);
-    assert.equal(createdSite.calculation.totalMonths, 38);
-    assert.equal(createdSite.calculation.totalForecast, 209000);
+    assert.equal(createdSite.startOffsetMonths, 3);
+    assert.equal(createdSite.endOffsetMonths, 0);
+    assert.equal(createdSite.calculation.totalMonths, 35);
+    assert.equal(createdSite.calculation.totalForecast, 192500);
+    assert.equal(createdSite.calculation.resolvedStart, "2026-12-01");
     const createdCustom = applied.body.collection.items.find((row) => row.name === "Custom UAT");
     assert.match(createdCustom.sourceTemplateKey, /^co\.prelims\./);
     assert.equal(createdCustom.costCodeKey, buildKey);
@@ -446,6 +455,67 @@ if (!isDbConfigured()) {
     const smAfter = previewAfter.body.lines.find((row) => row.templateLineId === siteManager.id);
     assert.equal(smAfter.alreadyApplied, true);
     assert.equal(smAfter.selectable, false);
+  });
+
+  test("apply persists development-selected forecast driver override without changing template", async () => {
+    const active = await getActiveClient();
+    const developmentId = await createDevelopment(active);
+    const { template, siteManager, custom } = await createTemplate();
+
+    const applied = await request(app)
+      .post(`/api/developments/${developmentId}/prelims-setup/apply`)
+      .send({
+        templateId: template.id,
+        templateVersion: template.version,
+        reportingMonth: "2026-08",
+        lines: [
+          {
+            templateLineId: siteManager.id,
+            selected: true,
+            costCodeKey: "5210",
+            forecastDriver: "LUMP_SUM",
+            lumpSumAmount: 75000,
+          },
+          {
+            templateLineId: custom.id,
+            selected: true,
+            costCodeKey: "UAT-CC-001",
+            forecastDriver: "TIME",
+            monthlyRate: 1000,
+            startBasis: "SITE_START",
+            endBasis: "FINAL_COMPLETION",
+            startOffsetMonths: 0,
+            endOffsetMonths: 0,
+          },
+        ],
+      });
+    assert.equal(applied.status, 200, JSON.stringify(applied.body));
+    assert.equal(applied.body.createdCount, 2);
+
+    const createdSite = applied.body.collection.items.find((row) => row.name === "Site Manager");
+    assert.equal(createdSite.forecastDriver, "LUMP_SUM");
+    assert.equal(createdSite.lumpSumAmount, 75000);
+    assert.equal(createdSite.monthlyRate, null);
+    assert.equal(createdSite.startBasis, null);
+
+    const createdCustom = applied.body.collection.items.find((row) => row.name === "Custom UAT");
+    assert.equal(createdCustom.forecastDriver, "TIME");
+    assert.equal(createdCustom.monthlyRate, 1000);
+    assert.equal(createdCustom.lumpSumAmount, null);
+    assert.equal(createdCustom.startBasis, "SITE_START");
+    assert.equal(createdCustom.calculation.totalMonths, 38);
+
+    const templateDrivers = await pool.query(
+      `SELECT id::text, forecast_driver, monthly_rate, lump_sum_amount, cost_code_key
+         FROM client_prelims_template_lines WHERE id = ANY($1::uuid[])`,
+      [[siteManager.id, custom.id]]
+    );
+    const tmplSm = templateDrivers.rows.find((row) => row.id === siteManager.id);
+    const tmplCustom = templateDrivers.rows.find((row) => row.id === custom.id);
+    assert.equal(tmplSm.forecast_driver, "TIME");
+    assert.equal(tmplCustom.forecast_driver, "LUMP_SUM");
+    assert.equal(tmplSm.monthly_rate, null);
+    assert.equal(tmplCustom.lump_sum_amount, null);
   });
 
   test("setup source files do not adopt into CVR or rewrite company money", () => {

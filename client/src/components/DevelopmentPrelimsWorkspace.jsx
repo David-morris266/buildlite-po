@@ -13,11 +13,11 @@ import {
   PRELIMS_STATUSES,
   PRELIMS_UNRESOLVED_LABELS,
   TIME_BASES,
-  TIME_BASIS_KEYS,
-  TIME_BASIS_LABELS,
 } from '../prelims/prelimsConstants';
-import { suggestedPrelimsDriver } from '../prelims/prelimsForecastEngine';
+import { resolveTimeSpan, suggestedPrelimsDriver } from '../prelims/prelimsForecastEngine';
 import DevelopmentPrelimsSetupWorksheet from './DevelopmentPrelimsSetupWorksheet';
+import PrelimsTimeSpanFields from './PrelimsTimeSpanFields';
+import { coerceOffsetMonths } from '../programme/programmeCalendar';
 
 const EMPTY_ADD_FORM = {
   id: null,
@@ -28,8 +28,10 @@ const EMPTY_ADD_FORM = {
   status: PRELIMS_STATUSES.ACTIVE,
   monthlyRate: '1000',
   startBasis: TIME_BASES.SITE_START,
+  startOffsetMonths: 0,
   startFixedDate: '',
   endBasis: TIME_BASES.FINAL_COMPLETION,
+  endOffsetMonths: 0,
   endFixedDate: '',
   lumpSumAmount: '',
 };
@@ -218,9 +220,31 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
 
   const grouped = useMemo(() => groupByCostCode(collection?.items || []), [collection]);
   const summary = collection?.summary;
+  const formTimeSpan = useMemo(() => {
+    if (form.forecastDriver !== PRELIMS_DRIVERS.TIME) {
+      return { resolvedStart: null, resolvedEnd: null, totalMonths: null, outsideProgramme: false };
+    }
+    return resolveTimeSpan(
+      {
+        forecastDriver: PRELIMS_DRIVERS.TIME,
+        startBasis: form.startBasis,
+        startOffsetMonths: form.startOffsetMonths,
+        startFixedDate: form.startFixedDate,
+        endBasis: form.endBasis,
+        endOffsetMonths: form.endOffsetMonths,
+        endFixedDate: form.endFixedDate,
+      },
+      collection?.programme
+    );
+  }, [form, collection?.programme]);
 
   function updateField(field, value) {
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => {
+      const next = { ...current, [field]: value };
+      if (field === 'startBasis' && value === TIME_BASES.FIXED_DATE) next.startOffsetMonths = 0;
+      if (field === 'endBasis' && value === TIME_BASES.FIXED_DATE) next.endOffsetMonths = 0;
+      return next;
+    });
   }
 
   function enterAddMode() {
@@ -242,8 +266,10 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
       status: item.status,
       monthlyRate: item.monthlyRate == null ? '' : String(item.monthlyRate),
       startBasis: item.startBasis || TIME_BASES.SITE_START,
+      startOffsetMonths: item.startOffsetMonths ?? 0,
       startFixedDate: item.startFixedDate || '',
       endBasis: item.endBasis || TIME_BASES.FINAL_COMPLETION,
+      endOffsetMonths: item.endOffsetMonths ?? 0,
       endFixedDate: item.endFixedDate || '',
       lumpSumAmount: item.lumpSumAmount == null ? '' : String(item.lumpSumAmount),
     });
@@ -264,11 +290,15 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
       status: form.status,
       monthlyRate: form.forecastDriver === PRELIMS_DRIVERS.TIME ? Number(form.monthlyRate) : null,
       startBasis: form.forecastDriver === PRELIMS_DRIVERS.TIME ? form.startBasis : null,
+      startOffsetMonths:
+        form.forecastDriver === PRELIMS_DRIVERS.TIME ? coerceOffsetMonths(form.startOffsetMonths) : 0,
       startFixedDate:
         form.forecastDriver === PRELIMS_DRIVERS.TIME && form.startBasis === TIME_BASES.FIXED_DATE
           ? form.startFixedDate
           : null,
       endBasis: form.forecastDriver === PRELIMS_DRIVERS.TIME ? form.endBasis : null,
+      endOffsetMonths:
+        form.forecastDriver === PRELIMS_DRIVERS.TIME ? coerceOffsetMonths(form.endOffsetMonths) : 0,
       endFixedDate:
         form.forecastDriver === PRELIMS_DRIVERS.TIME && form.endBasis === TIME_BASES.FIXED_DATE
           ? form.endFixedDate
@@ -444,62 +474,22 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
                 aria-label="Prelims monthly rate"
               />
             </label>
-            <label>
-              Start
-              <select
-                className="input"
-                value={form.startBasis}
-                onChange={(event) => updateField('startBasis', event.target.value)}
-                aria-label="Prelims start basis"
-              >
-                {TIME_BASIS_KEYS.map((basis) => (
-                  <option key={basis} value={basis}>
-                    {TIME_BASIS_LABELS[basis]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {form.startBasis === TIME_BASES.FIXED_DATE ? (
-              <label>
-                Start date
-                <input
-                  className="input"
-                  type="date"
-                  value={form.startFixedDate}
-                  onChange={(event) => updateField('startFixedDate', event.target.value)}
-                  required
-                  aria-label="Prelims start date"
-                />
-              </label>
-            ) : null}
-            <label>
-              End
-              <select
-                className="input"
-                value={form.endBasis}
-                onChange={(event) => updateField('endBasis', event.target.value)}
-                aria-label="Prelims end basis"
-              >
-                {TIME_BASIS_KEYS.map((basis) => (
-                  <option key={basis} value={basis}>
-                    {TIME_BASIS_LABELS[basis]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {form.endBasis === TIME_BASES.FIXED_DATE ? (
-              <label>
-                End date
-                <input
-                  className="input"
-                  type="date"
-                  value={form.endFixedDate}
-                  onChange={(event) => updateField('endFixedDate', event.target.value)}
-                  required
-                  aria-label="Prelims end date"
-                />
-              </label>
-            ) : null}
+            <div className="dev-prelims__form-time">
+              <PrelimsTimeSpanFields
+                namePrefix="Prelims"
+                startBasis={form.startBasis}
+                startOffsetMonths={form.startOffsetMonths}
+                startFixedDate={form.startFixedDate}
+                endBasis={form.endBasis}
+                endOffsetMonths={form.endOffsetMonths}
+                endFixedDate={form.endFixedDate}
+                resolvedStart={formTimeSpan.resolvedStart}
+                resolvedEnd={formTimeSpan.resolvedEnd}
+                totalMonths={formTimeSpan.totalMonths}
+                outsideProgramme={formTimeSpan.outsideProgramme}
+                onChange={updateField}
+              />
+            </div>
           </>
         ) : (
           <label>

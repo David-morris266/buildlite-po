@@ -4,7 +4,7 @@
  * forecastAsAt is the CVR reporting month. Never today.
  */
 
-import { inclusiveCalendarMonthCount, toIsoDate, toYearMonth } from '../programme/programmeCalendar';
+import { applyCalendarMonthOffset, inclusiveCalendarMonthCount, toIsoDate, toYearMonth } from '../programme/programmeCalendar';
 import {
   PRELIMS_CALC_STATES,
   PRELIMS_DRIVERS,
@@ -76,6 +76,24 @@ export function resolveBasisDate(basis, fixedDate, programme = {}) {
   return null;
 }
 
+export function isOutsideProgramme(resolvedStart, resolvedEnd, programme = {}) {
+  const startYm = toYearMonth(resolvedStart);
+  const endYm = toYearMonth(resolvedEnd);
+  const siteYm = toYearMonth(programme.siteStart);
+  const finalYm = toYearMonth(programme.finalCompletion);
+  if (!startYm || !endYm) return false;
+  if (siteYm && startYm < siteYm) return true;
+  if (finalYm && endYm > finalYm) return true;
+  return false;
+}
+
+function resolveOffsetDate(basis, fixedDate, programme, offsetMonths) {
+  const base = resolveBasisDate(basis, fixedDate, programme);
+  if (!base) return null;
+  if (String(basis || '').trim() === TIME_BASES.FIXED_DATE) return base;
+  return applyCalendarMonthOffset(base, offsetMonths);
+}
+
 function unresolvedReasonForBasis(basis, kind) {
   const key = String(basis || '').trim();
   if (key === TIME_BASES.SITE_START) return PRELIMS_UNRESOLVED_REASONS.MISSING_SITE_START;
@@ -135,6 +153,7 @@ export function resolveTimeSpan(line = {}, programme = null) {
       resolvedStart: null,
       resolvedEnd: null,
       totalMonths: null,
+      outsideProgramme: false,
     };
   }
 
@@ -148,11 +167,17 @@ export function resolveTimeSpan(line = {}, programme = null) {
         resolvedStart: null,
         resolvedEnd: null,
         totalMonths: null,
+        outsideProgramme: false,
       };
     }
   }
 
-  const resolvedStart = resolveBasisDate(line.startBasis, line.startFixedDate, programme || {});
+  const resolvedStart = resolveOffsetDate(
+    line.startBasis,
+    line.startFixedDate,
+    programme || {},
+    line.startOffsetMonths
+  );
   if (!resolvedStart) {
     return {
       state: PRELIMS_CALC_STATES.UNRESOLVED,
@@ -160,9 +185,15 @@ export function resolveTimeSpan(line = {}, programme = null) {
       resolvedStart: null,
       resolvedEnd: null,
       totalMonths: null,
+      outsideProgramme: false,
     };
   }
-  const resolvedEnd = resolveBasisDate(line.endBasis, line.endFixedDate, programme || {});
+  const resolvedEnd = resolveOffsetDate(
+    line.endBasis,
+    line.endFixedDate,
+    programme || {},
+    line.endOffsetMonths
+  );
   if (!resolvedEnd) {
     return {
       state: PRELIMS_CALC_STATES.UNRESOLVED,
@@ -170,6 +201,7 @@ export function resolveTimeSpan(line = {}, programme = null) {
       resolvedStart,
       resolvedEnd: null,
       totalMonths: null,
+      outsideProgramme: false,
     };
   }
 
@@ -181,6 +213,7 @@ export function resolveTimeSpan(line = {}, programme = null) {
       resolvedStart,
       resolvedEnd,
       totalMonths: null,
+      outsideProgramme: isOutsideProgramme(resolvedStart, resolvedEnd, programme || {}),
     };
   }
 
@@ -190,6 +223,7 @@ export function resolveTimeSpan(line = {}, programme = null) {
     resolvedStart,
     resolvedEnd,
     totalMonths,
+    outsideProgramme: isOutsideProgramme(resolvedStart, resolvedEnd, programme || {}),
   };
 }
 
@@ -217,7 +251,7 @@ export function calculateTimeLine(line = {}, { programme = null, reportingMonth 
         });
   }
 
-  const { resolvedStart, resolvedEnd, totalMonths } = span;
+  const { resolvedStart, resolvedEnd, totalMonths, outsideProgramme } = span;
 
   const elapsedMonths = elapsedCalendarMonths(resolvedStart, resolvedEnd, asAt);
   const remainingMonths = totalMonths - elapsedMonths;
@@ -239,6 +273,7 @@ export function calculateTimeLine(line = {}, { programme = null, reportingMonth 
     assumptionAmount: totalForecast,
     remainingExposure: forecastToComplete,
     includedInActiveProposal: false,
+    outsideProgramme: Boolean(outsideProgramme),
   };
   return applyStatusToAssumption(resolved, line.status, totalForecast);
 }

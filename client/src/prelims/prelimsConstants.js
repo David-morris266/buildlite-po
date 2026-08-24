@@ -26,6 +26,9 @@ export const TIME_BASES = {
 
 export const TIME_BASIS_KEYS = Object.values(TIME_BASES);
 
+export const TIME_OFFSET_MIN_MONTHS = -60;
+export const TIME_OFFSET_MAX_MONTHS = 60;
+
 export const TIME_BASIS_LABELS = {
   SITE_START: 'Site start',
   FIRST_COMPLETION: 'First completion',

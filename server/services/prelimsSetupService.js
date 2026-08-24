@@ -60,6 +60,7 @@ function durationDocument(span) {
     resolvedStart: span.resolvedStart || null,
     resolvedEnd: span.resolvedEnd || null,
     totalMonths: span.totalMonths,
+    outsideProgramme: Boolean(span.outsideProgramme),
   };
 }
 
@@ -217,15 +218,16 @@ function insertSetupItemSql() {
   return `
     INSERT INTO development_prelims_items (
       client_id, development_id, cost_code_key, name, forecast_driver, status,
-      monthly_rate, start_basis, start_fixed_date, end_basis, end_fixed_date,
+      monthly_rate, start_basis, start_fixed_date, start_offset_months,
+      end_basis, end_fixed_date, end_offset_months,
       lump_sum_amount, version, created_by, updated_by,
       source_template_id, source_template_version, source_template_line_id, source_template_key
     )
     VALUES (
       $1, $2, $3, $4, $5, 'active',
-      $6, $7, $8, $9, $10,
-      $11, 1, $12, $12,
-      $13, $14, $15, $16
+      $6, $7, $8, $9, $10, $11, $12,
+      $13, 1, $14, $14,
+      $15, $16, $17, $18
     )
     ON CONFLICT (development_id, source_template_id, source_template_key)
       WHERE source_template_id IS NOT NULL AND source_template_key IS NOT NULL
@@ -241,6 +243,7 @@ async function applyPrelimsSetup(clientId, developmentId, body = {}, { actor } =
   if (!validated.ok) {
     return { ok: false, status: 400, errors: validated.errors, message: validated.errors.join(" ") };
   }
+  const programme = await loadProgrammeDocument(clientId, developmentId, scoped.development);
 
   const dbClient = await pool.connect();
   try {
@@ -321,18 +324,28 @@ async function applyPrelimsSetup(clientId, developmentId, body = {}, { actor } =
           message: `Mapped cost code is required to create "${templateLine.name}".`,
         };
       }
+      const forecastDriver = selected.forecastDriver || templateLine.forecast_driver;
+      const isTime = forecastDriver === "TIME";
       const itemBody = {
         version: 0,
         costCodeKey,
         name: templateLine.name,
-        forecastDriver: templateLine.forecast_driver,
+        forecastDriver,
         status: "active",
-        monthlyRate: selected.monthlyRate,
-        startBasis: templateLine.start_basis,
-        endBasis: templateLine.end_basis,
-        lumpSumAmount: selected.lumpSumAmount,
+        monthlyRate: isTime ? selected.monthlyRate : null,
+        startBasis: isTime
+          ? selected.startBasis || templateLine.start_basis || "SITE_START"
+          : null,
+        startFixedDate: isTime ? selected.startFixedDate : null,
+        startOffsetMonths: isTime ? selected.startOffsetMonths : 0,
+        endBasis: isTime
+          ? selected.endBasis || templateLine.end_basis || "FINAL_COMPLETION"
+          : null,
+        endFixedDate: isTime ? selected.endFixedDate : null,
+        endOffsetMonths: isTime ? selected.endOffsetMonths : 0,
+        lumpSumAmount: isTime ? null : selected.lumpSumAmount,
       };
-      const itemValidated = validatePrelimsItemBody(itemBody);
+      const itemValidated = validatePrelimsItemBody(itemBody, { programme });
       if (!itemValidated.ok) {
         await dbClient.query("ROLLBACK");
         return {
@@ -356,8 +369,10 @@ async function applyPrelimsSetup(clientId, developmentId, body = {}, { actor } =
         entry.value.monthlyRate,
         entry.value.startBasis,
         entry.value.startFixedDate,
+        entry.value.startOffsetMonths,
         entry.value.endBasis,
         entry.value.endFixedDate,
+        entry.value.endOffsetMonths,
         entry.value.lumpSumAmount,
         actor || null,
         templateRow.id,
