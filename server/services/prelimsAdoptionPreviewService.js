@@ -3,7 +3,7 @@
  * Reuses x.4A compare engine. Does not write CVR, Prelims, or metadata.
  */
 
-const { listCvrPeriods } = require("./cvrPeriodRepository");
+const { listCvrPeriods, listCostCodeInputs } = require("./cvrPeriodRepository");
 const { CVR_PERIOD_STATUSES, isCvrPeriodLocked } = require("./cvrPeriodConstants");
 const { buildCvrCloseCandidate } = require("./cvrCloseEngine");
 const { listClassifications } = require("./costCodeClassificationRepository");
@@ -58,8 +58,16 @@ function unresolvedLineDetail(item) {
   };
 }
 
-function enrichCandidate(candidate, { itemsById, cvrByKey }) {
-  const cvrRow = cvrByKey.get(candidate.costCodeKey) || null;
+function enrichCandidate(candidate, { itemsById, cvrByKey, inputByKey = new Map() }) {
+  const key = String(candidate.costCodeKey || "").trim();
+  const cvrRow =
+    cvrByKey.get(key) ||
+    cvrByKey.get(key.toLowerCase()) ||
+    null;
+  const input =
+    inputByKey.get(key) ||
+    inputByKey.get(key.toLowerCase()) ||
+    null;
   const unresolvedLines = (candidate.unresolvedLineIds || [])
     .map((id) => itemsById.get(String(id)))
     .filter(Boolean)
@@ -78,6 +86,8 @@ function enrichCandidate(candidate, { itemsById, cvrByKey }) {
   return {
     ...candidate,
     costCodeDescription: costCodeLabelFromRow(cvrRow) || candidate.costCodeKey,
+    inputId: input?.id || null,
+    inputVersion: input?.version ?? null,
     unresolvedLines,
     includedLines,
     unresolvedExcludedMessage:
@@ -179,6 +189,17 @@ async function buildPrelimsAdoptionReviewPreview(clientId, developmentId, { repo
     if (key) displayMetadataByCostCode[key] = row.displayMetadata || {};
   }
 
+  const inputsResult = await listCostCodeInputs(clientId, developmentId, openPeriod.id);
+  const inputByKey = new Map();
+  if (inputsResult.ok) {
+    for (const input of inputsResult.inputs || []) {
+      const key = String(input.costCodeKey || "").trim();
+      if (!key) continue;
+      inputByKey.set(key, input);
+      inputByKey.set(key.toLowerCase(), input);
+    }
+  }
+
   const enginePreview = buildPrelimsAdoptionPreview({
     developmentId,
     periodKey: openPeriod.periodKey,
@@ -199,7 +220,7 @@ async function buildPrelimsAdoptionReviewPreview(clientId, developmentId, { repo
 
   const candidates = (enginePreview.candidates || [])
     .filter((row) => (row.lineCount || 0) > 0)
-    .map((row) => enrichCandidate(row, { itemsById, cvrByKey }));
+    .map((row) => enrichCandidate(row, { itemsById, cvrByKey, inputByKey }));
 
   const reviewable = candidates.filter(
     (row) => !row.flags?.[PRELIMS_ADOPTION_FLAG_KEYS.NO_CVR_ROW]

@@ -112,7 +112,7 @@ export async function applyDevelopmentPrelimsSetup(developmentId, payload = {}) 
   return handleJson(res);
 }
 
-/** BL-033D.x.4B — Read-only Prelims vs CVR commercial review (no adoption write). */
+/** BL-033D.x.4B — Prelims vs CVR commercial review preview. */
 export async function previewDevelopmentPrelimsAdoption(
   developmentId,
   { reportingMonth } = {}
@@ -124,5 +124,25 @@ export async function previewDevelopmentPrelimsAdoption(
     query ? `?${query}` : ''
   }`;
   const res = await fetch(buildUrl(path));
+  return handleJson(res);
+}
+
+/**
+ * BL-033D.x.4C.2 — Adopt selected Prelims cost codes into a Draft CVR period.
+ * Sends intent/expectations only; server recalculates authoritative amounts.
+ */
+export async function adoptDevelopmentPrelimsIntoCvr(
+  developmentId,
+  periodId,
+  payload = {}
+) {
+  const path = `/api/developments/${encodeURIComponent(developmentId)}/cvr/periods/${encodeURIComponent(
+    periodId
+  )}/prelims-adoption`;
+  const res = await fetch(buildUrl(path), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(withActor(payload)),
+  });
   return handleJson(res);
 }

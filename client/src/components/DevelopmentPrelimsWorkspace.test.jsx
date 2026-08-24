@@ -255,7 +255,7 @@ describe('DevelopmentPrelimsWorkspace add vs edit', () => {
     vi.clearAllMocks();
   });
 
-  it('shows Review against CVR (not Adopt) and opens the read-only review view', async () => {
+  it('shows Review against CVR and opens the review view', async () => {
     await renderWorkspace();
     expect(container.textContent).toMatch(/Review against CVR/);
     expect(container.textContent).not.toMatch(/Review & Adopt/);
@@ -265,7 +265,6 @@ describe('DevelopmentPrelimsWorkspace add vs edit', () => {
     });
     expect(container.querySelector('[data-testid="mock-prelims-review"]')).toBeTruthy();
     expect(container.querySelector('form')).toBeNull();
-    expect(container.textContent).not.toMatch(/\bAdopt\b|\bApply\b/i);
     await act(async () => {
       container.querySelector('[data-testid="back-to-prelims"]').click();
     });
@@ -276,8 +275,8 @@ describe('DevelopmentPrelimsWorkspace add vs edit', () => {
   it('shows a proposal-only banner, a setup worksheet entry, and no Review & Adopt control', async () => {
     await renderWorkspace();
     expect(container.textContent).toMatch(/Prelims proposal only/);
-    expect(container.textContent).toMatch(/not yet been adopted into the CVR/i);
-    expect(container.textContent).toMatch(/CVR forecast remains unchanged/i);
+    expect(container.textContent).toMatch(/do not change the CVR until you review/i);
+    expect(container.textContent).toMatch(/explicitly confirm adoption/i);
     expect(container.textContent).not.toMatch(/Review & Adopt/);
     expect(container.textContent).toMatch(/Review against CVR/);
     expect(container.textContent).toMatch(/Set up site Prelims/);

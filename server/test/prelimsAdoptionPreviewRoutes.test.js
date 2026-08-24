@@ -229,6 +229,8 @@ if (!isDbConfigured()) {
     assert.equal(row.proposedFinalForecast, 58000);
     assert.equal(row.deltaFinal, 7200);
     assert.equal(row.manualAccrual, 120);
+    assert.equal(row.inputVersion, 1);
+    assert.ok(row.proposalFingerprint);
     assert.match(row.unresolvedExcludedMessage, /excluded from proposed CVR value/i);
     assert.equal(row.unresolvedLines.length, 1);
 

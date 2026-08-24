@@ -17,11 +17,11 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Branch | `buildlite-V1-1` |
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
-| Last completed product slice | **BL-033D.x.4B COMPLETE.** Prelims Review against CVR read-only preview. Human UAT **PASSED**. |
-| Last persistence slice implemented | **BL-033D.x.3R.** Additive `019` signed month offsets on `development_prelims_items`. Applied on `buildlite_test` and local `buildlite_clone` (controlled UAT). Existing rows default `0/0`. x.4B added **no** migration. |
+| Last completed product slice | **BL-033D.x.4C.2 COMPLETE** (Prelims Adopt UI). Human UAT **PASSED**. Forensic clone UAT **PASSED**. Controlled Test Site 1 adoption of 5231 into Draft P04 proven (+£520 → +£7,720; final £58,000; accrual £120). |
+| Last persistence slice implemented | **BL-033D.x.3R.** Additive `019` signed month offsets on `development_prelims_items`. Applied on `buildlite_test` and local `buildlite_clone` (controlled UAT). Existing rows default `0/0`. x.4B/x.4C added **no** migration. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT** | **BL-033D.x.4C — Prelims → CVR adoption write** is **NOT STARTED**. Do **not** implement CVR writes yet. Do **not** Submit or Approve & Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog. Historic P01/P02/P03 `reporting_month` remains NULL. |
+| **NEXT** | Do **not** mark whole **BL-033D.x.4C** complete until any remaining x.4C closure is explicit. Do **not** Submit or Approve & Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog. Historic P01/P02/P03 `reporting_month` remains NULL. |
 
 ---
 
@@ -1071,30 +1071,41 @@ Test Site 1 human UAT (leave in place):
 
 **PRELIMS UX FOLLOW-UP:** The main Prelims page still prominently exposes the original “Add Prelims line” form from before the company-template / “Set up site Prelims” workflow. Human UAT found the journey disjointed. Future UX review should make template/site setup the primary setup path while retaining manual site-specific Prelim creation as a secondary action (for example “Add site-specific Prelim”) rather than a permanently expanded primary form. Do **not** implement that follow-up in x.4C unless explicitly instructed.
 
-## BL-033D.x.4C.1 (Server Prelims → Draft CVR adoption contract) — IMPLEMENTED / awaiting server review & banking
+## BL-033D.x.4C.1 (Server Prelims → Draft CVR adoption contract) — BANKED
 
-Server-only command to adopt **explicitly selected** eligible Prelims cost codes into a **Draft** CVR period. No BuildLite UI trigger in this slice. x.4B Review remains read-only. No controlled clone / Test Site 1 adoption.
+Server-only command to adopt **explicitly selected** eligible Prelims cost codes into a **Draft** CVR period. Banked at `8bd66f6`.
 
-Proven contract:
+## BL-033D.x.4C.2 (Prelims Adopt UI / confirmation) — COMPLETE
 
-- `POST /api/developments/:developmentId/cvr/periods/:periodId/prelims-adoption`
-- Accepts intent + expectations only (selected codes, fingerprints, expected input version / system forecast / current adjustment, acknowledgements). Browser `proposedAdjustment` is **not** authoritative and cannot force a write amount.
-- Server reloads period + Prelims + programme + close candidate + x.4A preview, recalculates replacement adjustment, then writes.
-- Commercial rule: `replacementAdjustment = resolvedPrelimsTotal − systemForecast` (replaces existing adjustment; not additive).
-- Atomic multi-code transaction: all selected succeed or none write.
-- Unresolved excluded lines require `acknowledgeUnresolvedExcluded` or the whole request is rejected.
-- `adoption_superseded` requires `acknowledgeSupersededAdjustment` or the whole request is rejected.
-- Codes not on the current CVR cannot be adopted; selecting one fails the whole request.
-- `up_to_date` re-adoption is a no-op (no needless version bump).
-- Minimum write set only: `commercial_adjustment`, `adjustment_reason`, merged `display_metadata` (`prelimsAdoption` + appended `adjustmentHistory`), version / updated_at / updated_by.
-- Does **not** write accrual, budgets, system forecast, snapshots, Prelims, programme, Cost Code Master, or classification.
-- Adoption write decision reads Prelims, programme, and classifications on the **same transaction connection** as the CVR locks; development Prelims rows and programme row are taken `FOR UPDATE`.
+Client UI on Review against CVR that calls the banked x.4C.1 POST.
 
-Status: **IMPLEMENTED / awaiting server review & banking**. Next: **x.4C.2 UI** after banking. Controlled clone UAT is a later slice.
+Proven UI contract:
+
+- Explicit cost-code selection (none selected by default); “Select all eligible” is deliberate
+- Missing-CVR and up-to-date codes are not selectable
+- “Adopt selected into CVR” opens confirmation before any write
+- Confirmation shows exact commercial consequences and replacement wording
+- Unresolved excluded lines require acknowledgement
+- `adoption_superseded` requires acknowledgement
+- POST sends intent/expectations only; browser amounts are not authoritative
+- 409 stale / PERIOD_NOT_DRAFT clears selection and refreshes GET preview
+- Success clears selection, refreshes GET preview, leaves CVR Draft
+- No Submit / Approve / Lock / P05
+
+### Controlled clone UAT (PASSED)
+
+Test Site 1 / P04 / 5231 Cleaning: deliberate select → confirm with unresolved ack → adopt. Post-adoption:
+
+- P04 remains **Draft** (period version still **1**)
+- 5231 input version **1 → 2**; commercial adjustment **+£520 → +£7,720**; final **£58,000**; accrual **£120**
+- `prelimsAdoption` provenance correct; one `adjustmentHistory` entry; one `prelims_adopted` audit
+- Prelims (4 rows), programme, Cost Code Master/classification, snapshots (**3**), P03 frozen money unchanged; **P05 absent**; UAT-CC-001 not created on CVR
+
+Status: **COMPLETE** (human UAT **PASSED**; forensic DB UAT **PASSED**). Do not mark whole **x.4C** complete yet unless explicitly closed.
 
 ## Next action
 
-**NEXT: Bank BL-033D.x.4C.1, then BL-033D.x.4C.2 (UI).** Do **not** add an Adopt button until x.4C.1 is banked. Do **not** Submit/Approve P04. Do **not** create P05. Do **not** mutate Test Site 1 / `buildlite_clone` for adoption. Do **not** switch 5231 to TIME. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Do **not** Save migrated Admin cost-code rows from a browser whose Commercial Structure catalog lacks the server `reporting_group` values.
+**NEXT:** Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Do **not** Save migrated Admin cost-code rows from a browser whose Commercial Structure catalog lacks the server `reporting_group` values.
 
 Do **not** alter P01/P02/P03 `reporting_month` except by a future explicit historic-correction feature. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`. Do not delete P04 `0f513191-cd25-4812-834f-37dcf66487e0` except by a later controlled commercial task.
 

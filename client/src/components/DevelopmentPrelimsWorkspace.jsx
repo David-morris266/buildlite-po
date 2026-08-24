@@ -331,8 +331,8 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
       <div className="dev-prelims__banner" role="note">
         <strong>Prelims proposal only</strong>
         <p>
-          These forecasts have not yet been adopted into the CVR. The CVR forecast remains
-          unchanged.
+          These forecasts do not change the CVR until you review them against the worksheet and
+          explicitly confirm adoption.
         </p>
       </div>
 

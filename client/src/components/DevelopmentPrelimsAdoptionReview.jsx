@@ -1,15 +1,19 @@
 /**
- * BL-033D.x.4B — Read-only Prelims Review against CVR commercial preview UI.
- * Does not adopt, adjust, or write CVR / Prelims / metadata.
+ * BL-033D.x.4B / x.4C.2 — Prelims Review against CVR + explicit adoption UI.
+ * Adoption writes only via confirmed POST to the banked x.4C.1 command.
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   DevelopmentPrelimsApiError,
+  adoptDevelopmentPrelimsIntoCvr,
   previewDevelopmentPrelimsAdoption,
 } from '../api/developmentPrelimsItems';
 import { formatCvrMoney } from '../cvr/cvrHelpers';
-import { PRELIMS_ADOPTION_FLAG_KEYS } from '../prelims/prelimsAdoptionCompare';
+import {
+  PRELIMS_ADOPTION_DRIFT_STATES,
+  PRELIMS_ADOPTION_FLAG_KEYS,
+} from '../prelims/prelimsAdoptionCompare';
 
 function money(value) {
   if (value == null) return '—';
@@ -32,33 +36,110 @@ function headlineForCandidate(row) {
   )} → proposed final ${money(row.proposedFinalForecast)} (${signedMoney(row.deltaFinal)})`;
 }
 
-function CostCodeReviewCard({ row }) {
+function isUpToDate(row) {
+  return Boolean(
+    row?.isUpToDate || row?.driftState === PRELIMS_ADOPTION_DRIFT_STATES.UP_TO_DATE
+  );
+}
+
+function isSuperseded(row) {
+  return row?.driftState === PRELIMS_ADOPTION_DRIFT_STATES.ADOPTION_SUPERSEDED;
+}
+
+function isPeriodDraft(preview) {
+  return String(preview?.periodStatus || '').toLowerCase() === 'draft';
+}
+
+function isSelectableCandidate(row, preview) {
+  if (!row) return false;
+  if (!isPeriodDraft(preview)) return false;
+  if (row.flags?.[PRELIMS_ADOPTION_FLAG_KEYS.NO_CVR_ROW]) return false;
+  if (row.cannotAdopt || row.flags?.[PRELIMS_ADOPTION_FLAG_KEYS.CANNOT_ADOPT]) return false;
+  if (isUpToDate(row)) return false;
+  if (row.inputVersion == null || !Number.isInteger(Number(row.inputVersion))) return false;
+  if (!row.proposalFingerprint) return false;
+  return true;
+}
+
+function buildSelectionPayload(row, { acknowledgeUnresolved, acknowledgeSuperseded }) {
+  return {
+    costCodeKey: row.costCodeKey,
+    proposalFingerprint: row.proposalFingerprint,
+    expectedInputVersion: Number(row.inputVersion),
+    expectedSystemForecast: row.systemForecast,
+    expectedCurrentAdjustment: row.currentAdjustment,
+    acknowledgeUnresolvedExcluded: Boolean(
+      row.unresolvedCount > 0 && acknowledgeUnresolved
+    ),
+    acknowledgeSupersededAdjustment: Boolean(
+      isSuperseded(row) && acknowledgeSuperseded
+    ),
+  };
+}
+
+function CostCodeReviewCard({
+  row,
+  selectable,
+  selected,
+  onToggle,
+  disabled,
+}) {
   const belowSystem = row.flags?.[PRELIMS_ADOPTION_FLAG_KEYS.PROPOSAL_BELOW_SYSTEM];
   const unresolved = row.unresolvedCount > 0;
+  const upToDate = isUpToDate(row);
+  const superseded = isSuperseded(row);
 
   return (
     <article
-      className={`dev-prelims-review__card${belowSystem ? ' dev-prelims-review__card--below' : ''}`}
+      className={`dev-prelims-review__card${belowSystem ? ' dev-prelims-review__card--below' : ''}${
+        selected ? ' dev-prelims-review__card--selected' : ''
+      }`}
       data-cost-code={row.costCodeKey}
       data-testid={`prelims-review-card-${row.costCodeKey}`}
     >
       <header className="dev-prelims-review__card-head">
-        <div>
-          <h4>
-            {row.costCodeKey}
-            {row.costCodeDescription && row.costCodeDescription !== row.costCodeKey
-              ? ` · ${row.costCodeDescription}`
-              : ''}
-          </h4>
-          {headlineForCandidate(row) ? (
-            <p className="dev-prelims-review__card-headline">{headlineForCandidate(row)}</p>
+        <div className="dev-prelims-review__card-title">
+          {selectable ? (
+            <label className="dev-prelims-review__select">
+              <input
+                type="checkbox"
+                checked={selected}
+                disabled={disabled}
+                onChange={() => onToggle?.(row.costCodeKey)}
+                aria-label={`Select ${row.costCodeKey}`}
+                data-testid={`select-cost-code-${row.costCodeKey}`}
+              />
+            </label>
+          ) : null}
+          <div>
+            <h4>
+              {row.costCodeKey}
+              {row.costCodeDescription && row.costCodeDescription !== row.costCodeKey
+                ? ` · ${row.costCodeDescription}`
+                : ''}
+            </h4>
+            {headlineForCandidate(row) ? (
+              <p className="dev-prelims-review__card-headline">{headlineForCandidate(row)}</p>
+            ) : null}
+          </div>
+        </div>
+        <div className="dev-prelims-review__chips">
+          {upToDate ? (
+            <span className="dev-prelims-review__flag" data-testid={`already-adopted-${row.costCodeKey}`}>
+              Already adopted — no change
+            </span>
+          ) : null}
+          {superseded ? (
+            <span className="dev-prelims-review__flag" data-testid={`superseded-${row.costCodeKey}`}>
+              Manual adjustment superseded prior adoption
+            </span>
+          ) : null}
+          {belowSystem ? (
+            <span className="dev-prelims-review__flag" data-testid="proposal-below-system">
+              Proposal below system forecast
+            </span>
           ) : null}
         </div>
-        {belowSystem ? (
-          <span className="dev-prelims-review__flag" data-testid="proposal-below-system">
-            Proposal below system forecast
-          </span>
-        ) : null}
       </header>
 
       <dl className="dev-prelims-review__metrics">
@@ -178,6 +259,7 @@ function MissingCvrCard({ row }) {
             ? ` · ${row.costCodeDescription}`
             : ''}
         </h4>
+        <span className="dev-prelims-review__flag">Cannot adopt</span>
       </header>
       <p className="dev-prelims-review__missing-banner" role="status">
         {row.missingFromCvrMessage ||
@@ -200,40 +282,237 @@ function MissingCvrCard({ row }) {
   );
 }
 
+function AdoptionConfirmDialog({
+  open,
+  rows,
+  periodKey,
+  acknowledgeUnresolved,
+  acknowledgeSuperseded,
+  onAcknowledgeUnresolved,
+  onAcknowledgeSuperseded,
+  needsUnresolvedAck,
+  needsSupersededAck,
+  adopting,
+  error,
+  onCancel,
+  onConfirm,
+}) {
+  if (!open) return null;
+
+  const canConfirm =
+    !adopting &&
+    (!needsUnresolvedAck || acknowledgeUnresolved) &&
+    (!needsSupersededAck || acknowledgeSuperseded);
+
+  return (
+    <div className="dev-cvr-add-backdrop" role="presentation" data-testid="adoption-confirm-dialog">
+      <div className="dev-cvr-add modal dev-prelims-review__confirm" role="dialog" aria-modal="true">
+        <h3>Confirm Prelims adoption into {periodKey || 'CVR'}</h3>
+        <p className="dev-prelims-review__semantics" data-testid="confirm-replacement-wording">
+          The proposed replacement adjustment replaces the current CVR adjustment. It is not added
+          to it.
+        </p>
+
+        <div className="dev-prelims-review__confirm-list">
+          {rows.map((row) => (
+            <article
+              key={row.costCodeKey}
+              className="dev-prelims-review__confirm-card"
+              data-testid={`confirm-card-${row.costCodeKey}`}
+            >
+              <h4>
+                {row.costCodeKey}
+                {row.costCodeDescription && row.costCodeDescription !== row.costCodeKey
+                  ? ` — ${row.costCodeDescription}`
+                  : ''}
+              </h4>
+              <dl className="dev-prelims-review__metrics">
+                <div>
+                  <dt>Resolved Prelims proposal</dt>
+                  <dd>{money(row.resolvedPrelimsTotal)}</dd>
+                </div>
+                <div>
+                  <dt>Current system forecast</dt>
+                  <dd>{money(row.systemForecast)}</dd>
+                </div>
+                <div>
+                  <dt>Current adjustment</dt>
+                  <dd>{signedMoney(row.currentAdjustment)}</dd>
+                </div>
+                <div>
+                  <dt>Current final forecast</dt>
+                  <dd>{money(row.currentFinalForecast)}</dd>
+                </div>
+                <div>
+                  <dt>Proposed replacement adjustment</dt>
+                  <dd>{signedMoney(row.proposedAdjustment)}</dd>
+                </div>
+                <div>
+                  <dt>Proposed final forecast</dt>
+                  <dd>{money(row.proposedFinalForecast)}</dd>
+                </div>
+                <div>
+                  <dt>Resulting movement in final forecast</dt>
+                  <dd>{signedMoney(row.deltaFinal)}</dd>
+                </div>
+              </dl>
+              {isSuperseded(row) ? (
+                <div
+                  className="dev-prelims-review__warn"
+                  data-testid={`confirm-superseded-${row.costCodeKey}`}
+                >
+                  <p>
+                    This CVR adjustment has been changed since the previous Prelims adoption.
+                  </p>
+                  <p>
+                    Previously adopted adjustment: {signedMoney(row.adoptionMetadata?.adoptedAdjustment)}
+                  </p>
+                  <p>Current CVR adjustment: {signedMoney(row.currentAdjustment)}</p>
+                  <p>
+                    New proposed replacement adjustment: {signedMoney(row.proposedAdjustment)}
+                  </p>
+                </div>
+              ) : null}
+              {row.unresolvedCount > 0 ? (
+                <p
+                  className="dev-prelims-review__warn"
+                  data-testid={`confirm-unresolved-${row.costCodeKey}`}
+                >
+                  {row.unresolvedCount} unresolved Prelims line
+                  {row.unresolvedCount === 1 ? '' : 's'}{' '}
+                  {row.unresolvedCount === 1 ? 'is' : 'are'} excluded from this adoption and{' '}
+                  {row.unresolvedCount === 1 ? 'is' : 'are'} not treated as £0.
+                </p>
+              ) : null}
+            </article>
+          ))}
+        </div>
+
+        {needsUnresolvedAck ? (
+          <label className="dev-prelims-review__ack" data-testid="ack-unresolved">
+            <input
+              type="checkbox"
+              checked={acknowledgeUnresolved}
+              disabled={adopting}
+              onChange={(event) => onAcknowledgeUnresolved(event.target.checked)}
+            />
+            <span>I understand the unresolved line is excluded from the adopted value.</span>
+          </label>
+        ) : null}
+
+        {needsSupersededAck ? (
+          <label className="dev-prelims-review__ack" data-testid="ack-superseded">
+            <input
+              type="checkbox"
+              checked={acknowledgeSuperseded}
+              disabled={adopting}
+              onChange={(event) => onAcknowledgeSuperseded(event.target.checked)}
+            />
+            <span>I understand this will replace the current CVR adjustment.</span>
+          </label>
+        ) : null}
+
+        {error ? (
+          <p className="dev-workspace__section-lead" role="alert" data-testid="adoption-confirm-error">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="dev-cvr-add__actions modal-actions">
+          <button
+            type="button"
+            className="po-list-btn-secondary"
+            onClick={onCancel}
+            disabled={adopting}
+            data-testid="adoption-cancel"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="po-btn-primary"
+            onClick={onConfirm}
+            disabled={!canConfirm}
+            data-testid="adoption-confirm"
+          >
+            {adopting ? 'Adopting…' : 'Confirm adoption'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack }) {
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set());
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [acknowledgeUnresolved, setAcknowledgeUnresolved] = useState(false);
+  const [acknowledgeSuperseded, setAcknowledgeSuperseded] = useState(false);
+  const [adopting, setAdopting] = useState(false);
+  const [confirmError, setConfirmError] = useState('');
+  const [reloadToken, setReloadToken] = useState(0);
+
+  const loadPreview = useCallback(async ({ preserveError = false } = {}) => {
+    setLoading(true);
+    if (!preserveError) setError('');
+    try {
+      const doc = await previewDevelopmentPrelimsAdoption(developmentId);
+      setPreview(doc);
+      return doc;
+    } catch (err) {
+      const message =
+        err instanceof DevelopmentPrelimsApiError
+          ? err.message
+          : err?.message || 'Could not load Prelims review against CVR.';
+      setError(message);
+      setPreview(null);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [developmentId]);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError('');
-    previewDevelopmentPrelimsAdoption(developmentId)
-      .then((doc) => {
-        if (!cancelled) setPreview(doc);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        const message =
-          err instanceof DevelopmentPrelimsApiError
-            ? err.message
-            : err?.message || 'Could not load Prelims review against CVR.';
-        setError(message);
-        setPreview(null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    setSelectedKeys(new Set());
+    setConfirmOpen(false);
+    setAcknowledgeUnresolved(false);
+    setAcknowledgeSuperseded(false);
+    setConfirmError('');
+    (async () => {
+      const doc = await loadPreview();
+      if (cancelled) return;
+      if (!doc) return;
+    })();
     return () => {
       cancelled = true;
     };
-  }, [developmentId]);
+  }, [developmentId, reloadToken, loadPreview]);
+
+  const candidates = preview?.candidates || [];
+  const missingRows = preview?.missingFromCvr || [];
+  const draftPeriod = isPeriodDraft(preview);
+
+  const eligibleRows = useMemo(
+    () => candidates.filter((row) => isSelectableCandidate(row, preview)),
+    [candidates, preview]
+  );
+
+  const selectedRows = useMemo(
+    () => candidates.filter((row) => selectedKeys.has(row.costCodeKey)),
+    [candidates, selectedKeys]
+  );
+
+  const needsUnresolvedAck = selectedRows.some((row) => row.unresolvedCount > 0);
+  const needsSupersededAck = selectedRows.some((row) => isSuperseded(row));
 
   const summary = preview?.summary;
-  const primary = (preview?.candidates || [])[0] || null;
-  const missingRows = preview?.missingFromCvr || [];
-  const allReviewRows = [...(preview?.candidates || []), ...missingRows];
+  const primary = candidates[0] || null;
+  const allReviewRows = [...candidates, ...missingRows];
   const notOnCvrTotal = missingRows.reduce((total, row) => {
     if (row.resolvedPrelimsTotal == null) return total;
     return total + (Number(row.resolvedPrelimsTotal) || 0);
@@ -247,6 +526,123 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
       ? '1 unresolved line'
       : `${unresolvedLineCount} unresolved lines`;
 
+  function toggleKey(costCodeKey) {
+    setSuccess('');
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(costCodeKey)) next.delete(costCodeKey);
+      else next.add(costCodeKey);
+      return next;
+    });
+  }
+
+  function selectAllEligible() {
+    setSuccess('');
+    setSelectedKeys(new Set(eligibleRows.map((row) => row.costCodeKey)));
+  }
+
+  function clearSelection() {
+    setSelectedKeys(new Set());
+    setAcknowledgeUnresolved(false);
+    setAcknowledgeSuperseded(false);
+  }
+
+  function openConfirm() {
+    if (!selectedRows.length || adopting) return;
+    setConfirmError('');
+    setAcknowledgeUnresolved(false);
+    setAcknowledgeSuperseded(false);
+    setConfirmOpen(true);
+  }
+
+  function closeConfirm() {
+    if (adopting) return;
+    setConfirmOpen(false);
+    setConfirmError('');
+  }
+
+  async function refreshAfterStale(message) {
+    setConfirmOpen(false);
+    setConfirmError('');
+    clearSelection();
+    setSuccess('');
+    setError(message);
+    // Preserve the stale/conflict message while reloading GET review — do not
+    // bump reloadToken (that path clears error via the initial-load effect).
+    await loadPreview({ preserveError: true });
+  }
+
+  async function handleConfirmAdoption() {
+    if (adopting || !preview?.periodId || !selectedRows.length) return;
+    if (needsUnresolvedAck && !acknowledgeUnresolved) return;
+    if (needsSupersededAck && !acknowledgeSuperseded) return;
+
+    setAdopting(true);
+    setConfirmError('');
+    setError('');
+    setSuccess('');
+
+    const payload = {
+      expectedPeriodKey: preview.periodKey,
+      expectedReportingMonth: preview.reportingMonth,
+      selections: selectedRows.map((row) =>
+        buildSelectionPayload(row, {
+          acknowledgeUnresolved,
+          acknowledgeSuperseded,
+        })
+      ),
+    };
+
+    try {
+      const result = await adoptDevelopmentPrelimsIntoCvr(
+        developmentId,
+        preview.periodId,
+        payload
+      );
+      const adoptedCount = Array.isArray(result?.adopted) ? result.adopted.length : selectedRows.length;
+      setConfirmOpen(false);
+      clearSelection();
+      setSuccess(
+        `${adoptedCount} Prelims cost code${adoptedCount === 1 ? '' : 's'} adopted into ${
+          preview.periodKey || 'CVR'
+        }.`
+      );
+      setReloadToken((token) => token + 1);
+    } catch (err) {
+      const code = err?.body?.code || null;
+      const status = err?.status || 0;
+
+      if (status === 409) {
+        const staleMessage =
+          code === 'PERIOD_NOT_DRAFT'
+            ? 'Adoption is no longer available because the CVR period is no longer Draft. The page has been refreshed.'
+            : 'The CVR or Prelims changed after this review. The page has been refreshed. Please review the updated figures before adopting.';
+        await refreshAfterStale(staleMessage);
+        return;
+      }
+
+      if (
+        code === 'COST_CODE_NOT_ON_CVR' ||
+        code === 'SELECTION_REQUIRED' ||
+        code === 'DUPLICATE_COST_CODE'
+      ) {
+        setConfirmError(err.message || 'Adoption request was rejected.');
+        clearSelection();
+        setReloadToken((token) => token + 1);
+        return;
+      }
+
+      if (code === 'UNRESOLVED_ACK_REQUIRED' || code === 'SUPERSEDED_ACK_REQUIRED') {
+        setConfirmError(err.message || 'Acknowledgement is required before adoption.');
+        return;
+      }
+
+      setConfirmError(err.message || 'Could not adopt Prelims into the CVR.');
+    } finally {
+      setAdopting(false);
+    }
+  }
+
   return (
     <section className="dev-prelims-review" data-testid="prelims-adoption-review">
       <div className="dev-prelims-review__toolbar">
@@ -257,19 +653,24 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
 
       <header className="dev-prelims-review__intro">
         <h3>Review against CVR</h3>
-        <p>
+        <p data-testid="review-intro-copy">
           Commercial preview of the Prelims proposal against the current open CVR worksheet. This
-          view is read-only — nothing is adopted or written.
+          review does not change the CVR until you explicitly select cost codes and confirm
+          adoption.
         </p>
       </header>
 
-      {loading ? (
-        <p className="dev-workspace__section-lead">Loading review…</p>
-      ) : null}
+      {loading ? <p className="dev-workspace__section-lead">Loading review…</p> : null}
 
       {error ? (
-        <p className="dev-workspace__section-lead" role="alert">
+        <p className="dev-workspace__section-lead" role="alert" data-testid="review-error">
           {error}
+        </p>
+      ) : null}
+
+      {success ? (
+        <p className="dev-prelims-review__success" role="status" data-testid="adoption-success">
+          {success}
         </p>
       ) : null}
 
@@ -338,27 +739,89 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
                 'The proposed replacement adjustment replaces the current CVR adjustment; it is not added to it.'}
             </p>
             <p className="dev-prelims-review__support">{preview.accrualNote}</p>
+            {!draftPeriod ? (
+              <p className="dev-prelims-review__warn" role="status" data-testid="period-not-draft">
+                Adoption is unavailable because the open CVR period is no longer Draft.
+              </p>
+            ) : null}
+          </div>
+
+          <div className="dev-prelims-review__actions" data-testid="adoption-action-bar">
+            <div className="dev-prelims-review__actions-meta">
+              <span data-testid="selected-count">
+                {selectedKeys.size} selected
+              </span>
+              <button
+                type="button"
+                className="btn"
+                onClick={selectAllEligible}
+                disabled={!draftPeriod || !eligibleRows.length || adopting}
+                data-testid="select-all-eligible"
+              >
+                Select all eligible
+              </button>
+            </div>
+            <button
+              type="button"
+              className="po-btn-primary"
+              onClick={openConfirm}
+              disabled={!draftPeriod || selectedKeys.size === 0 || adopting}
+              data-testid="adopt-selected"
+            >
+              Adopt selected into CVR
+            </button>
           </div>
 
           <div className="dev-prelims-review__list">
             <h4>Cost-code review</h4>
-            {(preview.candidates || []).map((row) => (
-              <CostCodeReviewCard key={row.costCodeKey} row={row} />
-            ))}
+            {candidates.map((row) => {
+              const selectable = isSelectableCandidate(row, preview);
+              return (
+                <CostCodeReviewCard
+                  key={row.costCodeKey}
+                  row={row}
+                  selectable={selectable}
+                  selected={selectedKeys.has(row.costCodeKey)}
+                  onToggle={toggleKey}
+                  disabled={adopting || !draftPeriod}
+                />
+              );
+            })}
           </div>
 
-          {(preview.missingFromCvr || []).length ? (
+          {missingRows.length ? (
             <div className="dev-prelims-review__missing" data-testid="missing-from-cvr">
               <h4>Not on current CVR</h4>
-              {(preview.missingFromCvr || []).map((row) => (
+              {missingRows.map((row) => (
                 <MissingCvrCard key={row.costCodeKey} row={row} />
               ))}
             </div>
           ) : null}
+
+          <AdoptionConfirmDialog
+            open={confirmOpen}
+            rows={selectedRows}
+            periodKey={preview.periodKey}
+            acknowledgeUnresolved={acknowledgeUnresolved}
+            acknowledgeSuperseded={acknowledgeSuperseded}
+            onAcknowledgeUnresolved={setAcknowledgeUnresolved}
+            onAcknowledgeSuperseded={setAcknowledgeSuperseded}
+            needsUnresolvedAck={needsUnresolvedAck}
+            needsSupersededAck={needsSupersededAck}
+            adopting={adopting}
+            error={confirmError}
+            onCancel={closeConfirm}
+            onConfirm={handleConfirmAdoption}
+          />
         </>
       ) : null}
     </section>
   );
 }
 
-export { headlineForCandidate, signedMoney };
+export {
+  headlineForCandidate,
+  signedMoney,
+  isSelectableCandidate,
+  buildSelectionPayload,
+};
