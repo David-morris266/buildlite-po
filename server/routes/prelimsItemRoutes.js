@@ -1,9 +1,10 @@
 /**
- * BL-033D.1 / BL-033D.x.3 — Development Prelims items + setup APIs
+ * BL-033D.1 / BL-033D.x.3 / BL-033D.x.4B — Development Prelims items + setup + adoption review
  * GET/POST /api/developments/:developmentId/prelims-items
  * GET/PUT  /api/developments/:developmentId/prelims-items/:itemId
  * GET      /api/developments/:developmentId/prelims-setup/preview
  * POST     /api/developments/:developmentId/prelims-setup/apply
+ * GET      /api/developments/:developmentId/prelims-adoption/preview (read-only)
  */
 
 const express = require("express");
@@ -17,6 +18,9 @@ const {
   provisionalActor,
 } = require("../services/prelimsItemRepository");
 const { previewPrelimsSetup, applyPrelimsSetup } = require("../services/prelimsSetupService");
+const {
+  buildPrelimsAdoptionReviewPreview,
+} = require("../services/prelimsAdoptionPreviewService");
 
 const router = express.Router({ mergeParams: true });
 
@@ -26,10 +30,28 @@ function sendResult(res, result, successKey, successStatus = 200) {
     if (result.errors) payload.errors = result.errors;
     if (result.item) payload.item = result.item;
     if (result.collection) payload.collection = result.collection;
+    if (result.blockers) payload.blockers = result.blockers;
     return res.status(result.status || 400).json(payload);
   }
   return res.status(result.status || successStatus).json(result[successKey]);
 }
+
+router.get("/prelims-adoption/preview", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+    const result = await buildPrelimsAdoptionReviewPreview(active.id, req.params.developmentId, {
+      reportingMonth: req.query.reportingMonth,
+    });
+    sendResult(res, result, "preview");
+  } catch (err) {
+    console.error("[Prelims adoption] PREVIEW error:", err);
+    res.status(500).json({ message: "Failed to load Prelims adoption review preview." });
+  }
+});
 
 router.get("/prelims-setup/preview", async (req, res) => {
   try {

@@ -1,10 +1,10 @@
 # BuildLite Database Reference
 
 **Current programme:** Doc 67 persistence migration on `buildlite-V1-1` (see `CURRENT_STATE.md`).  
-**Last product slice fully complete:** **BL-033D.x.3 — COMPLETE** (development Prelims setup from company template; Test Site 1 setup UAT **PASSED**; four development Prelims rows; resolved proposal **£59,000** + unresolved FIRST_COMPLETION; no CVR adoption).  
-**Last persistence slice implemented:** **BL-033D.x.3 COMPLETE.** Additive `018` provenance on `development_prelims_items`. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 setup UAT **PASSED**.  
+**Last product slice fully complete:** **BL-033D.x.4B — COMPLETE** (read-only Prelims Review against CVR; GET-only; no CVR writes; human UAT **PASSED**).  
+**Last persistence slice implemented:** **BL-033D.x.3R COMPLETE** (`019` TIME offsets). x.4B added **no** schema migration.  
 **CRITICAL:** P03 is **locked** with schema-v2 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. P04 is **Draft** `0f513191-cd25-4812-834f-37dcf66487e0` v1 with `reporting_month` **2026-08** and **no snapshot**. P01/P02/P03 `reporting_month` remain NULL. P05 does not exist.  
-**NEXT:** BL-033D.x.4 — Review & Adopt design preflight (do not implement CVR adoption yet). Do not Submit or Approve & Lock P04. Do not create P05. Do not switch 5231 to TIME. Do not Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog.
+**NEXT:** **BL-033D.x.4C — Prelims → CVR adoption write** is **NOT STARTED**. Do not Submit or Approve & Lock P04. Do not create P05. Do not switch 5231 to TIME. Do not Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog.
 
 ---
 

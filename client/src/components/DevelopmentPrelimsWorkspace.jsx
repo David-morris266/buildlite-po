@@ -15,6 +15,7 @@ import {
   TIME_BASES,
 } from '../prelims/prelimsConstants';
 import { resolveTimeSpan, suggestedPrelimsDriver } from '../prelims/prelimsForecastEngine';
+import DevelopmentPrelimsAdoptionReview from './DevelopmentPrelimsAdoptionReview';
 import DevelopmentPrelimsSetupWorksheet from './DevelopmentPrelimsSetupWorksheet';
 import PrelimsTimeSpanFields from './PrelimsTimeSpanFields';
 import { coerceOffsetMonths } from '../programme/programmeCalendar';
@@ -378,6 +379,11 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
             await load();
           }}
         />
+      ) : workspaceView === 'review' ? (
+        <DevelopmentPrelimsAdoptionReview
+          developmentId={developmentId}
+          onBack={() => setWorkspaceView('lines')}
+        />
       ) : (
         <>
       <div className="dev-prelims__actions">
@@ -390,6 +396,17 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
           }}
         >
           Set up site Prelims
+        </button>
+        <button
+          className="btn btn--primary"
+          type="button"
+          data-testid="review-against-cvr"
+          onClick={() => {
+            setError('');
+            setWorkspaceView('review');
+          }}
+        >
+          Review against CVR
         </button>
       </div>
 

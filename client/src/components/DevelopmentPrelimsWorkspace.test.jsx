@@ -26,7 +26,39 @@ vi.mock('../api/developmentPrelimsItems', () => ({
   updateDevelopmentPrelimsItem,
   previewDevelopmentPrelimsSetup: vi.fn(),
   applyDevelopmentPrelimsSetup: vi.fn(),
+  previewDevelopmentPrelimsAdoption: vi.fn(async () => ({
+    readOnly: true,
+    periodKey: 'P04',
+    reportingMonth: '2026-08',
+    summary: {},
+    candidates: [],
+    missingFromCvr: [],
+  })),
   DevelopmentPrelimsApiError: PrelimsApiError,
+}));
+
+vi.mock('./DevelopmentPrelimsSetupWorksheet', () => ({
+  default: function MockSetup({ onCancel }) {
+    return (
+      <div data-testid="mock-prelims-setup">
+        <button type="button" onClick={onCancel}>
+          Cancel setup
+        </button>
+      </div>
+    );
+  },
+}));
+
+vi.mock('./DevelopmentPrelimsAdoptionReview', () => ({
+  default: function MockReview({ onBack }) {
+    return (
+      <div data-testid="mock-prelims-review">
+        <button type="button" data-testid="back-to-prelims" onClick={onBack}>
+          Back to Prelims
+        </button>
+      </div>
+    );
+  },
 }));
 
 vi.mock('../api/costCodeClassifications', () => ({
@@ -223,12 +255,31 @@ describe('DevelopmentPrelimsWorkspace add vs edit', () => {
     vi.clearAllMocks();
   });
 
+  it('shows Review against CVR (not Adopt) and opens the read-only review view', async () => {
+    await renderWorkspace();
+    expect(container.textContent).toMatch(/Review against CVR/);
+    expect(container.textContent).not.toMatch(/Review & Adopt/);
+    expect(container.querySelector('[data-testid="review-against-cvr"]')).toBeTruthy();
+    await act(async () => {
+      container.querySelector('[data-testid="review-against-cvr"]').click();
+    });
+    expect(container.querySelector('[data-testid="mock-prelims-review"]')).toBeTruthy();
+    expect(container.querySelector('form')).toBeNull();
+    expect(container.textContent).not.toMatch(/\bAdopt\b|\bApply\b/i);
+    await act(async () => {
+      container.querySelector('[data-testid="back-to-prelims"]').click();
+    });
+    expect(container.querySelector('[data-testid="review-against-cvr"]')).toBeTruthy();
+    expect(container.querySelector('form')).toBeTruthy();
+  });
+
   it('shows a proposal-only banner, a setup worksheet entry, and no Review & Adopt control', async () => {
     await renderWorkspace();
     expect(container.textContent).toMatch(/Prelims proposal only/);
     expect(container.textContent).toMatch(/not yet been adopted into the CVR/i);
     expect(container.textContent).toMatch(/CVR forecast remains unchanged/i);
     expect(container.textContent).not.toMatch(/Review & Adopt/);
+    expect(container.textContent).toMatch(/Review against CVR/);
     expect(container.textContent).toMatch(/Set up site Prelims/);
     expect(container.textContent).toMatch(/CVR reporting month 2026-08/);
     expect(container.querySelector('form').getAttribute('data-mode')).toBe('add');

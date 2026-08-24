@@ -17,11 +17,11 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Branch | `buildlite-V1-1` |
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
-| Last completed product slice | **BL-033D.x.3R COMPLETE.** Flexible Prelims timing + setup UX (offsets, FIXED_DATE, driver override, searchable cost-code picker, compact worksheet). Human UAT **PASSED**. |
-| Last persistence slice implemented | **BL-033D.x.3R.** Additive `019` signed month offsets on `development_prelims_items`. Applied on `buildlite_test` and local `buildlite_clone` (controlled UAT). Existing rows default `0/0`. |
+| Last completed product slice | **BL-033D.x.4B COMPLETE.** Prelims Review against CVR read-only preview. Human UAT **PASSED**. |
+| Last persistence slice implemented | **BL-033D.x.3R.** Additive `019` signed month offsets on `development_prelims_items`. Applied on `buildlite_test` and local `buildlite_clone` (controlled UAT). Existing rows default `0/0`. x.4B added **no** migration. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT** | **BL-033D.x.4B — Review & Adopt preview UI only** (no CVR apply). Do **not** Submit or Approve & Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog. Historic P01/P02/P03 `reporting_month` remains NULL. |
+| **NEXT** | **BL-033D.x.4C — Prelims → CVR adoption write** is **NOT STARTED**. Do **not** implement CVR writes yet. Do **not** Submit or Approve & Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog. Historic P01/P02/P03 `reporting_month` remains NULL. |
 
 ---
 
@@ -53,6 +53,7 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-033D.x.3** | Development Prelims setup from company template | **COMPLETE.** Additive `018` provenance + read-only preview + transactional apply + commercial setup worksheet. Test Site 1 setup UAT **PASSED** on `buildlite_clone`. Four development Prelims rows. No CVR adoption. |
 | **BL-033D.x.3R** | Flexible Prelims timing + setup UX | **COMPLETE.** Development-owned signed calendar-month offsets (`019`); FIXED_DATE setup overrides; development TIME↔LUMP_SUM driver override (template unchanged); searchable canonical Cost Code Master picker; compact two-tier setup worksheet. Human UAT **PASSED**. Deferred: basis-select text can clip slightly at some viewport widths. |
 | **BL-033D.x.4A** | Prelims adoption compare engine | **COMPLETE.** Pure cost-code compare + fingerprint + `display_metadata.prelimsAdoption` contract. Fingerprint includes offsets. No UI. No CVR writes. |
+| **BL-033D.x.4B** | Prelims Review against CVR (read-only) | **COMPLETE / BANKED.** GET-only preview UI. Proposed adjustment **replaces** current CVR adjustment. Unresolved Prelims excluded (not £0). Codes not on current CVR shown separately and **not** created. No Adopt/Apply. No CVR writes. Human UAT **PASSED**. **x.4C NOT STARTED.** |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -1037,9 +1038,42 @@ Proven rules:
 
 No CVR adoption. No P04 Submit/Approve. No P05. Four Test Site 1 Prelims rows remain commercially identical at offsets `0/0`.
 
+## BL-033D.x.4B (Prelims Review against CVR — read-only) — COMPLETE / BANKED
+
+Read-only commercial review of the development Prelims proposal against the open CVR worksheet. Human UAT **PASSED** on Test Site 1 / `buildlite_clone`.
+
+Proven:
+
+- Development → Prelims → **Review against CVR** (not “Adopt”)
+- `GET /api/developments/:id/prelims-adoption/preview` only — no write route
+- Reuses banked x.4A compare engine; no maths reimplemented in JSX
+- Proposed replacement adjustment replaces the current CVR adjustment (not added to it)
+- Unresolved Prelims excluded from the proposed CVR value (not treated as £0)
+- Cost codes not present on the current CVR shown separately; no CVR row created; no remap
+- Accrual visible for context only; not incorporated into the adoption formula
+- Back to Prelims only — no Adopt / Apply / Confirm
+- Opening or reopening Review does not change Prelims, P04 overlays, snapshots, or metadata
+
+Test Site 1 human UAT (leave in place):
+
+| Check | Result |
+|-------|--------|
+| Total resolved Prelims | **£59,000** |
+| Reviewable against CVR | **£58,000** |
+| Not on current CVR | **£1,000** (`UAT-CC-001`) |
+| Unresolved | **1** FIRST_COMPLETION line |
+| 5231 system / current adj / current final | **£50,280** / **+£520** / **£50,800** |
+| Proposed replacement adj / proposed final / movement | **+£7,720** / **£58,000** / **+£7,200** |
+| P04 after review | **Draft** unchanged; no snapshot; no metadata write |
+| P05 | **absent** |
+
+### Deferred UX (not this slice)
+
+**PRELIMS UX FOLLOW-UP:** The main Prelims page still prominently exposes the original “Add Prelims line” form from before the company-template / “Set up site Prelims” workflow. Human UAT found the journey disjointed. Future UX review should make template/site setup the primary setup path while retaining manual site-specific Prelim creation as a secondary action (for example “Add site-specific Prelim”) rather than a permanently expanded primary form. Do **not** implement that follow-up in x.4C unless explicitly instructed.
+
 ## Next action
 
-**NEXT: BL-033D.x.4B — Review & Adopt preview UI only** (no CVR apply). Do **not** adopt Prelims into the CVR. P04 remains Draft. Do **not** Submit P04. Do **not** Approve & Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Do **not** Save migrated Admin cost-code rows from a browser whose Commercial Structure catalog lacks the server `reporting_group` values.
+**NEXT: BL-033D.x.4C — Prelims → CVR adoption write** is **NOT STARTED**. Do **not** implement CVR writes, adjustment apply, `display_metadata` writes, P04 Submit/Approve, or P05 creation in this checkpoint. P04 remains Draft. Do **not** switch 5231 to TIME. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Do **not** Save migrated Admin cost-code rows from a browser whose Commercial Structure catalog lacks the server `reporting_group` values.
 
 Do **not** alter P01/P02/P03 `reporting_month` except by a future explicit historic-correction feature. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`. Do not delete P04 `0f513191-cd25-4812-834f-37dcf66487e0` except by a later controlled commercial task.
 

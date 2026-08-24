@@ -10251,3 +10251,166 @@
   background: transparent;
 }
 
+/* BL-033D.x.4B — Prelims Review against CVR (read-only) */
+.dev-prelims-review {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.dev-prelims-review__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.dev-prelims-review__intro h3 {
+  margin: 0 0 0.35rem;
+}
+
+.dev-prelims-review__intro p,
+.dev-prelims-review__support,
+.dev-prelims-review__semantics {
+  margin: 0;
+  color: var(--muted, #9aa4b2);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.dev-prelims-review__summary {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.dev-prelims-review__summary .dev-prelims__context + .dev-prelims__context {
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--line, rgba(255, 255, 255, 0.06));
+}
+
+.dev-prelims-review__hero {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.4;
+  color: var(--text, #e8edf5);
+}
+
+.dev-prelims-review__list,
+.dev-prelims-review__missing {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.dev-prelims-review__list h4,
+.dev-prelims-review__missing h4 {
+  margin: 0;
+}
+
+.dev-prelims-review__card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  background: rgba(12, 16, 22, 0.45);
+}
+
+.dev-prelims-review__card--below {
+  border-color: rgba(240, 198, 116, 0.35);
+}
+
+.dev-prelims-review__card--missing {
+  border-color: rgba(255, 148, 148, 0.28);
+}
+
+.dev-prelims-review__card-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.dev-prelims-review__card-head h4 {
+  margin: 0;
+}
+
+.dev-prelims-review__card-headline {
+  margin: 0.35rem 0 0;
+  color: var(--muted, #9aa4b2);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.dev-prelims-review__flag {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #f0c674;
+  border: 1px solid rgba(240, 198, 116, 0.35);
+  background: rgba(240, 198, 116, 0.1);
+}
+
+.dev-prelims-review__metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.55rem 0.85rem;
+  margin: 0;
+}
+
+.dev-prelims-review__metrics dt {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--muted, #9aa4b2);
+}
+
+.dev-prelims-review__metrics dd {
+  margin: 0.15rem 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.dev-prelims-review__delta--up {
+  color: var(--accent, #7cff6b);
+}
+
+.dev-prelims-review__delta--down {
+  color: #f0c674;
+}
+
+.dev-prelims-review__unresolved {
+  padding: 0.65rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid rgba(240, 198, 116, 0.3);
+  background: rgba(240, 198, 116, 0.08);
+}
+
+.dev-prelims-review__unresolved-banner,
+.dev-prelims-review__missing-banner {
+  margin: 0 0 0.45rem;
+  font-weight: 600;
+  color: #f0c674;
+}
+
+.dev-prelims-review__missing-banner {
+  color: #ffb4c0;
+}
+
+.dev-prelims-review__unresolved ul,
+.dev-prelims-review__included ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.dev-prelims-review__excluded-note {
+  color: var(--muted, #9aa4b2);
+}
+
+.dev-prelims-review__included h5 {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+}
+

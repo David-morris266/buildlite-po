@@ -111,3 +111,18 @@ export async function applyDevelopmentPrelimsSetup(developmentId, payload = {}) 
   );
   return handleJson(res);
 }
+
+/** BL-033D.x.4B — Read-only Prelims vs CVR commercial review (no adoption write). */
+export async function previewDevelopmentPrelimsAdoption(
+  developmentId,
+  { reportingMonth } = {}
+) {
+  const params = new URLSearchParams();
+  if (reportingMonth) params.set('reportingMonth', reportingMonth);
+  const query = params.toString();
+  const path = `/api/developments/${encodeURIComponent(developmentId)}/prelims-adoption/preview${
+    query ? `?${query}` : ''
+  }`;
+  const res = await fetch(buildUrl(path));
+  return handleJson(res);
+}
