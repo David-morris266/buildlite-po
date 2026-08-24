@@ -1,8 +1,10 @@
 /**
- * BL-031A / BL-031E.3B — CVR period API (/api/developments/:developmentId/cvr/...).
+ * BL-031A / BL-031E.3B / BL-033D.x.4C.1 — CVR period API
+ * (/api/developments/:developmentId/cvr/...).
  *
  * Approve & Lock persists an immutable snapshot atomically. Client historic
  * snapshot rendering is BL-031E.4.
+ * Prelims adoption is a Draft-only command (no client UI in x.4C.1).
  */
 
 const express = require("express");
@@ -22,6 +24,7 @@ const {
   submitCvrPeriod,
   upsertCostCodeInputs,
 } = require("../services/cvrPeriodRepository");
+const { adoptPrelimsForecasts } = require("../services/prelimsAdoptionApplyService");
 
 const router = express.Router({ mergeParams: true });
 
@@ -34,6 +37,14 @@ function sendResult(res, result, successStatus = 200, payloadKey) {
     if (result.duplicates) payload.duplicates = result.duplicates;
     if (result.code) payload.code = result.code;
     if (result.blockers) payload.blockers = result.blockers;
+    if (result.costCodeKey) payload.costCodeKey = result.costCodeKey;
+    if (result.periodStatus) payload.periodStatus = result.periodStatus;
+    if (result.expectedReportingMonth) {
+      payload.expectedReportingMonth = result.expectedReportingMonth;
+    }
+    if (result.actualReportingMonth) {
+      payload.actualReportingMonth = result.actualReportingMonth;
+    }
     return res.status(result.status || 400).json(payload);
   }
   if (payloadKey) {
@@ -279,6 +290,33 @@ router.patch("/cvr/periods/:periodId/inputs/:inputId", async (req, res) => {
   } catch (err) {
     console.error("[CVR] patch input error:", err);
     res.status(500).json({ message: "Failed to update CVR cost-code input." });
+  }
+});
+
+/**
+ * BL-033D.x.4C.1 — Atomic Prelims → Draft CVR adoption command.
+ * No client UI trigger in this slice.
+ */
+router.post("/cvr/periods/:periodId/prelims-adoption", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const body = req.body || {};
+    const result = await adoptPrelimsForecasts(
+      active.id,
+      req.params.developmentId,
+      req.params.periodId,
+      body,
+      { actor: provisionalActor(body) }
+    );
+    sendResult(res, result, 200, "adoption");
+  } catch (err) {
+    console.error("[CVR] prelims adoption error:", err);
+    res.status(500).json({ message: "Failed to adopt Prelims forecasts into CVR." });
   }
 });
 

@@ -663,6 +663,78 @@ async function findInputRow(clientId, periodId, inputId, dbClient = null, { forU
   return rows[0] || null;
 }
 
+/**
+ * Lock all cost-code inputs for a period (shared-tx primitive for multi-row writes).
+ */
+async function listCostCodeInputRowsForUpdate(clientId, periodId, dbClient) {
+  const { rows } = await runQuery(
+    dbClient,
+    `
+      SELECT *
+      FROM cvr_cost_code_inputs
+      WHERE client_id = $1 AND period_id = $2
+      ORDER BY cost_code_key ASC
+      FOR UPDATE
+    `,
+    [clientId, periodId]
+  );
+  return rows;
+}
+
+/**
+ * BL-033D.x.4C.1 — Minimum write set for Prelims adoption inside an open transaction.
+ * Reuses Draft optimistic-version semantics from patchCostCodeInput without opening a
+ * nested connection/transaction (so multi-code adoption stays atomic).
+ */
+async function updateCostCodeInputCommercialFields(
+  dbClient,
+  {
+    clientId,
+    inputId,
+    expectedVersion,
+    commercialAdjustment,
+    adjustmentReason,
+    displayMetadata,
+    actor = null,
+  } = {}
+) {
+  const updated = await runQuery(
+    dbClient,
+    `
+      UPDATE cvr_cost_code_inputs
+      SET
+        commercial_adjustment = $1,
+        adjustment_reason = $2,
+        display_metadata = $3::jsonb,
+        version = version + 1,
+        updated_at = NOW(),
+        updated_by = $4
+      WHERE client_id = $5 AND id = $6 AND version = $7
+      RETURNING *
+    `,
+    [
+      commercialAdjustment,
+      adjustmentReason,
+      JSON.stringify(displayMetadata || {}),
+      actor || null,
+      clientId,
+      inputId,
+      expectedVersion,
+    ]
+  );
+
+  if (!updated.rowCount) {
+    return {
+      ok: false,
+      status: 409,
+      code: "CVR_INPUT_CONFLICT",
+      message: "Cost-code input version conflict.",
+    };
+  }
+
+  return { ok: true, row: updated.rows[0], input: inputRowToDocument(updated.rows[0]) };
+}
+
 async function insertInput(dbClient, clientId, periodId, value, actor) {
   const { rows } = await runQuery(
     dbClient,
@@ -1042,4 +1114,9 @@ module.exports = {
   createCostCodeInput,
   patchCostCodeInput,
   upsertCostCodeInputs,
+  findPeriodRow,
+  listCostCodeInputRowsForUpdate,
+  updateCostCodeInputCommercialFields,
+  insertAudit,
+  developmentOr404,
 };

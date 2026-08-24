@@ -24,28 +24,35 @@ function provisionalActor(body = {}) {
   return body.updatedBy || body.createdBy || body.actor || null;
 }
 
-async function developmentOr404(clientId, developmentId) {
-  const development = await findDevelopmentById(clientId, developmentId);
+async function developmentOr404(clientId, developmentId, dbClient = null) {
+  const development = await findDevelopmentById(clientId, developmentId, dbClient);
   if (!development) {
     return { ok: false, status: 404, message: "Development not found." };
   }
   return { ok: true, development };
 }
 
-async function loadProgrammeDocument(clientId, developmentId, development) {
-  const row = await findProgrammeRow(clientId, developmentId);
+async function loadProgrammeDocument(
+  clientId,
+  developmentId,
+  development,
+  dbClient = null,
+  { forUpdate = false } = {}
+) {
+  const row = await findProgrammeRow(clientId, developmentId, dbClient, { forUpdate });
   return row
     ? programmeRowToDocument(row, developmentId)
     : seedProgrammeFromDevelopment(development);
 }
 
-async function resolveReportingMonth(clientId, developmentId, requested) {
+async function resolveReportingMonth(clientId, developmentId, requested, dbClient = null) {
   const explicit = toYearMonth(requested);
   if (explicit) {
     return { reportingMonth: explicit, source: "query" };
   }
   try {
-    const { rows } = await query(
+    const exec = dbClient ? dbClient.query.bind(dbClient) : query;
+    const { rows } = await exec(
       `
         SELECT period_key, status, to_char(reporting_month, 'YYYY-MM') AS reporting_month
         FROM cvr_periods
@@ -65,7 +72,7 @@ async function resolveReportingMonth(clientId, developmentId, requested) {
   }
 }
 
-async function listItemRows(clientId, developmentId, dbClient = null) {
+async function listItemRows(clientId, developmentId, dbClient = null, { forUpdate = false } = {}) {
   const exec = dbClient ? dbClient.query.bind(dbClient) : query;
   const { rows } = await exec(
     `
@@ -73,6 +80,7 @@ async function listItemRows(clientId, developmentId, dbClient = null) {
       FROM development_prelims_items
       WHERE client_id = $1 AND development_id = $2
       ORDER BY cost_code_key ASC, created_at ASC, id ASC
+      ${forUpdate ? "FOR UPDATE" : ""}
     `,
     [clientId, developmentId]
   );
@@ -123,12 +131,34 @@ function collectionDocument({
   };
 }
 
-async function listPrelimsItems(clientId, developmentId, { reportingMonth } = {}) {
-  const scoped = await developmentOr404(clientId, developmentId);
+/**
+ * List development Prelims items.
+ * Optional `dbClient` participates in the caller's transaction (BL-033D.x.4C.1 adoption).
+ * Optional `forUpdate` locks programme + Prelims rows on that connection.
+ */
+async function listPrelimsItems(
+  clientId,
+  developmentId,
+  { reportingMonth, dbClient = null, forUpdate = false } = {}
+) {
+  const scoped = await developmentOr404(clientId, developmentId, dbClient);
   if (!scoped.ok) return scoped;
-  const programme = await loadProgrammeDocument(clientId, developmentId, scoped.development);
-  const reporting = await resolveReportingMonth(clientId, developmentId, reportingMonth);
-  const rows = await listItemRows(clientId, developmentId);
+  const programme = await loadProgrammeDocument(
+    clientId,
+    developmentId,
+    scoped.development,
+    dbClient,
+    { forUpdate: Boolean(forUpdate && dbClient) }
+  );
+  const reporting = await resolveReportingMonth(
+    clientId,
+    developmentId,
+    reportingMonth,
+    dbClient
+  );
+  const rows = await listItemRows(clientId, developmentId, dbClient, {
+    forUpdate: Boolean(forUpdate && dbClient),
+  });
   const items = decorateItems(rows, programme, reporting.reportingMonth);
   return {
     ok: true,

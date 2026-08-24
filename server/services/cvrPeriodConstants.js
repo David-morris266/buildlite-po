@@ -20,6 +20,7 @@ const CVR_PERIOD_AUDIT_ACTIONS = {
   approved: "approved",
   locked: "locked",
   inputsUpserted: "inputs_upserted",
+  prelimsAdopted: "prelims_adopted",
 };
 
 const UUID_PATTERN =

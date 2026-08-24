@@ -35,8 +35,9 @@ async function findClassificationRow(clientId, costCodeKey, dbClient = null) {
   return rows[0] || null;
 }
 
-async function listClassifications(clientId) {
-  const { rows } = await query(
+async function listClassifications(clientId, dbClient = null) {
+  const exec = dbClient ? dbClient.query.bind(dbClient) : query;
+  const { rows } = await exec(
     `
       SELECT *
       FROM cost_code_classifications
