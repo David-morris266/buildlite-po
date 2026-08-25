@@ -6,7 +6,7 @@
 **Last server contract banked:** **BL-033D.x.4C.1 — BANKED** (`8bd66f6`; Prelims → Draft CVR adoption command).  
 **Last persistence slice implemented:** **BL-033D.x.3R COMPLETE** (`019` TIME offsets). x.4C/x.5 added **no** schema migration.  
 **CRITICAL:** P03 is **locked** with schema-v2 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. P04 is **Draft** `0f513191-cd25-4812-834f-37dcf66487e0` v1 with `reporting_month` **2026-08** and **no snapshot**. Controlled UAT left 5231 commercial adjustment **+£7,720** / accrual **£120** / input version **2**. P01/P02/P03 `reporting_month` remain NULL. P05 does not exist. Snapshot count remains **3**.  
-**NEXT:** Keep P04 Draft. Do not mark whole x.4C complete unless explicitly closed. Do not Submit or Approve & Lock P04. Do not create P05. Do not switch 5231 to TIME. Do not Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog.
+**NEXT:** Bank BL-037A after review. Keep P04 Draft. Do not Submit or Approve & Lock P04. Do not create P05. Do not add 5400 to P04 until BL-037B. Do not switch 5231 to TIME. Do not Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog.
 
 ---
 
@@ -277,12 +277,14 @@ Agreed future commercial rules (do **not** change live client calculations in BL
 | Table | Purpose |
 |-------|---------|
 | `cvr_periods` | One reporting period per development. Unique `(client_id, development_id, lower(period_key))`. Status `draft` → `submitted` → `locked`. At most one open (`draft` or `submitted`) period per development. |
-| `cvr_period_audit` | Workflow/edit evidence (created, patched, submitted, rejected, approved, locked, inputs_upserted). |
+| `cvr_period_audit` | Workflow/edit evidence (created, patched, submitted, rejected, approved, locked, inputs_upserted, prelims_adopted, **cost_code_added**). |
 | `cvr_cost_code_inputs` | QS overlays per period × `cost_code_key`, including `manual_accrual NUMERIC NOT NULL DEFAULT 0`. Unique `(client_id, period_id, cost_code_key)`. |
 | `ledger_import_batches` | Import provenance (file, profile, row counts, total net). |
 | `ledger_transactions` | Transaction-level actuals. Unique `(client_id, development_id, fingerprint)`. Optional `reverses_id`. |
 
 No snapshot tables in `009`. Legacy `payment_certificates` and BL-029/BL-030 matrix/certificate tables are unchanged.
+
+**BL-037A** adds no table. `POST .../cvr/periods/:periodId/cost-code-members` inserts one empty `cvr_cost_code_inputs` row for an active tenant Master code on a Draft period and writes `cvr_period_audit.action = cost_code_added`. Unique `(client_id, period_id, cost_code_key)` remains the duplicate gate. Period `version` is **not** incremented. Live commercial facts are not copied into overlay columns.
 
 ---
 

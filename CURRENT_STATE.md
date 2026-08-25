@@ -20,11 +20,11 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | **BL-033D.x.5 COMPLETE** (Prelims landing UX consolidation). Human visual UAT **PASSED**. |
-| Last persistence slice implemented | **BL-034B BANKED** at HEAD `b34ea60` — Simple Selling Costs proposal (`020`); human UAT **PASS**. Prior: **BL-033D.x.3R** (`019`). |
+| Last persistence slice implemented | **BL-037A IMPLEMENTED** (awaiting bank) — authoritative Draft CVR membership command. Prior banked HEAD: **BL-035A** constitution `a1e3d94`; **BL-034B** Simple Selling Costs (`020`). |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
 | Durable intent / deferred decisions | `docs/PRODUCT_CONSTITUTION.md` |
-| **NEXT** | Documentation recovery (this constitution). Do **not** start BL-034C/D, BL-035, BL-036, or BL-037 until instructed. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Internal commercial sequence after this file is banked: see constitution §6. |
+| **NEXT** | Bank **BL-037A** after review. Then **BL-037B** (Budget Import + Master picker). Do **not** start BL-037C, BL-034C/D, BL-035, or BL-036 until instructed. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** add 5400 to P04 until 037B UI. |
 
 ---
 
@@ -1145,9 +1145,26 @@ Controlled clone UAT prep (applied): migration **020**; Cost Code Master **5400*
 
 UX follow-up only (not implemented): optional live preview of unsaved Selling Costs assumption while typing.
 
+## BL-037A (Authoritative Draft CVR membership command) — IMPLEMENTED / AWAITING BANK
+
+Server-only command to add an **active tenant Cost Code Master** code as an empty `cvr_cost_code_inputs` member of an **existing Draft** CVR period.
+
+- `POST /api/developments/:developmentId/cvr/periods/:periodId/cost-code-members`
+- Body intent: `costCodeKey` + actor. Server ignores client budgets/adjustments/accruals/descriptions.
+- Overlay starts empty (`original_budget`/`current_budget` null, adjustment 0, accrual 0, version 1).
+- Audit action `cost_code_added`. Period version and lifecycle unchanged. No snapshot.
+- Duplicate → `409 COST_CODE_ALREADY_MEMBER` with existing overlay preserved.
+- Unknown Master → `404 COST_CODE_NOT_FOUND`. Inactive → `400 COST_CODE_INACTIVE`. Non-draft → `409 PERIOD_NOT_DRAFT`.
+- Classification is **not** a membership gate.
+- Live facts remain derived by the close engine; membership does not copy them into overlay.
+- Legacy `POST .../inputs` remains for existing overlay creates until BL-037B rewires consumers.
+- **No client UX. No Budget Import change. No 5400 on Test Site 1 P04. No P05.**
+
+HD-007 principles recorded in `docs/PRODUCT_CONSTITUTION.md`. HD-007 is **not** fully resolved until BL-037B human UAT. HD-002 unset.
+
 ## Next action
 
-**NEXT:** Bank **BL-035A** (`docs/PRODUCT_CONSTITUTION.md`) after review. **BL-034B is already HEAD.** Do **not** start BL-034C/D, BL-035 Trial Envelope, BL-036, or BL-037 in this slice. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning for later commercial slices: `docs/PRODUCT_CONSTITUTION.md`.
+**NEXT:** Bank **BL-037A** after review. Then implement **BL-037B** (Budget Import + Cost Code Master picker consume the membership command). Do **not** start BL-037C, BL-034C/D, BL-035 Trial Envelope, or BL-036 until instructed. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** add 5400 to P04 until 037B. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning: `docs/PRODUCT_CONSTITUTION.md`.
 
 Do **not** alter P01/P02/P03 `reporting_month` except by a future explicit historic-correction feature. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`. Do not delete P04 `0f513191-cd25-4812-834f-37dcf66487e0` except by a later controlled commercial task.
 

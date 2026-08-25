@@ -47,6 +47,22 @@ function stale(row) {
   };
 }
 
+async function findCostCodeRowByCode(clientId, code, dbClient = null) {
+  const identity = String(code || "").trim();
+  if (!identity) return null;
+  const exec = dbClient ? dbClient.query.bind(dbClient) : query;
+  const { rows } = await exec(
+    `
+      SELECT *
+      FROM cost_codes
+      WHERE client_id = $1 AND lower(btrim(code)) = lower(btrim($2))
+      LIMIT 1
+    `,
+    [clientId, identity]
+  );
+  return rows[0] || null;
+}
+
 async function findCostCodeRow(clientId, id, dbClient = null) {
   if (!isUuid(id)) return null;
   const exec = dbClient ? dbClient.query.bind(dbClient) : query;
@@ -250,6 +266,7 @@ async function setCostCodeActive(clientId, id, body = {}, { actor } = {}) {
 
 module.exports = {
   createCostCode,
+  findCostCodeRowByCode,
   getCostCode,
   listCostCodes,
   provisionalActor,

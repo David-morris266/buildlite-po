@@ -1117,6 +1117,8 @@ module.exports = {
   findPeriodRow,
   listCostCodeInputRowsForUpdate,
   updateCostCodeInputCommercialFields,
+  insertInput,
   insertAudit,
   developmentOr404,
+  isUniqueViolation,
 };

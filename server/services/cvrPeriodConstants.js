@@ -21,6 +21,7 @@ const CVR_PERIOD_AUDIT_ACTIONS = {
   locked: "locked",
   inputsUpserted: "inputs_upserted",
   prelimsAdopted: "prelims_adopted",
+  costCodeAdded: "cost_code_added",
 };
 
 const UUID_PATTERN =

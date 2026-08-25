@@ -1,10 +1,11 @@
 /**
- * BL-031A / BL-031E.3B / BL-033D.x.4C.1 — CVR period API
+ * BL-031A / BL-031E.3B / BL-033D.x.4C.1 / BL-037A — CVR period API
  * (/api/developments/:developmentId/cvr/...).
  *
  * Approve & Lock persists an immutable snapshot atomically. Client historic
  * snapshot rendering is BL-031E.4.
  * Prelims adoption is a Draft-only command (no client UI in x.4C.1).
+ * BL-037A membership is a Draft-only Master-backed empty overlay command.
  */
 
 const express = require("express");
@@ -25,6 +26,7 @@ const {
   upsertCostCodeInputs,
 } = require("../services/cvrPeriodRepository");
 const { adoptPrelimsForecasts } = require("../services/prelimsAdoptionApplyService");
+const { addDraftCvrCostCodeMember } = require("../services/cvrMembershipService");
 
 const router = express.Router({ mergeParams: true });
 
@@ -243,6 +245,33 @@ router.put("/cvr/periods/:periodId/inputs", async (req, res) => {
   } catch (err) {
     console.error("[CVR] upsert inputs error:", err);
     res.status(500).json({ message: "Failed to upsert CVR cost-code inputs." });
+  }
+});
+
+/**
+ * BL-037A — Authoritative Draft CVR membership. Empty overlay from Cost Code
+ * Master. Does not replace POST /inputs (legacy overlay create).
+ */
+router.post("/cvr/periods/:periodId/cost-code-members", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const body = req.body || {};
+    const result = await addDraftCvrCostCodeMember(
+      active.id,
+      req.params.developmentId,
+      req.params.periodId,
+      body,
+      { actor: provisionalActor(body) }
+    );
+    sendResult(res, result, 201, "input");
+  } catch (err) {
+    console.error("[CVR] add cost-code member error:", err);
+    res.status(500).json({ message: "Failed to add CVR cost-code member." });
   }
 });
 
