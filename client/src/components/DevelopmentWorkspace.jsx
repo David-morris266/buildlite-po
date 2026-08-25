@@ -45,6 +45,7 @@ import CVRSummaryPage from './CVRSummaryPage';
 import CVRRegister from './CVRRegister';
 import CVRWorkspace from './CVRWorkspace';
 import RevenueWorkspace from './RevenueWorkspace';
+import DevelopmentSellingCostsWorkspace from './DevelopmentSellingCostsWorkspace';
 import DevelopmentPrelimsWorkspace from './DevelopmentPrelimsWorkspace';
 import SubcontractPackageWorkspace from './SubcontractPackageWorkspace';
 import PackageWorkspaceNotFound from './PackageWorkspaceNotFound';
@@ -859,7 +860,11 @@ export default function DevelopmentWorkspace({
         </div>
       ) : null}
 
-      {activeTab !== 'cvr' && activeTab !== 'revenue' && activeTab !== 'prelims' && !isCvrPeriodOpen ? (
+      {activeTab !== 'cvr' &&
+      activeTab !== 'revenue' &&
+      activeTab !== 'selling-costs' &&
+      activeTab !== 'prelims' &&
+      !isCvrPeriodOpen ? (
         <SummaryDashboard cards={model.summaryCards} />
       ) : null}
 
@@ -946,6 +951,10 @@ export default function DevelopmentWorkspace({
             refreshToken={revenueRefresh}
             onRevenueChanged={handleRevenueChanged}
           />
+        ) : null}
+
+        {activeTab === 'selling-costs' ? (
+          <DevelopmentSellingCostsWorkspace developmentId={model.id} />
         ) : null}
 
         {activeTab === 'prelims' ? (

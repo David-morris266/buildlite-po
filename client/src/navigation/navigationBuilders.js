@@ -11,6 +11,7 @@ const DEVELOPMENT_TAB_LABELS = {
   commercial: 'Commercial Events',
   ledger: 'Ledger',
   revenue: 'Revenue',
+  'selling-costs': 'Selling Costs',
   prelims: 'Prelims',
   cvr: 'CVRs',
 };

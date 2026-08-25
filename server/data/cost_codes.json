@@ -1146,6 +1146,12 @@
     "Element": "CIL"
   },
   {
+    "Cost Code": 5400,
+    "Sub-Heading": "Sales",
+    "Trade": "Consultant",
+    "Element": "Selling Costs — General Allowance"
+  },
+  {
     "Cost Code": 6100,
     "Sub-Heading": "Sales",
     "Trade": "Revenue",

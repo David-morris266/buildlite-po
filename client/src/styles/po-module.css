@@ -10531,3 +10531,149 @@
   margin: 0 0 0.5rem;
 }
 
+/* BL-034B — Simple Selling Costs */
+.dev-selling-costs {
+  display: grid;
+  gap: 1.1rem;
+  max-width: 40rem;
+}
+
+.dev-selling-costs__banner {
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(30, 41, 59, 0.55);
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+}
+
+.dev-selling-costs__banner strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #f8fafc;
+}
+
+.dev-selling-costs__banner p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.dev-selling-costs__status {
+  display: inline-flex;
+  width: fit-content;
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.dev-selling-costs__status--default {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fde68a;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
+.dev-selling-costs__status--saved {
+  background: rgba(52, 211, 153, 0.16);
+  color: #a7f3d0;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.dev-selling-costs__summary,
+.dev-selling-costs__destination {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.dev-selling-costs__summary div,
+.dev-selling-costs__destination div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.dev-selling-costs__summary dt,
+.dev-selling-costs__destination dt {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.dev-selling-costs__summary dd,
+.dev-selling-costs__destination dd {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.dev-selling-costs__copy {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.45;
+  font-size: 0.92rem;
+}
+
+.dev-selling-costs__form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.dev-selling-costs__field {
+  display: grid;
+  gap: 0.35rem;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+}
+
+.dev-selling-costs__percent-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dev-selling-costs__percent-input input {
+  width: 6.5rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.65);
+  color: #f8fafc;
+}
+
+.dev-selling-costs__actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.dev-selling-costs__actions button {
+  padding: 0.5rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  background: rgba(37, 99, 235, 0.35);
+  color: #dbeafe;
+  cursor: pointer;
+}
+
+.dev-selling-costs__actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.dev-selling-costs__warning,
+.dev-selling-costs__error {
+  margin: 0;
+  color: #fca5a5;
+}
+
+.dev-selling-costs__info {
+  margin: 0;
+  color: #a7f3d0;
+}
+
+.dev-selling-costs__muted {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.88rem;
+}
+

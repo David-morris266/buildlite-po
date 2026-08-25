@@ -73,6 +73,9 @@ vi.mock('./PurchaseLedger', () => ({ default: () => <div>Ledger panel</div> }));
 vi.mock('./RevenueWorkspace', () => ({
   default: () => <div data-testid="revenue-panel">Revenue panel</div>,
 }));
+vi.mock('./DevelopmentSellingCostsWorkspace', () => ({
+  default: () => <div data-testid="selling-costs-panel">Selling Costs panel</div>,
+}));
 vi.mock('./DevelopmentPrelimsWorkspace', () => ({
   default: () => <div data-testid="prelims-panel">Prelims panel</div>,
 }));
@@ -184,5 +187,17 @@ describe('DevelopmentWorkspace stability guards', () => {
     clickTab('Revenue');
 
     expect(document.querySelector('[data-testid="revenue-panel"]')).not.toBeNull();
+  });
+
+  it('switches to Selling Costs when selecting the Selling Costs tab', async () => {
+    renderWorkspace();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    clickTab('Selling Costs');
+
+    expect(document.querySelector('[data-testid="selling-costs-panel"]')).not.toBeNull();
   });
 });
