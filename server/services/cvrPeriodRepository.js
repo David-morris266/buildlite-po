@@ -735,6 +735,42 @@ async function updateCostCodeInputCommercialFields(
   return { ok: true, row: updated.rows[0], input: inputRowToDocument(updated.rows[0]) };
 }
 
+/**
+ * BL-037B — Budget-only write. Does not touch adjustment, accrual, metadata,
+ * or Master identity fields.
+ */
+async function updateCostCodeInputBudgets(
+  dbClient,
+  { clientId, inputId, expectedVersion, originalBudget, currentBudget, actor = null } = {}
+) {
+  const updated = await runQuery(
+    dbClient,
+    `
+      UPDATE cvr_cost_code_inputs
+      SET
+        original_budget = $1,
+        current_budget = $2,
+        version = version + 1,
+        updated_at = NOW(),
+        updated_by = $3
+      WHERE client_id = $4 AND id = $5 AND version = $6
+      RETURNING *
+    `,
+    [originalBudget, currentBudget, actor || null, clientId, inputId, expectedVersion]
+  );
+
+  if (!updated.rowCount) {
+    return {
+      ok: false,
+      status: 409,
+      code: "CVR_INPUT_CONFLICT",
+      message: "Cost-code input version conflict.",
+    };
+  }
+
+  return { ok: true, row: updated.rows[0], input: inputRowToDocument(updated.rows[0]) };
+}
+
 async function insertInput(dbClient, clientId, periodId, value, actor) {
   const { rows } = await runQuery(
     dbClient,
@@ -1117,6 +1153,7 @@ module.exports = {
   findPeriodRow,
   listCostCodeInputRowsForUpdate,
   updateCostCodeInputCommercialFields,
+  updateCostCodeInputBudgets,
   insertInput,
   insertAudit,
   developmentOr404,

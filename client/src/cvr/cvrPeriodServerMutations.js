@@ -7,9 +7,11 @@
 
 import {
   CvrPeriodApiError,
+  addCvrCostCodeMember,
   approveCvrPeriodForDevelopment,
   createCvrPeriodForDevelopment,
   createCvrPeriodInput,
+  importCvrBudget,
   patchCvrPeriodForDevelopment,
   patchCvrPeriodInput,
   rejectCvrPeriodForDevelopment,
@@ -26,27 +28,23 @@ export const CVR_PERIOD_VERSION_CONFLICT_MESSAGE =
   'This CVR period was changed elsewhere. Refresh and retry.';
 
 function mapApiError(error) {
-  if (error instanceof CvrPeriodApiError) {
-    if (error.status === 409) {
-      return {
-        ok: false,
-        errors: [error.body?.message || CVR_PERIOD_VERSION_CONFLICT_MESSAGE],
-        status: 409,
-        period: error.body?.period || null,
-        input: error.body?.input || null,
-      };
-    }
-    return {
-      ok: false,
-      errors: [error.body?.message || error.message || 'CVR period server request failed'],
-      status: error.status,
-      period: error.body?.period || null,
-      input: error.body?.input || null,
-    };
-  }
+  const body = error instanceof CvrPeriodApiError ? error.body : null;
+  const status = error instanceof CvrPeriodApiError ? error.status : 0;
+  const message =
+    body?.message ||
+    (status === 409 ? CVR_PERIOD_VERSION_CONFLICT_MESSAGE : null) ||
+    error.message ||
+    'CVR period server request failed';
   return {
     ok: false,
-    errors: [error?.message || 'CVR period server request failed'],
+    errors: [message],
+    status,
+    code: body?.code || null,
+    period: body?.period || null,
+    input: body?.input || null,
+    unknownCodes: body?.unknownCodes || null,
+    inactiveCodes: body?.inactiveCodes || null,
+    duplicateCodes: body?.duplicateCodes || null,
   };
 }
 
@@ -134,6 +132,29 @@ export async function patchServerCvrPeriodInput(developmentId, periodId, inputId
     const input = await patchCvrPeriodInput(developmentId, periodId, inputId, payload);
     if (input) upsertCachedCvrInput(periodId, input);
     return { ok: true, input };
+  } catch (error) {
+    return mapApiError(error);
+  }
+}
+
+export async function addServerCvrCostCodeMember(developmentId, periodId, payload = {}) {
+  try {
+    const input = await addCvrCostCodeMember(developmentId, periodId, payload);
+    if (input) upsertCachedCvrInput(periodId, input);
+    return { ok: true, input };
+  } catch (error) {
+    return mapApiError(error);
+  }
+}
+
+export async function importServerCvrBudget(developmentId, periodId, payload = {}) {
+  try {
+    const result = await importCvrBudget(developmentId, periodId, payload);
+    const inputs = Array.isArray(result?.inputs) ? result.inputs : [];
+    for (const input of inputs) {
+      if (input) upsertCachedCvrInput(periodId, input);
+    }
+    return { ok: true, ...result };
   } catch (error) {
     return mapApiError(error);
   }

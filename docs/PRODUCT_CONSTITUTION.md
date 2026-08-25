@@ -91,7 +91,7 @@ Importance: **V1 blocker** (hosted trial) · **V1 important** · **post-pilot** 
 | PC-005 | Unsaved % live preview | CURRENT_STATE BL-034B UX note | **Not implemented.** | post-pilot | — | UX follow-up | Optional; not commercial maths. |
 | PC-006 | Prelims engine + adopt | Doc 42 BL-PB-039 (High); BL-033D.* | **Adopt implemented** (x.4C). Landing UX x.5 done. | — | — | Core done | Remaining: basis-select clip; QUANTITY/MILESTONE/… drivers; Standard v2 must not mutate v1 copies. |
 | PC-007 | Conceptual stack `max(system, engine)+QS` | BL-033A | **Not an invariant.** Live Prelims adopt uses **replacement adjustment**. | needs human decision | HD-002 | Do not revive silently | Recorded so 034C does not copy the unused formula. |
-| PC-008 | CVR destination membership (add missing cost code to Draft) | Recovery audit; Prelims x.4B/C contract | **BL-037A implemented** (server membership primitive; awaiting bank). **BL-037B/C not started.** Prelims Adopt still will not create rows. Worksheet `addCostCentre` remains the legacy overlay path until 037B. | V1 important | HD-007 | 037B then 037C then honest 034C | 5400 is classified SELLING and is **not** on P04. UAT-CC-001 Prelims £ likewise off-CVR. HD-007 not fully resolved until 037B human UAT. |
+| PC-008 | CVR destination membership (add missing cost code to Draft) | Recovery audit; Prelims x.4B/C contract | **BL-037A banked.** **BL-037B implemented; human UAT PASS; awaiting bank.** **BL-037C not started.** Prelims Adopt still will not create rows. | V1 important | HD-007 | 037C then honest 034C | 5400 is on Test Site 1 P04 as an **empty** overlay after Manual Add UAT. Proposal £ is not copied. |
 | PC-009 | Pending variations in Forecast Liability | Design Authority Docs 2–3 | System forecast = **approved** PO net + approved contract-value CEs only. | needs human decision | HD-001 | **No formula change** until decided | Original: Forecast Liability = approved commitment **+ pending variations**. |
 | PC-010 | Selling Costs adoption formula | Prelims x.4C pattern vs unused BL-033A stack | **Unset** for Selling Costs. 5400 typically has **no commitment**. | needs human decision | HD-002 | Settle **before** 034C writes | Replacement-adjustment on a £0 system forecast is a different commercial meaning than Prelims on 5231. |
 | PC-011 | Commercial Journals | Doc 43A; Doc 45 | Cost-centre drawer **Future**. | V1 important | After core commercial completion | Candidate P2 | Explain timing differences **without** rewriting budget/commitment/cert/ledger. Differentiator, not a stub. |
@@ -158,19 +158,19 @@ Doc 48 treats incentives/extras as **revenue adjustments**. Repo: CE subcategory
 
 ### HD-007 — What establishes CVR membership for a development period?
 
-**Settled principles (BL-037A server primitive; 037B human UAT still required before this HD is fully resolved):**
+**Settled principles (BL-037A banked; BL-037B implemented; both 037B human UAT routes PASSED, awaiting bank):**
 
 Master eligibility, live CVR visibility, and period overlay membership are different facts.
 
 - **Master eligibility:** the code exists and is **active** on the current tenant Cost Code Master. New deliberate membership requires this. Classification (STANDARD_CVR / PRELIMS / SELLING / BUILD / …) does **not** grant membership and does **not** auto-populate sites.
 - **Live visibility:** approved PO/CE commitment, certified package value, and ledger actuals appear on the live CVR / close candidate through the existing **fact union**. Booked facts do **not** silently create `cvr_cost_code_inputs` overlays.
 - **Period overlay membership:** a Draft `cvr_cost_code_inputs` row. This is what is editable (budget / adjustment / accrual), adoptable, audited as membership, and copied by next-period carry-forward (BL-031F remains authoritative).
-- **Valid budget import** of Master codes **is** a membership-establishing structure decision for the **current Draft** (wired in BL-037B; not all Master codes).
-- **Manual QS Add** creates membership via the same Master-backed command (picker in BL-037B).
+- **Valid budget import** of Master codes **is** a membership-establishing structure decision for the **current Draft** (BL-037B; not all Master codes). Unknown/inactive codes fail closed. Omitted members are not deleted.
+- **Manual QS Add** creates membership via the same Master-backed command and searchable picker (BL-037B).
 - **Proposals** (Prelims / Selling Costs) **never** silently create membership. BL-037C will expose missing-member / can-add. Adopt stays fail-closed until an input exists.
 - New membership is **Draft-only**. Locked/submitted periods and snapshots are untouched.
 
-**Not fully resolved until BL-037B** proves the structural UI routes (Master picker + budget import) on a Draft CVR. Do not treat 037A alone as complete HD-007 UAT. 5400 is still absent from Test Site 1 P04 until that UI exists.
+**Structural UI routes proven (BL-037B human UAT PASS, 25 Aug 2026):** Manual Add of 5400 on Test Site 1 P04 (empty overlay; proposal remains separate); Budget Import on throwaway P01 (1110/2300/5105 including explicit £0; unknown 9999 blocked with zero writes). HD-002 remains unset. BL-037C (proposal missing-member / can-add) is **not started**.
 
 **HD-002 is separate** and remains unset.
 
@@ -201,8 +201,8 @@ Do not Save migrated Admin cost-code rows whose server `reporting_group` is abse
 ### Internal / single-operator commercial development (current recommendation)
 
 ```
-BL-037A  Authoritative Draft CVR membership command  (PC-008; HD-007 principles recorded; 037B UAT still required)
-  → BL-037B  Budget Import + Master picker consume 037A
+BL-037A  Authoritative Draft CVR membership command  BANKED
+  → BL-037B  Budget Import + Master picker consume 037A  (implemented; human UAT PASS; awaiting bank)
   → BL-037C  Proposal missing-member / can-add read-model
   → settle  HD-002 Selling Costs formula          (and HD-008 numbering)
   → BL-034C Selling Costs Review / Adopt          (as a pair unless HD-008 splits them)
@@ -211,7 +211,7 @@ BL-037A  Authoritative Draft CVR membership command  (PC-008; HD-007 principles 
 
 **BL-036** (persisted Commercial Structure / admin setup) is **not** a hard prerequisite of BL-037 if destination codes already exist on Cost Code Master. Place BL-036 when customer Admin setup or the reporting_group save trap (HD-011) is in the critical path — typically **parallel** to 034C or **after** Simple Selling Costs is in CVR, not before 037 by default.
 
-Do **not** start 034C/D, 035, 036, 037B, or 037C until this 037A slice is banked. Keep P04 Draft. Do not create P05.
+Do **not** start 034C/D, 035, 036, or 037C until this 037B slice is banked. Keep P04 Draft. Do not create P05.
 
 ### Before hosted external / multi-user trial
 

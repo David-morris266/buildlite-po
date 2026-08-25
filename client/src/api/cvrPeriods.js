@@ -158,3 +158,27 @@ export async function patchCvrPeriodInput(developmentId, periodId, inputId, payl
   });
   return handleJson(res);
 }
+
+export async function addCvrCostCodeMember(developmentId, periodId, payload = {}) {
+  const res = await fetch(
+    buildUrl(`${periodsUrl(developmentId, periodId)}/cost-code-members`),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(withActor(payload)),
+    }
+  );
+  return handleJson(res);
+}
+
+export async function importCvrBudget(developmentId, periodId, payload = {}) {
+  const res = await fetch(
+    buildUrl(`${periodsUrl(developmentId, periodId)}/budget-import`),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(withActor(payload)),
+    }
+  );
+  return handleJson(res);
+}

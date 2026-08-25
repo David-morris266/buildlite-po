@@ -22,6 +22,7 @@ const CVR_PERIOD_AUDIT_ACTIONS = {
   inputsUpserted: "inputs_upserted",
   prelimsAdopted: "prelims_adopted",
   costCodeAdded: "cost_code_added",
+  budgetImported: "budget_imported",
 };
 
 const UUID_PATTERN =

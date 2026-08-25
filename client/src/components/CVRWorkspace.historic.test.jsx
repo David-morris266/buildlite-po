@@ -148,4 +148,31 @@ describe('CVRWorkspace historic snapshot (BL-031E.4)', () => {
     expect(text).not.toMatch(/50,250/);
     expect(text).not.toContain('Import Budget');
   });
+
+  it('does not expose Add Cost Code or Import Budget on a submitted period', async () => {
+    seedMockCvrPeriod(
+      DEV.id,
+      buildServerCvrPeriodFixture({
+        id: PERIOD_ID,
+        developmentId: DEV.id,
+        status: 'submitted',
+        snapshot: null,
+      })
+    );
+
+    await act(async () => {
+      root.render(
+        <CVRWorkspace
+          development={DEV}
+          periodKey="P01"
+          certificatesReady
+        />
+      );
+    });
+    await flush();
+    await flush();
+
+    expect(container.textContent).not.toContain('Add Cost Code');
+    expect(container.textContent).not.toContain('Import Budget');
+  });
 });

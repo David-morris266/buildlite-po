@@ -6,6 +6,7 @@
  * snapshot rendering is BL-031E.4.
  * Prelims adoption is a Draft-only command (no client UI in x.4C.1).
  * BL-037A membership is a Draft-only Master-backed empty overlay command.
+ * BL-037B budget import applies Master-validated budgets atomically.
  */
 
 const express = require("express");
@@ -27,6 +28,7 @@ const {
 } = require("../services/cvrPeriodRepository");
 const { adoptPrelimsForecasts } = require("../services/prelimsAdoptionApplyService");
 const { addDraftCvrCostCodeMember } = require("../services/cvrMembershipService");
+const { importDraftCvrBudget } = require("../services/cvrBudgetImportService");
 
 const router = express.Router({ mergeParams: true });
 
@@ -41,6 +43,10 @@ function sendResult(res, result, successStatus = 200, payloadKey) {
     if (result.blockers) payload.blockers = result.blockers;
     if (result.costCodeKey) payload.costCodeKey = result.costCodeKey;
     if (result.periodStatus) payload.periodStatus = result.periodStatus;
+    if (result.unknownCodes) payload.unknownCodes = result.unknownCodes;
+    if (result.inactiveCodes) payload.inactiveCodes = result.inactiveCodes;
+    if (result.duplicateCodes) payload.duplicateCodes = result.duplicateCodes;
+    if (result.invalidBudget) payload.invalidBudget = result.invalidBudget;
     if (result.expectedReportingMonth) {
       payload.expectedReportingMonth = result.expectedReportingMonth;
     }
@@ -272,6 +278,29 @@ router.post("/cvr/periods/:periodId/cost-code-members", async (req, res) => {
   } catch (err) {
     console.error("[CVR] add cost-code member error:", err);
     res.status(500).json({ message: "Failed to add CVR cost-code member." });
+  }
+});
+
+router.post("/cvr/periods/:periodId/budget-import", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const body = req.body || {};
+    const result = await importDraftCvrBudget(
+      active.id,
+      req.params.developmentId,
+      req.params.periodId,
+      body,
+      { actor: provisionalActor(body) }
+    );
+    sendResult(res, result);
+  } catch (err) {
+    console.error("[CVR] budget import error:", err);
+    res.status(500).json({ message: "Failed to import CVR budget." });
   }
 });
 

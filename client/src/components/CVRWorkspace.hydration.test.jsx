@@ -101,5 +101,7 @@ describe('CVRWorkspace input hydration (BL-031B)', () => {
     expect(container.textContent).toContain('5231');
     expect(container.textContent).toContain('Cleaning');
     expect(container.textContent).not.toContain('Loading CVR data…');
+    expect(container.textContent).toContain('Add Cost Code');
+    expect(container.textContent).toContain('Import Budget');
   });
 });

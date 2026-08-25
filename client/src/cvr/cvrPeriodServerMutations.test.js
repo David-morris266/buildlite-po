@@ -6,8 +6,11 @@ vi.mock('../api/cvrPeriods', () => import('../test/mockCvrPeriodApi'));
 import {
   CvrPeriodApiError,
   getCvrMutationCallCounts,
+  getLastCvrAddMemberPayload,
+  getLastCvrBudgetImportPayload,
   resetCvrPeriodApiStore,
   seedMockCvrPeriod,
+  setCvrAddMemberReject,
   setCvrMutationReject,
   buildServerCvrPeriodFixture,
 } from '../test/mockCvrPeriodApi';
@@ -17,9 +20,11 @@ import {
   getCachedCvrPeriods,
 } from './cvrPeriodServerCache';
 import {
+  addServerCvrCostCodeMember,
   approveServerCvrPeriod,
   createServerCvrPeriod,
   createServerCvrPeriodInput,
+  importServerCvrBudget,
   patchServerCvrPeriod,
   patchServerCvrPeriodInput,
   rejectServerCvrPeriod,
@@ -141,5 +146,44 @@ describe('CVR period server mutations (BL-031C)', () => {
     expect(result.ok).toBe(false);
     expect(result.status).toBe(409);
     expect(result.errors[0]).toMatch(/version conflict/i);
+  });
+
+  it('adds a Draft member with costCodeKey intent only', async () => {
+    const created = await createServerCvrPeriod(DEV, { periodKey: 'P01' });
+    const added = await addServerCvrCostCodeMember(DEV, created.period.id, {
+      costCodeKey: '5400',
+      actor: 'QS',
+    });
+    expect(added.ok).toBe(true);
+    expect(added.input.costCodeKey).toBe('5400');
+    expect(added.input.originalBudget).toBeNull();
+    expect(added.input.commercialAdjustment).toBe(0);
+    expect(getLastCvrAddMemberPayload().payload.costCodeKey).toBe('5400');
+    expect(getLastCvrAddMemberPayload().payload.originalBudget).toBeUndefined();
+    expect(getCachedCvrInputs(created.period.id).some((item) => item.costCodeKey === '5400')).toBe(
+      true
+    );
+  });
+
+  it('surfaces COST_CODE_ALREADY_MEMBER as a 409', async () => {
+    const created = await createServerCvrPeriod(DEV, { periodKey: 'P01' });
+    setCvrAddMemberReject();
+    const added = await addServerCvrCostCodeMember(DEV, created.period.id, {
+      costCodeKey: '5400',
+    });
+    expect(added.ok).toBe(false);
+    expect(added.status).toBe(409);
+    expect(added.code).toBe('COST_CODE_ALREADY_MEMBER');
+  });
+
+  it('imports budget rows through the server command', async () => {
+    const created = await createServerCvrPeriod(DEV, { periodKey: 'P01' });
+    const imported = await importServerCvrBudget(DEV, created.period.id, {
+      rows: [{ costCodeKey: '1110', originalBudget: 25000, currentBudget: 25000 }],
+    });
+    expect(imported.ok).toBe(true);
+    expect(imported.created).toBe(1);
+    expect(getLastCvrBudgetImportPayload().payload.rows[0].costCodeKey).toBe('1110');
+    expect(getCachedCvrInputs(created.period.id)[0].originalBudget).toBe(25000);
   });
 });

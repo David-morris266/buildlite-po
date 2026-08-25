@@ -14,9 +14,11 @@ import {
   getCachedCvrPeriodByKey,
 } from './cvrPeriodServerCache';
 import {
+  addServerCvrCostCodeMember,
   approveServerCvrPeriod,
   createServerCvrPeriod,
   createServerCvrPeriodInput,
+  importServerCvrBudget,
   patchServerCvrPeriod,
   patchServerCvrPeriodInput,
   rejectServerCvrPeriod,
@@ -352,4 +354,23 @@ export async function patchCostCentreOnServer(developmentId, periodKey, centre) 
   );
   if (!result.ok) return result;
   return { ok: true, costCentre: result.input };
+}
+
+export async function addCostCodeMemberOnServer(developmentId, periodKey, costCodeKey, actor) {
+  const resolved = requireCachedPeriod(developmentId, periodKey);
+  if (!resolved.ok) return resolved;
+  const key = String(costCodeKey || '').trim();
+  if (!key) return { ok: false, errors: ['Cost code is required.'] };
+  const result = await addServerCvrCostCodeMember(developmentId, resolved.period.id, {
+    costCodeKey: key,
+    actor,
+  });
+  if (!result.ok) return result;
+  return { ok: true, input: result.input, costCentre: result.input };
+}
+
+export async function importBudgetOnServer(developmentId, periodKey, rows, actor) {
+  const resolved = requireCachedPeriod(developmentId, periodKey);
+  if (!resolved.ok) return resolved;
+  return importServerCvrBudget(developmentId, resolved.period.id, { rows, actor });
 }

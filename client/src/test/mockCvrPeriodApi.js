@@ -28,6 +28,14 @@ const store = {
   createInputCallCount: 0,
   upsertInputsCallCount: 0,
   patchInputCallCount: 0,
+  addMemberCallCount: 0,
+  budgetImportCallCount: 0,
+  lastAddMemberPayload: null,
+  lastBudgetImportPayload: null,
+  addMemberShouldReject: false,
+  addMemberRejectError: null,
+  budgetImportShouldReject: false,
+  budgetImportRejectError: null,
 };
 
 export class CvrPeriodApiError extends Error {
@@ -78,6 +86,14 @@ export function resetCvrPeriodApiStore() {
   store.createInputCallCount = 0;
   store.upsertInputsCallCount = 0;
   store.patchInputCallCount = 0;
+  store.addMemberCallCount = 0;
+  store.budgetImportCallCount = 0;
+  store.lastAddMemberPayload = null;
+  store.lastBudgetImportPayload = null;
+  store.addMemberShouldReject = false;
+  store.addMemberRejectError = null;
+  store.budgetImportShouldReject = false;
+  store.budgetImportRejectError = null;
 }
 
 export function seedMockCvrPeriod(developmentId, period) {
@@ -132,6 +148,8 @@ export function getCvrMutationCallCounts() {
     createInput: store.createInputCallCount,
     upsertInputs: store.upsertInputsCallCount,
     patchInput: store.patchInputCallCount,
+    addMember: store.addMemberCallCount,
+    budgetImport: store.budgetImportCallCount,
     total:
       store.createCallCount +
       store.patchCallCount +
@@ -140,7 +158,9 @@ export function getCvrMutationCallCounts() {
       store.approveCallCount +
       store.createInputCallCount +
       store.upsertInputsCallCount +
-      store.patchInputCallCount,
+      store.patchInputCallCount +
+      store.addMemberCallCount +
+      store.budgetImportCallCount,
   };
 }
 
@@ -752,4 +772,150 @@ export async function patchCvrPeriodInput(developmentId, periodId, inputId, payl
   }
   const next = { ...existing, ...payload, id: inputId, periodId, version: existing.version + 1 };
   return saveInput(periodId, next);
+}
+
+export function setCvrAddMemberReject(error = null) {
+  store.addMemberShouldReject = true;
+  store.addMemberRejectError =
+    error ||
+    new CvrPeriodApiError('A cost-code input already exists for this period.', {
+      status: 409,
+      body: {
+        code: 'COST_CODE_ALREADY_MEMBER',
+        message: 'A cost-code input already exists for this period.',
+      },
+    });
+}
+
+export function setCvrBudgetImportReject(error = null) {
+  store.budgetImportShouldReject = true;
+  store.budgetImportRejectError =
+    error ||
+    new CvrPeriodApiError('Budget cannot be imported.', {
+      status: 400,
+      body: {
+        code: 'COST_CODE_NOT_FOUND',
+        message: 'Budget cannot be imported.',
+      },
+    });
+}
+
+export function getLastCvrAddMemberPayload() {
+  return store.lastAddMemberPayload ? clone(store.lastAddMemberPayload) : null;
+}
+
+export function getLastCvrBudgetImportPayload() {
+  return store.lastBudgetImportPayload ? clone(store.lastBudgetImportPayload) : null;
+}
+
+export async function addCvrCostCodeMember(developmentId, periodId, payload = {}) {
+  store.addMemberCallCount += 1;
+  store.lastAddMemberPayload = clone({ developmentId, periodId, payload });
+  if (store.addMemberShouldReject) throw store.addMemberRejectError;
+  assertMutationAllowed();
+  const period = findPeriod(developmentId, periodId);
+  if (!period) throw new CvrPeriodApiError('CVR period not found.', { status: 404 });
+  if (period.status !== 'draft') {
+    throw new CvrPeriodApiError('Only draft CVR periods can be edited.', {
+      status: 409,
+      body: { code: 'PERIOD_NOT_DRAFT', message: 'Only draft CVR periods can be edited.' },
+    });
+  }
+  const key = String(payload.costCodeKey || payload.costCode || '').trim();
+  const existing = (store.inputsByPeriod.get(periodId) || []).find(
+    (item) => item.costCodeKey === key
+  );
+  if (existing) {
+    throw new CvrPeriodApiError('A cost-code input already exists for this period.', {
+      status: 409,
+      body: {
+        code: 'COST_CODE_ALREADY_MEMBER',
+        message: 'A cost-code input already exists for this period.',
+        input: clone(existing),
+      },
+    });
+  }
+  const input = {
+    ...buildServerCvrInputFixture({
+      id: newMockId(),
+      periodId,
+      costCodeKey: key,
+      costCodeLabel: `${key} — Master`,
+      description: 'Master description',
+      version: 1,
+      createdBy: payload.actor || 'QS',
+      updatedBy: payload.actor || 'QS',
+    }),
+    originalBudget: null,
+    currentBudget: null,
+    commercialAdjustment: 0,
+    manualAccrual: 0,
+    notes: '',
+    displayMetadata: {},
+  };
+  return saveInput(periodId, input);
+}
+
+export async function importCvrBudget(developmentId, periodId, payload = {}) {
+  store.budgetImportCallCount += 1;
+  store.lastBudgetImportPayload = clone({ developmentId, periodId, payload });
+  if (store.budgetImportShouldReject) throw store.budgetImportRejectError;
+  assertMutationAllowed();
+  const period = findPeriod(developmentId, periodId);
+  if (!period) throw new CvrPeriodApiError('CVR period not found.', { status: 404 });
+  if (period.status !== 'draft') {
+    throw new CvrPeriodApiError('Only draft CVR periods can be edited.', {
+      status: 409,
+      body: { code: 'PERIOD_NOT_DRAFT', message: 'Only draft CVR periods can be edited.' },
+    });
+  }
+  const rows = Array.isArray(payload.rows) ? payload.rows : [];
+  const existing = store.inputsByPeriod.get(periodId) || [];
+  const byKey = new Map(existing.map((item) => [item.costCodeKey, item]));
+  let created = 0;
+  let updated = 0;
+  const inputs = [];
+  for (const row of rows) {
+    const key = String(row.costCodeKey || '').trim();
+    const current = byKey.get(key);
+    if (!current) {
+      created += 1;
+      const input = {
+        ...buildServerCvrInputFixture({
+          id: newMockId(),
+          periodId,
+          costCodeKey: key,
+          version: 2,
+        }),
+        originalBudget: row.originalBudget,
+        currentBudget: row.currentBudget ?? row.originalBudget,
+        commercialAdjustment: 0,
+        manualAccrual: 0,
+      };
+      byKey.set(key, input);
+      inputs.push(input);
+      continue;
+    }
+    updated += 1;
+    const next = {
+      ...current,
+      originalBudget: row.originalBudget,
+      currentBudget: row.currentBudget ?? row.originalBudget,
+      version: current.version + 1,
+    };
+    byKey.set(key, next);
+    inputs.push(next);
+  }
+  store.inputsByPeriod.set(periodId, [...byKey.values()]);
+  return {
+    created,
+    updated,
+    importedCount: rows.length,
+    totalOriginalBudget: rows.reduce((sum, row) => sum + Number(row.originalBudget || 0), 0),
+    totalCurrentBudget: rows.reduce(
+      (sum, row) => sum + Number(row.currentBudget ?? row.originalBudget ?? 0),
+      0
+    ),
+    inputs: clone(inputs),
+  };
 }

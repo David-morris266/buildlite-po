@@ -3,8 +3,8 @@ import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import CvrReportingMonthDialog from './CvrReportingMonthDialog';
 import CVRTable from './CVRTable';
 import CostCentreDrawer from './CostCentreDrawer';
-import BudgetEditor from './BudgetEditor';
 import CVRBudgetImportWizard from './CVRBudgetImportWizard';
+import CvrAddCostCodeDialog from './CvrAddCostCodeDialog';
 import { listPOs } from '../api';
 import { subscribeCommercialChanged } from '../commercial/commercialEvents';
 import { buildCvrWorkspaceModel, formatCvrTotals } from '../cvr/cvrHelpers';
@@ -41,6 +41,7 @@ import {
   upsertAutoCostCentre,
 } from '../cvr/cvrStore';
 import { isCvrServerAuthorityEnabled } from '../cvr/cvrPeriodAuthority';
+import { addCostCodeMemberOnServer } from '../cvr/cvrPeriodAuthorityWrites';
 import {
   CVR_HISTORIC_SNAPSHOT_BANNER,
   CVR_HISTORIC_UNAVAILABLE_MESSAGE,
@@ -145,65 +146,6 @@ function WorkflowDialog({ title, children, confirmLabel, onCancel, onConfirm }) 
   );
 }
 
-function AddCostCentreDialog({ open, onCancel, onSave }) {
-  const [values, setValues] = useState({
-    costCodeLabel: '',
-    originalBudget: '',
-    currentBudget: '',
-  });
-  const [errors, setErrors] = useState([]);
-
-  useEffect(() => {
-    if (!open) return;
-    setValues({
-      costCodeLabel: '',
-      originalBudget: '',
-      currentBudget: '',
-    });
-    setErrors([]);
-  }, [open]);
-
-  if (!open) return null;
-
-  function handleChange(field, value) {
-    setValues((prev) => ({ ...prev, [field]: value }));
-    setErrors([]);
-  }
-
-  function handleSave() {
-    const result = onSave?.(values);
-    if (result?.ok === false) {
-      setErrors(result.errors || ['Could not add cost code.']);
-    }
-  }
-
-  return (
-    <div className="dev-cvr-add-backdrop" role="presentation">
-      <div className="dev-cvr-add modal" role="dialog" aria-modal="true">
-        <h3>Add Cost Code</h3>
-        <p className="dev-cvr-add__lead">
-          Enter manual budgets for a company cost code. System Forecast will calculate
-          automatically once commercial data exists.
-        </p>
-        <BudgetEditor
-          showName
-          values={values}
-          errors={errors}
-          onChange={handleChange}
-        />
-        <div className="dev-cvr-add__actions modal-actions">
-          <button type="button" className="po-list-btn-secondary" onClick={onCancel}>
-            Cancel
-          </button>
-          <button type="button" className="po-btn-primary" onClick={handleSave}>
-            Add Cost Code
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function CVRWorkspace({
   development,
   periodKey,
@@ -226,6 +168,7 @@ export default function CVRWorkspace({
   const [localRefresh, setLocalRefresh] = useState(0);
   const [selectedRow, setSelectedRow] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [addFeedback, setAddFeedback] = useState('');
   const [budgetImportOpen, setBudgetImportOpen] = useState(false);
   const [notes, setNotes] = useState('');
   const [dialog, setDialog] = useState(null);
@@ -328,6 +271,19 @@ export default function CVRWorkspace({
     const rows = activeHeadFilter ? displayedRows : workspace?.rows || [];
     return formatCvrTotals(buildCvrTotals(rows));
   }, [workspace?.rows, displayedRows, activeHeadFilter]);
+
+  const memberKeys = useMemo(() => {
+    const keys = new Set();
+    for (const centre of period?.costCentres || []) {
+      if (centre?.costCodeKey) keys.add(centre.costCodeKey);
+    }
+    for (const row of workspace?.rows || []) {
+      if (row?.costCodeKey && !String(row.id || '').startsWith('auto-')) {
+        keys.add(row.costCodeKey);
+      }
+    }
+    return [...keys];
+  }, [period?.costCentres, workspace?.rows]);
 
   useEffect(() => {
     setNotes(workspace?.developmentNotes || '');
@@ -447,10 +403,29 @@ export default function CVRWorkspace({
     return result;
   }
 
-  async function handleAddCostCentre(values) {
-    const result = await Promise.resolve(addCostCentre(development.id, values, periodKey));
+  async function handleAddCostCentre({ costCodeKey }) {
+    if (readOnly) return { ok: false, errors: ['This CVR period is read-only.'] };
+    const key = String(costCodeKey || '').trim();
+    if (!key) return { ok: false, errors: ['Select a cost code from Cost Code Master.'] };
+
+    const result = isCvrServerAuthorityEnabled()
+      ? await addCostCodeMemberOnServer(development.id, periodKey, key)
+      : await Promise.resolve(
+          addCostCentre(
+            development.id,
+            {
+              costCodeKey: key,
+              costCodeLabel: key,
+              originalBudget: null,
+              currentBudget: null,
+            },
+            periodKey
+          )
+        );
     if (!result.ok) return result;
+    const addedKey = result.input?.costCodeKey || result.costCentre?.costCodeKey || key;
     setAddOpen(false);
+    setAddFeedback(`${addedKey} added to ${period?.periodKey || periodKey}.`);
     refresh();
     return result;
   }
@@ -680,6 +655,12 @@ export default function CVRWorkspace({
         </dl>
       </ApplicationPageHeader>
 
+      {addFeedback ? (
+        <p className="po-import-step__ok" role="status">
+          {addFeedback}
+        </p>
+      ) : null}
+
       {historicUnavailable ? (
         <div className="po-list-feedback po-list-feedback--warning" role="status">
           {CVR_HISTORIC_UNAVAILABLE_MESSAGE}
@@ -775,8 +756,10 @@ export default function CVRWorkspace({
         onSaveCommercialAdjustment={handleSaveCommercialAdjustment}
       />
 
-      <AddCostCentreDialog
+      <CvrAddCostCodeDialog
         open={addOpen}
+        periodKey={period?.periodKey || periodKey}
+        memberKeys={memberKeys}
         onCancel={() => setAddOpen(false)}
         onSave={handleAddCostCentre}
       />

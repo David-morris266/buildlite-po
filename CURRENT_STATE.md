@@ -20,11 +20,11 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | **BL-033D.x.5 COMPLETE** (Prelims landing UX consolidation). Human visual UAT **PASSED**. |
-| Last persistence slice implemented | **BL-037A IMPLEMENTED** (awaiting bank) — authoritative Draft CVR membership command. Prior banked HEAD: **BL-035A** constitution `a1e3d94`; **BL-034B** Simple Selling Costs (`020`). |
+| Last persistence slice implemented | **BL-037B IMPLEMENTED** — human UAT **PASS**, awaiting bank. Budget Import + Manual Cost Code Master picker consume BL-037A. Prior banked HEAD: **BL-037A** `f2b6e56`. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
 | Durable intent / deferred decisions | `docs/PRODUCT_CONSTITUTION.md` |
-| **NEXT** | Bank **BL-037A** after review. Then **BL-037B** (Budget Import + Master picker). Do **not** start BL-037C, BL-034C/D, BL-035, or BL-036 until instructed. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** add 5400 to P04 until 037B UI. |
+| **NEXT** | Bank **BL-037B** (human UAT **PASS**). Then **BL-037C** (proposal missing-member/can-add). Do **not** start BL-034C/D, BL-035, or BL-036 until instructed. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. P04 now has **10** members including empty **5400**. |
 
 ---
 
@@ -61,6 +61,8 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-033D.x.5** | Prelims landing UX consolidation | **COMPLETE / BANKED.** Template/Manage primary; site-specific add secondary. |
 | **BL-034A** | Selling Costs design / preflight | **COMPLETE (read-only).** Simple % × live Forecast Revenue; proposal-before-CVR; destination configurable (standard hint **5400**); incentives deferred. |
 | **BL-034B** | Simple Selling Costs proposal | **COMPLETE / BANKED** at `b34ea60`. Migration `020` + GET/PUT `/selling-costs` + workspace tab. Default **2.00%** / saved assumption; £ derived from live Forecast Revenue; no CVR writes. Test Site 1 human UAT **PASS** (saved **1.75%** → **£182,780.64**). Review/Adopt numbering vs Detailed: see `docs/PRODUCT_CONSTITUTION.md` HD-008. UX follow-up only: optional live preview of unsaved % (not implemented). |
+| **BL-037A** | Authoritative Draft CVR membership command | **COMPLETE / BANKED** at `f2b6e56`. `POST .../cost-code-members`. Empty overlay from active Master. Audit `cost_code_added`. |
+| **BL-037B** | Budget Import + Manual Cost Code Master picker | **IMPLEMENTED** — human UAT **PASS**, awaiting bank. Server `POST .../budget-import` + Draft Master picker. Both consume 037A. |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -1145,7 +1147,7 @@ Controlled clone UAT prep (applied): migration **020**; Cost Code Master **5400*
 
 UX follow-up only (not implemented): optional live preview of unsaved Selling Costs assumption while typing.
 
-## BL-037A (Authoritative Draft CVR membership command) — IMPLEMENTED / AWAITING BANK
+## BL-037A (Authoritative Draft CVR membership command) — BANKED
 
 Server-only command to add an **active tenant Cost Code Master** code as an empty `cvr_cost_code_inputs` member of an **existing Draft** CVR period.
 
@@ -1157,14 +1159,29 @@ Server-only command to add an **active tenant Cost Code Master** code as an empt
 - Unknown Master → `404 COST_CODE_NOT_FOUND`. Inactive → `400 COST_CODE_INACTIVE`. Non-draft → `409 PERIOD_NOT_DRAFT`.
 - Classification is **not** a membership gate.
 - Live facts remain derived by the close engine; membership does not copy them into overlay.
-- Legacy `POST .../inputs` remains for existing overlay creates until BL-037B rewires consumers.
-- **No client UX. No Budget Import change. No 5400 on Test Site 1 P04. No P05.**
+- Legacy `POST .../inputs` remains for existing overlay creates; BL-037B Budget Import and Manual Add now consume 037A instead.
 
-HD-007 principles recorded in `docs/PRODUCT_CONSTITUTION.md`. HD-007 is **not** fully resolved until BL-037B human UAT. HD-002 unset.
+HD-007 principles recorded in `docs/PRODUCT_CONSTITUTION.md`. Both BL-037B human UAT routes have now **PASSED**. HD-002 unset.
+
+## BL-037B (Budget-driven membership + Manual Cost Code Add) — IMPLEMENTED / HUMAN UAT PASS / AWAITING BANK
+
+Connects the two deliberate structural entry routes to the BL-037A membership primitive.
+
+- `POST /api/developments/:developmentId/cvr/periods/:periodId/budget-import` — one transaction. Unknown/inactive/duplicate Master codes fail closed with zero writes. New members use `addDraftCvrCostCodeMember`; existing members receive budget-only updates (adjustment, accrual, metadata preserved). Omitted codes are not deleted. Explicit £0 is a valid line. File description does not override Master identity.
+- Draft CVR **Add Cost Code** is a searchable active Cost Code Master picker. Confirmation POSTs `{ costCodeKey, actor }` only. Existing members are excluded from the picker; server 409 is shown if selected anyway. Not available on submitted/locked periods.
+- Legacy “Create new Cost Codes from unknown Cost Codes” is retired from CVR Budget Import.
+- Classification still does not establish membership. Live-fact union is unchanged. Prelims/Selling Costs proposal Add is **not** started (BL-037C).
+
+**Human UAT PASS (25 Aug 2026, `buildlite_clone`):**
+
+1. **Manual Add on Test Site 1 P04.** 5400 — Selling Costs — General Allowance added via the Master picker. P04 remains Draft v1 / 2026-08. Exactly **10** members; 5400 is the sole new empty overlay (budgets null, adj 0, accrual 0, input v1). One `cost_code_added` audit. Live 5400 system/final **£0**. Selling Costs proposal remains separate (**1.75%** / **£182,780.64**). 5231 still adj **7720** / accrual **120** / v2 with Prelims adoption metadata. Snapshots **3**. Prelims **4**. P05 absent. No Submit/Approve/Lock.
+2. **Budget Import on throwaway `dev-1787654138867-7potct` P01** (`BL037B-BI-UAT`). Success CSV established **1110 £25,000**, **2300 £300,000**, **5105 £0** (stored zero, not null). Exactly 3 members; input v2; adj/accrual 0; Master identity; live totals Original/Current/System/Final **£325,000**. Unknown-code rollback CSV (`9999`) blocked at Validation with no writes: 1110 remained **£25,000**; 9999 not created on Master or CVR; still one `budget_imported` + three `cost_code_added` audits from the successful import only.
+
+HD-007 structural routes are now proven. HD-002 unset.
 
 ## Next action
 
-**NEXT:** Bank **BL-037A** after review. Then implement **BL-037B** (Budget Import + Cost Code Master picker consume the membership command). Do **not** start BL-037C, BL-034C/D, BL-035 Trial Envelope, or BL-036 until instructed. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** add 5400 to P04 until 037B. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning: `docs/PRODUCT_CONSTITUTION.md`.
+**NEXT:** Bank **BL-037B**. Then **BL-037C**. Do **not** start BL-034C/D, BL-035 Trial Envelope, or BL-036 until instructed. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** treat 5400 membership as Selling Costs adoption (proposal remains separate). Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning: `docs/PRODUCT_CONSTITUTION.md`.
 
 Do **not** alter P01/P02/P03 `reporting_month` except by a future explicit historic-correction feature. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`. Do not delete P04 `0f513191-cd25-4812-834f-37dcf66487e0` except by a later controlled commercial task.
 
