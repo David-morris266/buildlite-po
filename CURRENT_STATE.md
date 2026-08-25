@@ -20,11 +20,11 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | **BL-033D.x.5 COMPLETE** (Prelims landing UX consolidation). Human visual UAT **PASSED**. |
-| Last persistence slice implemented | **BL-037C human UAT PASS** — awaiting bank. Prelims Draft **Add to CVR** + first overlay edit on fact-only auto-rows consume BL-037A. Mixed-case overlay identity corrected during UAT. **BL-037A** banked `f2b6e56`. **BL-037B** banked `cb356df`. |
+| Last persistence slice implemented | **BL-037C BANKED** at `c5f4c73`. Prelims Draft **Add to CVR** + first overlay edit on fact-only auto-rows consume BL-037A. **BL-037A** banked `f2b6e56`. **BL-037B** banked `cb356df`. **HD-002 RESOLVED.** **HD-008 RESOLVED.** |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
 | Durable intent / deferred decisions | `docs/PRODUCT_CONSTITUTION.md` |
-| **NEXT** | Bank **BL-037C**. Do **not** Adopt UAT-CC-001. Do **not** start BL-034C/D, BL-035, or BL-036 until instructed. HD-002 remains unset. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. P04 has **11** members including empty **5400** and empty **uat-cc-001**. |
+| **NEXT** | **BL-034C** — Selling Costs Review against CVR (**read-only**). Do **not** start BL-034D. Do **not** Adopt Selling Costs. Do **not** Adopt UAT-CC-001. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. P04 has **11** members including empty **5400** (SELLING / STANDARD_CVR; not adopted) and empty **uat-cc-001**. HD-002 and HD-008 are **resolved**. |
 
 ---
 
@@ -60,10 +60,12 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-033D.x.4C** | Prelims Adopt into CVR | **x.4C.1 / x.4C.2 COMPLETE / BANKED** (server adopt + UI). Controlled Test Site 1 5231 adopt preserved as UAT evidence. |
 | **BL-033D.x.5** | Prelims landing UX consolidation | **COMPLETE / BANKED.** Template/Manage primary; site-specific add secondary. |
 | **BL-034A** | Selling Costs design / preflight | **COMPLETE (read-only).** Simple % × live Forecast Revenue; proposal-before-CVR; destination configurable (standard hint **5400**); incentives deferred. |
-| **BL-034B** | Simple Selling Costs proposal | **COMPLETE / BANKED** at `b34ea60`. Migration `020` + GET/PUT `/selling-costs` + workspace tab. Default **2.00%** / saved assumption; £ derived from live Forecast Revenue; no CVR writes. Test Site 1 human UAT **PASS** (saved **1.75%** → **£182,780.64**). Review/Adopt numbering vs Detailed: see `docs/PRODUCT_CONSTITUTION.md` HD-008. UX follow-up only: optional live preview of unsaved % (not implemented). |
+| **BL-034B** | Simple Selling Costs proposal | **COMPLETE / BANKED** at `b34ea60`. Migration `020` + GET/PUT `/selling-costs` + workspace tab. Default **2.00%** / saved assumption; £ derived from live Forecast Revenue; no CVR writes. Test Site 1 human UAT **PASS** (saved **1.75%** → **£182,780.64**). Destination **5400** classified **SELLING / STANDARD_CVR**. **HD-008 resolved:** BL-034C = Review (read-only); BL-034D = Adopt (write). Detailed is later, not 034D. UX follow-up only: optional live preview of unsaved % (not implemented). |
+| **BL-034C** | Selling Costs Review against CVR | **Not started.** Read-only. HD-002 / HD-008 **resolved**. |
+| **BL-034D** | Selling Costs Adopt into Draft CVR | **Not started.** Write slice after 034C. |
 | **BL-037A** | Authoritative Draft CVR membership command | **COMPLETE / BANKED** at `f2b6e56`. `POST .../cost-code-members`. Empty overlay from active Master. Audit `cost_code_added`. |
 | **BL-037B** | Budget Import + Manual Cost Code Master picker | **COMPLETE / BANKED** at `cb356df`. Server `POST .../budget-import` + Draft Master picker. Both consume 037A. Human UAT **PASS**. |
-| **BL-037C** | Controlled missing-line CVR integration | **HUMAN UAT PASS** — awaiting bank. Prelims Draft **Add to CVR**; first QS overlay edit on fact-only auto-rows uses 037A. Mixed-case overlay identity corrected during UAT. Adopt remains a separate action. Selling Costs adoption **not started**. HD-002 unset. |
+| **BL-037C** | Controlled missing-line CVR integration | **COMPLETE / BANKED** at `c5f4c73`. Prelims Draft **Add to CVR**; first QS overlay edit on fact-only auto-rows uses 037A. Mixed-case overlay identity corrected during UAT. Adopt remains a separate action. Selling Costs adoption **not started**. |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -84,7 +86,7 @@ BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when lo
 - **CVR snapshots** (`010_cvr_period_snapshots.sql`) — **BL-031E COMPLETE**. Approve & Lock persists an immutable snapshot atomically. Locked periods render from that snapshot (or explicit historic-unavailable if none). Test Site 1 snapshot creation UAT **PASSED**. Historic freeze UAT **PASSED**. **BL-031F COMPLETE**: P02 monthly-cycle UAT **PASSED** (two independent locked snapshots on Test Site 1).
 - **Development revenue settings** (`011_development_revenue_settings.sql`) — **BL-032A COMPLETE**. Typed strategy/settings row per development. Runtime uses Postgres only when `VITE_REVENUE_SERVER_AUTHORITY=true`. Default remains OFF. Migration `011` is applied on local `buildlite_clone` (additive; no backfill). Plot Master commercial fields stay on `developments.payload`.
 - **Whole-CVR Revenue snapshot** (`012_cvr_period_snapshot_revenue.sql`) — **BL-032D COMPLETE**. Additive nullable Revenue/GP columns on `cvr_period_snapshots` plus `cvr_period_snapshot_plots`. Applied on `buildlite_test` and local `buildlite_clone`. New Approve & Lock writes schema **v2** or does not lock. Historic v1 rows stay NULL (no default £0, no backfill). Test Site 1 P03 is the first v2 snapshot.
-- **Cost-code semantic classification** (`013_cost_code_classifications.sql`) — **BL-033B COMPLETE**. Tenant-level mapping only. Unmapped codes resolve as UNCLASSIFIED + STANDARD_CVR without inserting a row. Applied on `buildlite_test` and local `buildlite_clone`. Does not enter CVR close or snapshots. Test Site 1 `5231` is PRELIMS + STANDARD_CVR. `forecast_driver` is a default/suggested driver only.
+- **Cost-code semantic classification** (`013_cost_code_classifications.sql`) — **BL-033B COMPLETE**. Tenant-level mapping only. Unmapped codes resolve as UNCLASSIFIED + STANDARD_CVR without inserting a row. Applied on `buildlite_test` and local `buildlite_clone`. Does not enter CVR close or snapshots. Test Site 1: `5231` is PRELIMS + STANDARD_CVR; **`5400` is SELLING + STANDARD_CVR** (BL-034B UAT prep). `forecast_driver` is a default/suggested driver only.
 - **Development programme** (`014_development_programme.sql`) — **BL-033C COMPLETE**. Typed site start / first completion / final completion / plot count + version. GET seeds from `payload.startDate` / `targetCompletion` / `plotCount` without inserting until PUT. PUT is optimistic. Applied on `buildlite_test` and local `buildlite_clone`. Does not dual-write payload. Does not enter CVR close or snapshots. Test Site 1 has one programme row (version 1). **BL-033C.1 COMPLETE** (no migration): Create Next requires an explicit YYYY-MM; Test Site 1 P04 is Draft with `reporting_month` **2026-08**.
 - **Development Prelims items** (`015_development_prelims_items.sql`) — **BL-033D.1 COMPLETE**. TIME / LUMP_SUM proposal lines beside the CVR. Applied on `buildlite_test` and local `buildlite_clone`. GET does not mutate programme, CVR, or classification. Calculated months/money are derived live. Not adopted into the CVR. **BL-033D.x.3 COMPLETE:** nullable template provenance via `018` on clone. Setup preview is a read-only commercial worksheet. Apply copies selected ready lines as independent development rows with provenance/idempotency. No live link back to the company template.
 - **Company Prelims templates** (`016_client_prelims_templates.sql`) — **BL-033D.x.1 COMPLETE**. Tenant-owned headers + lines. BuildLite Standard is a product-owned application definition, not tenant rows. Applied on `buildlite_test` and local `buildlite_clone`. Company-template UAT **PASSED**. Does not write `development_prelims_items`. Does not enter CVR. **BL-033D.x.2 COMPLETE** (no schema change): company header/line tailoring, custom `co.prelims.*` lines, enable/disable, and canonical `cost_code_key` mapping against `/api/cost-codes`. Mapping UAT **PASSED**. Live Test Site 1 copy is **26 lines / 2 mapped** to canonical `5231`.
@@ -1142,9 +1144,9 @@ Development → Selling Costs tab. Default **2.00%** proposal without insert; Sa
 - Destination: **5400 — Selling Costs — General Allowance** (ready)
 - **No CVR writes**
 
-Commercial rules: Simple % × total Forecast Revenue; calculated £ is derived not stored as authority; **5400** is standard General Selling Costs allowance (engine not hard-coded exclusively to 5400); proposal has no CVR effect; Review/Adopt = BL-034C/D; Detailed mode deferred; Sales Incentive Revenue Treatment deferred.
+Commercial rules: Simple % × total Forecast Revenue; calculated £ is derived not stored as authority; **5400** is standard General Selling Costs allowance (engine not hard-coded exclusively to 5400); proposal has no CVR effect; **HD-008:** Review = BL-034C (read-only); Adopt = BL-034D (write); Detailed is later, not 034D; Sales Incentive Revenue Treatment deferred.
 
-Controlled clone UAT prep (applied): migration **020**; Cost Code Master **5400**; classification **SELLING / STANDARD_CVR**; one human-created settings row at **1.75%**.
+Controlled clone UAT prep (applied): migration **020**; Cost Code Master **5400**; classification **SELLING / STANDARD_CVR** (`f9a8aa59-7fcc-43e0-9015-548ec4d35efc`); one human-created settings row at **1.75%**. 5400 does **not** need a further classification decision before BL-034C.
 
 UX follow-up only (not implemented): optional live preview of unsaved Selling Costs assumption while typing.
 
@@ -1162,7 +1164,7 @@ Server-only command to add an **active tenant Cost Code Master** code as an empt
 - Live facts remain derived by the close engine; membership does not copy them into overlay.
 - Legacy `POST .../inputs` remains for some overlay-create helpers; live structural membership (Budget Import, Manual Add, Prelims Add to CVR, first overlay edit on a fact-only auto-row) consumes 037A instead.
 
-HD-007 principles recorded in `docs/PRODUCT_CONSTITUTION.md`. Both BL-037B human UAT routes have now **PASSED**. HD-002 unset.
+HD-007 principles recorded in `docs/PRODUCT_CONSTITUTION.md`. Both BL-037B human UAT routes have now **PASSED**. HD-002 **resolved** (target-final / replacement-adjustment).
 
 ## BL-037B (Budget-driven membership + Manual Cost Code Add) — BANKED
 
@@ -1178,9 +1180,9 @@ Connects the two deliberate structural entry routes to the BL-037A membership pr
 1. **Manual Add on Test Site 1 P04.** 5400 — Selling Costs — General Allowance added via the Master picker. P04 remains Draft v1 / 2026-08. Exactly **10** members; 5400 is the sole new empty overlay (budgets null, adj 0, accrual 0, input v1). One `cost_code_added` audit. Live 5400 system/final **£0**. Selling Costs proposal remains separate (**1.75%** / **£182,780.64**). 5231 still adj **7720** / accrual **120** / v2 with Prelims adoption metadata. Snapshots **3**. Prelims **4**. P05 absent. No Submit/Approve/Lock.
 2. **Budget Import on throwaway `dev-1787654138867-7potct` P01** (`BL037B-BI-UAT`). Success CSV established **1110 £25,000**, **2300 £300,000**, **5105 £0** (stored zero, not null). Exactly 3 members; input v2; adj/accrual 0; Master identity; live totals Original/Current/System/Final **£325,000**. Unknown-code rollback CSV (`9999`) blocked at Validation with no writes: 1110 remained **£25,000**; 9999 not created on Master or CVR; still one `budget_imported` + three `cost_code_added` audits from the successful import only.
 
-HD-007 structural routes proven. HD-002 unset. Banked at `cb356df`.
+HD-007 structural routes proven. HD-002 **resolved**. Banked at `cb356df`.
 
-## BL-037C (Controlled missing-line CVR integration) — HUMAN UAT PASS / AWAITING BANK
+## BL-037C (Controlled missing-line CVR integration) — BANKED
 
 Two deliberate commercial actions remain separate: **Add to CVR** then **Adopt into CVR**. This slice does not combine them.
 
@@ -1190,19 +1192,29 @@ Two deliberate commercial actions remain separate: **Add to CVR** then **Adopt i
 
 **Fact-only auto-row first overlay edit:** Under server CVR authority, the first QS overlay edit on an `auto-{key}` row establishes membership via 037A, then PATCHes the intended overlay field on the real input identity. Fact £ is not copied into budget/adjustment/accrual. Overlay PATCH preserves null budgets (does not coerce them to £0). Duplicate/concurrent membership returns the existing overlay.
 
-Selling Costs Review/Adopt **not started**. HD-002 remains unset. HD-001 unchanged (pending variations are not system-forecast inputs). BL-034C/D not started.
-
 **Human UAT PASS (25 Aug 2026):** Test Site 1 → Prelims → Review against CVR. One Add click wrote empty P04 overlay `uat-cc-001` (`6153356d-72f9-449b-8da2-e03bff4899ac`), null budgets, adj 0, accrual 0, v1, one `cost_code_added`. No Adopt. After refresh, UAT-CC-001 is a normal reviewable/selectable candidate (Prelims proposal £1,000; CVR system/current/final £0; proposed replacement +£1,000). 5231 remains Already adopted.
 
 **UAT defect and correction:** 037A stores `normaliseCostCodeKey` (lowercase). Prelims/Master remain `UAT-CC-001`. First post-Add refresh still showed Not on current CVR because preview membership used exact-string match. Compare/preview now match overlay identity case-insensitively and keep the Prelims/Master display key. Do not Add again. Do not reverse the overlay. Do not Adopt UAT-CC-001 in this slice.
 
+Banked at `c5f4c73`.
+
+## HD-002 / HD-008 (Selling Costs adoption treatment and numbering) — RESOLVED
+
+Documentation-only settlement after the HD-002 preflight. No product code. No clone writes.
+
+**HD-002 RESOLVED:** Selling Costs CVR adoption uses **target-final / replacement-adjustment** semantics. Target final = current Selling Costs proposal. Replacement adjustment = proposal − current system forecast. Final = system + replacement adjustment. Adoption writes **commercial adjustment only**. It must not write budget, system forecast, accrual, commitment, or actual. Proposal stays separate until deliberate Adopt. Adoption is point-in-time: later Revenue or facts must not auto-recalculate the CVR; Review exposes drift and permits re-adopt. Manual QS change of the adopted adjustment **supersedes** the adoption and requires acknowledgement to re-adopt. Proposal below system is a **warning**, not a hard block. GP moves only through CVR final forecast. Simple currently targets **5400**; Detailed later uses the same per-code contract. Full wording: `docs/PRODUCT_CONSTITUTION.md` HD-002.
+
+**HD-008 RESOLVED:** **BL-034C** = Selling Costs Review against CVR (read-only). **BL-034D** = Selling Costs Adopt into Draft CVR (write). Detailed / itemised Selling Costs is later work and must **not** be implemented as BL-034D. Banked BL-034A/B commits are unchanged.
+
+Test Site 1 **5400** is already classified **SELLING / STANDARD_CVR** (`f9a8aa59-7fcc-43e0-9015-548ec4d35efc`, BL-034B UAT prep) and is an empty P04 member (BL-037B Manual Add). Membership is not adoption. Saved Selling Costs assumption remains **1.75%**.
+
 ## Next action
 
-**NEXT:** Bank **BL-037C**. Do **not** Adopt UAT-CC-001. Do **not** start BL-034C/D, BL-035 Trial Envelope, or BL-036 until instructed. HD-002 remains unset. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** treat 5400 membership as Selling Costs adoption (proposal remains separate at saved 1.75%). Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning: `docs/PRODUCT_CONSTITUTION.md`.
+**NEXT:** **BL-034C** — Selling Costs Review against CVR (**read-only**). Compare the current proposal with destination 5400: system forecast, current adjustment, current final, proposed replacement adjustment, proposed final, movement; expose drift / superseded / below-system. **No CVR writes. No Adopt. No membership create. No budget/accrual changes.** Do **not** start BL-034D. Do **not** Adopt UAT-CC-001. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** treat 5400 membership as Selling Costs adoption. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning: `docs/PRODUCT_CONSTITUTION.md`.
 
 Do **not** alter P01/P02/P03 `reporting_month` except by a future explicit historic-correction feature. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`. Do not delete P04 `0f513191-cd25-4812-834f-37dcf66487e0` except by a later controlled commercial task.
 
-Do not treat Hawthorn Gardens as started. Repo flag default remains OFF. Local UAT left `VITE_REVENUE_SERVER_AUTHORITY=true` in ignored `client/.env.local` (do not commit it). Test Site 1 has one `development_revenue_settings` row (version 2, OM 350, completion) as evidence — do not delete it. Do not delete locked P03 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. Do not delete classification row `131acfb1-d2e9-4d53-86b9-df5f4f8306b6`.
+Do not treat Hawthorn Gardens as started. Repo flag default remains OFF. Local UAT left `VITE_REVENUE_SERVER_AUTHORITY=true` in ignored `client/.env.local` (do not commit it). Test Site 1 has one `development_revenue_settings` row (version 2, OM 350, completion) as evidence — do not delete it. Do not delete locked P03 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. Do not delete classification rows `131acfb1-d2e9-4d53-86b9-df5f4f8306b6` (5231) or `f9a8aa59-7fcc-43e0-9015-548ec4d35efc` (5400).
 
 ---
 
