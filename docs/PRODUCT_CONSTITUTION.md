@@ -8,13 +8,59 @@
 
 **Baseline when this file was created:** HEAD `b34ea608b1547548422c87e5a87994f4b0d9be33` — `BL-034B - Add Simple Selling Costs proposal` on `buildlite-V1-1`.
 
+**Last design-authority settlement:** HD-001 resolved by explicit product-owner decision after founding-principles reconciliation. Banked product HEAD remains `6d11491cffa16c321d27bbcb9ee4ef585f0261ef` — `BL-034D - Add Selling Costs CVR adoption`. This settlement is documentation only; expected-liability behaviour is **not** implemented.
+
 ---
 
-## 1. Product identity
+## 1. Founding Product Principles
+
+These principles sit above slice sequencing. Later banked code implements them; it does not silently replace them. HD-002 remains settled and is not reopened by this section.
+
+1. **SME FIRST**  
+   BuildLite is built primarily for SME housebuilders / developers and their small commercial functions, not for an enterprise office full of administrators.
+
+2. **ONE CAPABLE QS CAN RUN IT**  
+   A key product objective is that one capable QS can operate the commercial controls of a small developer efficiently. Requiring unnecessary administration or additional headcount is a product failure.
+
+3. **FASTER THAN EXCEL**  
+   BuildLite should reduce routine QS administration compared with disconnected Excel worksheets. If a normal commercial-control task is materially slower or more cumbersome in BuildLite than the spreadsheet method it replaces, the workflow should be challenged.
+
+4. **CLIENT COST CODES ARE IDENTITY**  
+   Clients own their cost-code structures. BuildLite must not require clients to adopt a BuildLite standard numbering structure. Cost-code classification / metadata may tell BuildLite what a code does, but must not replace the client's own cost-code identity. Test Site 1 codes such as **5231** and **5400** are UAT examples / recommendations, not a mandatory BuildLite chart. Hawthorn Gardens must retain its own cost-code structure when recovered as an end-to-end UAT.
+
+5. **FACTS FLOW ONCE**  
+   Budget, PO/package, Commercial Event/variation, certificate, ledger actual and other commercial facts should flow into the commercial model without duplicate re-keying.
+
+6. **FINAL FORECAST MEANS EXPECTED OUTTURN**  
+   The CVR Final Forecast should represent the QS's current best commercial view of expected final liability/outturn, not merely approved accounting facts.
+
+7. **SYSTEM FORECAST REMAINS FACT-BASED**  
+   System Forecast remains the mechanically derived position from the authoritative commercial facts defined by the close engine. Do not misrepresent an unapproved CE as an approved commitment. This does **not** mean unapproved/pending commercial liability should disappear from the expected forecast.
+
+8. **QS JUDGEMENT IS FIRST-CLASS**  
+   QS judgement must be easy to express, linked to the commercial fact where practical, auditable, and reversible. The operator must be able to include, reduce, hold or exclude expected liability without changing the underlying fact.
+
+9. **NEVER DESTROY THE FACT**  
+   Forecast treatment must not rewrite the underlying PO, CE, certificate, ledger transaction or budget.
+
+10. **AUTOMATE COMPLEXITY BEHIND SIMPLE UX**  
+    Concurrency, locking, provenance, stale checks, transaction boundaries and audit controls may be sophisticated internally. The QS should not have to operate that sophistication.
+
+11. **CVR IS THE ASSEMBLED COMMERCIAL OUTCOME**  
+    The CVR should assemble the live commercial position rather than becoming another spreadsheet requiring duplicate entry. Membership / adoption controls exist to prevent silent or unauthorised writes. They must not make normal QS forecasting unnecessarily ceremonial.
+
+12. **PARKED HUMAN DECISIONS STAY PARKED**  
+    A banked implementation does not automatically settle an explicitly parked product-owner decision. Where this constitution says a human decision is required, only an explicit owner settlement closes it. **HD-002 remains settled and must not be reopened.**
+
+---
+
+## 2. Product identity
 
 BuildLite is a **commercial-control layer** for SME housebuilders and residential developers. It is **not** an accounting package, payroll system, CIS system, or Sage/Xero/COINS Financials replacement.
 
 It is intended to sit between spreadsheets and enterprise ERP: commitment control, forecasting, certification, CVR, and commercial reporting, with accounting remaining the financial system of record (Design Authority v1.1; Doc 39).
+
+**Cost-code flexibility:** BuildLite does not own the client's numbering scheme. Master Cost Code **identity** is client-owned (for example 4360, 5231, CLN01, or Hawthorn's own chart). PRELIMS / SELLING / other classifications are **semantic metadata** used by BuildLite engines. A recommended code such as **5400** is a recommendation/default for current Test Site 1 data, not a universal requirement. Different SMEs may use entirely different codes for equivalent commercial purposes. Hawthorn should later test this flexibility. Commercial Structure Head / Family / `reporting_group` persistence remains a known onboarding issue (HD-011 / PC-020); it is not solved here.
 
 ### Intended commercial chain
 
@@ -30,11 +76,11 @@ Budget
   → Management Reporting               ← partly built (see PC-013, PC-027)
 ```
 
-Do not invent missing links merely to complete this diagram. Status of each stage is in §3 and §4.
+Do not invent missing links merely to complete this diagram. Status of each stage is in §4 and §5.
 
 ---
 
-## 2. Authority hierarchy
+## 3. Authority hierarchy
 
 | Rank | Source | Role |
 |------|--------|------|
@@ -49,36 +95,39 @@ Do not invent missing links merely to complete this diagram. Status of each stag
 1. Later **explicit banked** decisions supersede older design documents.
 2. Where A/B and D **conflict**, do **not** silently pick a winner. Record the conflict here (Human Decision or Deferred Register) until a human settles it and the settling slice updates this file.
 3. The Master Documentation folder is **stale after Doc 67 / July 2026 Doc 49** for Prelims, Selling Costs, reporting-month, and later CVR work. Those designs live in the repo. Do not treat June 2026 gap analyses as current.
+4. Rank A (banked code) is **implementation truth**. It does **not** close an explicitly parked human decision in this file. Only an explicit owner settlement in Rank C closes it (Founding Principle 12). HD-001 was the example: approved-only System Forecast was implementation, not a settlement of expected liability.
 
 External Master Docs cited below in plain text: Doc 18, Doc 39, Doc 42, Doc 43 / 43A, Doc 45, Doc 47, Doc 48, Doc 67, Design Authority v1.1.
 
 ---
 
-## 3. Current commercial backbone
+## 4. Current commercial backbone
 
 Orientation only. Detail and UAT evidence stay in `CURRENT_STATE.md`.
 
 | Area | Implementation (concise) |
 |------|--------------------------|
 | Developments / Plot Master | Server-backed developments; plots and sales lifecycle dates on `developments.payload`. Typed `development_programme` exists beside payload dates. |
-| Cost Code Master / classification | Server master when `VITE_COST_CODE_SERVER_AUTHORITY` is ON (repo default OFF). Semantic groups including PRELIMS / SELLING. Commercial Structure catalog still browser-local. |
+| Cost Code Master / classification | Server master when `VITE_COST_CODE_SERVER_AUTHORITY` is ON (repo default OFF). **Identity is the client's own code.** Semantic groups (PRELIMS / SELLING / …) are purpose metadata, not a BuildLite numbering chart. Test Site 1 **5231** / **5400** are UAT examples. Commercial Structure catalog still browser-local (HD-011). |
 | Purchase Orders | Working Postgres JSON POs; PDF; archive; types include subcontract / materials / plant. |
 | Packages / measurement / certificates | Materialised on subcontract PO approval; order matrix; V1 certs with historic freeze. Legacy `payment_certificates` table is **not** the V1 engine. |
-| Commercial Events | Server-authoritative variations, recoveries, contra; pending/draft exist as workflow, not as CVR system-forecast inputs. |
-| CVR | Draft → Submit → Approve & Lock; immutable snapshots (v2 includes Revenue); QS accrual + commercial adjustment; carry-forward. System forecast = approved commitment / budget / actual hierarchy — **not** pending CEs (HD-001). |
+| Commercial Events | Server-authoritative variations, recoveries, contra. Pending/draft exist as workflow facts. **HD-001 resolved:** they must remain visible as potential liability; QS expected-liability treatment (default = full **submitted** value) feeds **Final Forecast**, not System Forecast. **Not implemented yet.** Banked close engine still excludes draft/submitted CEs from System Forecast. |
+| CVR | Draft → Submit → Approve & Lock; immutable snapshots (v2 includes Revenue); QS accrual + commercial adjustment; carry-forward. **System Forecast** = approved commitment / budget / actual hierarchy (close engine). **Final Forecast** is expected outturn (HD-001: CE expected liability will feed it; today only unlinked commercial adjustment can). Do not use accrual as CE expected liability. |
 | Revenue | Strategy + private plot Secured lifecycle + live/v2 GP. `recognitionPolicy=exchange` stored only (HD-009). HA/package revenue, extras, scenario forecasting not live. |
 | Prelims | Templates, site setup, TIME/LUMP_SUM, Review, **Adopt into Draft CVR** (replacement adjustment). Unresolved lines excluded, not £0. Missing Draft lines can be **Added to CVR** via 037A; Adopt still will not create rows. |
-| Selling Costs | **BL-034B banked:** Simple % × live Forecast Revenue; proposal only; 5400 classified SELLING / STANDARD_CVR; 5405 forbidden as Simple destination. **HD-002 resolved** (target-final / replacement-adjustment). **HD-008:** 034C Review banked (`e06a86c`); **034D Adopt BANKED** (human UAT PASS). Detailed unstarted. |
+| Selling Costs | **BL-034D banked** at `6d11491`. Simple % × live Forecast Revenue; proposal until deliberate Adopt; Test Site 1 destination **5400** classified SELLING / STANDARD_CVR (recommendation, not a mandatory chart); 5405 forbidden as Simple destination. **HD-002 resolved** (target-final / replacement-adjustment). **HD-008 resolved.** Detailed unstarted. Engine Adopt ceremony must **not** be generalised to every CE (HD-001). |
 | Ledger | CSV import; COINS/Sage/Xero **column templates**; fingerprint de-dupe; reversal not delete. Not live accounting APIs. |
 | Administration | Shell exists. Company/structure/behaviour largely localStorage. Users and Approval Settings are **placeholders** (Doc 47). |
 | Assistant | Rule recommendations (certs, CEs); local dispositions; not an LLM product. |
 | Auth / tenancy | Mock `localStorage` identity; one global active client; unauthenticated API. Acceptable for controlled internal UAT per Doc 67; not for hosted multi-user SaaS. |
 
-**Test Site 1 guards (do not casually violate):** P04 remains Draft; no P05; do not lock P04; do not switch `5231` to TIME; do not treat Hawthorn Gardens as started.
+**Test Site 1 guards (do not casually violate):** P04 remains Draft; no P05; do not lock P04; do not switch `5231` to TIME; do not Adopt UAT-CC-001.
+
+**Hawthorn Gardens:** remains commercially valuable and must **not** be discarded or normalised onto Test Site 1. It is an end-to-end known-answer UAT representing a different SME/client structure. Technical artefacts may be stale and require recovery to current BuildLite mechanics; commercial intent remains valuable. Preserve as UAT intentions: client-owned / broader cost-code structure; CCV / approved commitment distinct from pending liability; QS Final Forecast distinct from both; pending variations visible before approval; PO/package and matrix behaviour; certificate/recovery logic; ledger actual distinct from certified value; known-answer month-end CVR; negative/import control tests; eventual multi-period continuation. Do **not** remap Hawthorn cost codes to `5231` / `5400` merely because Test Site 1 uses those codes. Where Hawthorn mechanics conflict with subsequently settled product rules (including HD-001 and HD-002), update future UAT mechanics while preserving the underlying commercial scenario. Pack is in repo and **not imported** (PC-029).
 
 ---
 
-## 4. Durable deferred / parked register
+## 5. Durable deferred / parked register
 
 Importance: **V1 blocker** (hosted trial) · **V1 important** · **post-pilot** · **future** · **needs human decision**.
 
@@ -92,7 +141,7 @@ Importance: **V1 blocker** (hosted trial) · **V1 important** · **post-pilot** 
 | PC-006 | Prelims engine + adopt | Doc 42 BL-PB-039 (High); BL-033D.* | **Adopt implemented** (x.4C). Landing UX x.5 done. | — | — | Core done | Remaining: basis-select clip; QUANTITY/MILESTONE/… drivers; Standard v2 must not mutate v1 copies. |
 | PC-007 | Conceptual stack `max(system, engine)+QS` | BL-033A | **Not an invariant.** Live Prelims and HD-002 Selling Costs use **replacement adjustment**. | settled (do not use) | HD-002 | Do not revive | HD-002 chose target-final / replacement-adjustment, not this stack. |
 | PC-008 | CVR destination membership (add missing cost code to Draft) | Recovery audit; Prelims x.4B/C contract | **BL-037A/B/C banked.** Prelims Adopt still will not create rows. | V1 important | HD-007 | Honest 034C after 037C bank | P04 overlays: 5400 (Manual Add then BL-034D adopted) and `uat-cc-001` (Prelims Add, still empty). Selling Costs Adopt does not create membership. |
-| PC-009 | Pending variations in Forecast Liability | Design Authority Docs 2–3 | System forecast = **approved** PO net + approved contract-value CEs only. | needs human decision | HD-001 | **No formula change** until decided | Original: Forecast Liability = approved commitment **+ pending variations**. |
+| PC-009 | Pending / expected CE liability in Final Forecast | Design Authority Docs 2–3; founding principles 6–9 | **HD-001 resolved** by owner. System Forecast stays approved facts. Submitted CE expected liability defaults to **full submitted value** and feeds **Final Forecast**. **Not implemented.** | V1 important | HD-001 | **BL-038A** CE-linked expected liability design preflight | Accrual is not the substitute. Generic commercial adjustment remains for non-CE judgement. Approval must not double-count. |
 | PC-010 | Selling Costs adoption formula | Prelims x.4C pattern | **HD-002 resolved:** target-final / replacement-adjustment. | settled | HD-002 | BL-034C shows it; BL-034D writes it | Does not write budget, system forecast, or accrual. Point-in-time. |
 | PC-011 | Commercial Journals | Doc 43A; Doc 45 | Cost-centre drawer **Future**. | V1 important | After core commercial completion | Candidate P2 | Explain timing differences **without** rewriting budget/commitment/cert/ledger. Differentiator, not a stub. |
 | PC-012 | Executive CVR Summary (command centre) | Doc 45 | Summary KPIs exist; commentary, intelligence panel, sales bridge largely absent. | P1/P2 | — | After 034C or parallel UX | Original: “How is this development performing?” in seconds. |
@@ -103,7 +152,7 @@ Importance: **V1 blocker** (hosted trial) · **V1 important** · **post-pilot** 
 | PC-017 | Material / Plant dedicated workspaces | Doc 39 §§21–22; V1 checklist | PO types M/S/P exist; no separate modules. Materials: commitment without certificates. | needs human decision | HD-005 | Decide before building modules | |
 | PC-018 | Trial Envelope (thin safety) | Doc 67 §26; recovery audit BL-035 | **Not started.** | **V1 blocker for hosted/multi-user trial.** Not required to continue single-operator internal UAT. | HD-003 | Before hosted trial | Lock tenant switch, CORS, health, backup drill, mock-auth warning. **Not** full RBAC. |
 | PC-019 | Authority-flag deploy contract | Doc 67 §23 dual-write ban; `.env.example` defaults OFF | Flags default OFF in repo. | V1 blocker for shared UAT | HD-003 | With PC-018 for hosted trial | Named ON set for claimed source of truth. |
-| PC-020 | Persisted Commercial Structure / company admin | Doc 47; Doc 42 “Next = Company Administration” | Structure/company settings **localStorage**. Cost Code Master can be server. Save trap if `reporting_group` missing from local catalog. | V1 important | HD-011 | BL-036 when admin/customer setup is in play | Not a hard dependency of BL-037 if 5400 already exists on Cost Code Master. |
+| PC-020 | Persisted Commercial Structure / company admin | Doc 47; Doc 42 “Next = Company Administration” | Structure/company settings **localStorage**. Cost Code Master can be server. Save trap if `reporting_group` missing from local catalog. | V1 important | HD-011 | BL-036 when admin/customer setup is in play | Not required to implement HD-001. Retain as known onboarding issue. Test Site 1 **5400** existing on Master is evidence, not a product chart. |
 | PC-021 | Full users / RBAC / auth | Doc 18 MVP **includes**; Doc 47 **placeholders only**; Doc 67 **before SaaS** | Mock identity; no server roles. | Before commercial SaaS. **Not** the next internal commercial slice. | HD-003 | Dedicated programme | Do not delay remaining commercial UAT for JWT/RBAC. |
 | PC-022 | Welcome / setup wizard refresh | Doc 43 IDEA-040; V1 checklist | Setup Assistant exists; not a polished customer onboarding. | P2 | After engine completion | Later | |
 | PC-023 | Certificate PDF | V1 checklist; Doc 67 §28 parked in persistence | PO PDF exists; V1 cert PDF does not. | P2 / trial expectation | — | After persistence era | |
@@ -112,22 +161,64 @@ Importance: **V1 blocker** (hosted trial) · **V1 important** · **post-pilot** 
 | PC-026 | HA / package revenue; extras; recognitionPolicy live | Doc 18 excluded Revenue then Doc 48 built it; BL-032 not-do lists | Private plot revenue live. HA/extras/`exchange` policy not live. | future / HD-009 | HD-006 related | Later | |
 | PC-027 | Portfolio / management reporting suite | Doc 17 R9; Doc 45 Phase 4 | CVR Portfolio is **cost-only**. | P2/P3 | PC-012 | Later | |
 | PC-028 | Hard refresh lands on New PO | CURRENT_STATE BL-032A deferred UX | `App.jsx` default tab `"form"`. | V1 important | — | Small UX slice | Not a commercial formula. |
-| PC-029 | Hawthorn Gardens known-answer UAT import | `docs/test-data/README.md` | Pack in repo; **not imported**. | V1 important (regression) | Flags ON | Later UAT | Test Site 1 is contaminated evidence. |
+| PC-029 | Hawthorn Gardens known-answer UAT | `docs/test-data/README.md`; founding-principles reconciliation | Pack in repo; **not imported**. Commercially valuable; **do not discard** and **do not remap** onto Test Site 1 (`5231` / `5400`). | V1 important (regression) | Flags ON; HD-001 | Later recovery UAT, not the next code slice | Client-owned chart; CCV ≠ pending ≠ FFC; pending visible; PO/matrix; cert/recovery; ledger ≠ certified; known-answer month-end; negative import tests; eventual multi-period. Technical artefacts may be stale; preserve commercial scenarios. |
 | PC-030 | Portals, AI/LLM product, benchmarking, risk/opportunity register | Doc 17–18 post-MVP; Doc 43 ideas | Assistant is rules-only. | future | — | Out of V1 core | Do not invent an AI roadmap because development used AI. |
 
 ---
 
-## 5. Human decision register
+## 6. Human decision register
 
-**No implementation of a decided formula or workflow until the named HD is settled in this file by the same banked slice.**
+**No implementation of a decided formula or workflow until the named HD is settled in this file by the same banked slice.** Rank A code does not close a parked HD.
 
-### HD-001 — Pending variations in Forecast Liability
+### HD-001 — Pending / expected liability in Final Forecast — RESOLVED
+
+**Resolved** by explicit product-owner decision after the founding-principles / Hawthorn reconciliation. Product HEAD remains `6d11491` (BL-034D). This record is **design authority only**. Do **not** implement expected liability in the same slice as this documentation.
 
 **Original (Design Authority Docs 2–3):** Forecast Liability = approved commitment **+ pending variations**. Potential liabilities must be visible before approval.
 
-**Current (banked CVR):** System forecast uses **approved** subcontract PO net + **approved/closed contract-value** CEs. Draft/submitted CEs do not enter system forecast. Recovery CEs excluded from commitment.
+**Current banked close engine (unchanged until a named implementation slice):** System Forecast uses **approved** subcontract PO net + **approved/closed contract-value** CEs. Draft/submitted CEs do not enter System Forecast. Recovery CEs are excluded from commitment. Final Forecast today = System Forecast + unlinked commercial adjustment. Accrual is incurred/CTC, not CE expected liability.
 
-**Do not change the formula** until a human commercial decision. Options: keep approved-only (current); include pending in a separate “potential” column (closer to original, lower risk); include pending in system forecast (moves money).
+**Owner settlement:**
+
+**A. Approved / authoritative fact position**  
+System Forecast remains based on the approved / authoritative fact hierarchy already established by the CVR close engine. A draft/submitted/pending Commercial Event must **not** be falsely converted into approved commitment merely because it has forecast treatment.
+
+**B. Potential liability**  
+Pending/submitted Commercial Events must remain visible as potential commercial liability before approval. BuildLite must not require the QS to maintain a parallel Excel sheet merely to remember likely variation exposure.
+
+**C. Expected liability**  
+A pending/submitted Commercial Event may carry an auditable QS expected-liability treatment. That treatment feeds **Final Forecast**, not approved commitment / System Forecast. The underlying CE remains unchanged.
+
+**D. Default treatment — owner decision**  
+**DEFAULT EXPECTED LIABILITY FOR A SUBMITTED COMMERCIAL EVENT = FULL SUBMITTED VALUE.**
+
+Example: PO / approved commitment = £100,000; submitted CE = £20,000. System Forecast / approved fact position remains £100,000, subject to the existing close hierarchy. Potential liability exposes the £20,000 CE. Expected liability defaults to £20,000. Final Forecast therefore includes that expected £20,000 liability unless the QS changes its treatment.
+
+**E. QS control**  
+The QS must be able to override the default expected treatment. Conceptually this must support: include at full value; reduce to another expected value; hold / forecast £0; exclude from expected liability where commercially appropriate. Do not prematurely prescribe exact UI labels here. The essential rule is that the QS controls the expected amount and the decision is auditable.
+
+Example: submitted CE = £20,000; QS believes likely settlement = £15,000. CE fact remains £20,000 submitted. Potential liability remains £20,000. Expected liability = £15,000. Final Forecast includes £15,000.
+
+**F. Simplicity**  
+This should ultimately form part of the normal Commercial Event / CVR workflow. Do **not** design a future process that unnecessarily requires Create CE → separate CVR screen → separate review → separate adopt → confirmation → manual reversal later for every ordinary pending variation. The low-administration default should be commercially safe: a submitted CE naturally carries its full value into expected liability unless the QS deliberately changes the treatment.
+
+**G. Auditability**  
+Changes to expected-liability treatment must be attributable and auditable. The QS should be able to understand: CE factual value/status; potential liability; expected-liability treatment; resulting Final Forecast impact; who changed the treatment and when.
+
+**H. Approval / double-count protection**  
+When a treated pending CE later becomes approved / included in authoritative commitment, BuildLite must reconcile the expected-liability treatment so the same liability is not counted twice. This is a **mandatory requirement of the future implementation**. Do not implement the mechanism in this documentation slice.
+
+**I. Accrual**  
+Do not use manual accrual as the substitute for CE expected liability. Accrual remains its existing incurred-cost / cost-to-complete concept.
+
+**J. Generic commercial adjustment**  
+Generic commercial adjustment remains available for genuine QS forecast judgement that is not represented by a more specific commercial fact. A known pending CE should not require an unlinked lump adjustment merely to get expected liability into Final Forecast. That is the gap HD-001 resolves.
+
+**Relationship to HD-002:** HD-002 remains **RESOLVED** exactly as banked (target-final / replacement-adjustment). Do not alter Selling Costs semantics. Selling Costs / Prelims proposals requiring deliberate adoption are forecast **engines**, not inconsistent with HD-001. A Commercial Event is already an explicit commercial fact entered by the QS; its expected-liability treatment is part of forecasting that fact. Do **not** generalise the Selling Costs Adopt ceremony to every CE.
+
+**Hawthorn:** Preserve CCV / approved commitment as distinct from pending liability, and QS Final Forecast as distinct from both. Hawthorn UAT-02 (3100) already separates approved CCV from pending CE visibility and QS FFC judgement. Future Hawthorn recovery must follow this settlement mechanically without remapping Hawthorn codes to Test Site 1.
+
+**Next named slice (not this one):** **BL-038A — CE-linked expected liability design preflight.** Inspect the current CE model, statuses, CVR close engine, commercialAdjustment behaviour, audit/provenance and approval transition before proposing implementation. Must design: full submitted-value default; QS override/hold/exclude; Final Forecast integration; Potential vs Expected visibility; approval without double count; historic snapshot behaviour; Create Next behaviour; simple SME UX; no destruction of CE facts. Draft-CE default (if any) is an open preflight question; this settlement specifies **submitted** CEs.
 
 ### HD-002 — Selling Costs adoption treatment — RESOLVED
 
@@ -149,7 +240,7 @@ Authoritative commercial rule:
 - Proposal below current System Forecast is a **warning**, not a hard adoption block, consistent with existing Prelims/CVR principles.
 - Selling Costs adoption does **not** alter accrual.
 - GP changes naturally through the CVR final forecast. There must be **no** second Selling Costs deduction from GP.
-- Simple mode currently targets **5400**. Future Detailed mode uses the same **per-cost-code** target-final / replacement-adjustment contract.
+- Simple mode currently targets **5400** on Test Site 1 (recommended destination for that UAT data, **not** a mandatory BuildLite chart — Founding Principle 4). Future Detailed mode uses the same **per-cost-code** target-final / replacement-adjustment contract.
 
 Do **not** write system forecast or budget. Do **not** revive the unused BL-033A stack `max(system, engine)+QS` (PC-007).
 
@@ -216,7 +307,7 @@ Do not Save migrated Admin cost-code rows whose server `reporting_group` is abse
 
 ---
 
-## 6. Near-term sequencing
+## 7. Near-term sequencing
 
 ### Internal / single-operator commercial development (current recommendation)
 
@@ -226,13 +317,18 @@ BL-037A  Authoritative Draft CVR membership command  BANKED
   → BL-037C  Controlled missing-line CVR integration     BANKED
   → HD-002 / HD-008 Selling Costs adoption treatment    RESOLVED
   → BL-034C Selling Costs Review against CVR            READ ONLY (BANKED e06a86c)
-  → BL-034D Selling Costs Adopt into Draft CVR          WRITE (BANKED; human UAT PASS)
-  → Detailed / itemised Selling Costs                   later; not 034D
+  → BL-034D Selling Costs Adopt into Draft CVR          WRITE (BANKED 6d11491)
+  → Founding Product Principles recorded                THIS SLICE (docs only)
+  → HD-001 expected liability                           RESOLVED (docs only; not implemented)
+  → BL-038A CE-linked expected liability design preflight   NEXT
+  → Detailed / itemised Selling Costs                   later; not 034D; not the next slice
 ```
 
-**BL-036** (persisted Commercial Structure / admin setup) is **not** a hard prerequisite of BL-037 if destination codes already exist on Cost Code Master. Place BL-036 when customer Admin setup or the reporting_group save trap (HD-011) is in the critical path — typically **parallel** to 034C or **after** Simple Selling Costs is in CVR, not before 037 by default.
+**BL-036** (persisted Commercial Structure / admin setup) is **not** a hard prerequisite of BL-037 or of HD-001 implementation if destination codes already exist on Cost Code Master. Place BL-036 when customer Admin setup or the reporting_group save trap (HD-011) is in the critical path.
 
-**BL-034D is BANKED.** Keep P04 Draft. Do not create P05. Do not Adopt UAT-CC-001. Detailed Selling Costs remains unstarted. HD-002 and HD-008 remain resolved.
+**BL-034D is BANKED** at `6d11491`. Keep P04 Draft. Do not create P05. Do not Adopt UAT-CC-001. Detailed Selling Costs remains unstarted. HD-001, HD-002 and HD-008 remain **resolved**. Do not implement expected liability until BL-038A (or the named successor) has been approved.
+
+Hawthorn Gardens remains a future client-chart known-answer UAT. Do not import, discard, or remap it in the next slice.
 
 ### Before hosted external / multi-user trial
 
@@ -242,7 +338,7 @@ Full RBAC/users/JWT is **not** the immediate next commercial slice (Doc 47; Doc 
 
 ---
 
-## 7. Maintenance rule
+## 8. Maintenance rule
 
 Every future slice that **parks** functionality, **changes product intent**, **creates or resolves a human decision**, **supersedes Master Documentation**, **changes V1 scope**, or **resolves an item in this register** must update **this file in the same banked slice**.
 

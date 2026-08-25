@@ -20,11 +20,12 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | **BL-033D.x.5 COMPLETE** (Prelims landing UX consolidation). Human visual UAT **PASSED**. |
-| Last persistence slice implemented | **BL-034D BANKED.** Human UAT **PASS**. HD-002 / HD-008 remain **resolved**. Detailed Selling Costs remains unstarted. |
+| Last persistence slice implemented | **BL-034D BANKED** at `6d11491`. Human UAT **PASS**. |
+| Last design-authority slice | **Founding Product Principles + HD-001 RESOLVED** (documentation only). HD-002 / HD-008 remain **resolved**. Detailed Selling Costs remains unstarted. Expected liability **not implemented**. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
 | Durable intent / deferred decisions | `docs/PRODUCT_CONSTITUTION.md` |
-| **NEXT** | Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** Adopt UAT-CC-001. P04 has **11** members; **5400** holds the adopted Selling Costs forecast (**£182,780.64**). HD-002 and HD-008 remain **resolved**. **Detailed Selling Costs remains unstarted.** Later UX only: when Review is Up to date, hide/disable Adopt into CVR. |
+| **NEXT** | **BL-038A — CE-linked expected liability design preflight.** Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** Adopt UAT-CC-001. Do **not** implement expected liability in the next slice until the preflight is approved. Do **not** start Detailed Selling Costs. Do **not** import or remap Hawthorn. P04 has **11** members; **5400** holds the adopted Selling Costs forecast (**£182,780.64**). HD-001 / HD-002 / HD-008 remain **resolved**. |
 
 ---
 
@@ -66,6 +67,7 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-037A** | Authoritative Draft CVR membership command | **COMPLETE / BANKED** at `f2b6e56`. `POST .../cost-code-members`. Empty overlay from active Master. Audit `cost_code_added`. |
 | **BL-037B** | Budget Import + Manual Cost Code Master picker | **COMPLETE / BANKED** at `cb356df`. Server `POST .../budget-import` + Draft Master picker. Both consume 037A. Human UAT **PASS**. |
 | **BL-037C** | Controlled missing-line CVR integration | **COMPLETE / BANKED** at `c5f4c73`. Prelims Draft **Add to CVR**; first QS overlay edit on fact-only auto-rows uses 037A. Mixed-case overlay identity corrected during UAT. Adopt remains a separate action. Selling Costs adoption **not started**. |
+| **BL-038A** | CE-linked expected liability design preflight | **NEXT / NOT STARTED.** HD-001 resolved by owner. Inspect CE model, close engine, overlay adjustment, audit, approval transition, snapshots, Create Next. Do not implement until the preflight is approved. |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -186,7 +188,7 @@ See `docs/test-data/README.md`.
 
 | Pack | Role |
 |------|------|
-| **Hawthorn Gardens** (`docs/test-data/Hawthorn Gardens UAT/`) | Intended **clean fictional known-answer** end-to-end UAT development. Permanent regression/UAT material. Not yet the imported live UAT model; import is a later task, not BL-029. |
+| **Hawthorn Gardens** (`docs/test-data/Hawthorn Gardens UAT/`) | **Retained** clean fictional known-answer end-to-end UAT for a **different SME/client cost-code structure**. Permanent regression/UAT material. **Not imported.** Do **not** discard. Do **not** remap onto Test Site 1 (`5231` / `5400`). Technical artefacts may be stale; commercial intent remains valuable (client-owned chart; CCV ≠ pending ≠ FFC; pending visible; PO/matrix; cert/recovery; ledger ≠ certified; known-answer month-end; negative import tests; eventual multi-period). Recovery is later UAT, not the next code slice. |
 | **Test Site 1** (`docs/test-data/Test Site 1/`) | **Legacy / current historical test evidence.** Keep. Do not treat as the new clean commercial test model. Used for BL-029D, BL-030C, BL-031C–F (including **BL-031E** snapshot/freeze UAT and **BL-031F** P02 monthly-cycle UAT), **BL-032C** P03 Draft UAT, and **BL-032D** P03 whole-CVR lock/freeze UAT. |
 
 ---
@@ -1198,6 +1200,16 @@ Two deliberate commercial actions remain separate: **Add to CVR** then **Adopt i
 
 Banked at `c5f4c73`.
 
+## HD-001 (pending / expected CE liability) — RESOLVED
+
+Documentation / design-authority settlement after founding-principles reconciliation. **No product code. No clone writes. No schema.**
+
+**HD-001 RESOLVED by explicit product-owner decision.** System Forecast remains the approved/authoritative close-engine fact position. Draft/submitted/pending CEs must not be converted into approved commitment by forecast treatment. Pending/submitted CEs remain visible as **potential liability**. QS **expected-liability** treatment feeds **Final Forecast**. **Default for a submitted CE = full submitted value.** QS may include, reduce, hold at £0, or exclude; the CE fact is never rewritten. Approval must reconcile so the same liability is not counted twice (mandatory future implementation requirement). Do not use accrual as the substitute. Generic commercial adjustment remains for non-CE judgement. Do not generalise Selling Costs Adopt ceremony to every CE. **HD-002 unchanged.**
+
+**Not implemented.** Banked close engine still excludes draft/submitted CEs from System Forecast and has no CE-linked expected-liability field. Full wording: `docs/PRODUCT_CONSTITUTION.md` HD-001.
+
+**NEXT named slice:** **BL-038A — CE-linked expected liability design preflight** (inspect CE model, statuses, close engine, commercialAdjustment, audit, approval transition, snapshots, Create Next, SME UX). Do not implement in this documentation slice.
+
 ## HD-002 / HD-008 (Selling Costs adoption treatment and numbering) — RESOLVED
 
 Documentation-only settlement after the HD-002 preflight. No product code. No clone writes.
@@ -1228,11 +1240,11 @@ Later UX only (not in this bank): when Review is Up to date, hide/disable Adopt 
 
 ## Next action
 
-**NEXT:** Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** Adopt UAT-CC-001. **Detailed Selling Costs remains unstarted.** Do **not** switch 5231 to TIME. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning: `docs/PRODUCT_CONSTITUTION.md`.
+**NEXT:** **BL-038A — CE-linked expected liability design preflight.** Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** Adopt UAT-CC-001. Do **not** implement expected liability until that preflight is approved. **Detailed Selling Costs remains unstarted.** Do **not** switch 5231 to TIME. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning: `docs/PRODUCT_CONSTITUTION.md`.
 
 Do **not** alter P01/P02/P03 `reporting_month` except by a future explicit historic-correction feature. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`. Do not delete P04 `0f513191-cd25-4812-834f-37dcf66487e0` except by a later controlled commercial task.
 
-Do not treat Hawthorn Gardens as started. Repo flag default remains OFF. Local UAT left `VITE_REVENUE_SERVER_AUTHORITY=true` in ignored `client/.env.local` (do not commit it). Test Site 1 has one `development_revenue_settings` row (version 2, OM 350, completion) as evidence — do not delete it. Do not delete locked P03 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. Do not delete classification rows `131acfb1-d2e9-4d53-86b9-df5f4f8306b6` (5231) or `f9a8aa59-7fcc-43e0-9015-548ec4d35efc` (5400).
+Hawthorn Gardens is **not started**, **not discarded**, and **must not be remapped** onto Test Site 1 codes. Repo flag default remains OFF. Local UAT left `VITE_REVENUE_SERVER_AUTHORITY=true` in ignored `client/.env.local` (do not commit it). Test Site 1 has one `development_revenue_settings` row (version 2, OM 350, completion) as evidence — do not delete it. Do not delete locked P03 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. Do not delete classification rows `131acfb1-d2e9-4d53-86b9-df5f4f8306b6` (5231) or `f9a8aa59-7fcc-43e0-9015-548ec4d35efc` (5400).
 
 ---
 
