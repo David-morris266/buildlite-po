@@ -6,6 +6,18 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import DevelopmentSellingCostsWorkspace from './DevelopmentSellingCostsWorkspace';
 
+vi.mock('./DevelopmentSellingCostsCvrReview', () => ({
+  default: function MockSellingCostsReview({ onBack }) {
+    return (
+      <div data-testid="mock-selling-costs-review">
+        <button type="button" data-testid="back-to-selling-costs" onClick={onBack}>
+          Back to Selling Costs
+        </button>
+      </div>
+    );
+  },
+}));
+
 vi.mock('../api/sellingCosts', () => ({
   SellingCostsApiError: class SellingCostsApiError extends Error {
     constructor(message, { status = 0, body = null } = {}) {
@@ -17,6 +29,7 @@ vi.mock('../api/sellingCosts', () => ({
   },
   getSellingCostsProposal: vi.fn(),
   putSellingCostsAssumption: vi.fn(),
+  getSellingCostsCvrReview: vi.fn(),
 }));
 
 import {
@@ -103,6 +116,7 @@ describe('DevelopmentSellingCostsWorkspace', () => {
     expect(document.body.textContent).toMatch(/assumption, not an itemised build-up/i);
     expect(document.body.textContent).toMatch(/Selling Costs forecast/);
     expect(document.querySelector('[data-testid="selling-costs-save"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="selling-costs-review-against-cvr"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="selling-costs-adopt"]')).toBeNull();
     expect(document.body.textContent).not.toMatch(/BuildLite standard hint/i);
     expect(document.body.textContent).not.toMatch(/Detailed itemised Selling Costs are not available/i);
@@ -179,5 +193,20 @@ describe('DevelopmentSellingCostsWorkspace', () => {
     expect(document.querySelector('[data-testid="selling-costs-assumption-source"]')?.textContent).toContain(
       'SAVED ASSUMPTION'
     );
+  });
+
+  it('opens read-only Review against CVR and does not show Adopt', async () => {
+    await renderWorkspace();
+    await act(async () => {
+      document.querySelector('[data-testid="selling-costs-review-against-cvr"]')?.click();
+    });
+    await flush();
+    expect(document.querySelector('[data-testid="mock-selling-costs-review"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="selling-costs-adopt"]')).toBeNull();
+    expect(document.querySelector('[data-testid="selling-costs-save"]')).toBeNull();
+    await act(async () => {
+      document.querySelector('[data-testid="back-to-selling-costs"]')?.click();
+    });
+    expect(document.querySelector('[data-testid="selling-costs-review-against-cvr"]')).not.toBeNull();
   });
 });

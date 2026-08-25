@@ -5,6 +5,7 @@ import {
   SellingCostsApiError,
 } from '../api/sellingCosts';
 import { formatCvrMoney } from '../cvr/cvrHelpers';
+import DevelopmentSellingCostsCvrReview from './DevelopmentSellingCostsCvrReview';
 
 function formatPercentDisplay(value) {
   if (value == null || value === '') return '';
@@ -38,6 +39,7 @@ export default function DevelopmentSellingCostsWorkspace({ developmentId }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
+  const [workspaceView, setWorkspaceView] = useState('proposal');
 
   const load = useCallback(async () => {
     if (!developmentId) return;
@@ -114,11 +116,18 @@ export default function DevelopmentSellingCostsWorkspace({ developmentId }) {
         <strong>Selling Costs forecast</strong>
         <p>
           Selling Costs are a forecast proposal based on a percentage of total forecast
-          development revenue. They do not change the CVR until a later deliberate review
-          and adoption step.
+          development revenue. They do not change the CVR until a later deliberate adoption
+          step. Review against CVR is read-only.
         </p>
       </div>
 
+      {workspaceView === 'review' ? (
+        <DevelopmentSellingCostsCvrReview
+          developmentId={developmentId}
+          onBack={() => setWorkspaceView('proposal')}
+        />
+      ) : (
+        <>
       {loading ? <p className="dev-selling-costs__muted">Loading Selling Costs…</p> : null}
       {error ? (
         <p className="dev-selling-costs__error" role="alert">
@@ -197,12 +206,24 @@ export default function DevelopmentSellingCostsWorkspace({ developmentId }) {
               <button type="submit" disabled={saving} data-testid="selling-costs-save">
                 {saving ? 'Saving…' : 'Save assumption'}
               </button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                data-testid="selling-costs-review-against-cvr"
+                onClick={() => {
+                  setError('');
+                  setInfo('');
+                  setWorkspaceView('review');
+                }}
+              >
+                Review against CVR
+              </button>
             </div>
           </form>
 
           <dl className="dev-selling-costs__destination">
             <div>
-              <dt>CVR destination (for later review)</dt>
+              <dt>CVR destination</dt>
               <dd data-testid="selling-costs-destination">
                 {destinationStatusLabel(proposal.destination)}
               </dd>
@@ -210,6 +231,8 @@ export default function DevelopmentSellingCostsWorkspace({ developmentId }) {
           </dl>
         </>
       ) : null}
+        </>
+      )}
     </section>
   );
 }

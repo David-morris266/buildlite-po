@@ -68,7 +68,7 @@ Orientation only. Detail and UAT evidence stay in `CURRENT_STATE.md`.
 | CVR | Draft → Submit → Approve & Lock; immutable snapshots (v2 includes Revenue); QS accrual + commercial adjustment; carry-forward. System forecast = approved commitment / budget / actual hierarchy — **not** pending CEs (HD-001). |
 | Revenue | Strategy + private plot Secured lifecycle + live/v2 GP. `recognitionPolicy=exchange` stored only (HD-009). HA/package revenue, extras, scenario forecasting not live. |
 | Prelims | Templates, site setup, TIME/LUMP_SUM, Review, **Adopt into Draft CVR** (replacement adjustment). Unresolved lines excluded, not £0. Missing Draft lines can be **Added to CVR** via 037A; Adopt still will not create rows. |
-| Selling Costs | **BL-034B banked:** Simple % × live Forecast Revenue; proposal only; 5400 classified SELLING / STANDARD_CVR; 5405 forbidden as Simple destination. **HD-002 resolved** (target-final / replacement-adjustment). **HD-008:** 034C Review (read-only, next); 034D Adopt (write, not started). |
+| Selling Costs | **BL-034B banked:** Simple % × live Forecast Revenue; proposal only; 5400 classified SELLING / STANDARD_CVR; 5405 forbidden as Simple destination. **HD-002 resolved** (target-final / replacement-adjustment). **HD-008:** 034C Review (read-only, SAFE TO BANK / awaiting banking); 034D Adopt (write, not started). |
 | Ledger | CSV import; COINS/Sage/Xero **column templates**; fingerprint de-dupe; reversal not delete. Not live accounting APIs. |
 | Administration | Shell exists. Company/structure/behaviour largely localStorage. Users and Approval Settings are **placeholders** (Doc 47). |
 | Assistant | Rule recommendations (certs, CEs); local dispositions; not an LLM product. |
@@ -85,7 +85,7 @@ Importance: **V1 blocker** (hosted trial) · **V1 important** · **post-pilot** 
 | ID | Topic | Original authority | Current status | Importance | Dependency / decision | Target disposition | Notes |
 |----|--------|-------------------|----------------|------------|----------------------|--------------------|-------|
 | PC-001 | Simple Selling Costs proposal | Doc 42 BL-PB-040 (High); BL-034A/B | **Banked** BL-034B. % × Forecast Revenue. | — | — | Done | Product default 2.00%; Test Site 1 saved 1.75%. Calculated £ is derived, not stored as authority. 5400 is an empty P04 overlay from Manual Add UAT, **not** Selling Costs adoption. |
-| PC-002 | Selling Costs Review against CVR | CURRENT_STATE: BL-034C | **Not started.** Next slice. Read-only. | V1 important | HD-002 (resolved), PC-008 | BL-034C | Original High CVR backlog (Doc 42). HD-008 resolved: 034C = Review. |
+| PC-002 | Selling Costs Review against CVR | CURRENT_STATE: BL-034C | **SAFE TO BANK / awaiting banking.** Read-only. Human UAT + forensic PASS. | V1 important | HD-002 (resolved), PC-008 | BL-034C | Original High CVR backlog (Doc 42). HD-008 resolved: 034C = Review. Proposal £ is not in the CVR. |
 | PC-003 | Selling Costs Adopt into Draft CVR | CURRENT_STATE: BL-034D | **Not started.** Write after 034C. | V1 important | PC-002, HD-002 (resolved) | BL-034D | Must not silent-write CVR. Do not Adopt onto sacred P04 if a clean development is available. |
 | PC-004 | Detailed / itemised Selling Costs | BL-034B constants `DETAILED`; Master Docs unnamed | **Deferred.** Mode constant only. | future / P3 | HD-002 (resolved), HD-006 | After Simple Review/Adopt | **Not BL-034D.** Later id. Same per-code target-final / replacement-adjustment contract as Simple. |
 | PC-005 | Unsaved % live preview | CURRENT_STATE BL-034B UX note | **Not implemented.** | post-pilot | — | UX follow-up | Optional; not commercial maths. |
@@ -225,14 +225,14 @@ BL-037A  Authoritative Draft CVR membership command  BANKED
   → BL-037B  Budget Import + Master picker consume 037A  BANKED
   → BL-037C  Controlled missing-line CVR integration     BANKED
   → HD-002 / HD-008 Selling Costs adoption treatment    RESOLVED
-  → BL-034C Selling Costs Review against CVR            READ ONLY (next)
-  → BL-034D Selling Costs Adopt into Draft CVR          WRITE (later)
+  → BL-034C Selling Costs Review against CVR            READ ONLY (SAFE TO BANK / awaiting banking)
+  → BL-034D Selling Costs Adopt into Draft CVR          WRITE (later; not started)
   → Detailed / itemised Selling Costs                   later; not 034D
 ```
 
 **BL-036** (persisted Commercial Structure / admin setup) is **not** a hard prerequisite of BL-037 if destination codes already exist on Cost Code Master. Place BL-036 when customer Admin setup or the reporting_group save trap (HD-011) is in the critical path — typically **parallel** to 034C or **after** Simple Selling Costs is in CVR, not before 037 by default.
 
-Do **not** start BL-034D, 035, or 036 until instructed. **NEXT is BL-034C** (read-only Review). Keep P04 Draft. Do not create P05. Do not Adopt UAT-CC-001. Do not Adopt Selling Costs until BL-034D. HD-002 and HD-008 are resolved.
+Do **not** start BL-034D, 035, or 036 until instructed. **NEXT is bank BL-034C.** Keep P04 Draft. Do not create P05. Do not Adopt UAT-CC-001. Do not Adopt Selling Costs until BL-034D. HD-002 and HD-008 remain resolved.
 
 ### Before hosted external / multi-user trial
 

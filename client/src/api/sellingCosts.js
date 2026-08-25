@@ -68,3 +68,8 @@ export async function putSellingCostsAssumption(developmentId, payload = {}) {
   });
   return handleJson(res);
 }
+
+export async function getSellingCostsCvrReview(developmentId) {
+  const res = await fetch(buildUrl(`${sellingCostsUrl(developmentId)}/review`));
+  return handleJson(res);
+}
