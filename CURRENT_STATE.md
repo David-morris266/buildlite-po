@@ -20,11 +20,11 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | **BL-033D.x.5 COMPLETE** (Prelims landing UX consolidation). Human visual UAT **PASSED**. |
-| Last persistence slice implemented | **BL-037C BANKED** at `c5f4c73`. **HD-002 RESOLVED.** **HD-008 RESOLVED.** **BL-034C SAFE TO BANK** (read-only Selling Costs Review). Implementation / tests / human UAT / forensic **PASS**. Awaiting banking. |
+| Last persistence slice implemented | **BL-034D BANKED.** Human UAT **PASS**. HD-002 / HD-008 remain **resolved**. Detailed Selling Costs remains unstarted. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
 | Durable intent / deferred decisions | `docs/PRODUCT_CONSTITUTION.md` |
-| **NEXT** | **Bank BL-034C.** Then **BL-034D** only when separately instructed. Do **not** start BL-034D now. Do **not** Adopt Selling Costs. Do **not** Adopt UAT-CC-001. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. P04 has **11** members including empty **5400** (SELLING / STANDARD_CVR; proposal not in CVR) and empty **uat-cc-001**. HD-002 and HD-008 remain **resolved**. |
+| **NEXT** | Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** Adopt UAT-CC-001. P04 has **11** members; **5400** holds the adopted Selling Costs forecast (**£182,780.64**). HD-002 and HD-008 remain **resolved**. **Detailed Selling Costs remains unstarted.** Later UX only: when Review is Up to date, hide/disable Adopt into CVR. |
 
 ---
 
@@ -61,8 +61,8 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-033D.x.5** | Prelims landing UX consolidation | **COMPLETE / BANKED.** Template/Manage primary; site-specific add secondary. |
 | **BL-034A** | Selling Costs design / preflight | **COMPLETE (read-only).** Simple % × live Forecast Revenue; proposal-before-CVR; destination configurable (standard hint **5400**); incentives deferred. |
 | **BL-034B** | Simple Selling Costs proposal | **COMPLETE / BANKED** at `b34ea60`. Migration `020` + GET/PUT `/selling-costs` + workspace tab. Default **2.00%** / saved assumption; £ derived from live Forecast Revenue; no CVR writes. Test Site 1 human UAT **PASS** (saved **1.75%** → **£182,780.64**). Destination **5400** classified **SELLING / STANDARD_CVR**. **HD-008 resolved:** BL-034C = Review (read-only); BL-034D = Adopt (write). Detailed is later, not 034D. UX follow-up only: optional live preview of unsaved % (not implemented). |
-| **BL-034C** | Selling Costs Review against CVR | **SAFE TO BANK.** Implementation PASS. Automated tests PASS. Human UAT PASS. Forensic read-only verification PASS. Awaiting banking. HD-002 / HD-008 remain **resolved**. |
-| **BL-034D** | Selling Costs Adopt into Draft CVR | **Not started.** Write slice after 034C. |
+| **BL-034C** | Selling Costs Review against CVR | **COMPLETE / BANKED** at `e06a86c`. Read-only GET `/selling-costs/review`. Human UAT **PASS**. Forensic SELECT-only **PASS**. HD-002 / HD-008 remain **resolved**. |
+| **BL-034D** | Selling Costs Adopt into Draft CVR | **COMPLETE / BANKED.** Human UAT **PASS** on Test Site 1 P04 / 5400. Server-authoritative `POST .../selling-costs/adoption`. HD-002 replacement adjustment only. Detailed Selling Costs remains unstarted. |
 | **BL-037A** | Authoritative Draft CVR membership command | **COMPLETE / BANKED** at `f2b6e56`. `POST .../cost-code-members`. Empty overlay from active Master. Audit `cost_code_added`. |
 | **BL-037B** | Budget Import + Manual Cost Code Master picker | **COMPLETE / BANKED** at `cb356df`. Server `POST .../budget-import` + Draft Master picker. Both consume 037A. Human UAT **PASS**. |
 | **BL-037C** | Controlled missing-line CVR integration | **COMPLETE / BANKED** at `c5f4c73`. Prelims Draft **Add to CVR**; first QS overlay edit on fact-only auto-rows uses 037A. Mixed-case overlay identity corrected during UAT. Adopt remains a separate action. Selling Costs adoption **not started**. |
@@ -1206,19 +1206,29 @@ Documentation-only settlement after the HD-002 preflight. No product code. No cl
 
 **HD-008 RESOLVED:** **BL-034C** = Selling Costs Review against CVR (read-only). **BL-034D** = Selling Costs Adopt into Draft CVR (write). Detailed / itemised Selling Costs is later work and must **not** be implemented as BL-034D. Banked BL-034A/B commits are unchanged.
 
-## BL-034C (Selling Costs Review against CVR) — SAFE TO BANK / awaiting banking
+## BL-034C (Selling Costs Review against CVR) — BANKED
 
-Read-only Development → Selling Costs → **Review against CVR**. Server-authoritative GET `/api/developments/:developmentId/selling-costs/review`. HD-002 target-final / replacement-adjustment. No Adopt. No CVR writes. No membership create. No settings write.
+Read-only Development → Selling Costs → **Review against CVR**. Server-authoritative GET `/api/developments/:developmentId/selling-costs/review`. HD-002 target-final / replacement-adjustment. No CVR writes. No membership create. No settings write. Banked at `e06a86c`.
 
-**Human visual UAT PASS (25 Aug 2026)** on Test Site 1: proposal **£182,780.64** (1.75% of Forecast Revenue **£10,444,608**) vs empty 5400 (system/current/final/accrual **£0**) → proposed replacement **+£182,780.64**, proposed final **£182,780.64**, movement **+£182,780.64**, state **Not adopted**. No Adopt / Add to CVR / Submit / Approve / Lock / P05.
+**Human visual UAT PASS (25 Aug 2026)** on Test Site 1: proposal **£182,780.64** (1.75% of Forecast Revenue **£10,444,608**) vs empty 5400 (system/current/final/accrual **£0**) → proposed replacement **+£182,780.64**, proposed final **£182,780.64**, movement **+£182,780.64**, state **Not adopted**. No Add to CVR / Submit / Approve / Lock / P05.
 
 **Forensic SELECT-only PASS:** opening/refreshing Review and rebuilding the server preview caused **zero** clone writes. 5400 remains empty overlay (`9772e90b-135c-40dc-b547-ca4e679360bd`), `display_metadata` `{}`, no `sellingCostsAdoption`. Selling Costs settings still simple **1.75%** v1, `destination_cost_code_key` **null** (5400 resolved as recommended). Proposal £ is **not** in the CVR.
 
 Test Site 1 **5400** remains classified **SELLING / STANDARD_CVR**. Membership is not adoption.
 
+## BL-034D (Selling Costs Adopt into Draft CVR) — COMPLETE / BANKED
+
+Server-authoritative `POST /api/developments/:developmentId/selling-costs/adoption`. Intent + expectations only; server recalculates the HD-002 replacement adjustment and writes commercial adjustment + `display_metadata.sellingCostsAdoption` + adjustment history + one `selling_costs_adopted` audit. Draft stays Draft. No snapshot. No P05. No membership create. Accrual / budget / system forecast unchanged. Client-supplied proposal/adjustment money is ignored.
+
+Two fail-closed Confirm attempts wrote nothing. Fixes banked with this slice: adoption proposal rebuild uses the same transaction `dbClient`; multi-period listing maps each period row explicitly (`periodRowToDocument(row)`) so `Array.map` indexes cannot be treated as audit history. Stale/conflict gates were not weakened.
+
+**Human UAT 25 Aug 2026 — PASS** on Test Site 1 P04 / 5400: adopted forecast **£182,780.64**, Review **Up to date**, input v2, one `sellingCostsAdoption` (`superseded: false`), one `selling_costs_adopted` audit. P04 remains Draft v1 / 2026-08. Forecast Cost **£2,555,403.64**; GP **£7,889,204.36**. Settings still simple **1.75%** v1. Forecast Revenue **£10,444,608**. 5231 / UAT-CC-001 / Prelims / programme / snapshots **3** unchanged. Detailed Selling Costs remains unstarted.
+
+Later UX only (not in this bank): when Review is Up to date, hide/disable Adopt into CVR and show Already adopted — up to date.
+
 ## Next action
 
-**NEXT:** **Bank BL-034C.** **BL-034D** remains unstarted until separately instructed. Do **not** Adopt Selling Costs. Do **not** Adopt UAT-CC-001. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** treat 5400 membership as Selling Costs adoption. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning: `docs/PRODUCT_CONSTITUTION.md`.
+**NEXT:** Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** Adopt UAT-CC-001. **Detailed Selling Costs remains unstarted.** Do **not** switch 5231 to TIME. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning: `docs/PRODUCT_CONSTITUTION.md`.
 
 Do **not** alter P01/P02/P03 `reporting_month` except by a future explicit historic-correction feature. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`. Do not delete P04 `0f513191-cd25-4812-834f-37dcf66487e0` except by a later controlled commercial task.
 

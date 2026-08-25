@@ -30,6 +30,7 @@ vi.mock('../api/sellingCosts', () => ({
   getSellingCostsProposal: vi.fn(),
   putSellingCostsAssumption: vi.fn(),
   getSellingCostsCvrReview: vi.fn(),
+  adoptSellingCostsIntoCvr: vi.fn(),
 }));
 
 import {

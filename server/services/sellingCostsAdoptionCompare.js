@@ -1,7 +1,7 @@
 /**
- * BL-034C — Selling Costs → CVR review compare (pure, no writes).
+ * BL-034C / BL-034D — Selling Costs → CVR review compare (pure, no writes).
  * HD-002: target-final / replacement-adjustment.
- * Metadata contract is for future BL-034D; this module never persists it.
+ * BL-034D persists display_metadata.sellingCostsAdoption via the apply service.
  */
 
 const { roundMoney } = require("./cvrCloseFormulas");
@@ -92,7 +92,17 @@ function normalizeSellingCostsAdoptionMetadata(raw) {
   const adoptedTargetFinal = roundMoney(raw.adoptedTargetFinal);
   if (adoptedTargetFinal == null) return null;
 
+  const forecastRevenueAtAdoption = roundMoney(
+    raw.forecastRevenueAtAdoption ?? raw.forecastRevenueUsed
+  );
+  const inputVersionAtAdoption = Number.isInteger(Number(raw.inputVersionAtAdoption))
+    ? Number(raw.inputVersionAtAdoption)
+    : Number.isInteger(Number(raw.inputVersion))
+      ? Number(raw.inputVersion)
+      : null;
+
   return {
+    mode: String(raw.mode || "simple"),
     adoptedTargetFinal,
     adoptedAdjustment: roundMoney(raw.adoptedAdjustment) ?? 0,
     systemForecastAtAdoption: roundMoney(raw.systemForecastAtAdoption),
@@ -100,7 +110,8 @@ function normalizeSellingCostsAdoptionMetadata(raw) {
     previousAdjustment: roundMoney(raw.previousAdjustment) ?? 0,
     proposalFingerprint: String(raw.proposalFingerprint || ""),
     assumptionPercent: roundMoney(raw.assumptionPercent),
-    forecastRevenueUsed: roundMoney(raw.forecastRevenueUsed),
+    forecastRevenueAtAdoption,
+    forecastRevenueUsed: forecastRevenueAtAdoption,
     destinationCostCodeKey: String(raw.destinationCostCodeKey || "").trim(),
     settingsVersion: Number.isInteger(Number(raw.settingsVersion))
       ? Number(raw.settingsVersion)
@@ -111,13 +122,13 @@ function normalizeSellingCostsAdoptionMetadata(raw) {
     adoptedBy: raw.adoptedBy || null,
     superseded: Boolean(raw.superseded),
     inputId: raw.inputId ? String(raw.inputId) : null,
-    inputVersion: Number.isInteger(Number(raw.inputVersion))
-      ? Number(raw.inputVersion)
-      : null,
+    inputVersionAtAdoption,
+    inputVersion: inputVersionAtAdoption,
   };
 }
 
 function buildSellingCostsAdoptionMetadata({
+  mode = "simple",
   adoptedTargetFinal,
   adoptedAdjustment,
   systemForecastAtAdoption,
@@ -125,6 +136,7 @@ function buildSellingCostsAdoptionMetadata({
   previousAdjustment,
   proposalFingerprint,
   assumptionPercent,
+  forecastRevenueAtAdoption,
   forecastRevenueUsed,
   destinationCostCodeKey,
   settingsVersion,
@@ -133,26 +145,34 @@ function buildSellingCostsAdoptionMetadata({
   adoptedAt,
   adoptedBy,
   inputId,
+  inputVersionAtAdoption,
   inputVersion,
 } = {}) {
+  const revenue = roundMoney(forecastRevenueAtAdoption ?? forecastRevenueUsed);
+  const versionAtAdoption = Number.isInteger(Number(inputVersionAtAdoption))
+    ? Number(inputVersionAtAdoption)
+    : Number.isInteger(Number(inputVersion))
+      ? Number(inputVersion)
+      : null;
   return {
+    mode: String(mode || "simple"),
+    assumptionPercent: roundMoney(assumptionPercent),
+    forecastRevenueAtAdoption: revenue,
     adoptedTargetFinal: roundMoney(adoptedTargetFinal),
     adoptedAdjustment: roundMoney(adoptedAdjustment) ?? 0,
     systemForecastAtAdoption: roundMoney(systemForecastAtAdoption),
-    previousFinalForecast: roundMoney(previousFinalForecast),
     previousAdjustment: roundMoney(previousAdjustment) ?? 0,
+    previousFinalForecast: roundMoney(previousFinalForecast),
     proposalFingerprint: String(proposalFingerprint || ""),
-    assumptionPercent: roundMoney(assumptionPercent),
-    forecastRevenueUsed: roundMoney(forecastRevenueUsed),
     destinationCostCodeKey: String(destinationCostCodeKey || "").trim(),
     settingsVersion: Number.isInteger(Number(settingsVersion)) ? Number(settingsVersion) : null,
     reportingMonth: normalizeReportingMonth(reportingMonth),
     periodKey: String(periodKey || ""),
     adoptedAt: adoptedAt || null,
     adoptedBy: adoptedBy || null,
-    superseded: false,
     inputId: inputId ? String(inputId) : null,
-    inputVersion: Number.isInteger(Number(inputVersion)) ? Number(inputVersion) : null,
+    inputVersionAtAdoption: versionAtAdoption,
+    superseded: false,
   };
 }
 

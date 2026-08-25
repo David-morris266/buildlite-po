@@ -4,9 +4,9 @@
 **Last product slice fully complete:** **BL-033D.x.5 — COMPLETE** (Prelims landing UX consolidation; human visual UAT **PASSED**).  
 **Last Adopt UI slice:** **BL-033D.x.4C.2 — COMPLETE** (human + forensic UAT **PASSED**).  
 **Last server contract banked:** **BL-033D.x.4C.1 — BANKED** (`8bd66f6`; Prelims → Draft CVR adoption command).  
-**Last persistence slice implemented:** **BL-037C BANKED** (`c5f4c73`). **HD-002 / HD-008 resolved.** **BL-034C SAFE TO BANK** (read-only review; no schema change; awaiting banking).  
-**CRITICAL:** P03 is **locked** with schema-v2 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. P04 is **Draft** `0f513191-cd25-4812-834f-37dcf66487e0` v1 with `reporting_month` **2026-08**, **no snapshot**, and **11** members including empty **5400** (SELLING / STANDARD_CVR; proposal not in CVR) and empty **uat-cc-001**. Controlled UAT left 5231 commercial adjustment **+£7,720** / accrual **£120** / input version **2**. P01/P02/P03 `reporting_month` remain NULL. P05 does not exist. Snapshot count remains **3**.  
-**NEXT:** Bank BL-034C. Do not start BL-034D until instructed. Do not Adopt UAT-CC-001. Keep P04 Draft. Do not Submit or Approve & Lock P04. Do not create P05. Do not treat 5400 membership as Selling Costs adoption. Do not switch 5231 to TIME. Do not Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog.
+**Last persistence slice implemented:** **BL-034D BANKED** (no schema change). Human UAT **PASS**. **HD-002 / HD-008 resolved.** Detailed Selling Costs remains unstarted.  
+**CRITICAL:** P03 is **locked** with schema-v2 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. P04 is **Draft** `0f513191-cd25-4812-834f-37dcf66487e0` v1 with `reporting_month` **2026-08**, **no snapshot**, and **11** members. **5400** holds adopted Selling Costs **£182,780.64** (input v2; budgets null; accrual 0). `uat-cc-001` remains empty. Controlled UAT left 5231 commercial adjustment **+£7,720** / accrual **£120** / input version **2**. P01/P02/P03 `reporting_month` remain NULL. P05 does not exist. Snapshot count remains **3**.  
+**NEXT:** Keep P04 Draft. Do not Submit or Approve & Lock P04. Do not create P05. Do not Adopt UAT-CC-001. Detailed Selling Costs remains unstarted. Do not switch 5231 to TIME. Do not Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog.
 
 ---
 
@@ -277,7 +277,7 @@ Agreed future commercial rules (do **not** change live client calculations in BL
 | Table | Purpose |
 |-------|---------|
 | `cvr_periods` | One reporting period per development. Unique `(client_id, development_id, lower(period_key))`. Status `draft` → `submitted` → `locked`. At most one open (`draft` or `submitted`) period per development. |
-| `cvr_period_audit` | Workflow/edit evidence (created, patched, submitted, rejected, approved, locked, inputs_upserted, prelims_adopted, **cost_code_added**, **budget_imported**). |
+| `cvr_period_audit` | Workflow/edit evidence (created, patched, submitted, rejected, approved, locked, inputs_upserted, prelims_adopted, **selling_costs_adopted**, **cost_code_added**, **budget_imported**). |
 | `cvr_cost_code_inputs` | QS overlays per period × `cost_code_key`, including `manual_accrual NUMERIC NOT NULL DEFAULT 0`. Unique `(client_id, period_id, cost_code_key)`. |
 | `ledger_import_batches` | Import provenance (file, profile, row counts, total net). |
 | `ledger_transactions` | Transaction-level actuals. Unique `(client_id, development_id, fingerprint)`. Optional `reverses_id`. |
@@ -290,7 +290,9 @@ No snapshot tables in `009`. Legacy `payment_certificates` and BL-029/BL-030 mat
 
 **BL-037C** adds no table and no migration. Prelims Draft **Add to CVR** and the first QS overlay edit on a fact-only `auto-` worksheet row both call the existing 037A `POST .../cost-code-members` command, then (for overlay edits) PATCH the real input. Facts continue to union into the live CVR without requiring an overlay. Overlay create does not copy fact money. `COST_CODE_NOT_ON_CVR` remains the Adopt fail-closed guard. Prelims adoption preview matches overlay identity case-insensitively (037A stores `normaliseCostCodeKey`, which lowercases) and keeps the Prelims/Master display key. Human UAT **PASS** 25 Aug 2026. **Banked** at `c5f4c73`. No Selling Costs adoption. HD-002 **resolved** (target-final / replacement-adjustment; writes adjustment only). HD-008 **resolved** (034C Review read-only; 034D Adopt write). HD-001 unchanged.
 
-**BL-034C** adds no table and no migration. GET `/api/developments/:developmentId/selling-costs/review` is read-only: it composes the existing Selling Costs proposal with the existing CVR close candidate and overlay membership. It does not write CVR, settings, membership, accrual, budget, or `display_metadata.sellingCostsAdoption`. That metadata key is the future BL-034D provenance contract only. Test Site 1 human UAT **PASS** 25 Aug 2026. Forensic SELECT-only **PASS**: Review caused zero clone writes; 5400 remains empty; proposal **£182,780.64** is **not** on the CVR. **SAFE TO BANK / awaiting banking.**
+**BL-034C** adds no table and no migration. GET `/api/developments/:developmentId/selling-costs/review` is a compare: it composes the existing Selling Costs proposal with the existing CVR close candidate and overlay membership. BL-034C itself does not write CVR, settings, membership, accrual, budget, or `display_metadata.sellingCostsAdoption`. Test Site 1 human UAT **PASS** 25 Aug 2026. Forensic SELECT-only **PASS**. **Banked** at `e06a86c`.
+
+**BL-034D** adds no table and no migration. `POST /api/developments/:developmentId/selling-costs/adoption` is the write command. It recalculates the HD-002 replacement adjustment inside a transaction, writes commercial adjustment / reason / `display_metadata.sellingCostsAdoption` / adjustment history, bumps the destination input version, and records one `selling_costs_adopted` audit. It does not write Original/Current Budget, system forecast, accrual, commitment, actual, Selling Costs settings, Forecast Revenue, membership, period lifecycle, or snapshots. Simple mode currently adopts one destination; `selections[]` is the future Detailed contract. Proposal rebuild uses the adoption transaction client. Multi-period listing maps each period row explicitly. Human UAT **PASS** 25 Aug 2026. **Banked.** Test Site 1 5400 holds adopted **£182,780.64**. Detailed Selling Costs remains unstarted.
 
 ---
 

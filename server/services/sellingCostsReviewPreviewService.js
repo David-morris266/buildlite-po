@@ -1,9 +1,10 @@
 /**
- * BL-034C — Read-only Selling Costs Review against CVR.
- * Reuses the BL-034B proposal and existing CVR close candidate.
- * Does not write CVR, settings, membership, or adoption metadata.
+ * BL-034C/D — Selling Costs Review against CVR.
+ * GET remains a compare. BL-034D Adopt is a separate POST command.
+ * This preview does not write CVR, settings, membership, or adoption metadata.
  */
 
+const { CVR_PERIOD_STATUSES } = require("./cvrPeriodConstants");
 const { listCvrPeriods, listCostCodeInputs } = require("./cvrPeriodRepository");
 const { getSellingCostsProposal } = require("./sellingCostsRepository");
 const { DESTINATION_STATUSES, SELLING_COSTS_MODES } = require("./sellingCostsConstants");
@@ -106,13 +107,23 @@ function proposalContext(proposal) {
 
 function buildHeadline(comparison) {
   if (!comparison || comparison.sellingCostsProposal == null) return null;
+  if (comparison.isUpToDate) {
+    return (
+      `Selling Costs is up to date on the current CVR. ` +
+      `The adopted forecast is ${formatPounds(comparison.currentFinalForecast)}.`
+    );
+  }
   return (
     `BuildLite currently proposes ${formatPounds(comparison.sellingCostsProposal)} of Selling Costs. ` +
     `The CVR currently forecasts ${formatPounds(comparison.currentFinalForecast)}. ` +
-    `Adopting later would require adjustment ${signedPounds(
+    `Adopting would require replacement adjustment ${signedPounds(
       comparison.proposedReplacementAdjustment
     )} and would move the Final Forecast by ${signedPounds(comparison.resultingMovement)}.`
   );
+}
+
+function isDraftPeriod(period) {
+  return String(period?.status || "") === CVR_PERIOD_STATUSES.draft;
 }
 
 function blockedPreview({
@@ -275,7 +286,7 @@ async function buildSellingCostsReviewPreview(clientId, developmentId) {
           destinationKey,
       },
       headline: buildHeadline(comparison),
-      canAdopt: false,
+      canAdopt: isDraftPeriod(openPeriod),
     },
   };
 }

@@ -51,7 +51,7 @@ async function findSettingsRow(clientId, developmentId, dbClient = null) {
   return rows[0] || null;
 }
 
-async function composeProposal(clientId, developmentId, row) {
+async function composeProposal(clientId, developmentId, row, dbClient = null) {
   const settings = settingsRowToCore(row, developmentId);
   const assumptionPercent = settings.exists
     ? settings.assumptionPercent
@@ -60,11 +60,12 @@ async function composeProposal(clientId, developmentId, row) {
     ? ASSUMPTION_SOURCES.USER
     : ASSUMPTION_SOURCES.DEFAULT;
 
-  const { revenue } = await loadLiveForecastRevenue(clientId, developmentId);
+  const { revenue } = await loadLiveForecastRevenue(clientId, developmentId, { dbClient });
   const money = buildMoneyProposal(revenue, assumptionPercent);
 
   const destination = await resolveSellingCostsDestination(clientId, {
     overrideKey: settings.destinationCostCodeKey,
+    dbClient,
   });
 
   return buildProposalDocument({

@@ -337,7 +337,7 @@ if (!isDbConfigured()) {
     const res = await request(app).get(`/api/developments/${developmentId}/selling-costs/review`);
     assert.equal(res.status, 200, res.body?.message || JSON.stringify(res.body));
     assert.equal(res.body.readOnly, true);
-    assert.equal(res.body.canAdopt, false);
+    assert.equal(res.body.canAdopt, true);
     assert.equal(res.body.reviewStatus, "ready");
     assert.equal(res.body.reviewState, SELLING_COSTS_REVIEW_STATES.NOT_ADOPTED);
     assert.equal(res.body.proposal.forecastRevenue, KNOWN_FORECAST_REVENUE);

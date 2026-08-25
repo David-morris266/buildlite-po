@@ -1,6 +1,6 @@
 /**
- * BL-034B — Development Selling Costs proposal API client.
- * Server is calculation authority. No CVR mutations.
+ * BL-034B/C/D — Development Selling Costs proposal, review, and adoption API.
+ * Server is calculation authority. Adoption POST sends intent/expectations only.
  */
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace(
@@ -71,5 +71,18 @@ export async function putSellingCostsAssumption(developmentId, payload = {}) {
 
 export async function getSellingCostsCvrReview(developmentId) {
   const res = await fetch(buildUrl(`${sellingCostsUrl(developmentId)}/review`));
+  return handleJson(res);
+}
+
+/**
+ * BL-034D — Adopt the current Simple Selling Costs destination into Draft CVR.
+ * Sends intent + expectations only; server recalculates the replacement adjustment.
+ */
+export async function adoptSellingCostsIntoCvr(developmentId, payload = {}) {
+  const res = await fetch(buildUrl(`${sellingCostsUrl(developmentId)}/adoption`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(withActor(payload)),
+  });
   return handleJson(res);
 }
