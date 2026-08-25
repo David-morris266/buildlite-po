@@ -21,11 +21,11 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | **BL-033D.x.5 COMPLETE** (Prelims landing UX consolidation). Human visual UAT **PASSED**. |
 | Last persistence slice implemented | **BL-034D BANKED** at `6d11491`. Human UAT **PASS**. |
-| Last design-authority slice | **Founding Product Principles + HD-001 RESOLVED** (documentation only). HD-002 / HD-008 remain **resolved**. Detailed Selling Costs remains unstarted. Expected liability **not implemented**. |
+| Last design-authority slice | **HD-038-1 / HD-038-2 / HD-038-3 RESOLVED** (docs only, after BL-038A). HD-001 / HD-002 / HD-008 remain **resolved**. Detailed Selling Costs remains unstarted. Expected liability **not implemented**. **BL-038B not started.** |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
 | Durable intent / deferred decisions | `docs/PRODUCT_CONSTITUTION.md` |
-| **NEXT** | **BL-038A — CE-linked expected liability design preflight.** Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** Adopt UAT-CC-001. Do **not** implement expected liability in the next slice until the preflight is approved. Do **not** start Detailed Selling Costs. Do **not** import or remap Hawthorn. P04 has **11** members; **5400** holds the adopted Selling Costs forecast (**£182,780.64**). HD-001 / HD-002 / HD-008 remain **resolved**. |
+| **NEXT** | **BL-038B — CE expected-liability model / override / audit foundation.** **NOT STARTED.** Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** Adopt UAT-CC-001. Do **not** start Detailed Selling Costs. Do **not** import or remap Hawthorn. P04 has **11** members; **5400** holds the adopted Selling Costs forecast (**£182,780.64**). HD-001 / HD-002 / HD-008 / HD-038-1/2/3 remain **resolved**. |
 
 ---
 
@@ -67,7 +67,8 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-037A** | Authoritative Draft CVR membership command | **COMPLETE / BANKED** at `f2b6e56`. `POST .../cost-code-members`. Empty overlay from active Master. Audit `cost_code_added`. |
 | **BL-037B** | Budget Import + Manual Cost Code Master picker | **COMPLETE / BANKED** at `cb356df`. Server `POST .../budget-import` + Draft Master picker. Both consume 037A. Human UAT **PASS**. |
 | **BL-037C** | Controlled missing-line CVR integration | **COMPLETE / BANKED** at `c5f4c73`. Prelims Draft **Add to CVR**; first QS overlay edit on fact-only auto-rows uses 037A. Mixed-case overlay identity corrected during UAT. Adopt remains a separate action. Selling Costs adoption **not started**. |
-| **BL-038A** | CE-linked expected liability design preflight | **NEXT / NOT STARTED.** HD-001 resolved by owner. Inspect CE model, close engine, overlay adjustment, audit, approval transition, snapshots, Create Next. Do not implement until the preflight is approved. |
+| **BL-038A** | CE-linked expected liability design preflight | **COMPLETE (docs/design).** HD-001 plus HD-038-1/2/3 settled. No product code. |
+| **BL-038B** | CE expected-liability model / override / audit foundation | **NEXT / NOT STARTED.** Do not implement in the HD-038 documentation slice. |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -1208,13 +1209,27 @@ Documentation / design-authority settlement after founding-principles reconcilia
 
 **Not implemented.** Banked close engine still excludes draft/submitted CEs from System Forecast and has no CE-linked expected-liability field. Full wording: `docs/PRODUCT_CONSTITUTION.md` HD-001.
 
-**NEXT named slice:** **BL-038A — CE-linked expected liability design preflight** (inspect CE model, statuses, close engine, commercialAdjustment, audit, approval transition, snapshots, Create Next, SME UX). Do not implement in this documentation slice.
+**NEXT named slice:** **BL-038B — CE expected-liability model / override / audit foundation.** **Not started.**
+
+## HD-038-1 / HD-038-2 / HD-038-3 — RESOLVED
+
+Documentation / design-authority settlement after BL-038A. **No product code. No clone writes. No schema.** HD-001 and HD-002 are **not** reopened.
+
+**HD-038-1 RESOLVED (option 1):** Draft CEs do **not** contribute Expected Liability to the CVR. Submission is the commercial boundary. On Submit, an eligible contract-value CE contributes full submitted value as Expected unless the QS has changed treatment. Default is **derived**, not written on Submit. Draft may stay in package pending KPIs; it does not move Final Forecast.
+
+**HD-038-2 RESOLVED (option 1, additive):** **Final Forecast = System Forecast + CE Expected Liability + Commercial Adjustment.** Expected is a distinct component. HD-002 replacement write remains **proposal − System Forecast**. Adopted Prelims/Selling Costs may be supplemented by CE Expected on the same code (example: System £100k, engine target £120k, Expected £20k → Final £140k). Review “up to date” must not imply Final equals the engine proposal. Adopt must never consume/offset/suppress known CE Expected.
+
+**HD-038-3 RESOLVED (option 1):** Expected may **exceed** submitted CE value. Do not cap. Warning + required reason. Submitted value remains Potential. Override is auditable. CE fact is not rewritten.
+
+Agreed 038A principles (still not implemented): derived default; override stored separately; approval drops Expected by formula; no CE Adopt; no auto overlay membership; Hawthorn not remapped.
+
+Full wording: `docs/PRODUCT_CONSTITUTION.md` HD-038-1/2/3.
 
 ## HD-002 / HD-008 (Selling Costs adoption treatment and numbering) — RESOLVED
 
 Documentation-only settlement after the HD-002 preflight. No product code. No clone writes.
 
-**HD-002 RESOLVED:** Selling Costs CVR adoption uses **target-final / replacement-adjustment** semantics. Target final = current Selling Costs proposal. Replacement adjustment = proposal − current system forecast. Final = system + replacement adjustment. Adoption writes **commercial adjustment only**. It must not write budget, system forecast, accrual, commitment, or actual. Proposal stays separate until deliberate Adopt. Adoption is point-in-time: later Revenue or facts must not auto-recalculate the CVR; Review exposes drift and permits re-adopt. Manual QS change of the adopted adjustment **supersedes** the adoption and requires acknowledgement to re-adopt. Proposal below system is a **warning**, not a hard block. GP moves only through CVR final forecast. Simple currently targets **5400**; Detailed later uses the same per-code contract. Full wording: `docs/PRODUCT_CONSTITUTION.md` HD-002.
+**HD-002 RESOLVED:** Selling Costs CVR adoption uses **target-final / replacement-adjustment** semantics. Target final = current Selling Costs proposal. Replacement adjustment = proposal − current system forecast. Adoption writes **commercial adjustment only**. It must not write budget, system forecast, accrual, commitment, or actual. Proposal stays separate until deliberate Adopt. Adoption is point-in-time: later Revenue or facts must not auto-recalculate the CVR; Review exposes drift and permits re-adopt. Manual QS change of the adopted adjustment **supersedes** the adoption and requires acknowledgement to re-adopt. Proposal below system is a **warning**, not a hard block. GP moves only through CVR final forecast. Simple currently targets **5400**; Detailed later uses the same per-code contract. **HD-038-2:** authoritative **row** Final Forecast is System + CE Expected + Adjustment; HD-002 write is unchanged. Full wording: `docs/PRODUCT_CONSTITUTION.md` HD-002 and HD-038-2.
 
 **HD-008 RESOLVED:** **BL-034C** = Selling Costs Review against CVR (read-only). **BL-034D** = Selling Costs Adopt into Draft CVR (write). Detailed / itemised Selling Costs is later work and must **not** be implemented as BL-034D. Banked BL-034A/B commits are unchanged.
 
@@ -1240,7 +1255,7 @@ Later UX only (not in this bank): when Review is Up to date, hide/disable Adopt 
 
 ## Next action
 
-**NEXT:** **BL-038A — CE-linked expected liability design preflight.** Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** Adopt UAT-CC-001. Do **not** implement expected liability until that preflight is approved. **Detailed Selling Costs remains unstarted.** Do **not** switch 5231 to TIME. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning: `docs/PRODUCT_CONSTITUTION.md`.
+**NEXT:** **BL-038B — CE expected-liability model / override / audit foundation.** **NOT STARTED.** Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** Adopt UAT-CC-001. Do **not** implement expected liability in this documentation slice. **Detailed Selling Costs remains unstarted.** Do **not** switch 5231 to TIME. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning: `docs/PRODUCT_CONSTITUTION.md`.
 
 Do **not** alter P01/P02/P03 `reporting_month` except by a future explicit historic-correction feature. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`. Do not delete P04 `0f513191-cd25-4812-834f-37dcf66487e0` except by a later controlled commercial task.
 

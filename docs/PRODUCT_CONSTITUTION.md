@@ -8,7 +8,7 @@
 
 **Baseline when this file was created:** HEAD `b34ea608b1547548422c87e5a87994f4b0d9be33` — `BL-034B - Add Simple Selling Costs proposal` on `buildlite-V1-1`.
 
-**Last design-authority settlement:** HD-001 resolved by explicit product-owner decision after founding-principles reconciliation. Banked product HEAD remains `6d11491cffa16c321d27bbcb9ee4ef585f0261ef` — `BL-034D - Add Selling Costs CVR adoption`. This settlement is documentation only; expected-liability behaviour is **not** implemented.
+**Last design-authority settlement:** HD-038-1 / HD-038-2 / HD-038-3 resolved after the BL-038A preflight. Banked HEAD remains `19553dd4f189ba657549e708b3a6e08ebd4601ce` — `HD-001 - Settle expected liability and founding principles`. Product implementation HEAD remains `6d11491` (BL-034D). Expected-liability behaviour is **not** implemented. **BL-038B is not started.**
 
 ---
 
@@ -111,8 +111,8 @@ Orientation only. Detail and UAT evidence stay in `CURRENT_STATE.md`.
 | Cost Code Master / classification | Server master when `VITE_COST_CODE_SERVER_AUTHORITY` is ON (repo default OFF). **Identity is the client's own code.** Semantic groups (PRELIMS / SELLING / …) are purpose metadata, not a BuildLite numbering chart. Test Site 1 **5231** / **5400** are UAT examples. Commercial Structure catalog still browser-local (HD-011). |
 | Purchase Orders | Working Postgres JSON POs; PDF; archive; types include subcontract / materials / plant. |
 | Packages / measurement / certificates | Materialised on subcontract PO approval; order matrix; V1 certs with historic freeze. Legacy `payment_certificates` table is **not** the V1 engine. |
-| Commercial Events | Server-authoritative variations, recoveries, contra. Pending/draft exist as workflow facts. **HD-001 resolved:** they must remain visible as potential liability; QS expected-liability treatment (default = full **submitted** value) feeds **Final Forecast**, not System Forecast. **Not implemented yet.** Banked close engine still excludes draft/submitted CEs from System Forecast. |
-| CVR | Draft → Submit → Approve & Lock; immutable snapshots (v2 includes Revenue); QS accrual + commercial adjustment; carry-forward. **System Forecast** = approved commitment / budget / actual hierarchy (close engine). **Final Forecast** is expected outturn (HD-001: CE expected liability will feed it; today only unlinked commercial adjustment can). Do not use accrual as CE expected liability. |
+| Commercial Events | Server-authoritative variations, recoveries, contra. Pending/draft exist as workflow facts. **HD-001 resolved:** submitted contract-value CEs are potential liability; QS expected-liability treatment (default = full **submitted** value, **derived**) feeds **Final Forecast**, not System Forecast. **HD-038-1:** Draft CEs do **not** contribute Expected Liability. **Not implemented yet.** Banked close engine still excludes draft/submitted CEs from System Forecast. |
+| CVR | Draft → Submit → Approve & Lock; immutable snapshots (v2 includes Revenue); QS accrual + commercial adjustment; carry-forward. **System Forecast** = approved commitment / budget / actual hierarchy (close engine). **Authoritative future Final Forecast (HD-038-2, not live):** System Forecast + CE Expected Liability + Commercial Adjustment. Today only unlinked commercial adjustment exists. Do not use accrual as CE expected liability. |
 | Revenue | Strategy + private plot Secured lifecycle + live/v2 GP. `recognitionPolicy=exchange` stored only (HD-009). HA/package revenue, extras, scenario forecasting not live. |
 | Prelims | Templates, site setup, TIME/LUMP_SUM, Review, **Adopt into Draft CVR** (replacement adjustment). Unresolved lines excluded, not £0. Missing Draft lines can be **Added to CVR** via 037A; Adopt still will not create rows. |
 | Selling Costs | **BL-034D banked** at `6d11491`. Simple % × live Forecast Revenue; proposal until deliberate Adopt; Test Site 1 destination **5400** classified SELLING / STANDARD_CVR (recommendation, not a mandatory chart); 5405 forbidden as Simple destination. **HD-002 resolved** (target-final / replacement-adjustment). **HD-008 resolved.** Detailed unstarted. Engine Adopt ceremony must **not** be generalised to every CE (HD-001). |
@@ -141,7 +141,7 @@ Importance: **V1 blocker** (hosted trial) · **V1 important** · **post-pilot** 
 | PC-006 | Prelims engine + adopt | Doc 42 BL-PB-039 (High); BL-033D.* | **Adopt implemented** (x.4C). Landing UX x.5 done. | — | — | Core done | Remaining: basis-select clip; QUANTITY/MILESTONE/… drivers; Standard v2 must not mutate v1 copies. |
 | PC-007 | Conceptual stack `max(system, engine)+QS` | BL-033A | **Not an invariant.** Live Prelims and HD-002 Selling Costs use **replacement adjustment**. | settled (do not use) | HD-002 | Do not revive | HD-002 chose target-final / replacement-adjustment, not this stack. |
 | PC-008 | CVR destination membership (add missing cost code to Draft) | Recovery audit; Prelims x.4B/C contract | **BL-037A/B/C banked.** Prelims Adopt still will not create rows. | V1 important | HD-007 | Honest 034C after 037C bank | P04 overlays: 5400 (Manual Add then BL-034D adopted) and `uat-cc-001` (Prelims Add, still empty). Selling Costs Adopt does not create membership. |
-| PC-009 | Pending / expected CE liability in Final Forecast | Design Authority Docs 2–3; founding principles 6–9 | **HD-001 resolved** by owner. System Forecast stays approved facts. Submitted CE expected liability defaults to **full submitted value** and feeds **Final Forecast**. **Not implemented.** | V1 important | HD-001 | **BL-038A** CE-linked expected liability design preflight | Accrual is not the substitute. Generic commercial adjustment remains for non-CE judgement. Approval must not double-count. |
+| PC-009 | Pending / expected CE liability in Final Forecast | Design Authority Docs 2–3; founding principles 6–9; BL-038A | **HD-001 resolved.** **HD-038-1/2/3 resolved.** Draft expected = 0. Final = System + CE Expected + Adjustment. Expected may exceed submitted value. **Not implemented.** | V1 important | HD-001, HD-038-1/2/3 | **BL-038B** CE expected-liability model / override / audit foundation | Derived default on Submit. No CE Adopt. No auto overlay membership. Approval drops Expected by formula. |
 | PC-010 | Selling Costs adoption formula | Prelims x.4C pattern | **HD-002 resolved:** target-final / replacement-adjustment. | settled | HD-002 | BL-034C shows it; BL-034D writes it | Does not write budget, system forecast, or accrual. Point-in-time. |
 | PC-011 | Commercial Journals | Doc 43A; Doc 45 | Cost-centre drawer **Future**. | V1 important | After core commercial completion | Candidate P2 | Explain timing differences **without** rewriting budget/commitment/cert/ledger. Differentiator, not a stub. |
 | PC-012 | Executive CVR Summary (command centre) | Doc 45 | Summary KPIs exist; commentary, intelligence panel, sales bridge largely absent. | P1/P2 | — | After 034C or parallel UX | Original: “How is this development performing?” in seconds. |
@@ -214,11 +214,11 @@ Do not use manual accrual as the substitute for CE expected liability. Accrual r
 **J. Generic commercial adjustment**  
 Generic commercial adjustment remains available for genuine QS forecast judgement that is not represented by a more specific commercial fact. A known pending CE should not require an unlinked lump adjustment merely to get expected liability into Final Forecast. That is the gap HD-001 resolves.
 
-**Relationship to HD-002:** HD-002 remains **RESOLVED** exactly as banked (target-final / replacement-adjustment). Do not alter Selling Costs semantics. Selling Costs / Prelims proposals requiring deliberate adoption are forecast **engines**, not inconsistent with HD-001. A Commercial Event is already an explicit commercial fact entered by the QS; its expected-liability treatment is part of forecasting that fact. Do **not** generalise the Selling Costs Adopt ceremony to every CE.
+**Relationship to HD-002:** HD-002 remains **RESOLVED** exactly as banked (target-final / replacement-adjustment **write**). Do not alter Selling Costs semantics. HD-038-2 settles the **row Final Forecast** identity as additive Expected. Selling Costs / Prelims proposals requiring deliberate adoption are forecast **engines**, not inconsistent with HD-001. A Commercial Event is already an explicit commercial fact entered by the QS; its expected-liability treatment is part of forecasting that fact. Do **not** generalise the Selling Costs Adopt ceremony to every CE.
 
 **Hawthorn:** Preserve CCV / approved commitment as distinct from pending liability, and QS Final Forecast as distinct from both. Hawthorn UAT-02 (3100) already separates approved CCV from pending CE visibility and QS FFC judgement. Future Hawthorn recovery must follow this settlement mechanically without remapping Hawthorn codes to Test Site 1.
 
-**Next named slice (not this one):** **BL-038A — CE-linked expected liability design preflight.** Inspect the current CE model, statuses, CVR close engine, commercialAdjustment behaviour, audit/provenance and approval transition before proposing implementation. Must design: full submitted-value default; QS override/hold/exclude; Final Forecast integration; Potential vs Expected visibility; approval without double count; historic snapshot behaviour; Create Next behaviour; simple SME UX; no destruction of CE facts. Draft-CE default (if any) is an open preflight question; this settlement specifies **submitted** CEs.
+**Next named slice:** **BL-038B — CE expected-liability model / override / audit foundation.** **Not started.** BL-038A preflight is complete (design only). Do not implement until 038B. Draft expected, additive Final Forecast, and exceed-submitted are settled in HD-038-1/2/3.
 
 ### HD-002 — Selling Costs adoption treatment — RESOLVED
 
@@ -228,7 +228,8 @@ Authoritative commercial rule:
 
 - Target final forecast for the selected Selling Costs destination cost code(s) **is** the current Selling Costs proposal.
 - Replacement commercial adjustment **= Selling Costs proposal − current CVR system forecast**.
-- Final forecast **= system forecast + replacement commercial adjustment**.
+- **Adoption write identity (unchanged):** the replacement adjustment is still computed against **System Forecast only**. Do **not** subtract CE Expected Liability from the engine proposal (HD-038-2).
+- **Historic HD-002 sentence** “Final forecast = system forecast + replacement commercial adjustment” describes the **engine-adopted component** (System + that adjustment). **Authoritative CVR Final Forecast** is HD-038-2: System + CE Expected Liability + Commercial Adjustment. An adopted engine proposal may therefore be **supplemented** by CE Expected on the same code. Review “up to date” must not imply overall Final equals the engine proposal.
 - Adoption writes **commercial adjustment only**.
 - Adoption **must not** write or replace: Original Budget, Current Budget, System Forecast, accrual, commitment, or actual.
 - Selling Costs proposal remains separate from the CVR until **deliberate adoption**.
@@ -305,6 +306,55 @@ Master model is Company → Site. Product still has `jobs` / `JobSelect` on POs 
 
 Do not Save migrated Admin cost-code rows whose server `reporting_group` is absent from the local dropdown catalog (`CURRENT_STATE`). Persist Structure (PC-020) or constrain the picker.
 
+### HD-038-1 — Draft CEs in expected liability — RESOLVED
+
+**Resolved** (documentation settlement after BL-038A preflight). Option **1**. HD-001 is not reopened.
+
+- Draft Commercial Events do **not** contribute Expected Liability to the CVR.
+- **Submission is the commercial boundary.**
+- On Submit, an eligible **contract-value** CE automatically contributes its **full submitted value** as Expected Liability unless the QS has deliberately changed its expected treatment.
+- That default is **derived** from the submitted CE value; it is not physically written as an override on Submit.
+- Draft may remain visible in package-level pending information, but it does **not** move CVR Final Forecast.
+
+### HD-038-2 — Expected Liability vs Prelims / Selling Costs target-final — RESOLVED
+
+**Resolved** (documentation settlement after BL-038A preflight). Option **1 — additive Expected Liability**. HD-002 is not reopened.
+
+Authoritative **CVR Final Forecast** identity:
+
+**Final Forecast = System Forecast + CE Expected Liability + Commercial Adjustment.**
+
+- CE Expected Liability is a **distinct** forecast component and must not be hidden inside Commercial Adjustment.
+- Existing HD-002 replacement-adjustment **treatment** for Prelims / Selling Costs remains unchanged: replacement adjustment **= proposal − System Forecast**; adoption writes commercial adjustment only.
+- Therefore an adopted Prelims/Selling Costs proposal may be **supplemented** by CE Expected Liability on the same cost code.
+- Example: System £100k; adopted engine target £120k (adjustment +£20k); CE Expected Liability £20k; **Final Forecast £140k**.
+- Review/Adopt UX must make this decomposition clear so an engine proposal being “up to date” does **not** imply that overall Final Forecast must equal the engine proposal.
+- A Prelims/Selling Costs adoption must **never** silently consume, offset, or suppress a known CE Expected Liability.
+
+### HD-038-3 — Expected Liability greater than submitted CE value — RESOLVED
+
+**Resolved** (documentation settlement after BL-038A preflight). Option **1**.
+
+- The QS may set Expected Liability **above** the submitted CE value.
+- Do **not** cap it at submitted value.
+- This is deliberate QS judgement.
+- Surface an appropriate warning and **require a reason**.
+- Preserve the submitted CE value as the factual **Potential Liability**.
+- The override and reason must be fully auditable. Forecast treatment must not rewrite the CE fact.
+
+### BL-038A design principles (agreed; not implemented)
+
+These constrain BL-038B and later slices. They do not start implementation.
+
+- Default Expected Liability is **derived** from the submitted CE value, not physically written on Submit.
+- A QS override / hold / exclude is stored **separately** from the CE factual value.
+- Approval removes that CE from Expected **by formula** as it enters approved commitment / System Forecast; no manual reversal.
+- CE fact is never rewritten by forecast treatment.
+- No CE Adopt ceremony.
+- No automatic CVR overlay membership solely because a CE is submitted.
+- Hawthorn remains a client-chart end-to-end UAT and must **not** be remapped to Test Site 1 codes.
+- HD-001 and HD-002 remain resolved; do not reopen them.
+
 ---
 
 ## 7. Near-term sequencing
@@ -318,15 +368,16 @@ BL-037A  Authoritative Draft CVR membership command  BANKED
   → HD-002 / HD-008 Selling Costs adoption treatment    RESOLVED
   → BL-034C Selling Costs Review against CVR            READ ONLY (BANKED e06a86c)
   → BL-034D Selling Costs Adopt into Draft CVR          WRITE (BANKED 6d11491)
-  → Founding Product Principles recorded                THIS SLICE (docs only)
-  → HD-001 expected liability                           RESOLVED (docs only; not implemented)
-  → BL-038A CE-linked expected liability design preflight   NEXT
+  → Founding Product Principles + HD-001                 BANKED (19553dd; docs only)
+  → BL-038A CE-linked expected liability design preflight   COMPLETE (docs)
+  → HD-038-1 / HD-038-2 / HD-038-3                      RESOLVED (docs only; this settlement)
+  → BL-038B CE expected-liability model / override / audit  NEXT (NOT STARTED)
   → Detailed / itemised Selling Costs                   later; not 034D; not the next slice
 ```
 
 **BL-036** (persisted Commercial Structure / admin setup) is **not** a hard prerequisite of BL-037 or of HD-001 implementation if destination codes already exist on Cost Code Master. Place BL-036 when customer Admin setup or the reporting_group save trap (HD-011) is in the critical path.
 
-**BL-034D is BANKED** at `6d11491`. Keep P04 Draft. Do not create P05. Do not Adopt UAT-CC-001. Detailed Selling Costs remains unstarted. HD-001, HD-002 and HD-008 remain **resolved**. Do not implement expected liability until BL-038A (or the named successor) has been approved.
+**BL-034D is BANKED** at `6d11491`. Last design-authority bank is `19553dd` (HD-001). Keep P04 Draft. Do not create P05. Do not Adopt UAT-CC-001. Detailed Selling Costs remains unstarted. HD-001, HD-002, HD-008, and HD-038-1/2/3 remain **resolved**. **Do not start BL-038B in this documentation slice.** Expected liability remains unimplemented.
 
 Hawthorn Gardens remains a future client-chart known-answer UAT. Do not import, discard, or remap it in the next slice.
 

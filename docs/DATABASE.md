@@ -5,9 +5,9 @@
 **Last Adopt UI slice:** **BL-033D.x.4C.2 — COMPLETE** (human + forensic UAT **PASSED**).  
 **Last server contract banked:** **BL-033D.x.4C.1 — BANKED** (`8bd66f6`; Prelims → Draft CVR adoption command).  
 **Last persistence slice implemented:** **BL-034D BANKED** at `6d11491` (no schema change). Human UAT **PASS**.  
-**Last design-authority slice:** Founding Product Principles recorded; **HD-001 RESOLVED** by owner (docs only; expected liability **not implemented**). **HD-002 / HD-008 resolved.** Detailed Selling Costs remains unstarted.  
+**Last design-authority slice:** **HD-038-1 / HD-038-2 / HD-038-3 RESOLVED** after BL-038A (docs only; expected liability **not implemented**; **no schema**). HD-001 / HD-002 / HD-008 remain resolved. Detailed Selling Costs remains unstarted. **BL-038B not started.**  
 **CRITICAL:** P03 is **locked** with schema-v2 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. P04 is **Draft** `0f513191-cd25-4812-834f-37dcf66487e0` v1 with `reporting_month` **2026-08**, **no snapshot**, and **11** members. **5400** holds adopted Selling Costs **£182,780.64** (input v2; budgets null; accrual 0). `uat-cc-001` remains empty. Controlled UAT left 5231 commercial adjustment **+£7,720** / accrual **£120** / input version **2**. P01/P02/P03 `reporting_month` remain NULL. P05 does not exist. Snapshot count remains **3**.  
-**NEXT:** **BL-038A — CE-linked expected liability design preflight.** Keep P04 Draft. Do not Submit or Approve & Lock P04. Do not create P05. Do not Adopt UAT-CC-001. Do not implement expected liability in this programme position. Detailed Selling Costs remains unstarted. Do not import or remap Hawthorn. Do not switch 5231 to TIME. Do not Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog.
+**NEXT:** **BL-038B — CE expected-liability model / override / audit foundation.** **NOT STARTED.** Keep P04 Draft. Do not Submit or Approve & Lock P04. Do not create P05. Do not Adopt UAT-CC-001. Do not implement expected liability in this documentation slice. Detailed Selling Costs remains unstarted. Do not import or remap Hawthorn. Do not switch 5231 to TIME. Do not Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog.
 
 ---
 
@@ -274,7 +274,7 @@ Agreed future commercial rules (do **not** change live client calculations in BL
 - Ledger actual for CVR = **SUM(net)** (VAT stored as evidence only)
 - `manual_accrual` is a QS-entered input, distinct from outstanding certified. **HD-001:** accrual is **not** the substitute for CE expected liability.
 - Snapshot occurs on approve/lock in BL-031E.3B for newly locked periods; V1 does not reopen locked CVRs
-- **HD-001 resolved (design authority; no schema in this slice):** System Forecast remains the approved/fact hierarchy above. Submitted CE expected liability (default = full submitted value) will feed **Final Forecast** in a future implementation. Until then there is no CE-linked expected-liability column. Approval/double-count reconciliation is a mandatory future requirement. Cost-code **identity** remains the client Master key; classifications are metadata.
+- **HD-001 / HD-038 resolved (design authority; no schema today):** System Forecast remains the approved/fact hierarchy above. **Authoritative future Final Forecast (HD-038-2):** System Forecast + CE Expected Liability + Commercial Adjustment. Default Expected is **derived** from submitted contract-value CE value (HD-038-1: drafts contribute 0). Override/hold/exclude is stored separately from CE `value` when implemented; those columns **do not exist yet**. Expected may exceed submitted value (HD-038-3). Approval drops Expected by formula. HD-002 replacement write remains proposal − System Forecast and must not consume Expected. Until BL-038B+ there is no CE-linked expected-liability column. Cost-code **identity** remains the client Master key; classifications are metadata.
 
 | Table | Purpose |
 |-------|---------|
