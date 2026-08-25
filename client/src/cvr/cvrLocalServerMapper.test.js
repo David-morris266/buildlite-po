@@ -66,6 +66,17 @@ describe('CVR local→server mapper (BL-031C)', () => {
     expect(mapLocalCostCodeInput({ costCodeKey: '5231', manualAccrual: 400 }).value.manualAccrual).toBe(400);
   });
 
+  it('preserves null budgets instead of coercing them to £0', () => {
+    const mapped = mapLocalCostCodeInput({
+      costCodeKey: '2300',
+      originalBudget: null,
+      currentBudget: null,
+    });
+    expect(mapped.ok).toBe(true);
+    expect(mapped.value.originalBudget).toBeNull();
+    expect(mapped.value.currentBudget).toBeNull();
+  });
+
   it('maps commentary fields deterministically', () => {
     expect(mapLocalCommentary(null)).toEqual({
       keyCommercialIssues: '',

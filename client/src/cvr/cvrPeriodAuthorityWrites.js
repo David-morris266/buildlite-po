@@ -33,6 +33,21 @@ function periodNotFound() {
   return { ok: false, errors: ['CVR period not found.'] };
 }
 
+export const CVR_MEMBERSHIP_USER_MESSAGES = {
+  PERIOD_NOT_DRAFT: 'This CVR is no longer Draft, so a cost code cannot be added.',
+  COST_CODE_ALREADY_MEMBER: 'This cost code is already on the current CVR.',
+  COST_CODE_INACTIVE: 'This cost code is inactive in Cost Code Master and cannot be added to the CVR.',
+  COST_CODE_NOT_FOUND: 'This cost code is not in Cost Code Master for this company.',
+};
+
+export function membershipAddUserMessage(result, fallback) {
+  const code = result?.code;
+  if (code && CVR_MEMBERSHIP_USER_MESSAGES[code]) {
+    return CVR_MEMBERSHIP_USER_MESSAGES[code];
+  }
+  return result?.errors?.[0] || fallback || 'Could not add this cost code to the CVR.';
+}
+
 function requireCachedPeriod(developmentId, periodKey) {
   const period = getCachedCvrPeriodByKey(developmentId, periodKey);
   if (!period?.id) return { ok: false, ...periodNotFound(), period: null };
@@ -331,6 +346,8 @@ export async function savePeriodCommentaryOnServer(developmentId, periodKey, com
 }
 
 export async function createCostCentreOnServer(developmentId, periodKey, centre) {
+  // Legacy overlay create. Live structural membership must use
+  // addCostCodeMemberOnServer / ensureDraftCvrOverlayMemberOnServer (BL-037A).
   const resolved = requireCachedPeriod(developmentId, periodKey);
   if (!resolved.ok) return resolved;
   const mapped = toServerInputPayload(centre);
@@ -365,8 +382,39 @@ export async function addCostCodeMemberOnServer(developmentId, periodKey, costCo
     costCodeKey: key,
     actor,
   });
-  if (!result.ok) return result;
+  if (!result.ok) {
+    return {
+      ...result,
+      errors: [membershipAddUserMessage(result, result.errors?.[0])],
+    };
+  }
   return { ok: true, input: result.input, costCentre: result.input };
+}
+
+/**
+ * Establish an empty Draft overlay via BL-037A. Used for the first QS overlay
+ * edit on a fact-only auto- row. Does not copy fact money. Duplicate membership
+ * returns the existing overlay instead of creating a second row.
+ */
+export async function ensureDraftCvrOverlayMemberOnServer(
+  developmentId,
+  periodKey,
+  costCodeKey,
+  actor
+) {
+  const result = await addCostCodeMemberOnServer(developmentId, periodKey, costCodeKey, actor);
+  if (result.ok) {
+    return { ok: true, alreadyMember: false, input: result.input, costCentre: result.input };
+  }
+  if (result.code === 'COST_CODE_ALREADY_MEMBER' && result.input) {
+    return {
+      ok: true,
+      alreadyMember: true,
+      input: result.input,
+      costCentre: result.input,
+    };
+  }
+  return result;
 }
 
 export async function importBudgetOnServer(developmentId, periodKey, rows, actor) {

@@ -29,6 +29,7 @@ import {
   buildPackagesForCostCentre,
 } from '../cvr/cvrEngine';
 import { isCvrServerAuthorityEnabled } from '../cvr/cvrPeriodAuthority';
+import { ensureDraftCvrOverlayMemberOnServer } from '../cvr/cvrPeriodAuthorityWrites';
 import {
   ensureCvrPeriodAndInputsReady,
   getCvrPeriodReadiness,
@@ -364,21 +365,31 @@ export default function CVRSummaryPage({
   }
 
   async function resolveCentreId(row) {
-    let targetId = row.id.startsWith('auto-') ? null : row.id;
-    if (!targetId) {
-      const created = await Promise.resolve(
-        upsertAutoCostCentre(
-          development.id,
-          {
-            costCodeKey: row.costCodeKey,
-            costCodeLabel: row.costCodeLabel,
-          },
-          periodKey
-        )
+    if (!row?.id || row.id.startsWith('auto-') === false) return row?.id || null;
+    if (isCvrServerAuthorityEnabled()) {
+      const result = await ensureDraftCvrOverlayMemberOnServer(
+        development.id,
+        periodKey,
+        row.costCodeKey
       );
-      targetId = created?.id;
+      if (!result.ok) {
+        window.alert(result.errors?.[0] || 'Could not add this cost code to the CVR.');
+        refresh();
+        return null;
+      }
+      return result.costCentre?.id || result.input?.id || null;
     }
-    return targetId;
+    const created = await Promise.resolve(
+      upsertAutoCostCentre(
+        development.id,
+        {
+          costCodeKey: row.costCodeKey,
+          costCodeLabel: row.costCodeLabel,
+        },
+        periodKey
+      )
+    );
+    return created?.id || null;
   }
 
   async function handleSaveCommercialAdjustment(values) {

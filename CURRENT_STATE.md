@@ -20,11 +20,11 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | **BL-033D.x.5 COMPLETE** (Prelims landing UX consolidation). Human visual UAT **PASSED**. |
-| Last persistence slice implemented | **BL-037B IMPLEMENTED** — human UAT **PASS**, awaiting bank. Budget Import + Manual Cost Code Master picker consume BL-037A. Prior banked HEAD: **BL-037A** `f2b6e56`. |
+| Last persistence slice implemented | **BL-037C human UAT PASS** — awaiting bank. Prelims Draft **Add to CVR** + first overlay edit on fact-only auto-rows consume BL-037A. Mixed-case overlay identity corrected during UAT. **BL-037A** banked `f2b6e56`. **BL-037B** banked `cb356df`. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
 | Durable intent / deferred decisions | `docs/PRODUCT_CONSTITUTION.md` |
-| **NEXT** | Bank **BL-037B** (human UAT **PASS**). Then **BL-037C** (proposal missing-member/can-add). Do **not** start BL-034C/D, BL-035, or BL-036 until instructed. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. P04 now has **10** members including empty **5400**. |
+| **NEXT** | Bank **BL-037C**. Do **not** Adopt UAT-CC-001. Do **not** start BL-034C/D, BL-035, or BL-036 until instructed. HD-002 remains unset. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. P04 has **11** members including empty **5400** and empty **uat-cc-001**. |
 
 ---
 
@@ -62,7 +62,8 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-034A** | Selling Costs design / preflight | **COMPLETE (read-only).** Simple % × live Forecast Revenue; proposal-before-CVR; destination configurable (standard hint **5400**); incentives deferred. |
 | **BL-034B** | Simple Selling Costs proposal | **COMPLETE / BANKED** at `b34ea60`. Migration `020` + GET/PUT `/selling-costs` + workspace tab. Default **2.00%** / saved assumption; £ derived from live Forecast Revenue; no CVR writes. Test Site 1 human UAT **PASS** (saved **1.75%** → **£182,780.64**). Review/Adopt numbering vs Detailed: see `docs/PRODUCT_CONSTITUTION.md` HD-008. UX follow-up only: optional live preview of unsaved % (not implemented). |
 | **BL-037A** | Authoritative Draft CVR membership command | **COMPLETE / BANKED** at `f2b6e56`. `POST .../cost-code-members`. Empty overlay from active Master. Audit `cost_code_added`. |
-| **BL-037B** | Budget Import + Manual Cost Code Master picker | **IMPLEMENTED** — human UAT **PASS**, awaiting bank. Server `POST .../budget-import` + Draft Master picker. Both consume 037A. |
+| **BL-037B** | Budget Import + Manual Cost Code Master picker | **COMPLETE / BANKED** at `cb356df`. Server `POST .../budget-import` + Draft Master picker. Both consume 037A. Human UAT **PASS**. |
+| **BL-037C** | Controlled missing-line CVR integration | **HUMAN UAT PASS** — awaiting bank. Prelims Draft **Add to CVR**; first QS overlay edit on fact-only auto-rows uses 037A. Mixed-case overlay identity corrected during UAT. Adopt remains a separate action. Selling Costs adoption **not started**. HD-002 unset. |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -1159,29 +1160,45 @@ Server-only command to add an **active tenant Cost Code Master** code as an empt
 - Unknown Master → `404 COST_CODE_NOT_FOUND`. Inactive → `400 COST_CODE_INACTIVE`. Non-draft → `409 PERIOD_NOT_DRAFT`.
 - Classification is **not** a membership gate.
 - Live facts remain derived by the close engine; membership does not copy them into overlay.
-- Legacy `POST .../inputs` remains for existing overlay creates; BL-037B Budget Import and Manual Add now consume 037A instead.
+- Legacy `POST .../inputs` remains for some overlay-create helpers; live structural membership (Budget Import, Manual Add, Prelims Add to CVR, first overlay edit on a fact-only auto-row) consumes 037A instead.
 
 HD-007 principles recorded in `docs/PRODUCT_CONSTITUTION.md`. Both BL-037B human UAT routes have now **PASSED**. HD-002 unset.
 
-## BL-037B (Budget-driven membership + Manual Cost Code Add) — IMPLEMENTED / HUMAN UAT PASS / AWAITING BANK
+## BL-037B (Budget-driven membership + Manual Cost Code Add) — BANKED
 
 Connects the two deliberate structural entry routes to the BL-037A membership primitive.
 
 - `POST /api/developments/:developmentId/cvr/periods/:periodId/budget-import` — one transaction. Unknown/inactive/duplicate Master codes fail closed with zero writes. New members use `addDraftCvrCostCodeMember`; existing members receive budget-only updates (adjustment, accrual, metadata preserved). Omitted codes are not deleted. Explicit £0 is a valid line. File description does not override Master identity.
 - Draft CVR **Add Cost Code** is a searchable active Cost Code Master picker. Confirmation POSTs `{ costCodeKey, actor }` only. Existing members are excluded from the picker; server 409 is shown if selected anyway. Not available on submitted/locked periods.
 - Legacy “Create new Cost Codes from unknown Cost Codes” is retired from CVR Budget Import.
-- Classification still does not establish membership. Live-fact union is unchanged. Prelims/Selling Costs proposal Add is **not** started (BL-037C).
+- Classification still does not establish membership. Live-fact union is unchanged.
 
 **Human UAT PASS (25 Aug 2026, `buildlite_clone`):**
 
 1. **Manual Add on Test Site 1 P04.** 5400 — Selling Costs — General Allowance added via the Master picker. P04 remains Draft v1 / 2026-08. Exactly **10** members; 5400 is the sole new empty overlay (budgets null, adj 0, accrual 0, input v1). One `cost_code_added` audit. Live 5400 system/final **£0**. Selling Costs proposal remains separate (**1.75%** / **£182,780.64**). 5231 still adj **7720** / accrual **120** / v2 with Prelims adoption metadata. Snapshots **3**. Prelims **4**. P05 absent. No Submit/Approve/Lock.
 2. **Budget Import on throwaway `dev-1787654138867-7potct` P01** (`BL037B-BI-UAT`). Success CSV established **1110 £25,000**, **2300 £300,000**, **5105 £0** (stored zero, not null). Exactly 3 members; input v2; adj/accrual 0; Master identity; live totals Original/Current/System/Final **£325,000**. Unknown-code rollback CSV (`9999`) blocked at Validation with no writes: 1110 remained **£25,000**; 9999 not created on Master or CVR; still one `budget_imported` + three `cost_code_added` audits from the successful import only.
 
-HD-007 structural routes are now proven. HD-002 unset.
+HD-007 structural routes proven. HD-002 unset. Banked at `cb356df`.
+
+## BL-037C (Controlled missing-line CVR integration) — HUMAN UAT PASS / AWAITING BANK
+
+Two deliberate commercial actions remain separate: **Add to CVR** then **Adopt into CVR**. This slice does not combine them.
+
+**Facts vs QS line:** Live facts (approved PO commitments, approved/locked certificates, ledger actuals, banked approved CE commitment movements) may appear in the live CVR and affect totals **without** a `cvr_cost_code_inputs` row. QS overlay (budget, accrual, adjustment, notes, adoption metadata, explicit worksheet structure) is created only by an explicit structural/edit action. Facts are not copied into the overlay when a CVR line is added. Opening the CVR still does not auto-create overlays.
+
+**Prelims Review — Add to CVR:** A valid active current-tenant Master code that is not a CVR line shows **Not on current CVR** with **Add to CVR** on Draft. Clicking Add calls existing `POST .../cost-code-members` (037A), awaits completion, refreshes review, and does **not** Adopt. Empty overlay semantics are preserved. `COST_CODE_NOT_ON_CVR` remains if Adopt is attempted without Add. Submitted/Locked/inactive/unknown Master cannot Add. Duplicate membership refreshes rather than creating a second row. `PERIOD_NOT_DRAFT` refreshes and explains. No `prelims_adopted` audit until a separate confirmed Adopt.
+
+**Fact-only auto-row first overlay edit:** Under server CVR authority, the first QS overlay edit on an `auto-{key}` row establishes membership via 037A, then PATCHes the intended overlay field on the real input identity. Fact £ is not copied into budget/adjustment/accrual. Overlay PATCH preserves null budgets (does not coerce them to £0). Duplicate/concurrent membership returns the existing overlay.
+
+Selling Costs Review/Adopt **not started**. HD-002 remains unset. HD-001 unchanged (pending variations are not system-forecast inputs). BL-034C/D not started.
+
+**Human UAT PASS (25 Aug 2026):** Test Site 1 → Prelims → Review against CVR. One Add click wrote empty P04 overlay `uat-cc-001` (`6153356d-72f9-449b-8da2-e03bff4899ac`), null budgets, adj 0, accrual 0, v1, one `cost_code_added`. No Adopt. After refresh, UAT-CC-001 is a normal reviewable/selectable candidate (Prelims proposal £1,000; CVR system/current/final £0; proposed replacement +£1,000). 5231 remains Already adopted.
+
+**UAT defect and correction:** 037A stores `normaliseCostCodeKey` (lowercase). Prelims/Master remain `UAT-CC-001`. First post-Add refresh still showed Not on current CVR because preview membership used exact-string match. Compare/preview now match overlay identity case-insensitively and keep the Prelims/Master display key. Do not Add again. Do not reverse the overlay. Do not Adopt UAT-CC-001 in this slice.
 
 ## Next action
 
-**NEXT:** Bank **BL-037B**. Then **BL-037C**. Do **not** start BL-034C/D, BL-035 Trial Envelope, or BL-036 until instructed. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** treat 5400 membership as Selling Costs adoption (proposal remains separate). Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning: `docs/PRODUCT_CONSTITUTION.md`.
+**NEXT:** Bank **BL-037C**. Do **not** Adopt UAT-CC-001. Do **not** start BL-034C/D, BL-035 Trial Envelope, or BL-036 until instructed. HD-002 remains unset. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** treat 5400 membership as Selling Costs adoption (proposal remains separate at saved 1.75%). Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning: `docs/PRODUCT_CONSTITUTION.md`.
 
 Do **not** alter P01/P02/P03 `reporting_month` except by a future explicit historic-correction feature. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`. Do not delete P04 `0f513191-cd25-4812-834f-37dcf66487e0` except by a later controlled commercial task.
 

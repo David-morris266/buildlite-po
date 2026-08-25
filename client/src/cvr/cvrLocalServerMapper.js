@@ -118,6 +118,15 @@ export function mapLocalCostCodeInput(centre) {
     errors.push('manualAccrual must be a finite amount when present.');
   }
 
+  const originalBudget =
+    centre.originalBudget == null || centre.originalBudget === ''
+      ? null
+      : roundMoney(centre.originalBudget);
+  const currentBudget =
+    centre.currentBudget == null || centre.currentBudget === ''
+      ? originalBudget
+      : roundMoney(centre.currentBudget);
+
   return {
     ok: errors.length === 0,
     errors,
@@ -128,8 +137,8 @@ export function mapLocalCostCodeInput(centre) {
       commercialHead: String(centre.commercialHead || ''),
       commercialFamily: String(centre.commercialFamily || ''),
       trade: String(centre.trade || ''),
-      originalBudget: roundMoney(centre.originalBudget),
-      currentBudget: roundMoney(centre.currentBudget ?? centre.originalBudget),
+      originalBudget,
+      currentBudget,
       commercialAdjustment,
       adjustmentReason,
       commercialReason: adjustmentReason,

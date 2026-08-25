@@ -24,6 +24,7 @@ import {
 } from './cvrPeriodServerCache';
 import {
   createCostCentreOnServer,
+  ensureDraftCvrOverlayMemberOnServer,
   patchCostCentreOnServer,
 } from './cvrPeriodAuthorityWrites';
 
@@ -637,7 +638,15 @@ export function upsertAutoCostCentre(
   const existing = (period.costCentres || []).find(
     (item) => item.costCodeKey === costCodeKey && item.active !== false
   );
-  if (existing) return normaliseCostCentreRecord(existing);
+  if (existing && !String(existing.id || '').startsWith('auto-')) {
+    return normaliseCostCentreRecord(existing);
+  }
+
+  if (isCvrServerAuthorityEnabled()) {
+    return ensureDraftCvrOverlayMemberOnServer(developmentId, periodKey, costCodeKey).then(
+      (result) => (result.ok ? result.costCentre : null)
+    );
+  }
 
   const result = addCostCentre(
     developmentId,

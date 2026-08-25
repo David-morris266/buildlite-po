@@ -143,7 +143,11 @@ export async function addServerCvrCostCodeMember(developmentId, periodId, payloa
     if (input) upsertCachedCvrInput(periodId, input);
     return { ok: true, input };
   } catch (error) {
-    return mapApiError(error);
+    const mapped = mapApiError(error);
+    if (mapped.code === 'COST_CODE_ALREADY_MEMBER' && mapped.input) {
+      upsertCachedCvrInput(periodId, mapped.input);
+    }
+    return mapped;
   }
 }
 

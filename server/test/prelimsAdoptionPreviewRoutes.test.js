@@ -11,6 +11,8 @@ const request = require("supertest");
 const createApp = require("../app");
 const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
+const { createCostCode } = require("../services/costCodeMasterRepository");
+const { normaliseCostCodeKey } = require("../services/cvrPeriodValidation");
 
 const app = createApp();
 const ROOT = path.join(__dirname, "..");
@@ -19,9 +21,11 @@ const MIGRATION_009 = path.join(ROOT, "migrations", "009_cvr_and_purchase_ledger
 const MIGRATION_013 = path.join(ROOT, "migrations", "013_cost_code_classifications.sql");
 const MIGRATION_014 = path.join(ROOT, "migrations", "014_development_programme.sql");
 const MIGRATION_015 = path.join(ROOT, "migrations", "015_development_prelims_items.sql");
+const MIGRATION_017 = path.join(ROOT, "migrations", "017_cost_codes_tenant_master.sql");
 const MIGRATION_019 = path.join(ROOT, "migrations", "019_development_prelims_time_offsets.sql");
 
 const testDevelopmentIds = [];
+const testCostCodeIds = [];
 
 function trackDevelopment(id) {
   if (id && !testDevelopmentIds.includes(id)) testDevelopmentIds.push(id);
@@ -33,6 +37,7 @@ async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_013, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_014, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_015, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_017, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_019, "utf8"));
 }
 
@@ -44,16 +49,25 @@ async function cleanup() {
   await pool.query(`DELETE FROM development_programme WHERE development_id = ANY($1::text[])`, [
     testDevelopmentIds,
   ]);
-  await pool.query(
-    `DELETE FROM cvr_cost_code_inputs WHERE period_id IN (
-       SELECT id FROM cvr_periods WHERE development_id = ANY($1::text[])
-     )`,
-    [testDevelopmentIds]
-  );
-  await pool.query(`DELETE FROM cvr_periods WHERE development_id = ANY($1::text[])`, [
-    testDevelopmentIds,
-  ]);
+    await pool.query(
+      `DELETE FROM cvr_cost_code_inputs WHERE period_id IN (
+         SELECT id FROM cvr_periods WHERE development_id = ANY($1::text[])
+       )`,
+      [testDevelopmentIds]
+    );
+    await pool.query(
+      `DELETE FROM cvr_period_audit WHERE period_id IN (
+         SELECT id FROM cvr_periods WHERE development_id = ANY($1::text[])
+       )`,
+      [testDevelopmentIds]
+    );
+    await pool.query(`DELETE FROM cvr_periods WHERE development_id = ANY($1::text[])`, [
+      testDevelopmentIds,
+    ]);
   await pool.query(`DELETE FROM developments WHERE id = ANY($1::text[])`, [testDevelopmentIds]);
+  if (testCostCodeIds.length) {
+    await pool.query(`DELETE FROM cost_codes WHERE id = ANY($1::uuid[])`, [testCostCodeIds]);
+  }
 }
 
 async function getActiveClient() {
@@ -238,7 +252,7 @@ if (!isDbConfigured()) {
       (item) => item.costCodeKey === "UAT-CC-001"
     );
     assert.ok(missing);
-    assert.match(missing.missingFromCvrMessage, /not present in the current CVR/i);
+    assert.match(missing.missingFromCvrMessage, /not currently included as a CVR line/i);
 
     const afterAdj = await pool.query(
       `
@@ -264,6 +278,142 @@ if (!isDbConfigured()) {
       [developmentId]
     ).catch(() => ({ rows: [{ n: 0 }] }));
     assert.equal(snapshotCount.rows[0].n, 0);
+  });
+
+  test("GET preview recognises a mixed-case Master code immediately after one membership POST", async () => {
+    const active = await getActiveClient();
+    const developmentId = await createDevelopment(active);
+    const mixedCode = `UAT-CC-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+    const created = await createCostCode(
+      active.id,
+      {
+        code: mixedCode,
+        description: "BL-037C mixed-case membership preview",
+        commercialHead: "Build",
+        reportingGroup: "General",
+        defaultVatTreatment: "Standard",
+        defaultOrderType: "S",
+        actor: "Commercial Manager",
+      },
+      { actor: "Commercial Manager" }
+    );
+    assert.equal(created.ok, true, created.message || JSON.stringify(created));
+    testCostCodeIds.push(created.costCode.id);
+
+    await request(app)
+      .put(`/api/developments/${developmentId}/programme`)
+      .send({
+        version: 0,
+        siteStart: "2026-09-01",
+        finalCompletion: "2029-10-01",
+        totalPlots: 31,
+      });
+
+    const period = await request(app)
+      .post(`/api/developments/${developmentId}/cvr/periods`)
+      .send({ reportingMonth: "2026-08-01", periodKey: "P04" });
+    assert.equal(period.status, 201, period.body?.message || JSON.stringify(period.body));
+
+    await request(app)
+      .post(`/api/developments/${developmentId}/prelims-items`)
+      .send({
+        version: 0,
+        costCodeKey: mixedCode,
+        name: "Mixed-case Prelims proposal",
+        forecastDriver: "LUMP_SUM",
+        lumpSumAmount: 1000,
+        status: "active",
+      });
+
+    const before = await request(app).get(
+      `/api/developments/${developmentId}/prelims-adoption/preview`
+    );
+    assert.equal(before.status, 200, before.body?.message || JSON.stringify(before.body));
+    const missingBefore = (before.body.missingFromCvr || []).find(
+      (item) => String(item.costCodeKey).toLowerCase() === mixedCode.toLowerCase()
+    );
+    assert.ok(missingBefore);
+    assert.equal(missingBefore.costCodeKey, mixedCode);
+    assert.equal(missingBefore.canAddToCvr, true);
+    assert.equal(
+      (before.body.candidates || []).some(
+        (item) => String(item.costCodeKey).toLowerCase() === mixedCode.toLowerCase()
+      ),
+      false
+    );
+
+    const added = await request(app)
+      .post(
+        `/api/developments/${developmentId}/cvr/periods/${period.body.id}/cost-code-members`
+      )
+      .send({ costCodeKey: mixedCode, actor: "Commercial Manager" });
+    assert.equal(added.status, 201, added.body?.message || JSON.stringify(added.body));
+    assert.equal(added.body.costCodeKey, normaliseCostCodeKey(mixedCode));
+    assert.equal(added.body.originalBudget, null);
+    assert.equal(added.body.currentBudget, null);
+    assert.equal(added.body.commercialAdjustment, 0);
+    assert.equal(added.body.manualAccrual, 0);
+    assert.equal(added.body.version, 1);
+
+    const after = await request(app).get(
+      `/api/developments/${developmentId}/prelims-adoption/preview`
+    );
+    assert.equal(after.status, 200, after.body?.message || JSON.stringify(after.body));
+    assert.equal(
+      (after.body.missingFromCvr || []).some(
+        (item) => String(item.costCodeKey).toLowerCase() === mixedCode.toLowerCase()
+      ),
+      false
+    );
+    const reviewable = (after.body.candidates || []).find(
+      (item) => String(item.costCodeKey).toLowerCase() === mixedCode.toLowerCase()
+    );
+    assert.ok(reviewable);
+    assert.equal(reviewable.costCodeKey, mixedCode);
+    assert.equal(reviewable.flags?.noCvrRow, false);
+    assert.equal(reviewable.cannotAdopt, false);
+    assert.equal(reviewable.inputVersion, 1);
+    assert.equal(reviewable.resolvedPrelimsTotal, 1000);
+    assert.ok(reviewable.proposalFingerprint);
+
+    const stored = await pool.query(
+      `
+        SELECT cost_code_key, original_budget, current_budget,
+               commercial_adjustment::float8 AS adj, manual_accrual::float8 AS accrual, version
+          FROM cvr_cost_code_inputs
+         WHERE period_id = $1 AND lower(btrim(cost_code_key)) = lower(btrim($2))
+      `,
+      [period.body.id, mixedCode]
+    );
+    assert.equal(stored.rows.length, 1);
+    assert.equal(stored.rows[0].cost_code_key, normaliseCostCodeKey(mixedCode));
+    assert.equal(stored.rows[0].original_budget, null);
+    assert.equal(stored.rows[0].current_budget, null);
+    assert.equal(stored.rows[0].adj, 0);
+    assert.equal(stored.rows[0].accrual, 0);
+    assert.equal(stored.rows[0].version, 1);
+
+    const audits = await pool.query(
+      `
+        SELECT action, comment
+          FROM cvr_period_audit
+         WHERE period_id = $1 AND action = 'cost_code_added'
+      `,
+      [period.body.id]
+    );
+    assert.equal(audits.rows.length, 1);
+    assert.match(audits.rows[0].comment, new RegExp(normaliseCostCodeKey(mixedCode)));
+
+    const adopted = await pool.query(
+      `
+        SELECT COUNT(*)::int AS n
+          FROM cvr_period_audit
+         WHERE period_id = $1 AND action = 'prelims_adopted'
+      `,
+      [period.body.id]
+    );
+    assert.equal(adopted.rows[0].n, 0);
   });
 
   test("GET without open CVR returns 404", async () => {

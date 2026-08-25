@@ -38,6 +38,44 @@ function moneyClose(a, b) {
   return Math.abs((roundMoney(a) ?? 0) - (roundMoney(b) ?? 0)) <= MONEY_TOLERANCE;
 }
 
+function costCodeKeyIdentity(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function indexByCostCodeKey(items, getKey) {
+  const exact = new Map();
+  const lower = new Map();
+  for (const item of items || []) {
+    const key = String(getKey(item) || "").trim();
+    if (!key || key === "(blank)") continue;
+    exact.set(key, item);
+    lower.set(costCodeKeyIdentity(key), item);
+  }
+  return {
+    get(key) {
+      const raw = String(key || "").trim();
+      if (!raw) return null;
+      return exact.get(raw) || lower.get(costCodeKeyIdentity(raw)) || null;
+    },
+  };
+}
+
+function preferredCostCodeKeys(primaryKeys, secondaryKeys) {
+  const preferred = new Map();
+  for (const key of primaryKeys || []) {
+    const raw = String(key || "").trim();
+    if (!raw || raw === "(blank)") continue;
+    preferred.set(costCodeKeyIdentity(raw), raw);
+  }
+  for (const key of secondaryKeys || []) {
+    const raw = String(key || "").trim();
+    if (!raw || raw === "(blank)") continue;
+    const identity = costCodeKeyIdentity(raw);
+    if (!preferred.has(identity)) preferred.set(identity, raw);
+  }
+  return [...preferred.values()];
+}
+
 function isActive(status) {
   return String(status || PRELIMS_STATUSES.ACTIVE) === PRELIMS_STATUSES.ACTIVE;
 }
@@ -182,10 +220,11 @@ function aggregateAdoptionCandidatesByCostCode(enrichedLines = []) {
   const buckets = new Map();
 
   for (const line of enrichedLines) {
-    const key = String(line.costCodeKey || "").trim() || "(blank)";
-    if (!buckets.has(key)) {
-      buckets.set(key, {
-        costCodeKey: key,
+    const displayKey = String(line.costCodeKey || "").trim() || "(blank)";
+    const identity = displayKey === "(blank)" ? "(blank)" : costCodeKeyIdentity(displayKey);
+    if (!buckets.has(identity)) {
+      buckets.set(identity, {
+        costCodeKey: displayKey,
         lineCount: 0,
         resolvedPrelimsTotal: null,
         hasResolvedAmount: false,
@@ -196,7 +235,7 @@ function aggregateAdoptionCandidatesByCostCode(enrichedLines = []) {
       });
     }
 
-    const bucket = buckets.get(key);
+    const bucket = buckets.get(identity);
     bucket.lineCount += 1;
     const calc = line.calculation || {};
 
@@ -332,7 +371,7 @@ function comparePrelimsAdoptionCandidate({
 } = {}) {
   const key = String(costCodeKey || prelimsBucket?.costCodeKey || "").trim();
   const linesForCode = enrichedLines.filter(
-    (line) => String(line.costCodeKey || "").trim() === key
+    (line) => costCodeKeyIdentity(line.costCodeKey) === costCodeKeyIdentity(key)
   );
   const fingerprint = buildProposalFingerprint({
     developmentId,
@@ -439,33 +478,36 @@ function buildPrelimsAdoptionPreview({
   const context = { programme, reportingMonth };
   const enrichedLines = enrichPrelimsItemsForAdoption(prelimsItems, context);
   const buckets = aggregateAdoptionCandidatesByCostCode(enrichedLines);
-  const bucketByKey = new Map(buckets.map((bucket) => [bucket.costCodeKey, bucket]));
-  const cvrByKey = new Map(
-    cvrRows.map((row) => [String(row.costCodeKey || row.cost_code_key || "").trim(), row])
+  const bucketIndex = indexByCostCodeKey(buckets, (bucket) => bucket.costCodeKey);
+  const cvrIndex = indexByCostCodeKey(cvrRows, (row) => row.costCodeKey || row.cost_code_key);
+  const classificationIndex = indexByCostCodeKey(
+    classifications,
+    (row) => row.costCodeKey || row.cost_code_key
   );
-  const classificationByKey = new Map(
-    classifications.map((row) => [
-      String(row.costCodeKey || row.cost_code_key || "").trim(),
-      row,
-    ])
+  const metadataEntries = Object.entries(displayMetadataByCostCode || {}).map(
+    ([key, displayMetadata]) => ({ costCodeKey: key, displayMetadata })
+  );
+  const metadataIndex = indexByCostCodeKey(metadataEntries, (row) => row.costCodeKey);
+
+  const allKeys = preferredCostCodeKeys(
+    buckets.map((bucket) => bucket.costCodeKey),
+    cvrRows.map((row) => row.costCodeKey || row.cost_code_key)
   );
 
-  const allKeys = new Set([...bucketByKey.keys(), ...cvrByKey.keys()]);
-
-  const candidates = [...allKeys]
-    .filter((key) => key && key !== "(blank)")
+  const candidates = allKeys
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
     .map((key) => {
-      const displayMetadata = displayMetadataByCostCode[key] || null;
+      const displayMetadata =
+        metadataIndex.get(key)?.displayMetadata || displayMetadataByCostCode[key] || null;
       const existingMetadata = displayMetadata
         ? extractPrelimsAdoptionMetadata(displayMetadata)
         : null;
 
       return comparePrelimsAdoptionCandidate({
         costCodeKey: key,
-        prelimsBucket: bucketByKey.get(key) || null,
-        cvrRow: cvrByKey.get(key) || null,
-        classification: classificationByKey.get(key) || null,
+        prelimsBucket: bucketIndex.get(key) || null,
+        cvrRow: cvrIndex.get(key) || null,
+        classification: classificationIndex.get(key) || null,
         periodKey,
         reportingMonth,
         developmentId,

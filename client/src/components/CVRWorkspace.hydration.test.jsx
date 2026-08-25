@@ -22,6 +22,7 @@ vi.mock('../api/cvrPeriods', () => import('../test/mockCvrPeriodApi'));
 import {
   buildServerCvrInputFixture,
   buildServerCvrPeriodFixture,
+  getCvrMutationCallCounts,
   resetCvrPeriodApiStore,
   seedMockCvrInputs,
   seedMockCvrPeriod,
@@ -103,5 +104,7 @@ describe('CVRWorkspace input hydration (BL-031B)', () => {
     expect(container.textContent).not.toContain('Loading CVR data…');
     expect(container.textContent).toContain('Add Cost Code');
     expect(container.textContent).toContain('Import Budget');
+    expect(getCvrMutationCallCounts().addMember).toBe(0);
+    expect(getCvrMutationCallCounts().createInput).toBe(0);
   });
 });

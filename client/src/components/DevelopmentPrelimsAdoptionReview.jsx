@@ -11,6 +11,10 @@ import {
 } from '../api/developmentPrelimsItems';
 import { formatCvrMoney } from '../cvr/cvrHelpers';
 import {
+  membershipAddUserMessage,
+} from '../cvr/cvrPeriodAuthorityWrites';
+import { addServerCvrCostCodeMember } from '../cvr/cvrPeriodServerMutations';
+import {
   PRELIMS_ADOPTION_DRIFT_STATES,
   PRELIMS_ADOPTION_FLAG_KEYS,
 } from '../prelims/prelimsAdoptionCompare';
@@ -245,7 +249,19 @@ function CostCodeReviewCard({
   );
 }
 
-function MissingCvrCard({ row }) {
+function canAddMissingToCvr(row, preview) {
+  if (!row || !isPeriodDraft(preview)) return false;
+  if (row.canAddToCvr === true) return true;
+  return false;
+}
+
+function MissingCvrCard({
+  row,
+  canAdd,
+  adding,
+  disabled,
+  onAdd,
+}) {
   return (
     <article
       className="dev-prelims-review__card dev-prelims-review__card--missing"
@@ -259,11 +275,11 @@ function MissingCvrCard({ row }) {
             ? ` · ${row.costCodeDescription}`
             : ''}
         </h4>
-        <span className="dev-prelims-review__flag">Cannot adopt</span>
+        <span className="dev-prelims-review__flag">Not on current CVR</span>
       </header>
       <p className="dev-prelims-review__missing-banner" role="status">
         {row.missingFromCvrMessage ||
-          'Cannot review against CVR — cost code is not present in the current CVR.'}
+          'This Prelims proposal uses a cost code that is not currently included as a CVR line.'}
       </p>
       <dl className="dev-prelims-review__metrics">
         <div>
@@ -275,9 +291,27 @@ function MissingCvrCard({ row }) {
           <dd>{row.unresolvedCount || 0}</dd>
         </div>
       </dl>
-      <p className="dev-prelims-review__support">
-        This cost code is not on the open CVR worksheet. No CVR row is created by this review.
-      </p>
+      {canAdd ? (
+        <div className="dev-prelims-review__add-actions">
+          <button
+            type="button"
+            className="po-btn-primary"
+            onClick={() => onAdd?.(row)}
+            disabled={disabled || adding}
+            data-testid={`add-to-cvr-${row.costCodeKey}`}
+          >
+            {adding ? 'Adding…' : 'Add to CVR'}
+          </button>
+        </div>
+      ) : row.addBlockedReason ? (
+        <p className="dev-prelims-review__support" data-testid={`add-blocked-${row.costCodeKey}`}>
+          {row.addBlockedReason}
+        </p>
+      ) : (
+        <p className="dev-prelims-review__support">
+          This cost code cannot be added to the current CVR.
+        </p>
+      )}
     </article>
   );
 }
@@ -453,6 +487,7 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
   const [acknowledgeUnresolved, setAcknowledgeUnresolved] = useState(false);
   const [acknowledgeSuperseded, setAcknowledgeSuperseded] = useState(false);
   const [adopting, setAdopting] = useState(false);
+  const [addingKey, setAddingKey] = useState('');
   const [confirmError, setConfirmError] = useState('');
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -559,6 +594,44 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
     if (adopting) return;
     setConfirmOpen(false);
     setConfirmError('');
+  }
+
+  async function handleAddToCvr(row) {
+    if (addingKey || adopting || !preview?.periodId || !row?.costCodeKey) return;
+    if (!canAddMissingToCvr(row, preview)) return;
+
+    const key = row.costCodeKey;
+    setAddingKey(key);
+    setError('');
+    setSuccess('');
+
+    try {
+      const result = await addServerCvrCostCodeMember(developmentId, preview.periodId, {
+        costCodeKey: key,
+      });
+
+      if (result?.ok) {
+        setSuccess(`${key} added to ${preview.periodKey || 'the current CVR'}.`);
+        await loadPreview({ preserveError: true });
+        return;
+      }
+
+      if (result?.code === 'COST_CODE_ALREADY_MEMBER') {
+        setSuccess(`${key} is already on ${preview.periodKey || 'the current CVR'}.`);
+        await loadPreview({ preserveError: true });
+        return;
+      }
+
+      if (result?.code === 'PERIOD_NOT_DRAFT') {
+        setError(membershipAddUserMessage(result));
+        await loadPreview({ preserveError: true });
+        return;
+      }
+
+      setError(membershipAddUserMessage(result, 'Could not add this cost code to the CVR.'));
+    } finally {
+      setAddingKey('');
+    }
   }
 
   async function refreshAfterStale(message) {
@@ -669,7 +742,7 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
       ) : null}
 
       {success ? (
-        <p className="dev-prelims-review__success" role="status" data-testid="adoption-success">
+        <p className="dev-prelims-review__success" role="status" data-testid="review-success">
           {success}
         </p>
       ) : null}
@@ -793,7 +866,14 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
             <div className="dev-prelims-review__missing" data-testid="missing-from-cvr">
               <h4>Not on current CVR</h4>
               {missingRows.map((row) => (
-                <MissingCvrCard key={row.costCodeKey} row={row} />
+                <MissingCvrCard
+                  key={row.costCodeKey}
+                  row={row}
+                  canAdd={canAddMissingToCvr(row, preview)}
+                  adding={addingKey === row.costCodeKey}
+                  disabled={Boolean(addingKey) || adopting}
+                  onAdd={handleAddToCvr}
+                />
               ))}
             </div>
           ) : null}

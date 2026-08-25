@@ -7,6 +7,8 @@ const { listCvrPeriods, listCostCodeInputs } = require("./cvrPeriodRepository");
 const { CVR_PERIOD_STATUSES, isCvrPeriodLocked } = require("./cvrPeriodConstants");
 const { buildCvrCloseCandidate } = require("./cvrCloseEngine");
 const { listClassifications } = require("./costCodeClassificationRepository");
+const { costCodeRowToDocument } = require("./costCodeMasterMapper");
+const { findCostCodeRowByCode } = require("./costCodeMasterRepository");
 const { listPrelimsItems } = require("./prelimsItemRepository");
 const {
   PRELIMS_ADOPTION_FLAG_KEYS,
@@ -14,6 +16,9 @@ const {
   roundMoney,
 } = require("./prelimsAdoptionCompare");
 const { PRELIMS_UNRESOLVED_LABELS } = require("./prelimsConstants");
+
+const MISSING_CVR_LINE_MESSAGE =
+  "This Prelims proposal uses a cost code that is not currently included as a CVR line.";
 
 function toYearMonth(value) {
   if (value == null || value === "") return null;
@@ -97,11 +102,47 @@ function enrichCandidate(candidate, { itemsById, cvrByKey, inputByKey = new Map(
           } excluded from proposed CVR value`
         : null,
     missingFromCvrMessage: candidate.flags?.[PRELIMS_ADOPTION_FLAG_KEYS.NO_CVR_ROW]
-      ? "Cannot review against CVR — cost code is not present in the current CVR."
+      ? MISSING_CVR_LINE_MESSAGE
       : null,
     adjustmentSemantics:
       "The proposed replacement adjustment replaces the current CVR adjustment; it is not added to it.",
   };
+}
+
+function attachAddToCvrEligibility(row, { periodStatus, master } = {}) {
+  const draft = String(periodStatus || "").toLowerCase() === CVR_PERIOD_STATUSES.draft;
+  const found = Boolean(master);
+  const active = found && master.active !== false;
+  let addBlockedReason = null;
+  if (!draft) {
+    addBlockedReason =
+      String(periodStatus || "").toLowerCase() === CVR_PERIOD_STATUSES.locked
+        ? "This CVR is locked and cannot be changed."
+        : "This CVR is no longer Draft, so a cost code cannot be added.";
+  } else if (!found) {
+    addBlockedReason = "This cost code is not in Cost Code Master for this company.";
+  } else if (!active) {
+    addBlockedReason = "This cost code is inactive in Cost Code Master.";
+  }
+
+  return {
+    ...row,
+    missingFromCvrMessage: MISSING_CVR_LINE_MESSAGE,
+    canAddToCvr: Boolean(draft && found && active),
+    addBlockedReason,
+    masterFound: found,
+    masterActive: Boolean(active),
+  };
+}
+
+async function attachMissingCvrAddEligibility(clientId, periodStatus, rows = []) {
+  const next = [];
+  for (const row of rows) {
+    const masterRow = await findCostCodeRowByCode(clientId, row.costCodeKey);
+    const master = masterRow ? costCodeRowToDocument(masterRow) : null;
+    next.push(attachAddToCvrEligibility(row, { periodStatus, master }));
+  }
+  return next;
 }
 
 function buildCommercialSummary(candidates) {
@@ -186,7 +227,9 @@ async function buildPrelimsAdoptionReviewPreview(clientId, developmentId, { repo
   const displayMetadataByCostCode = {};
   for (const row of cvrRows) {
     const key = String(row.costCodeKey || "").trim();
-    if (key) displayMetadataByCostCode[key] = row.displayMetadata || {};
+    if (!key) continue;
+    displayMetadataByCostCode[key] = row.displayMetadata || {};
+    displayMetadataByCostCode[key.toLowerCase()] = row.displayMetadata || {};
   }
 
   const inputsResult = await listCostCodeInputs(clientId, developmentId, openPeriod.id);
@@ -214,9 +257,13 @@ async function buildPrelimsAdoptionReviewPreview(clientId, developmentId, { repo
   const itemsById = new Map(
     (collection.items || []).map((item) => [String(item.id), item])
   );
-  const cvrByKey = new Map(
-    cvrRows.map((row) => [String(row.costCodeKey || "").trim(), row])
-  );
+  const cvrByKey = new Map();
+  for (const row of cvrRows) {
+    const key = String(row.costCodeKey || "").trim();
+    if (!key) continue;
+    cvrByKey.set(key, row);
+    cvrByKey.set(key.toLowerCase(), row);
+  }
 
   const candidates = (enginePreview.candidates || [])
     .filter((row) => (row.lineCount || 0) > 0)
@@ -255,7 +302,11 @@ async function buildPrelimsAdoptionReviewPreview(clientId, developmentId, { repo
         ...buildCommercialSummary(candidates),
       },
       candidates: reviewable,
-      missingFromCvr,
+      missingFromCvr: await attachMissingCvrAddEligibility(
+        clientId,
+        openPeriod.status,
+        missingFromCvr
+      ),
       engine: {
         costCodeCount: enginePreview.summary?.costCodeCount ?? null,
         adoptableCostCodeCount: enginePreview.summary?.adoptableCostCodeCount ?? null,
@@ -265,8 +316,10 @@ async function buildPrelimsAdoptionReviewPreview(clientId, developmentId, { repo
 }
 
 module.exports = {
+  MISSING_CVR_LINE_MESSAGE,
   buildPrelimsAdoptionReviewPreview,
   pickOpenCvrPeriod,
   enrichCandidate,
+  attachAddToCvrEligibility,
   buildCommercialSummary,
 };

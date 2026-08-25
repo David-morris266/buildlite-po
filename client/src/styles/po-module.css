@@ -10486,6 +10486,10 @@
   gap: 0.65rem;
 }
 
+.dev-prelims-review__add-actions {
+  margin-top: 0.75rem;
+}
+
 .dev-prelims-review__success {
   margin: 0.5rem 0 0.75rem;
   color: #86efac;

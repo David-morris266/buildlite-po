@@ -4,9 +4,9 @@
 **Last product slice fully complete:** **BL-033D.x.5 — COMPLETE** (Prelims landing UX consolidation; human visual UAT **PASSED**).  
 **Last Adopt UI slice:** **BL-033D.x.4C.2 — COMPLETE** (human + forensic UAT **PASSED**).  
 **Last server contract banked:** **BL-033D.x.4C.1 — BANKED** (`8bd66f6`; Prelims → Draft CVR adoption command).  
-**Last persistence slice implemented:** **BL-033D.x.3R COMPLETE** (`019` TIME offsets). x.4C/x.5 added **no** schema migration.  
-**CRITICAL:** P03 is **locked** with schema-v2 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. P04 is **Draft** `0f513191-cd25-4812-834f-37dcf66487e0` v1 with `reporting_month` **2026-08**, **no snapshot**, and **10** members including empty **5400**. Controlled UAT left 5231 commercial adjustment **+£7,720** / accrual **£120** / input version **2**. P01/P02/P03 `reporting_month` remain NULL. P05 does not exist. Snapshot count remains **3**.  
-**NEXT:** Bank BL-037B (human UAT **PASS**). Keep P04 Draft. Do not Submit or Approve & Lock P04. Do not create P05. Do not treat 5400 membership as Selling Costs adoption. Do not switch 5231 to TIME. Do not Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog.
+**Last persistence slice implemented:** **BL-037C human UAT PASS** (awaiting bank). **BL-037A** banked `f2b6e56`. **BL-037B** banked `cb356df`. No schema migration.  
+**CRITICAL:** P03 is **locked** with schema-v2 snapshot `0ad18cb8-0b1a-469a-8fa0-10216728150a`. P04 is **Draft** `0f513191-cd25-4812-834f-37dcf66487e0` v1 with `reporting_month` **2026-08**, **no snapshot**, and **11** members including empty **5400** and empty **uat-cc-001**. Controlled UAT left 5231 commercial adjustment **+£7,720** / accrual **£120** / input version **2**. P01/P02/P03 `reporting_month` remain NULL. P05 does not exist. Snapshot count remains **3**.  
+**NEXT:** Bank BL-037C. Do not Adopt UAT-CC-001. Keep P04 Draft. Do not Submit or Approve & Lock P04. Do not create P05. Do not start BL-034C/D. HD-002 remains unset. Do not treat 5400 membership as Selling Costs adoption. Do not switch 5231 to TIME. Do not Save migrated Admin rows whose server `reporting_group` is absent from the local Commercial Structure catalog.
 
 ---
 
@@ -286,7 +286,9 @@ No snapshot tables in `009`. Legacy `payment_certificates` and BL-029/BL-030 mat
 
 **BL-037A** adds no table. `POST .../cvr/periods/:periodId/cost-code-members` inserts one empty `cvr_cost_code_inputs` row for an active tenant Master code on a Draft period and writes `cvr_period_audit.action = cost_code_added`. Unique `(client_id, period_id, cost_code_key)` remains the duplicate gate. Period `version` is **not** incremented. Live commercial facts are not copied into overlay columns.
 
-**BL-037B** adds no table. `POST .../cvr/periods/:periodId/budget-import` validates every row against the current-tenant Cost Code Master, establishes missing members via the 037A service, then updates `original_budget` / `current_budget` only. One transaction; unknown/inactive/duplicate codes fail closed. Audit `budget_imported`. Period version is not incremented. Adjustments, accruals, and Master identity are not overwritten. Omitted members are not deleted. Human UAT **PASS** on throwaway `dev-1787654138867-7potct` P01 (success + blocked unknown-code rollback). Manual Add UAT **PASS** on Test Site 1 P04 (empty 5400). Awaiting bank.
+**BL-037B** adds no table. `POST .../cvr/periods/:periodId/budget-import` validates every row against the current-tenant Cost Code Master, establishes missing members via the 037A service, then updates `original_budget` / `current_budget` only. One transaction; unknown/inactive/duplicate codes fail closed. Audit `budget_imported`. Period version is not incremented. Adjustments, accruals, and Master identity are not overwritten. Omitted members are not deleted. Human UAT **PASS** on throwaway `dev-1787654138867-7potct` P01 (success + blocked unknown-code rollback). Manual Add UAT **PASS** on Test Site 1 P04 (empty 5400). **Banked** at `cb356df`.
+
+**BL-037C** adds no table and no migration. Prelims Draft **Add to CVR** and the first QS overlay edit on a fact-only `auto-` worksheet row both call the existing 037A `POST .../cost-code-members` command, then (for overlay edits) PATCH the real input. Facts continue to union into the live CVR without requiring an overlay. Overlay create does not copy fact money. `COST_CODE_NOT_ON_CVR` remains the Adopt fail-closed guard. Prelims adoption preview matches CVR overlay keys case-insensitively (037A stores `normaliseCostCodeKey`, which lowercases) and keeps the Prelims/Master display key. Human UAT **PASS** 25 Aug 2026. No Selling Costs adoption. HD-002 unset. HD-001 unchanged.
 
 ---
 

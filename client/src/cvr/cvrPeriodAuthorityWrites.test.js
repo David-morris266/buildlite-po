@@ -20,6 +20,7 @@ vi.mock('../api/cvrPeriods', () => import('../test/mockCvrPeriodApi'));
 import {
   CvrPeriodApiError,
   getCvrMutationCallCounts,
+  getLastCvrAddMemberPayload,
   resetCvrPeriodApiStore,
   seedMockCvrInputs,
   seedMockCvrPeriod,
@@ -38,6 +39,7 @@ import {
   addCostCentre,
   listCostCentres,
   updateCostCentre,
+  upsertAutoCostCentre,
 } from './costCentreStore';
 import {
   approveCvrPeriod,
@@ -48,6 +50,7 @@ import {
   saveCvrPeriodCommentary,
   submitCvrPeriod,
 } from './cvrPeriodStore';
+import { ensureDraftCvrOverlayMemberOnServer } from './cvrPeriodAuthorityWrites';
 
 const DEV_A = 'dev-auth-a';
 const DEV_B = 'dev-auth-b';
@@ -256,5 +259,44 @@ describe('BL-031D CVR authority writes', () => {
       100
     );
     expect(getCvrMutationCallCounts().total).toBe(0);
+  });
+
+  it('first auto-row overlay uses 037A membership instead of POST /inputs', async () => {
+    authorityEnabled.value = true;
+    await openServerDraft(DEV_A);
+    const created = await upsertAutoCostCentre(
+      DEV_A,
+      { costCodeKey: '2300', costCodeLabel: '2300 — Brickwork' },
+      'P01'
+    );
+    expect(created.costCodeKey).toBe('2300');
+    expect(created.originalBudget).toBeNull();
+    expect(created.commercialAdjustment).toBe(0);
+    expect(created.manualAccrual).toBe(0);
+    expect(getCvrMutationCallCounts().addMember).toBe(1);
+    expect(getCvrMutationCallCounts().createInput).toBe(0);
+    expect(getLastCvrAddMemberPayload().payload.costCodeKey).toBe('2300');
+  });
+
+  it('ensureDraftCvrOverlayMemberOnServer reuses existing overlay on duplicate', async () => {
+    authorityEnabled.value = true;
+    const created = await openServerDraft(DEV_A);
+    seedMockCvrInputs(created.period.id, [
+      buildServerCvrInputFixture({
+        id: 'existing-member',
+        periodId: created.period.id,
+        costCodeKey: '2300',
+        originalBudget: 12000,
+        currentBudget: 12000,
+        commercialAdjustment: 40,
+        version: 3,
+      }),
+    ]);
+    const result = await ensureDraftCvrOverlayMemberOnServer(DEV_A, 'P01', '2300');
+    expect(result.ok).toBe(true);
+    expect(result.alreadyMember).toBe(true);
+    expect(result.costCentre.originalBudget).toBe(12000);
+    expect(result.costCentre.commercialAdjustment).toBe(40);
+    expect(getCvrMutationCallCounts().createInput).toBe(0);
   });
 });

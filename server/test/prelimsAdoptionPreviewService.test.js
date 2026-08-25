@@ -12,7 +12,9 @@ const {
 } = require("../services/prelimsAdoptionCompare");
 const {
   enrichCandidate,
+  attachAddToCvrEligibility,
   buildCommercialSummary,
+  MISSING_CVR_LINE_MESSAGE,
 } = require("../services/prelimsAdoptionPreviewService");
 
 const DEV_ID = "dev-1785599776666-zck5pl";
@@ -174,11 +176,56 @@ test("UAT-CC-001 missing CVR target is surfaced separately", () => {
   assert.equal(missing.resolvedPrelimsTotal, 1000);
   assert.equal(missing.cannotAdopt, true);
   assert.equal(missing.flags[PRELIMS_ADOPTION_FLAG_KEYS.NO_CVR_ROW], true);
-  assert.match(missing.missingFromCvrMessage, /not present in the current CVR/i);
+  assert.match(missing.missingFromCvrMessage, /not currently included as a CVR line/i);
   assert.equal(
     review.candidates.some((item) => item.costCodeKey === "UAT-CC-001"),
     false
   );
+});
+
+test("lowercase 037A overlay is recognised as the UAT-CC-001 CVR line", () => {
+  const engine = buildPrelimsAdoptionPreview({
+    developmentId: DEV_ID,
+    periodKey: PERIOD_KEY,
+    reportingMonth: REPORTING_MONTH,
+    prelimsItems: TEST_SITE_1_PRELIMS,
+    programme: TEST_SITE_1_PROGRAMME,
+    cvrRows: [
+      {
+        costCodeKey: "5231",
+        systemForecast: 50280,
+        commercialAdjustment: 7720,
+        finalForecast: 58000,
+        manualAccrual: 120,
+      },
+      {
+        costCodeKey: "uat-cc-001",
+        systemForecast: 0,
+        commercialAdjustment: 0,
+        finalForecast: 0,
+        manualAccrual: 0,
+      },
+    ],
+    classifications: [{ costCodeKey: "5231", semanticGroup: "PRELIMS" }],
+  });
+
+  const candidates = engine.candidates.filter((row) => (row.lineCount || 0) > 0);
+  const reviewable = candidates.filter(
+    (row) => !row.flags[PRELIMS_ADOPTION_FLAG_KEYS.NO_CVR_ROW]
+  );
+  const missingFromCvr = candidates.filter(
+    (row) => row.flags[PRELIMS_ADOPTION_FLAG_KEYS.NO_CVR_ROW]
+  );
+
+  assert.equal(
+    missingFromCvr.some((item) => String(item.costCodeKey).toLowerCase() === "uat-cc-001"),
+    false
+  );
+  const row = reviewable.find((item) => item.costCodeKey === "UAT-CC-001");
+  assert.ok(row);
+  assert.equal(row.resolvedPrelimsTotal, 1000);
+  assert.equal(row.cannotAdopt, false);
+  assert.equal(row.flags[PRELIMS_ADOPTION_FLAG_KEYS.NO_CVR_ROW], false);
 });
 
 test("negative proposed adjustment keeps proposalBelowSystem flag", () => {
@@ -209,4 +256,44 @@ test("positive deltaFinal for 5231 worked example", () => {
   const row = review.candidates.find((item) => item.costCodeKey === "5231");
   assert.ok(row.deltaFinal > 0);
   assert.equal(row.deltaFinal, 7200);
+});
+
+test("Draft valid active Master missing line can be added to CVR", () => {
+  const attached = attachAddToCvrEligibility(
+    { costCodeKey: "UAT-CC-001", flags: { noCvrRow: true } },
+    { periodStatus: "draft", master: { code: "UAT-CC-001", active: true } }
+  );
+  assert.equal(attached.canAddToCvr, true);
+  assert.equal(attached.addBlockedReason, null);
+  assert.equal(attached.missingFromCvrMessage, MISSING_CVR_LINE_MESSAGE);
+});
+
+test("Submitted, locked, inactive, and unknown Master cannot add to CVR", () => {
+  const submitted = attachAddToCvrEligibility(
+    { costCodeKey: "UAT-CC-001" },
+    { periodStatus: "submitted", master: { code: "UAT-CC-001", active: true } }
+  );
+  assert.equal(submitted.canAddToCvr, false);
+  assert.match(submitted.addBlockedReason, /no longer Draft/i);
+
+  const locked = attachAddToCvrEligibility(
+    { costCodeKey: "UAT-CC-001" },
+    { periodStatus: "locked", master: { code: "UAT-CC-001", active: true } }
+  );
+  assert.equal(locked.canAddToCvr, false);
+  assert.match(locked.addBlockedReason, /locked/i);
+
+  const inactive = attachAddToCvrEligibility(
+    { costCodeKey: "UAT-CC-001" },
+    { periodStatus: "draft", master: { code: "UAT-CC-001", active: false } }
+  );
+  assert.equal(inactive.canAddToCvr, false);
+  assert.match(inactive.addBlockedReason, /inactive/i);
+
+  const unknown = attachAddToCvrEligibility(
+    { costCodeKey: "UAT-CC-001" },
+    { periodStatus: "draft", master: null }
+  );
+  assert.equal(unknown.canAddToCvr, false);
+  assert.match(unknown.addBlockedReason, /Cost Code Master/i);
 });

@@ -149,6 +149,45 @@ test("UAT-CC-001 without CVR row cannot adopt", () => {
   assert.equal(row.flags[PRELIMS_ADOPTION_FLAG_KEYS.NO_CVR_ROW], true);
 });
 
+test("UAT-CC-001 Prelims matches lowercase CVR overlay from 037A membership", () => {
+  const preview = buildPrelimsAdoptionPreview({
+    developmentId: DEV_ID,
+    periodKey: PERIOD_KEY,
+    reportingMonth: REPORTING_MONTH,
+    prelimsItems: TEST_SITE_1_PRELIMS,
+    programme: TEST_SITE_1_PROGRAMME,
+    cvrRows: [
+      {
+        costCodeKey: "5231",
+        systemForecast: 50280,
+        commercialAdjustment: 7720,
+        finalForecast: 58000,
+        manualAccrual: 120,
+      },
+      {
+        costCodeKey: "uat-cc-001",
+        systemForecast: 0,
+        commercialAdjustment: 0,
+        finalForecast: 0,
+        manualAccrual: 0,
+      },
+    ],
+    classifications: [{ costCodeKey: "5231", semanticGroup: "PRELIMS" }],
+  });
+
+  const matching = preview.candidates.filter(
+    (item) => String(item.costCodeKey || "").toLowerCase() === "uat-cc-001"
+  );
+  assert.equal(matching.length, 1);
+  const row = matching[0];
+  assert.equal(row.costCodeKey, "UAT-CC-001");
+  assert.equal(row.resolvedPrelimsTotal, 1000);
+  assert.equal(row.flags[PRELIMS_ADOPTION_FLAG_KEYS.NO_CVR_ROW], false);
+  assert.equal(row.cannotAdopt, false);
+  assert.equal(row.currentAdjustment, 0);
+  assert.equal(row.proposedAdjustment, 1000);
+});
+
 test("fingerprint is deterministic and changes when proposal inputs change", () => {
   const lines = enriched5231Lines();
   const first = buildProposalFingerprint({
