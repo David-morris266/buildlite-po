@@ -8,6 +8,8 @@ Historic Phase 0 / BL-006 schema notes remain in `docs/DATABASE.md` and `docs/ph
 
 Authoritative persistence architecture: **Doc 67** in BuildLite Master Documentation.
 
+**Before planning a product slice**, read `docs/PRODUCT_CONSTITUTION.md` (durable intent, parked register, human decisions, internal vs hosted-trial sequencing). This file remains the implementation/UAT status log. Do not treat chats or the external Master Documentation folder as programme authority unless promoted into the repo.
+
 ---
 
 ## Repository / programme
@@ -18,10 +20,11 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | **BL-033D.x.5 COMPLETE** (Prelims landing UX consolidation). Human visual UAT **PASSED**. |
-| Last persistence slice implemented | **BL-034B IMPLEMENTED (unbanked)** — Simple Selling Costs proposal (`020`); human UAT **PASS**; awaiting banking. Prior: **BL-033D.x.3R** (`019`). |
+| Last persistence slice implemented | **BL-034B BANKED** at HEAD `b34ea60` — Simple Selling Costs proposal (`020`); human UAT **PASS**. Prior: **BL-033D.x.3R** (`019`). |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
-| **NEXT** | **Bank BL-034B** after review. Do **not** start BL-034C/D. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. |
+| Durable intent / deferred decisions | `docs/PRODUCT_CONSTITUTION.md` |
+| **NEXT** | Documentation recovery (this constitution). Do **not** start BL-034C/D, BL-035, BL-036, or BL-037 until instructed. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Internal commercial sequence after this file is banked: see constitution §6. |
 
 ---
 
@@ -57,7 +60,7 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-033D.x.4C** | Prelims Adopt into CVR | **x.4C.1 / x.4C.2 COMPLETE / BANKED** (server adopt + UI). Controlled Test Site 1 5231 adopt preserved as UAT evidence. |
 | **BL-033D.x.5** | Prelims landing UX consolidation | **COMPLETE / BANKED.** Template/Manage primary; site-specific add secondary. |
 | **BL-034A** | Selling Costs design / preflight | **COMPLETE (read-only).** Simple % × live Forecast Revenue; proposal-before-CVR; destination configurable (standard hint **5400**); incentives deferred. |
-| **BL-034B** | Simple Selling Costs proposal | **IMPLEMENTED (unbanked).** Migration `020` + GET/PUT `/selling-costs` + workspace tab. Default **2.00%** / saved assumption; £ derived from live Forecast Revenue; no CVR writes. Test Site 1 human UAT **PASS** (saved **1.75%** → **£182,780.64**). Review/Adopt = **BL-034C/D**. UX follow-up only: optional live preview of unsaved % (not implemented). |
+| **BL-034B** | Simple Selling Costs proposal | **COMPLETE / BANKED** at `b34ea60`. Migration `020` + GET/PUT `/selling-costs` + workspace tab. Default **2.00%** / saved assumption; £ derived from live Forecast Revenue; no CVR writes. Test Site 1 human UAT **PASS** (saved **1.75%** → **£182,780.64**). Review/Adopt numbering vs Detailed: see `docs/PRODUCT_CONSTITUTION.md` HD-008. UX follow-up only: optional live preview of unsaved % (not implemented). |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -85,7 +88,7 @@ BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when lo
 - **Tenant Cost Code Master columns** (`017_cost_codes_tenant_master.sql`) — **BL-033D.x.2A.3 COMPLETE.** Additive Admin-master fields on existing `cost_codes`. Unique `(client_id, lower(btrim(code)))`. Applied on `buildlite_test` by tests and on local `buildlite_clone` by the controlled cutover. Test Site 1: **98** rows / **98** active / **0** `lower(btrim(code))` collisions (97 canonical + `UAT-CC-001` evidence). **BL-033D.x.2A.2** wired Admin Cost Codes to this table when `VITE_COST_CODE_SERVER_AUTHORITY=true`. Repo default remains OFF. Local Test Site 1 UAT left the flag ON in ignored `.env.local`. Browser `buildlite_cost_codes_master_v1` remains 95-row leftover evidence and is not authoritative while the flag is ON.
 - **Development Prelims template provenance** (`018_development_prelims_item_provenance.sql`) — **BL-033D.x.3 COMPLETE.** Nullable `source_template_id` / `source_template_version` / `source_template_line_id` / `source_template_key` on `development_prelims_items`. Partial unique `(development_id, source_template_id, source_template_key)` where provenance is present. No unique on `cost_code_key`. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 setup UAT **PASSED**. Existing D.1 manual rows stay NULL; fourth template-instantiated row has provenance.
 - **Development Prelims TIME offsets** (`019_development_prelims_time_offsets.sql`) — **BL-033D.x.3R COMPLETE.** Additive `start_offset_months` / `end_offset_months` INTEGER NOT NULL DEFAULT 0 with CHECK −60…60 on `development_prelims_items` only. Existing rows remain commercially identical at `0/0`. Applied on `buildlite_test` and local `buildlite_clone` (controlled UAT prep). Company template schema unchanged.
-- **Development Selling Costs settings** (`020_development_selling_costs_settings.sql`) — **BL-034B IMPLEMENTED (unbanked).** Simple mode assumption `%` + optional destination key; calculated £ is never persisted as authority. Applied on `buildlite_test` by tests. **Do not apply to `buildlite_clone` until controlled UAT approval.** Does not write CVR. Recommended destination hint **5400** (not an engine hard-code). **5405** forbidden as Simple destination. Sales Incentive Revenue Treatment deferred.
+- **Development Selling Costs settings** (`020_development_selling_costs_settings.sql`) — **BL-034B COMPLETE / BANKED.** Simple mode assumption `%` + optional destination key; calculated £ is never persisted as authority. Applied on `buildlite_test` by tests and on local `buildlite_clone` during controlled UAT. Does not write CVR. Recommended destination hint **5400** (not an engine hard-code). **5405** forbidden as Simple destination. Sales Incentive Revenue Treatment deferred. See `docs/PRODUCT_CONSTITUTION.md`.
 - Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, `VITE_CERTIFICATE_SERVER_AUTHORITY`, `VITE_CVR_SERVER_AUTHORITY`, `VITE_LEDGER_SERVER_AUTHORITY`, `VITE_REVENUE_SERVER_AUTHORITY`, and `VITE_COST_CODE_SERVER_AUTHORITY` for cutover (see `client/.env.example`). Repo defaults remain OFF. Local UAT uses `.env.local`. Do not commit `.env.local`.
 
 ### Browser / localStorage authority (not yet migrated)
@@ -1127,7 +1130,7 @@ Status: **COMPLETE** (human visual UAT **PASSED**).
 
 Read-only architecture preflight. Confirmed live Forecast Revenue authority (`buildRevenueSummary` / server `buildCvrRevenueCloseCandidate` → `summary.forecastRevenue`), Simple % proposal, deliberate CVR adoption later, no Prelims adoption generalisation. Human decisions locked: Simple destination = configurable/semantic with BuildLite standard hint **5400**; **5405** not used; incentives Revenue treatment deferred.
 
-## BL-034B (Simple Selling Costs proposal) — IMPLEMENTED (unbanked) — human UAT PASS
+## BL-034B (Simple Selling Costs proposal) — COMPLETE / BANKED — human UAT PASS
 
 Development → Selling Costs tab. Default **2.00%** proposal without insert; Save persists development-owned `%`. Proposal £ = assumption % × **live** Forecast Revenue. Test Site 1 human UAT **PASS**:
 
@@ -1144,7 +1147,7 @@ UX follow-up only (not implemented): optional live preview of unsaved Selling Co
 
 ## Next action
 
-**NEXT:** Bank **BL-034B** after review. Do **not** start BL-034C/D. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1.
+**NEXT:** Bank **BL-035A** (`docs/PRODUCT_CONSTITUTION.md`) after review. **BL-034B is already HEAD.** Do **not** start BL-034C/D, BL-035 Trial Envelope, BL-036, or BL-037 in this slice. Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** switch 5231 to TIME. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning for later commercial slices: `docs/PRODUCT_CONSTITUTION.md`.
 
 Do **not** alter P01/P02/P03 `reporting_month` except by a future explicit historic-correction feature. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`. Do not delete P04 `0f513191-cd25-4812-834f-37dcf66487e0` except by a later controlled commercial task.
 
