@@ -375,7 +375,10 @@ function snapshotRowToCvrRow(row) {
     actualCost: row.actualCost,
     currentCost: row.currentCost,
     systemForecast: row.systemForecast,
-    expectedLiability: row.expectedLiability ?? 0,
+    expectedLiability:
+      row.expectedLiabilityCaptured === false ? null : row.expectedLiability,
+    expectedLiabilityCaptured: row.expectedLiabilityCaptured !== false,
+    expectedLiabilityProvenance: row.expectedLiabilityProvenance ?? null,
     finalForecast: row.finalForecast,
     forecastFinalCost: row.finalForecast,
     costToComplete: row.costToComplete,
@@ -405,7 +408,10 @@ function historicTotalsFromSnapshot(snapshot, rows) {
     manualAccrual: header.manualAccrual ?? fromRows.manualAccrual,
     currentCost: header.currentCost ?? fromRows.currentCost,
     systemForecast: header.systemForecast ?? fromRows.systemForecast,
-    expectedLiability: header.expectedLiability ?? fromRows.expectedLiability,
+    expectedLiability:
+      header.expectedLiabilityCaptured === false
+        ? null
+        : header.expectedLiability ?? fromRows.expectedLiability,
     commercialAdjustment: header.commercialAdjustment ?? fromRows.commercialAdjustment,
     finalForecast: header.finalForecast ?? fromRows.finalForecast,
     forecastFinalCost: header.finalForecast ?? fromRows.forecastFinalCost,

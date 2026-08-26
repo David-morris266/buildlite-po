@@ -58,10 +58,56 @@ describe('CVR snapshot mapper (BL-031E.4)', () => {
     expect(mapped.totals.finalForecast).toBe(2365373);
     expect(mapped.totals.outstandingCertified).toBe(2150);
     expect(mapped.totals.forecastRevenue).toBeNull();
+    expect(mapped.totals.expectedLiability).toBeNull();
+    expect(mapped.totals.expectedLiabilityCaptured).toBe(false);
     expect(mapped.totals.grossProfit).toBeNull();
     expect(mapped.plots).toEqual([]);
     expect(mapped.committed).toBeUndefined();
     expect(JSON.stringify(mapped)).not.toMatch(/current_budget|actual_cost|cost_code_key/);
+  });
+
+  it('maps schema-v3 frozen Expected and provenance without consulting live CE state', () => {
+    const mapped = normalizeServerCvrSnapshot(
+      buildServerCvrSnapshotFixture({
+        schemaVersion: 3,
+        expectedLiability: 20000,
+        expectedLiabilityCaptured: true,
+        systemForecast: 10000,
+        commercialAdjustment: 5000,
+        finalForecast: 35000,
+        rows: [
+          buildServerCvrSnapshotRowFixture({
+            expectedLiability: 20000,
+            expectedLiabilityCaptured: true,
+            systemForecast: 10000,
+            commercialAdjustment: 5000,
+            finalForecast: 35000,
+            expectedLiabilityProvenance: [
+              {
+                ceId: 'ce-1',
+                eventNumber: 'CE-0001',
+                costCode: '5231',
+                factualValue: 20000,
+                statusAtLock: 'submitted',
+                expectedTreatment: 'default',
+                overrideAmount: null,
+                effectiveExpectedAmount: 20000,
+                reason: null,
+              },
+            ],
+          }),
+        ],
+      })
+    );
+    expect(mapped.totals.expectedLiability).toBe(20000);
+    expect(mapped.totals.expectedLiabilityCaptured).toBe(true);
+    expect(mapped.rows[0].expectedLiability).toBe(20000);
+    expect(mapped.rows[0].expectedLiabilityProvenance[0].eventNumber).toBe('CE-0001');
+    expect(
+      mapped.rows[0].systemForecast +
+        mapped.rows[0].expectedLiability +
+        mapped.rows[0].commercialAdjustment
+    ).toBe(mapped.rows[0].finalForecast);
   });
 
   it('maps snapshot rows including reason aliases and adjustment history', () => {

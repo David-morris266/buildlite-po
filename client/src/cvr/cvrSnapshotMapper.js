@@ -87,6 +87,17 @@ export function normalizeCvrSnapshotTotals(source = {}) {
     manualAccrual: moneyFrom(totalsSource, 'manualAccrual', 'manual_accrual', 0),
     currentCost: moneyFrom(totalsSource, 'currentCost', 'current_cost', 0),
     systemForecast: moneyFrom(totalsSource, 'systemForecast', 'system_forecast', 0),
+    expectedLiability: nullableMoneyFrom(
+      totalsSource,
+      'expectedLiability',
+      'expected_liability'
+    ),
+    expectedLiabilityCaptured:
+      firstDefined(
+        totalsSource.expectedLiabilityCaptured,
+        totalsSource.expected_liability_captured
+      ) ??
+      firstDefined(totalsSource.expectedLiability, totalsSource.expected_liability) != null,
     commercialAdjustment: moneyFrom(
       totalsSource,
       'commercialAdjustment',
@@ -178,6 +189,17 @@ export function normalizeCvrSnapshotRow(document) {
     actualCost: moneyFrom(document, 'actualCost', 'actual_cost', 0),
     currentCost: moneyFrom(document, 'currentCost', 'current_cost', 0),
     systemForecast: moneyFrom(document, 'systemForecast', 'system_forecast', 0),
+    expectedLiability: nullableMoneyFrom(document, 'expectedLiability', 'expected_liability'),
+    expectedLiabilityCaptured:
+      firstDefined(document.expectedLiabilityCaptured, document.expected_liability_captured) ??
+      firstDefined(document.expectedLiability, document.expected_liability) != null,
+    expectedLiabilityProvenance: (() => {
+      const value = firstDefined(
+        document.expectedLiabilityProvenance,
+        document.expected_liability_provenance
+      );
+      return Array.isArray(value) ? value : null;
+    })(),
     finalForecast: moneyFrom(document, 'finalForecast', 'final_forecast', 0),
     costToComplete: moneyFrom(document, 'costToComplete', 'cost_to_complete', 0),
     outstandingCertified: moneyFrom(

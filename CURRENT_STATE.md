@@ -20,12 +20,12 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | **BL-033D.x.5 COMPLETE** (Prelims landing UX consolidation). Human visual UAT **PASSED**. |
-| Last persistence slice implemented | **BL-038C BANKED** at `b036bc9` (human UAT + SELECT-only forensic PASS). Expected Liability is live in authoritative CVR Final Forecast. |
+| Last persistence slice implemented | **BL-038E IMPLEMENTED; automated verification, human UAT, and SELECT-only forensic verification PASS; SAFE TO BANK.** Schema-v3 snapshots explicitly freeze CE Expected Liability and lock-time provenance; older snapshots remain Expected-unavailable. Migration `022` is applied to `buildlite_clone`. |
 | Last design-authority slice | **HD-038-1 / HD-038-2 / HD-038-3 RESOLVED** (docs only, after BL-038A). HD-001 / HD-002 / HD-008 remain **resolved**. Detailed Selling Costs remains unstarted. **BL-038C BANKED** at `b036bc9`. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
 | Durable intent / deferred decisions | `docs/PRODUCT_CONSTITUTION.md` |
-| **NEXT** | **BL-038E — snapshot/Create Next integrity.** This is a pre-Hawthorn correctness gate. BL-038D drilldown/detail UX is deferred pending pilot evidence. Keep Test Site 1 P04 Draft; no P05, Hawthorn changes, Detailed Selling Costs, or UAT-CC-001 adoption. |
+| **NEXT** | **Bank BL-038E only after explicit approval.** Human UAT and forensic verification pass. Do not start Hawthorn or another slice silently. BL-038D remains deferred pending pilot evidence. |
 
 ---
 
@@ -1213,7 +1213,15 @@ Documentation / design-authority settlement after founding-principles reconcilia
 
 **BL-038C BANKED** at `b036bc9`; human approval-transition UAT PASS and SELECT-only post-UAT forensic PASS.
 
-**Post-038C pilot gate:** BL-038D's remaining CE/CVR drilldown and detail UX is useful but not required before a supervised SME pilot; defer it pending pilot evidence. BL-038E is required before Hawthorn because locked snapshots do not yet freeze CE Expected Liability explicitly, and Create Next needs regression proof that live CE transitions recompose without rewriting or obscuring the prior period.
+**Post-038C pilot gate:** BL-038D's remaining CE/CVR drilldown and detail UX is useful but not required before a supervised SME pilot; defer it pending pilot evidence. BL-038E was the pre-Hawthorn correctness gate and has now passed automated verification, human UAT, and SELECT-only forensic verification.
+
+## BL-038E — CE Expected Liability snapshot/Create Next integrity — IMPLEMENTED; HUMAN UAT + FORENSIC PASS; SAFE TO BANK
+
+Migration `022_cvr_snapshot_expected_liability.sql` adds nullable Expected Liability to snapshot headers/rows plus nullable row provenance. New schema-v3 locks require explicit Expected values and freeze submitted CE identity/reference, cost code, factual value/status, treatment, override, effective Expected, and reason. Pre-v3 snapshots remain NULL/unavailable rather than being presented as known £0. Historic reads use frozen Expected only and reconcile Final = System + Expected + Adjustment.
+
+Create Next remains unchanged structurally: it copies persisted QS overlays but never Expected into `cvr_cost_code_inputs`. The new Draft recomputes from live CE facts. Automated `buildlite_test` coverage proves still-submitted override, post-lock approval/value/treatment change, approved commitment/System transfer without double count, fact-only/no-overlay behaviour, and immutable historic composition. Full client regression **1395 PASS**; focused server/DB suites PASS; Vite build PASS. The full server sweep reached 437 passing tests before the 300-second command timeout with no observed failure; all affected/focused suites were then run to completion.
+
+**Controlled human UAT + SELECT-only forensic PASS, 26 Aug 2026:** migration `022` was the sole clone migration delta. Throwaway development `dev-1787753051169-qzj358`, P01 `902333f0-89c3-425e-8378-a925bdf887fb`, snapshot `66022ad0-7834-4c84-901f-4b1d3a367035`, CE-0025 `ce-1787753051256-e27468`, cost code 5218. P01 froze Committed/System **£10,000**, CE Expected **£20,000**, Adjustment **£0**, Final **£30,000**, with submitted/default lock-time CE provenance. After CE approval, P01 remained immutable. P02 `0fdf131b-0e29-4473-a09e-127a5172d3f3` (September 2026) has zero overlay inputs and live Committed/System **£30,000**, Expected **£0**, Final **£30,000**. No double count. Test Site 1 remains commercially unchanged with its three snapshots; P04 Draft and P05 absent.
 
 ## HD-038-1 / HD-038-2 / HD-038-3 — RESOLVED
 
@@ -1267,7 +1275,7 @@ Later UX only (not in this bank): when Review is Up to date, hide/disable Adopt 
 
 ## Next action
 
-**NEXT:** **BL-038E — CE Expected Liability snapshot/Create Next integrity.** It is a pre-Hawthorn correctness gate: freeze and restore Expected explicitly in locked CVRs and prove later CE transitions/Create Next do not rewrite or make the prior position unexplainable. BL-038D drilldown/detail UX is **DEFERRED pending pilot evidence**. Keep Test Site 1 P04 Draft. Do **not** create P05, Adopt UAT-CC-001, alter Hawthorn, or start Detailed Selling Costs.
+**NEXT:** **Bank BL-038E only after explicit approval.** Human UAT and SELECT-only forensic verification PASS. BL-038D remains **DEFERRED pending pilot evidence**. Do not silently start Hawthorn or another slice. Keep Test Site 1 P04 Draft. Do **not** create P05, Adopt UAT-CC-001, alter Hawthorn, or start Detailed Selling Costs.
 
 Do **not** alter P01/P02/P03 `reporting_month` except by a future explicit historic-correction feature. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`. Do not delete P04 `0f513191-cd25-4812-834f-37dcf66487e0` except by a later controlled commercial task.
 

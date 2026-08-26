@@ -283,7 +283,7 @@ if (!isDbConfigured()) {
     assert.equal(locked.status, 200);
     assert.equal(locked.body.status, "locked");
     assert.ok(locked.body.snapshot);
-    assert.equal(locked.body.snapshot.schemaVersion, 2);
+    assert.equal(locked.body.snapshot.schemaVersion, 3);
     assert.equal(locked.body.snapshotDeferred, false);
     assert.equal(locked.body.snapshotNote, SNAPSHOT_CREATED_NOTE);
     assert.equal(locked.body.snapshot.periodId, created.body.id);

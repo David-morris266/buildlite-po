@@ -5,7 +5,7 @@
  */
 
 const { buildCvrCloseCandidate } = require("./cvrCloseEngine");
-const { CVR_SNAPSHOT_REVENUE_SCHEMA_VERSION } = require("./cvrCloseConstants");
+const { CVR_SNAPSHOT_EXPECTED_LIABILITY_SCHEMA_VERSION } = require("./cvrCloseConstants");
 const { roundMoney } = require("./cvrCloseFormulas");
 const { buildCvrRevenueCloseCandidate } = require("./cvrRevenueClose");
 
@@ -107,7 +107,7 @@ async function buildWholeCvrCloseCandidate(options = {}) {
     revenue,
     snapshot: {
       ...cost.snapshot,
-      schemaVersion: CVR_SNAPSHOT_REVENUE_SCHEMA_VERSION,
+      schemaVersion: CVR_SNAPSHOT_EXPECTED_LIABILITY_SCHEMA_VERSION,
       sourceReadiness,
       forecastRevenue,
       securedRevenue: roundMoney(revenue.summary.securedRevenue) ?? 0,

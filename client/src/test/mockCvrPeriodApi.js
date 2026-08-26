@@ -388,6 +388,12 @@ export function buildServerCvrSnapshotFixture(overrides = {}) {
   if (overrides.grossMarginPercent !== undefined) {
     document.grossMarginPercent = overrides.grossMarginPercent;
   }
+  if (overrides.expectedLiability !== undefined) {
+    document.expectedLiability = overrides.expectedLiability;
+  }
+  if (overrides.expectedLiabilityCaptured !== undefined) {
+    document.expectedLiabilityCaptured = overrides.expectedLiabilityCaptured;
+  }
   return document;
 }
 
@@ -484,6 +490,9 @@ function snapshotFromApprovedPeriod(existing) {
       actualCost: 0,
       currentCost: input.manualAccrual ?? 0,
       systemForecast: 0,
+      expectedLiability: 0,
+      expectedLiabilityCaptured: true,
+      expectedLiabilityProvenance: [],
       finalForecast: input.commercialAdjustment ?? 0,
       costToComplete: 0,
       outstandingCertified: 0,
@@ -513,7 +522,9 @@ function snapshotFromApprovedPeriod(existing) {
     costToComplete: 0,
     outstandingCertified: 0,
     variance: 0,
-    schemaVersion: 2,
+    schemaVersion: 3,
+    expectedLiability: 0,
+    expectedLiabilityCaptured: true,
     forecastRevenue: 0,
     securedRevenue: 0,
     remainingForecastRevenue: 0,

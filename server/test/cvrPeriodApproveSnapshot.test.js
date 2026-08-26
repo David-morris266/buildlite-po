@@ -39,6 +39,18 @@ const MIGRATION_012 = path.join(
   "migrations",
   "012_cvr_period_snapshot_revenue.sql"
 );
+const MIGRATION_021 = path.join(
+  __dirname,
+  "..",
+  "migrations",
+  "021_commercial_event_expected_liability.sql"
+);
+const MIGRATION_022 = path.join(
+  __dirname,
+  "..",
+  "migrations",
+  "022_cvr_snapshot_expected_liability.sql"
+);
 const CVR_ROUTES = path.join(__dirname, "..", "routes", "cvrRoutes.js");
 
 const EXPECTED_5231 = {
@@ -104,6 +116,8 @@ async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_010, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_011, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_012, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_021, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_022, "utf8"));
 }
 
 async function cleanup() {
@@ -351,6 +365,10 @@ async function insertCommercialEvent({
   eventType = "variation",
   relationshipType = null,
   description = "Approve snapshot CE",
+  expectedTreatment = "default",
+  expectedAmount = null,
+  expectedReason = null,
+  costCode = pkg.costCode || pkg.costCodeKey || "5231",
 }) {
   const id = `ce-appr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const eventNumber = `CE-APPR-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -359,12 +377,14 @@ async function insertCommercialEvent({
       INSERT INTO commercial_events (
         id, client_id, development_id, package_id, order_key, event_number,
         event_type, category, responsibility, description, value, status,
-        relationship_type, vat_treatment, payload
+        relationship_type, vat_treatment, payload,
+        expected_treatment, expected_amount, expected_reason, cost_code
       )
       VALUES (
         $1, $2, $3, $4, $5, $6,
         $7, 'commercial', 'commercial', $8, $9, $10,
-        $11, 'standard', '{}'::jsonb
+        $11, 'standard', '{}'::jsonb,
+        $12, $13, $14, $15
       )
     `,
     [
@@ -379,6 +399,10 @@ async function insertCommercialEvent({
       value,
       status,
       relationshipType,
+      expectedTreatment,
+      expectedAmount,
+      expectedReason,
+      costCode,
     ]
   );
   trackCe(id);
@@ -748,7 +772,8 @@ if (!isDbConfigured()) {
     assert.equal(locked.body.snapshotDeferred, false);
     assert.equal(locked.body.snapshotNote, SNAPSHOT_CREATED_NOTE);
     assert.ok(locked.body.snapshot);
-    assert.equal(locked.body.snapshot.schemaVersion, 2);
+    assert.equal(locked.body.snapshot.schemaVersion, 3);
+    assert.equal(Number(locked.body.snapshot.expectedLiability), 0);
     assert.equal(Number(locked.body.snapshot.forecastRevenue), 0);
     assert.equal(Number(locked.body.snapshot.securedRevenue), 0);
     assert.equal(Number(locked.body.snapshot.grossProfit), -Number(candidate.snapshot.finalForecast));
@@ -775,6 +800,8 @@ if (!isDbConfigured()) {
     const row5231 = findRow(locked.body.snapshot, "5231");
     assert.ok(row5231);
     assert.equal(row5231.adjustmentReason, "Test adjustment");
+    assert.equal(Number(row5231.expectedLiability), 0);
+    assert.deepEqual(row5231.expectedLiabilityProvenance, []);
     assert.deepEqual(row5231.adjustmentHistory, [{ amount: 500, reason: "Test adjustment" }]);
     assert.equal(locked.body.snapshot.commentary.keyCommercialIssues, "Approve snapshot commentary");
     assert.ok(locked.body.snapshot.sourceReadiness);
@@ -796,6 +823,102 @@ if (!isDbConfigured()) {
       )
     );
     assert.ok(audit.some((item) => item.action === "locked" && item.comment === "Lock P01"));
+  });
+
+  test("BL-038E lock freezes Expected provenance and later approval recomposes Create Next", async () => {
+    const world = await setupBase({ inputs: [] });
+    const ceId = await insertCommercialEvent({
+      clientId: world.client.id,
+      development: world.development,
+      pkg: world.pkg,
+      value: 20000,
+      status: "submitted",
+    });
+    await submitPeriod(world.development.id, world.period.id);
+    const locked = await request(app)
+      .post(`${periodUrl(world.development.id, world.period.id)}/approve`)
+      .send({ actor: "Director", comment: "BL-038E freeze" });
+    assert.equal(locked.status, 200, locked.body?.message || JSON.stringify(locked.body));
+    const frozenRow = findRow(locked.body.snapshot, "5231");
+    assert.equal(locked.body.snapshot.schemaVersion, 3);
+    assert.equal(Number(locked.body.snapshot.expectedLiability), 20000);
+    assert.equal(Number(frozenRow.systemForecast), 50000);
+    assert.equal(Number(frozenRow.expectedLiability), 20000);
+    assert.equal(Number(frozenRow.finalForecast), 70000);
+    assert.equal(frozenRow.expectedLiabilityProvenance.length, 1);
+    assert.deepEqual(frozenRow.expectedLiabilityProvenance[0], {
+      ceId,
+      ceReference: frozenRow.expectedLiabilityProvenance[0].eventNumber,
+      eventNumber: frozenRow.expectedLiabilityProvenance[0].eventNumber,
+      costCode: "5231",
+      factualValue: 20000,
+      statusAtLock: "submitted",
+      expectedTreatment: "default",
+      overrideAmount: null,
+      effectiveExpectedAmount: 20000,
+      reason: null,
+    });
+
+    await pool.query(
+      `UPDATE commercial_events
+       SET status = 'approved', value = 25000, expected_treatment = 'override',
+           expected_amount = 999, expected_reason = 'Later live change', version = version + 1
+       WHERE id = $1 AND client_id = $2`,
+      [ceId, world.client.id]
+    );
+    const historic = await getCvrPeriod(world.client.id, world.development.id, world.period.id);
+    const historicRow = findRow(historic.period.snapshot, "5231");
+    assert.equal(Number(historic.period.snapshot.expectedLiability), 20000);
+    assert.equal(Number(historicRow.expectedLiability), 20000);
+    assert.equal(Number(historicRow.finalForecast), 70000);
+    assert.equal(historicRow.expectedLiabilityProvenance[0].factualValue, 20000);
+
+    const next = await createPeriod(world.development.id);
+    const nextCandidate = await buildCvrCloseCandidate({
+      clientId: world.client.id,
+      developmentId: world.development.id,
+      periodId: next.id,
+    });
+    const nextRow = findRow(nextCandidate.snapshot, "5231");
+    assert.equal(Number(nextRow.committed), 75000);
+    assert.equal(Number(nextRow.systemForecast), 75000);
+    assert.equal(Number(nextRow.expectedLiability), 0);
+    assert.equal(Number(nextRow.finalForecast), 75000);
+  });
+
+  test("BL-038E Create Next recomputes a still-submitted fact-only Expected without overlay copy", async () => {
+    const world = await setupBase({ costCode: "7777", inputs: [] });
+    await insertCommercialEvent({
+      clientId: world.client.id,
+      development: world.development,
+      pkg: world.pkg,
+      value: 15000,
+      status: "submitted",
+      expectedTreatment: "override",
+      expectedAmount: 12000,
+      expectedReason: "Current QS view",
+      costCode: "7777",
+    });
+    await submitPeriod(world.development.id, world.period.id);
+    const locked = await request(app)
+      .post(`${periodUrl(world.development.id, world.period.id)}/approve`)
+      .send({ actor: "Director" });
+    assert.equal(locked.status, 200, locked.body?.message || JSON.stringify(locked.body));
+    const next = await createPeriod(world.development.id);
+    const nextInputs = await pool.query(
+      "SELECT * FROM cvr_cost_code_inputs WHERE period_id = $1",
+      [next.id]
+    );
+    assert.equal(nextInputs.rows.length, 0);
+    const candidate = await buildCvrCloseCandidate({
+      clientId: world.client.id,
+      developmentId: world.development.id,
+      periodId: next.id,
+    });
+    const nextRow = findRow(candidate.snapshot, "7777");
+    assert.ok(nextRow);
+    assert.equal(Number(nextRow.expectedLiability), 12000);
+    assert.equal(Number(nextRow.finalForecast), 62000);
   });
 
   test("12. forced header insert failure rolls back", async () => {
@@ -1306,7 +1429,7 @@ if (!isDbConfigured()) {
       .post(`${periodUrl(world.development.id, world.period.id)}/approve`)
       .send({ actor: "Director", forecastRevenue: 1, securedRevenue: 99, grossProfit: 3 });
     assert.equal(locked.status, 200, locked.body?.message || JSON.stringify(locked.body));
-    assert.equal(locked.body.snapshot.schemaVersion, 2);
+    assert.equal(locked.body.snapshot.schemaVersion, 3);
     assert.equal(Number(locked.body.snapshot.forecastRevenue), 1000000);
     assert.equal(Number(locked.body.snapshot.securedRevenue), 0);
     assert.notEqual(Number(locked.body.snapshot.grossProfit), 3);

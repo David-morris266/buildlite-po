@@ -55,6 +55,11 @@ function snapshotRowToDocument(row) {
     actualCost: toNumber(row.actual_cost, 0),
     currentCost: toNumber(row.current_cost, 0),
     systemForecast: toNumber(row.system_forecast, 0),
+    expectedLiability: toNumberOrNull(row.expected_liability),
+    expectedLiabilityCaptured: row.expected_liability != null,
+    expectedLiabilityProvenance: Array.isArray(row.expected_liability_provenance)
+      ? row.expected_liability_provenance
+      : null,
     finalForecast: toNumber(row.final_forecast, 0),
     costToComplete: toNumber(row.cost_to_complete, 0),
     outstandingCertified: toNumber(row.outstanding_certified, 0),
@@ -115,6 +120,8 @@ function snapshotHeaderToDocument(header, rows = [], plots = []) {
     manualAccrual: toNumber(header.manual_accrual, 0),
     currentCost: toNumber(header.current_cost, 0),
     systemForecast: toNumber(header.system_forecast, 0),
+    expectedLiability: toNumberOrNull(header.expected_liability),
+    expectedLiabilityCaptured: header.expected_liability != null,
     commercialAdjustment: toNumber(header.commercial_adjustment, 0),
     finalForecast: toNumber(header.final_forecast, 0),
     costToComplete: toNumber(header.cost_to_complete, 0),

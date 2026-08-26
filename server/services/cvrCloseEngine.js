@@ -30,7 +30,11 @@ const {
   sourceReadinessDocument,
 } = require("./cvrCloseSources");
 const { isApprovedSubcontractPo } = require("./packagePoExtract");
-const { effectiveExpectedLiability } = require("./commercialEventExpectedLiability");
+const {
+  effectiveExpectedLiability,
+  isEligibleContractValueEvent,
+  normalizeTreatment,
+} = require("./commercialEventExpectedLiability");
 
 function isRecoveryCommercialEvent(event) {
   return event?.relationshipType === RECOVERY_RELATIONSHIP_TYPE;
@@ -216,16 +220,33 @@ function buildActualsByCostCode(transactions) {
 function buildExpectedLiabilityByCostCode(events) {
   const totals = new Map();
   const labels = new Map();
+  const provenance = new Map();
   for (const event of events || []) {
-    const amount = effectiveExpectedLiability(event);
-    if (!Number.isFinite(amount) || Math.abs(amount) < 0.005) continue;
     const costCode = event.costCode || event.costCodeKey;
     const key = normaliseCostCodeKey(costCode);
     if (!key) continue;
+    if (!isEligibleContractValueEvent(event) || event.status !== "submitted") continue;
+    const amount = effectiveExpectedLiability(event);
+    if (!Number.isFinite(amount)) continue;
     addAmount(totals, key, amount);
     if (!labels.has(key)) labels.set(key, buildCostCodeLabel(key, costCode));
+    const treatment = normalizeTreatment(event.expectedTreatment);
+    const entries = provenance.get(key) || [];
+    entries.push({
+      ceId: event.id || null,
+      ceReference: event.eventNumber || event.reference || event.id || null,
+      eventNumber: event.eventNumber || null,
+      costCode: String(costCode),
+      factualValue: roundMoney(event.value) ?? 0,
+      statusAtLock: event.status,
+      expectedTreatment: treatment,
+      overrideAmount: treatment === "override" ? roundMoney(event.expectedAmount) : null,
+      effectiveExpectedAmount: roundMoney(amount) ?? 0,
+      reason: treatment === "default" ? null : String(event.expectedReason || "").trim() || null,
+    });
+    provenance.set(key, entries);
   }
-  return { totals, labels };
+  return { totals, labels, provenance };
 }
 
 function collectCostCodeKeys(sources, inputs) {
@@ -268,6 +289,9 @@ function snapshotRowFromEnriched(row) {
     currentCost: moneyOrZero(row.currentCost),
     systemForecast: moneyOrZero(row.systemForecast),
     expectedLiability: moneyOrZero(row.expectedLiability),
+    expectedLiabilityProvenance: Array.isArray(row.expectedLiabilityProvenance)
+      ? row.expectedLiabilityProvenance
+      : [],
     finalForecast: moneyOrZero(row.finalForecast),
     costToComplete: moneyOrZero(row.costToComplete),
     outstandingCertified: moneyOrZero(row.outstandingCertified),
@@ -382,6 +406,7 @@ async function buildCvrCloseCandidate({
       certified: roundMoney(certifiedValue) ?? 0,
       actualCost: roundMoney(actualCost) ?? 0,
       expectedLiability: roundMoney(expectedLiabilities.totals.get(key)) ?? 0,
+      expectedLiabilityProvenance: expectedLiabilities.provenance.get(key) || [],
       manualAccrual: manual?.manualAccrual ?? 0,
     });
   });

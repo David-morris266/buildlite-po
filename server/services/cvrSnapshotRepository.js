@@ -7,7 +7,8 @@
  */
 
 const { query } = require("../db");
-const { CVR_SNAPSHOT_REVENUE_SCHEMA_VERSION } = require("./cvrCloseConstants");
+const assert = require("node:assert/strict");
+const { CVR_SNAPSHOT_EXPECTED_LIABILITY_SCHEMA_VERSION } = require("./cvrCloseConstants");
 const { snapshotHeaderToDocument } = require("./cvrSnapshotMapper");
 
 const SNAPSHOT_MONEY_FIELDS = [
@@ -18,6 +19,7 @@ const SNAPSHOT_MONEY_FIELDS = [
   ["manualAccrual", "manual_accrual"],
   ["currentCost", "current_cost"],
   ["systemForecast", "system_forecast"],
+  ["expectedLiability", "expected_liability"],
   ["commercialAdjustment", "commercial_adjustment"],
   ["finalForecast", "final_forecast"],
   ["costToComplete", "cost_to_complete"],
@@ -42,6 +44,7 @@ const ROW_MONEY_FIELDS = [
   ["actualCost", "actual_cost"],
   ["currentCost", "current_cost"],
   ["systemForecast", "system_forecast"],
+  ["expectedLiability", "expected_liability"],
   ["finalForecast", "final_forecast"],
   ["costToComplete", "cost_to_complete"],
   ["outstandingCertified", "outstanding_certified"],
@@ -131,7 +134,7 @@ async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodR
         client_id, development_id, period_id, period_key, schema_version,
         commentary, source_readiness,
         current_budget, committed, certified, actual_cost, manual_accrual,
-        current_cost, system_forecast, commercial_adjustment, final_forecast,
+        current_cost, system_forecast, expected_liability, commercial_adjustment, final_forecast,
         cost_to_complete, outstanding_certified, variance,
         forecast_revenue, secured_revenue, remaining_forecast_revenue,
         plots_sold, plots_remaining, gross_profit, gross_margin_percent,
@@ -142,12 +145,12 @@ async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodR
         $1, $2, $3, $4, $5,
         $6::jsonb, $7::jsonb,
         $8, $9, $10, $11, $12,
-        $13, $14, $15, $16,
-        $17, $18, $19,
-        $20, $21, $22,
-        $23, $24, $25, $26,
-        $27::jsonb, $28, $29,
-        $30
+        $13, $14, $15, $16, $17,
+        $18, $19, $20,
+        $21, $22, $23,
+        $24, $25, $26, $27,
+        $28::jsonb, $29, $30,
+        $31
       )
       RETURNING *
     `,
@@ -166,6 +169,7 @@ async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodR
       moneyNumber(snapshot.manualAccrual),
       moneyNumber(snapshot.currentCost),
       moneyNumber(snapshot.systemForecast),
+      moneyNumber(snapshot.expectedLiability),
       moneyNumber(snapshot.commercialAdjustment),
       moneyNumber(snapshot.finalForecast),
       moneyNumber(snapshot.costToComplete),
@@ -207,8 +211,8 @@ async function insertSnapshotRow(dbClient, { clientId, snapshotId, row }) {
         commercial_head, commercial_family, trade, active,
         original_budget, current_budget, commercial_adjustment, adjustment_reason,
         manual_accrual, notes, committed, certified, actual_cost, current_cost,
-        system_forecast, final_forecast, cost_to_complete, outstanding_certified,
-        variance, display_metadata
+        system_forecast, expected_liability, final_forecast, cost_to_complete,
+        outstanding_certified, variance, expected_liability_provenance, display_metadata
       )
       VALUES (
         $1, $2, $3, $4, $5,
@@ -216,7 +220,7 @@ async function insertSnapshotRow(dbClient, { clientId, snapshotId, row }) {
         $10, $11, $12, $13,
         $14, $15, $16, $17, $18, $19,
         $20, $21, $22, $23,
-        $24, $25::jsonb
+        $24, $25, $26::jsonb, $27::jsonb
       )
       RETURNING *
     `,
@@ -241,10 +245,12 @@ async function insertSnapshotRow(dbClient, { clientId, snapshotId, row }) {
       moneyNumber(row.actualCost),
       moneyNumber(row.currentCost),
       moneyNumber(row.systemForecast),
+      moneyNumber(row.expectedLiability),
       moneyNumber(row.finalForecast),
       moneyNumber(row.costToComplete),
       moneyNumber(row.outstandingCertified),
       moneyNumber(row.variance),
+      JSON.stringify(row.expectedLiabilityProvenance || []),
       JSON.stringify(metadata),
     ]
   );
@@ -312,6 +318,13 @@ function verifyPersistedSnapshot(header, insertedRows, insertedPlots, snapshot) 
   for (const [camel, column] of SNAPSHOT_MONEY_FIELDS) {
     assertSameMoney(header[column], snapshot[camel], `header.${camel}`);
   }
+  assertSameMoney(
+    snapshot.finalForecast,
+    moneyNumber(snapshot.systemForecast) +
+      moneyNumber(snapshot.expectedLiability) +
+      moneyNumber(snapshot.commercialAdjustment),
+    "header.Final = System + Expected + Adjustment"
+  );
   for (const [camel, column] of SNAPSHOT_REVENUE_FIELDS) {
     assertSameMoney(header[column], snapshot[camel], `header.${camel}`);
   }
@@ -349,6 +362,18 @@ function verifyPersistedSnapshot(header, insertedRows, insertedPlots, snapshot) 
     for (const [camel, column] of ROW_MONEY_FIELDS) {
       assertSameMoney(persisted[column], candidate[camel], `${persisted.cost_code_key}.${camel}`);
     }
+    assertSameMoney(
+      candidate.finalForecast,
+      moneyNumber(candidate.systemForecast) +
+        moneyNumber(candidate.expectedLiability) +
+        moneyNumber(candidate.commercialAdjustment),
+      `${persisted.cost_code_key}.Final = System + Expected + Adjustment`
+    );
+    assert.deepStrictEqual(
+      persisted.expected_liability_provenance || [],
+      candidate.expectedLiabilityProvenance || [],
+      `${persisted.cost_code_key}.expectedLiabilityProvenance mismatch`
+    );
   }
   const candidatePlots = snapshot.plots || [];
   if (insertedPlots.length !== candidatePlots.length) {
@@ -391,8 +416,8 @@ async function persistCvrPeriodSnapshot(
   if (String(periodRow.development_id) !== String(developmentId)) {
     throw new Error("CVR period development does not match approval development.");
   }
-  if (Number(snapshot.schemaVersion) !== CVR_SNAPSHOT_REVENUE_SCHEMA_VERSION) {
-    throw new Error("Whole-CVR lock requires snapshot schema version 2.");
+  if (Number(snapshot.schemaVersion) !== CVR_SNAPSHOT_EXPECTED_LIABILITY_SCHEMA_VERSION) {
+    throw new Error("Whole-CVR lock requires snapshot schema version 3.");
   }
   if (
     snapshot.forecastRevenue == null ||

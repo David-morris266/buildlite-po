@@ -37,6 +37,7 @@ function event(overrides = {}) {
     value: 20000,
     expectedTreatment: "default",
     expectedAmount: null,
+    eventNumber: "CE-038E-1",
     ...overrides,
   };
 }
@@ -184,4 +185,71 @@ test("BL-038C candidate remains calculation-only with no lifecycle or snapshot w
   assert.equal(result.snapshot.periodKey, "P01");
   assert.equal(result.snapshot.createdAt, null);
   assert.equal(result.snapshot.expectedLiability, 20000);
+});
+
+test("BL-038E freezes default and override provenance per cost code", async () => {
+  const result = await close({
+    events: [
+      event({ id: "ce-default", eventNumber: "CE-1001", value: 20000 }),
+      event({
+        id: "ce-override",
+        eventNumber: "CE-1002",
+        value: 30000,
+        expectedTreatment: "override",
+        expectedAmount: 15000,
+        expectedReason: "QS assessment",
+      }),
+    ],
+  });
+  const frozen = row(result);
+  assert.equal(frozen.expectedLiability, 35000);
+  assert.deepEqual(frozen.expectedLiabilityProvenance, [
+    {
+      ceId: "ce-default",
+      ceReference: "CE-1001",
+      eventNumber: "CE-1001",
+      costCode: "5218",
+      factualValue: 20000,
+      statusAtLock: "submitted",
+      expectedTreatment: "default",
+      overrideAmount: null,
+      effectiveExpectedAmount: 20000,
+      reason: null,
+    },
+    {
+      ceId: "ce-override",
+      ceReference: "CE-1002",
+      eventNumber: "CE-1002",
+      costCode: "5218",
+      factualValue: 30000,
+      statusAtLock: "submitted",
+      expectedTreatment: "override",
+      overrideAmount: 15000,
+      effectiveExpectedAmount: 15000,
+      reason: "QS assessment",
+    },
+  ]);
+});
+
+test("BL-038E freezes hold and exclude as zero with provenance", async () => {
+  const result = await close({
+    pos: [],
+    events: [
+      event({ expectedTreatment: "hold", expectedReason: "Awaiting detail" }),
+      event({ expectedTreatment: "exclude", expectedReason: "Not our liability" }),
+    ],
+  });
+  const frozen = row(result);
+  assert.equal(frozen.expectedLiability, 0);
+  assert.deepEqual(
+    frozen.expectedLiabilityProvenance.map((entry) => ({
+      treatment: entry.expectedTreatment,
+      amount: entry.effectiveExpectedAmount,
+      reason: entry.reason,
+    })),
+    [
+      { treatment: "hold", amount: 0, reason: "Awaiting detail" },
+      { treatment: "exclude", amount: 0, reason: "Not our liability" },
+    ]
+  );
 });

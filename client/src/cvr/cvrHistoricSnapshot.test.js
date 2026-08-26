@@ -200,9 +200,54 @@ describe('CVR historic snapshot reads (BL-031E.4)', () => {
     expect(model.rows[0].certified).toBe(2150);
     expect(model.rows[0].manualAccrual).toBe(100);
     expect(model.rows[0].finalForecast).toBe(50750);
+    expect(model.rows[0].expectedLiability).toBeNull();
+    expect(model.summary.expectedLiability).toBeNull();
     expect(model.summary.committed).toBe(2364873);
     expect(model.summary.finalForecast).toBe(2365373);
     expect(model.summary.outstandingCertified).toBe(2150);
+  });
+
+  it('schema v3 historic rows retain frozen Expected and reconcile Final composition', async () => {
+    await seedLockedSnapshot(
+      frozenSnapshot({
+        schemaVersion: 3,
+        systemForecast: 2364873,
+        expectedLiability: 20000,
+        expectedLiabilityCaptured: true,
+        commercialAdjustment: 500,
+        finalForecast: 2385373,
+        rows: [
+          buildServerCvrSnapshotRowFixture({
+            systemForecast: 50250,
+            expectedLiability: 20000,
+            expectedLiabilityCaptured: true,
+            commercialAdjustment: 500,
+            finalForecast: 70750,
+            expectedLiabilityProvenance: [
+              {
+                ceId: 'ce-frozen',
+                eventNumber: 'CE-0024',
+                costCode: '5231',
+                factualValue: 20000,
+                statusAtLock: 'submitted',
+                expectedTreatment: 'default',
+                overrideAmount: null,
+                effectiveExpectedAmount: 20000,
+                reason: null,
+              },
+            ],
+          }),
+        ],
+      })
+    );
+    const model = buildCvrModel(DEV, { periodKey: 'P01', pos: [] });
+    const row = model.rows[0];
+    expect(row.expectedLiability).toBe(20000);
+    expect(row.expectedLiabilityProvenance[0].eventNumber).toBe('CE-0024');
+    expect(row.systemForecast + row.expectedLiability + row.commercialAdjustment).toBe(
+      row.finalForecast
+    );
+    expect(model.summary.expectedLiability).toBe(20000);
   });
 
   it('later PO, CE, certificate, ledger, and overlay edits do not move locked figures', async () => {
@@ -451,7 +496,7 @@ describe('CVR historic snapshot reads (BL-031E.4)', () => {
     expect(approved.period.status).toBe('locked');
     expect(approved.snapshotDeferred).toBe(false);
     expect(approved.snapshot.rows[0].costCodeKey).toBe('5231');
-    expect(approved.snapshot.schemaVersion).toBe(2);
+    expect(approved.snapshot.schemaVersion).toBe(3);
     expect(approved.snapshot.totals.forecastRevenue).toBe(0);
     expect(getCachedCvrPeriods(DEV)[0].snapshot.totals).toBeTruthy();
     const model = buildCvrModel(DEV, { periodKey: 'P01' });
