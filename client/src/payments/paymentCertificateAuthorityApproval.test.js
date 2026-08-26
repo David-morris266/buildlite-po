@@ -16,6 +16,7 @@ const apiMocks = vi.hoisted(() => ({
   closeCommercialEvent: vi.fn(),
   dismissPotentialContra: vi.fn(),
   createLinkedRecovery: vi.fn(),
+  updateExpectedLiability: vi.fn(),
   listCommercialEvents: vi.fn(),
   getCommercialEvent: vi.fn(),
   importCommercialEvents: vi.fn(),
@@ -52,6 +53,7 @@ vi.mock('../api/commercialEvents', () => ({
   closeCommercialEvent: (...args) => apiMocks.closeCommercialEvent(...args),
   dismissPotentialContra: (...args) => apiMocks.dismissPotentialContra(...args),
   createLinkedRecovery: (...args) => apiMocks.createLinkedRecovery(...args),
+  updateExpectedLiability: (...args) => apiMocks.updateExpectedLiability?.(...args),
   importCommercialEvents: (...args) => apiMocks.importCommercialEvents(...args),
 }));
 

@@ -4,9 +4,23 @@
  * Client vocabulary: event.packageId = orderKey (NOT server Package UUID).
  */
 
+import { enrichExpectedLiabilityReadModel } from './commercialEventExpectedLiability';
+
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toNullableNumber(value) {
+  if (value == null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toNullableInteger(value) {
+  if (value == null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? parsed : null;
 }
 
 function normalizeAuditEntry(entry) {
@@ -25,6 +39,23 @@ function normalizeAuditEntry(entry) {
       entry.priorCertificateStatus ?? entry.prior_certificate_status ?? null,
     newCertificateStatus:
       entry.newCertificateStatus ?? entry.new_certificate_status ?? null,
+    priorExpectedTreatment:
+      entry.priorExpectedTreatment ?? entry.prior_expected_treatment ?? null,
+    newExpectedTreatment: entry.newExpectedTreatment ?? entry.new_expected_treatment ?? null,
+    priorExpectedAmount: toNullableNumber(
+      entry.priorExpectedAmount ?? entry.prior_expected_amount
+    ),
+    newExpectedAmount: toNullableNumber(entry.newExpectedAmount ?? entry.new_expected_amount),
+    priorEffectiveExpected: toNullableNumber(
+      entry.priorEffectiveExpected ?? entry.prior_effective_expected
+    ),
+    newEffectiveExpected: toNullableNumber(
+      entry.newEffectiveExpected ?? entry.new_effective_expected
+    ),
+    ceValueAtChange: toNullableNumber(entry.ceValueAtChange ?? entry.ce_value_at_change),
+    ceStatusAtChange: entry.ceStatusAtChange ?? entry.ce_status_at_change ?? null,
+    priorCeVersion: toNullableInteger(entry.priorCeVersion ?? entry.prior_ce_version),
+    newCeVersion: toNullableInteger(entry.newCeVersion ?? entry.new_ce_version),
   };
 }
 
@@ -86,9 +117,14 @@ export function normalizeServerCommercialEvent(document) {
     auditHistory: Array.isArray(document.auditHistory)
       ? document.auditHistory.map(normalizeAuditEntry).filter(Boolean)
       : [],
+    expectedTreatment: document.expectedTreatment ?? document.expected_treatment ?? 'default',
+    expectedAmount: toNullableNumber(document.expectedAmount ?? document.expected_amount),
+    expectedReason: document.expectedReason ?? document.expected_reason ?? null,
+    expectedUpdatedAt: document.expectedUpdatedAt ?? document.expected_updated_at ?? null,
+    expectedUpdatedBy: document.expectedUpdatedBy ?? document.expected_updated_by ?? null,
   };
 
-  return normalized;
+  return enrichExpectedLiabilityReadModel(normalized);
 }
 
 export function normalizeServerCommercialEventList(documents = []) {

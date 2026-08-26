@@ -32,6 +32,7 @@ import {
   createLinkedRecoveryFromOrigin,
   markPotentialContraChargeNotRequired,
   getCommercialEventById,
+  updateCommercialEventExpectedLiability,
 } from '../commercialEvents/commercialEventStore';
 import { getCommercialEventAuditActionLabel } from '../commercialEvents/commercialEventPackageValue';
 import {
@@ -55,6 +56,7 @@ import {
   isRecoverableDeductionFinancialTreatment,
   listCommercialEventFinancialTreatmentOptions,
 } from '../commercialEvents/commercialEventFinancialTreatment';
+import CommercialEventExpectedLiabilityPanel from './CommercialEventExpectedLiabilityPanel';
 
 const EMPTY_FORM = {
   eventType: COMMERCIAL_EVENT_TYPES.variation.key,
@@ -193,6 +195,9 @@ export default function CommercialEventDrawer({
   const [form, setForm] = useState(EMPTY_FORM);
   const [workflowComment, setWorkflowComment] = useState('');
   const [errors, setErrors] = useState([]);
+  const [expectedError, setExpectedError] = useState(null);
+  const [expectedBusy, setExpectedBusy] = useState(false);
+  const [expectedTick, setExpectedTick] = useState(0);
   const [createContraStep, setCreateContraStep] = useState(null);
   const [dismissStep, setDismissStep] = useState(false);
   const [dismissComment, setDismissComment] = useState('');
@@ -206,7 +211,7 @@ export default function CommercialEventDrawer({
   const liveEvent = useMemo(() => {
     if (!event || !order?.developmentId) return event;
     return getCommercialEventById(order.developmentId, event.id) || event;
-  }, [event, order?.developmentId, open, createContraStep, dismissStep]);
+  }, [event, order?.developmentId, open, createContraStep, dismissStep, expectedTick]);
 
   const drawerEvent = liveEvent || event;
   const isRecoveryEvent = isRecoveryCommercialEvent(drawerEvent);
@@ -235,6 +240,7 @@ export default function CommercialEventDrawer({
   useEffect(() => {
     if (!open) return;
     setErrors([]);
+    setExpectedError(null);
     setWorkflowComment('');
     setCreateContraStep(null);
     setDismissStep(false);
@@ -419,6 +425,25 @@ export default function CommercialEventDrawer({
 
     onSaved?.(result.event);
     onClose?.();
+  }
+
+  async function handleExpectedLiabilityApply(intent) {
+    if (!liveEvent || !order?.developmentId) return;
+    setExpectedBusy(true);
+    setExpectedError(null);
+    try {
+      const result = await Promise.resolve(
+        updateCommercialEventExpectedLiability(order.developmentId, liveEvent.id, intent)
+      );
+      if (!result?.ok) {
+        setExpectedError(result?.errors?.[0] || 'Unable to update expected liability');
+        return;
+      }
+      setExpectedTick((value) => value + 1);
+      onSaved?.(result.event);
+    } finally {
+      setExpectedBusy(false);
+    }
   }
 
   function handleCreateContraCharge() {
@@ -1059,6 +1084,13 @@ export default function CommercialEventDrawer({
               </DrawerSection>
             ) : null}
 
+            <CommercialEventExpectedLiabilityPanel
+              event={liveEvent}
+              busy={expectedBusy}
+              error={expectedError}
+              onApply={handleExpectedLiabilityApply}
+            />
+
             {liveEvent.auditHistory?.length ? (
               <DrawerSection title="Audit trail" defaultOpen={false} tone="audit">
                 <ol className="po-ce-drawer__audit-list">
@@ -1075,6 +1107,14 @@ export default function CommercialEventDrawer({
                       {entry.priorRecoveryStatus || entry.newRecoveryStatus ? (
                         <span>
                           {entry.priorRecoveryStatus || '—'} → {entry.newRecoveryStatus}
+                        </span>
+                      ) : null}
+                      {entry.priorExpectedTreatment || entry.newExpectedTreatment ? (
+                        <span>
+                          {entry.priorExpectedTreatment || '—'} → {entry.newExpectedTreatment}
+                          {entry.newEffectiveExpected != null
+                            ? ` (£${formatMoney(entry.newEffectiveExpected)})`
+                            : ''}
                         </span>
                       ) : null}
                       {entry.comment ? <p>{entry.comment}</p> : null}

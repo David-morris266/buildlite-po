@@ -132,6 +132,18 @@ export async function dismissPotentialContra(id, body = {}) {
   return postWorkflowAction(id, 'dismiss-potential-contra', body);
 }
 
+export async function updateExpectedLiability(id, body = {}) {
+  const res = await fetch(
+    buildUrl(`/api/commercial-events/${encodeURIComponent(id)}/expected-liability`),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(withActor(body)),
+    }
+  );
+  return handleJson(res);
+}
+
 export async function createLinkedRecovery(id, body = {}) {
   const res = await fetch(
     buildUrl(`/api/commercial-events/${encodeURIComponent(id)}/create-linked-recovery`),

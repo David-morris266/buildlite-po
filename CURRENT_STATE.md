@@ -20,12 +20,12 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | **BL-033D.x.5 COMPLETE** (Prelims landing UX consolidation). Human visual UAT **PASSED**. |
-| Last persistence slice implemented | **BL-034D BANKED** at `6d11491`. Human UAT **PASS**. |
-| Last design-authority slice | **HD-038-1 / HD-038-2 / HD-038-3 RESOLVED** (docs only, after BL-038A). HD-001 / HD-002 / HD-008 remain **resolved**. Detailed Selling Costs remains unstarted. Expected liability **not implemented**. **BL-038B not started.** |
+| Last persistence slice implemented | **BL-038B BANKED.** Human UAT **PASS**. Forensic **PASS**. Close-engine Final Forecast still does **not** include Expected (BL-038C). Previous product bank **BL-034D** at `6d11491`. |
+| Last design-authority slice | **HD-038-1 / HD-038-2 / HD-038-3 RESOLVED** (docs only, after BL-038A). HD-001 / HD-002 / HD-008 remain **resolved**. Detailed Selling Costs remains unstarted. **BL-038B BANKED.** Close-engine Final Forecast still does **not** include Expected. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
 | Durable intent / deferred decisions | `docs/PRODUCT_CONSTITUTION.md` |
-| **NEXT** | **BL-038B — CE expected-liability model / override / audit foundation.** **NOT STARTED.** Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** Adopt UAT-CC-001. Do **not** start Detailed Selling Costs. Do **not** import or remap Hawthorn. P04 has **11** members; **5400** holds the adopted Selling Costs forecast (**£182,780.64**). HD-001 / HD-002 / HD-008 / HD-038-1/2/3 remain **resolved**. |
+| **NEXT** | **BL-038C — integrate CE Expected Liability into authoritative CVR Final Forecast.** **Not started.** Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** Adopt UAT-CC-001. Do **not** start Detailed Selling Costs. Do **not** import or remap Hawthorn. P04 has **11** members; **5400** holds the adopted Selling Costs forecast (**£182,780.64**). HD-001 / HD-002 / HD-008 / HD-038-1/2/3 remain **resolved**. |
 
 ---
 
@@ -68,7 +68,7 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-037B** | Budget Import + Manual Cost Code Master picker | **COMPLETE / BANKED** at `cb356df`. Server `POST .../budget-import` + Draft Master picker. Both consume 037A. Human UAT **PASS**. |
 | **BL-037C** | Controlled missing-line CVR integration | **COMPLETE / BANKED** at `c5f4c73`. Prelims Draft **Add to CVR**; first QS overlay edit on fact-only auto-rows uses 037A. Mixed-case overlay identity corrected during UAT. Adopt remains a separate action. Selling Costs adoption **not started**. |
 | **BL-038A** | CE-linked expected liability design preflight | **COMPLETE (docs/design).** HD-001 plus HD-038-1/2/3 settled. No product code. |
-| **BL-038B** | CE expected-liability model / override / audit foundation | **NEXT / NOT STARTED.** Do not implement in the HD-038 documentation slice. |
+| **BL-038B** | CE expected-liability model / override / audit foundation | **BANKED.** Implementation PASS. Automated verification PASS. Human UAT PASS. Forensic PASS. Migration `021` on `buildlite_test` and local `buildlite_clone`. Compact CE treatment control. Close-engine money unchanged. **BL-038C not started.** |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -82,7 +82,7 @@ BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when lo
 - Cost codes, suppliers, purchase orders (`payload` JSONB)
 - **Developments** (`004_developments.sql`)
 - **Packages** + PO membership (`005_packages.sql`)
-- **Commercial Events** + CE audit (`006_commercial_events.sql`)
+- **Commercial Events** + CE audit (`006_commercial_events.sql`) plus **BL-038B** additive expected-liability columns (`021_commercial_event_expected_liability.sql`). Applied on `buildlite_test` by tests and on local `buildlite_clone` during controlled UAT prep. Close engine still ignores Expected.
 - **Order matrices** (`007_package_order_matrices.sql`) — plot-stage structure, committed value, versioned PUT
 - **V1 Payment Certificates** (`008_package_payment_certificates.sql`) — draft progress, commercial/recovery lines, submit/reject/approve, frozen snapshots
 - **CVR periods + purchase ledger tables** (`009_cvr_and_purchase_ledger.sql`) — **BL-031A–D**. Runtime CVR/ledger use Postgres when `VITE_CVR_SERVER_AUTHORITY` / `VITE_LEDGER_SERVER_AUTHORITY` are ON.
@@ -97,6 +97,7 @@ BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when lo
 - **Development Prelims template provenance** (`018_development_prelims_item_provenance.sql`) — **BL-033D.x.3 COMPLETE.** Nullable `source_template_id` / `source_template_version` / `source_template_line_id` / `source_template_key` on `development_prelims_items`. Partial unique `(development_id, source_template_id, source_template_key)` where provenance is present. No unique on `cost_code_key`. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 setup UAT **PASSED**. Existing D.1 manual rows stay NULL; fourth template-instantiated row has provenance.
 - **Development Prelims TIME offsets** (`019_development_prelims_time_offsets.sql`) — **BL-033D.x.3R COMPLETE.** Additive `start_offset_months` / `end_offset_months` INTEGER NOT NULL DEFAULT 0 with CHECK −60…60 on `development_prelims_items` only. Existing rows remain commercially identical at `0/0`. Applied on `buildlite_test` and local `buildlite_clone` (controlled UAT prep). Company template schema unchanged.
 - **Development Selling Costs settings** (`020_development_selling_costs_settings.sql`) — **BL-034B COMPLETE / BANKED.** Simple mode assumption `%` + optional destination key; calculated £ is never persisted as authority. Applied on `buildlite_test` by tests and on local `buildlite_clone` during controlled UAT. Does not write CVR. Recommended destination hint **5400** (not an engine hard-code). **5405** forbidden as Simple destination. Sales Incentive Revenue Treatment deferred. See `docs/PRODUCT_CONSTITUTION.md`.
+- **CE expected-liability treatment** (`021_commercial_event_expected_liability.sql`) — **BL-038B BANKED.** Additive columns on `commercial_events` + typed expected-liability audit fields. Applied on `buildlite_test` by tests and on local `buildlite_clone` during controlled UAT prep. Default Expected is derived. Close engine still ignores Expected. No `cvr_cost_code_inputs` expected money.
 - Local client uses `VITE_CE_SERVER_AUTHORITY`, `VITE_MATRIX_SERVER_AUTHORITY`, `VITE_CERTIFICATE_SERVER_AUTHORITY`, `VITE_CVR_SERVER_AUTHORITY`, `VITE_LEDGER_SERVER_AUTHORITY`, `VITE_REVENUE_SERVER_AUTHORITY`, and `VITE_COST_CODE_SERVER_AUTHORITY` for cutover (see `client/.env.example`). Repo defaults remain OFF. Local UAT uses `.env.local`. Do not commit `.env.local`.
 
 ### Browser / localStorage authority (not yet migrated)
@@ -1207,9 +1208,9 @@ Documentation / design-authority settlement after founding-principles reconcilia
 
 **HD-001 RESOLVED by explicit product-owner decision.** System Forecast remains the approved/authoritative close-engine fact position. Draft/submitted/pending CEs must not be converted into approved commitment by forecast treatment. Pending/submitted CEs remain visible as **potential liability**. QS **expected-liability** treatment feeds **Final Forecast**. **Default for a submitted CE = full submitted value.** QS may include, reduce, hold at £0, or exclude; the CE fact is never rewritten. Approval must reconcile so the same liability is not counted twice (mandatory future implementation requirement). Do not use accrual as the substitute. Generic commercial adjustment remains for non-CE judgement. Do not generalise Selling Costs Adopt ceremony to every CE. **HD-002 unchanged.**
 
-**Not implemented.** Banked close engine still excludes draft/submitted CEs from System Forecast and has no CE-linked expected-liability field. Full wording: `docs/PRODUCT_CONSTITUTION.md` HD-001.
+**BL-038B BANKED.** Implementation PASS. Automated verification PASS. Human UAT PASS. Forensic PASS. CE expected-liability model, override, and audit exist. Banked close engine still excludes draft/submitted CEs from System Forecast and **still ignores Expected in Final Forecast** until BL-038C. Full wording: `docs/PRODUCT_CONSTITUTION.md` HD-001.
 
-**NEXT named slice:** **BL-038B — CE expected-liability model / override / audit foundation.** **Not started.**
+**NEXT named slice after 038B banking:** **BL-038C — wire Expected into Final Forecast.** **Not started.**
 
 ## HD-038-1 / HD-038-2 / HD-038-3 — RESOLVED
 
@@ -1221,9 +1222,17 @@ Documentation / design-authority settlement after BL-038A. **No product code. No
 
 **HD-038-3 RESOLVED (option 1):** Expected may **exceed** submitted CE value. Do not cap. Warning + required reason. Submitted value remains Potential. Override is auditable. CE fact is not rewritten.
 
-Agreed 038A principles (still not implemented): derived default; override stored separately; approval drops Expected by formula; no CE Adopt; no auto overlay membership; Hawthorn not remapped.
+Agreed 038A principles: derived default; override stored separately; approval drops Expected by formula; no CE Adopt; no auto overlay membership; Hawthorn not remapped. **BL-038B implements the CE model only.** Close-engine Final Forecast still does not include Expected.
 
 Full wording: `docs/PRODUCT_CONSTITUTION.md` HD-038-1/2/3.
+
+## BL-038B — CE expected-liability model / override / audit foundation — BANKED
+
+Additive `021_commercial_event_expected_liability.sql` on `commercial_events` + typed `commercial_event_audit` columns. Applied on `buildlite_test` by tests and on local `buildlite_clone` during controlled UAT prep. Default treatment is derived (not stored on Submit). Dedicated `PATCH /api/commercial-events/:id/expected-liability`. Compact submitted-CE control on the existing package drawer. Routine Submit needs no extra action. Close-engine committed / system / final / snapshots unchanged. No Hawthorn. No Detailed Selling Costs.
+
+**Human UAT 26 Aug 2026 — PASS** on throwaway development `dev-1787737765769-q0nvgb` / CE-0024 (`ce-1787737765810-bef36a`), **not** Test Site 1. Draft £20,000 → Submit produced Potential/Expected £20,000 with no extra save. Override £15k → override £25k (above-submitted warning, allowed) → Hold £0 → Exclude £0 → Restore Default. Final DB: Submitted £20,000 v7, `expected_treatment=default`, `expected_amount` NULL, `expected_reason` NULL. Five `EXPECTED_LIABILITY_CHANGED` audits; Submit itself created none. Throwaway P01 remains Draft v1; 5218 Committed/System/Final/CTC **£10,000**, accrual **£0**; no snapshot. Test Site 1 commercially unchanged aside from global `021` columns. Pre-bank UX polish: unchanged non-default form mutes Save to **Saved**; editing treatment/amount/reason re-enables **Save expected treatment**.
+
+Implementation PASS. Automated verification PASS. Human UAT PASS. Forensic PASS. Banked by this commit.
 
 ## HD-002 / HD-008 (Selling Costs adoption treatment and numbering) — RESOLVED
 
@@ -1255,7 +1264,7 @@ Later UX only (not in this bank): when Review is Up to date, hide/disable Adopt 
 
 ## Next action
 
-**NEXT:** **BL-038B — CE expected-liability model / override / audit foundation.** **NOT STARTED.** Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** Adopt UAT-CC-001. Do **not** implement expected liability in this documentation slice. **Detailed Selling Costs remains unstarted.** Do **not** switch 5231 to TIME. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning: `docs/PRODUCT_CONSTITUTION.md`.
+**NEXT:** **BL-038C — integrate CE Expected Liability into authoritative CVR Final Forecast.** **Not started.** Keep P04 Draft. Do **not** Submit/Approve/Lock P04. Do **not** create P05. Do **not** Adopt UAT-CC-001. Do **not** claim Final Forecast includes Expected yet. **Detailed Selling Costs remains unstarted.** Do **not** switch 5231 to TIME. Do **not** alter the four Test Site 1 Prelims rows. Do **not** alter the 25-line BuildLite Standard v1. Planning: `docs/PRODUCT_CONSTITUTION.md`.
 
 Do **not** alter P01/P02/P03 `reporting_month` except by a future explicit historic-correction feature. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`. Do not delete P04 `0f513191-cd25-4812-834f-37dcf66487e0` except by a later controlled commercial task.
 

@@ -22,6 +22,7 @@ const MIGRATION_006 = path.join(__dirname, "..", "migrations", "006_commercial_e
 const MIGRATION_008 = path.join(__dirname, "..", "migrations", "008_package_payment_certificates.sql");
 const MIGRATION_009 = path.join(__dirname, "..", "migrations", "009_cvr_and_purchase_ledger.sql");
 const MIGRATION_010 = path.join(__dirname, "..", "migrations", "010_cvr_period_snapshots.sql");
+const MIGRATION_021 = path.join(__dirname, "..", "migrations", "021_commercial_event_expected_liability.sql");
 
 const EXPECTED_5231 = {
   currentBudget: 0,
@@ -84,6 +85,7 @@ async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_008, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_009, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_010, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_021, "utf8"));
 }
 
 async function cleanup() {
@@ -520,6 +522,44 @@ if (!isDbConfigured()) {
     assert.equal(result.ready, true);
     assertRow(result, "5231", { committed: 50000, systemForecast: 50000 });
     assert.equal(await snapshotCount(), before);
+  });
+
+  test("BL-038B submitted default expected liability does not move CVR money", async () => {
+    const world = await setupBase();
+    const snapshotsBefore = await snapshotCount();
+    const before = await buildCvrCloseCandidate({
+      clientId: world.client.id,
+      developmentId: world.development.id,
+      periodId: world.period.id,
+    });
+    const rowBefore = findRow(before, "5231");
+    await insertCommercialEvent({
+      clientId: world.client.id,
+      development: world.development,
+      pkg: world.pkg,
+      value: 20000,
+      eventType: "variation",
+      status: "submitted",
+      description: "BL-038B submitted expected must not enter close money",
+    });
+    const after = await buildCvrCloseCandidate({
+      clientId: world.client.id,
+      developmentId: world.development.id,
+      periodId: world.period.id,
+    });
+    assert.equal(after.ready, true);
+    assertRow(after, "5231", {
+      committed: Number(rowBefore.committed),
+      certified: Number(rowBefore.certified),
+      actualCost: Number(rowBefore.actualCost),
+      systemForecast: Number(rowBefore.systemForecast),
+      commercialAdjustment: Number(rowBefore.commercialAdjustment),
+      finalForecast: Number(rowBefore.finalForecast),
+      costToComplete: Number(rowBefore.costToComplete),
+    });
+    assert.equal(after.snapshot.periodId, before.snapshot.periodId);
+    assert.equal(after.snapshot.periodKey, before.snapshot.periodKey);
+    assert.equal(await snapshotCount(), snapshotsBefore);
   });
 
   test("2. PO + approved variation", async () => {

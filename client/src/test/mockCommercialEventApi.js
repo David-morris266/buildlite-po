@@ -194,6 +194,9 @@ export async function dismissPotentialContra() {
 export async function createLinkedRecovery() {
   throw new Error('createLinkedRecovery mock not implemented');
 }
+export async function updateExpectedLiability() {
+  throw new Error('updateExpectedLiability mock not implemented');
+}
 export async function importCommercialEvents() {
   throw new Error('importCommercialEvents mock not implemented');
 }

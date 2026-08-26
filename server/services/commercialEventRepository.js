@@ -7,6 +7,7 @@ const { pool, query } = require("../db");
 const {
   rowToDocument,
   extractPayloadFromDocument,
+  omitExpectedLiabilityWriteFields,
   auditRowToEntry,
 } = require("./commercialEventMapper");
 const {
@@ -29,6 +30,10 @@ const {
   validateRecoveryDraftPatch,
   assertDraftEditable,
 } = require("./commercialEventValidation");
+const {
+  EXPECTED_LIABILITY_AUDIT_ACTION,
+  validateExpectedLiabilityIntent,
+} = require("./commercialEventExpectedLiability");
 const {
   findPackageRowById,
   findPackageByOrderKey,
@@ -344,48 +349,68 @@ async function insertAuditEntry(
     priorCertificateStatus = null,
     newCertificateStatus = null,
     createdAt = null,
+    priorExpectedTreatment = null,
+    newExpectedTreatment = null,
+    priorExpectedAmount = null,
+    newExpectedAmount = null,
+    priorEffectiveExpected = null,
+    newEffectiveExpected = null,
+    ceValueAtChange = null,
+    ceStatusAtChange = null,
+    priorCeVersion = null,
+    newCeVersion = null,
   }
 ) {
   const auditId = id || generateCommercialEventAuditId();
-  const params = [
-    auditId,
-    clientId,
-    commercialEventId,
-    action,
-    actor,
-    comment || "",
-    priorStatus,
-    newStatus,
-    priorRecoveryStatus,
-    newRecoveryStatus,
-    priorCertificateStatus,
-    newCertificateStatus,
-  ];
-
-  let sql = `
-    INSERT INTO commercial_event_audit (
-      id, client_id, commercial_event_id, action, actor, comment,
-      prior_status, new_status, prior_recovery_status, new_recovery_status,
-      prior_certificate_status, new_certificate_status
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-  `;
-
-  if (createdAt) {
-    sql = `
+  const { rows } = await dbClient.query(
+    `
       INSERT INTO commercial_event_audit (
         id, client_id, commercial_event_id, action, actor, comment,
         prior_status, new_status, prior_recovery_status, new_recovery_status,
-        prior_certificate_status, new_certificate_status, created_at
+        prior_certificate_status, new_certificate_status,
+        prior_expected_treatment, new_expected_treatment,
+        prior_expected_amount, new_expected_amount,
+        prior_effective_expected, new_effective_expected,
+        ce_value_at_change, ce_status_at_change,
+        prior_ce_version, new_ce_version,
+        created_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-    `;
-    params.push(createdAt);
-  }
-
-  sql += " ON CONFLICT (id) DO NOTHING RETURNING id";
-
-  const { rows } = await dbClient.query(sql, params);
+      VALUES (
+        $1, $2, $3, $4, $5, $6,
+        $7, $8, $9, $10, $11, $12,
+        $13, $14, $15, $16, $17, $18,
+        $19, $20, $21, $22,
+        COALESCE($23::timestamptz, NOW())
+      )
+      ON CONFLICT (id) DO NOTHING
+      RETURNING id
+    `,
+    [
+      auditId,
+      clientId,
+      commercialEventId,
+      action,
+      actor,
+      comment || "",
+      priorStatus,
+      newStatus,
+      priorRecoveryStatus,
+      newRecoveryStatus,
+      priorCertificateStatus,
+      newCertificateStatus,
+      priorExpectedTreatment,
+      newExpectedTreatment,
+      priorExpectedAmount,
+      newExpectedAmount,
+      priorEffectiveExpected,
+      newEffectiveExpected,
+      ceValueAtChange,
+      ceStatusAtChange,
+      priorCeVersion,
+      newCeVersion,
+      createdAt,
+    ]
+  );
   return rows[0]?.id || null;
 }
 
@@ -461,10 +486,11 @@ async function createCommercialEvent(clientId, body = {}, { actor = null } = {})
 async function updateCommercialEventDraft(
   clientId,
   id,
-  patch = {},
+  rawPatch = {},
   expectedVersion,
   { actor = null } = {}
 ) {
+  const patch = omitExpectedLiabilityWriteFields(rawPatch);
   const existing = await findCommercialEventById(clientId, id);
   if (!existing) {
     return { ok: false, status: 404, message: "Commercial event not found." };
@@ -1153,6 +1179,122 @@ async function importCommercialEvents(clientId, { developmentId, events = [] } =
   }
 }
 
+async function updateCommercialEventExpectedLiability(
+  clientId,
+  id,
+  body = {},
+  { actor = null } = {}
+) {
+  const existing = await findCommercialEventById(clientId, id);
+  if (!existing) {
+    return { ok: false, status: 404, message: "Commercial event not found." };
+  }
+
+  const parsedVersion = Number(body.expectedVersion ?? body.version);
+  if (!Number.isInteger(parsedVersion) || parsedVersion < 1) {
+    return {
+      ok: false,
+      status: 400,
+      message: "expectedVersion is required and must be a positive integer.",
+    };
+  }
+  if (existing.version !== parsedVersion) {
+    return {
+      ok: false,
+      status: 409,
+      message: "Commercial event version conflict.",
+      event: existing,
+    };
+  }
+
+  const validated = validateExpectedLiabilityIntent(body, existing);
+  if (!validated.ok) return validated;
+
+  const actorName = actor || body.actor || body.updatedBy || null;
+  const comment =
+    validated.treatment === "default"
+      ? String(body.reason || body.expectedReason || "").trim() ||
+        "Restored default expected-liability treatment"
+      : validated.expectedReason;
+
+  const db = await pool.connect();
+  try {
+    await db.query("BEGIN");
+    const { rowCount } = await db.query(
+      `
+        UPDATE commercial_events
+        SET
+          expected_treatment = $1,
+          expected_amount = $2,
+          expected_reason = $3,
+          expected_updated_at = NOW(),
+          expected_updated_by = $4,
+          version = version + 1,
+          updated_at = NOW(),
+          updated_by = $4
+        WHERE id = $5
+          AND client_id = $6
+          AND version = $7
+        RETURNING id
+      `,
+      [
+        validated.treatment,
+        validated.expectedAmount,
+        validated.expectedReason,
+        actorName,
+        id,
+        clientId,
+        parsedVersion,
+      ]
+    );
+
+    if (!rowCount) {
+      await db.query("ROLLBACK");
+      const current = await findCommercialEventById(clientId, id);
+      return {
+        ok: false,
+        status: 409,
+        message: "Commercial event version conflict.",
+        event: current,
+      };
+    }
+
+    await insertAuditEntry(db, clientId, id, {
+      action: EXPECTED_LIABILITY_AUDIT_ACTION,
+      actor: actorName,
+      comment,
+      priorStatus: existing.status,
+      newStatus: existing.status,
+      priorExpectedTreatment: existing.expectedTreatment || "default",
+      newExpectedTreatment: validated.treatment,
+      priorExpectedAmount: existing.expectedAmount,
+      newExpectedAmount: validated.expectedAmount,
+      priorEffectiveExpected: existing.expectedLiability,
+      newEffectiveExpected: validated.nextEffectiveExpected,
+      ceValueAtChange: existing.value,
+      ceStatusAtChange: existing.status,
+      priorCeVersion: existing.version,
+      newCeVersion: existing.version + 1,
+    });
+
+    await db.query("COMMIT");
+    const event = await findCommercialEventById(clientId, id);
+    return { ok: true, event };
+  } catch (err) {
+    await db.query("ROLLBACK");
+    if (err && err.code === "23514") {
+      return {
+        ok: false,
+        status: 400,
+        message: "Expected-liability treatment does not satisfy stored constraints.",
+      };
+    }
+    throw err;
+  } finally {
+    db.release();
+  }
+}
+
 module.exports = {
   findCommercialEventById,
   listCommercialEvents,
@@ -1165,6 +1307,7 @@ module.exports = {
   dismissPotentialContraCharge,
   createLinkedRecoveryFromOrigin,
   importCommercialEvents,
+  updateCommercialEventExpectedLiability,
   resolvePackageForEvent,
   provisionalActor,
 };

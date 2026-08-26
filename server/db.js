@@ -1,6 +1,8 @@
 // server/db.js — single Postgres pool; init aligned with production (BL-006 / 003)
 require("dotenv").config();
 
+const fs = require("fs");
+const path = require("path");
 const { Pool } = require("pg");
 const {
   isDbConfigured,
@@ -425,6 +427,16 @@ async function init() {
     CREATE INDEX IF NOT EXISTS idx_commercial_event_audit_event_created
       ON commercial_event_audit (commercial_event_id, created_at);
   `);
+
+  // BL-038B — additive expected-liability columns. Test DB only via init().
+  // Do not rely on this path for clone; clone is SELECT-only in this slice.
+  if (isServerTestMode()) {
+    const expectedLiabilitySql = fs.readFileSync(
+      path.join(__dirname, "migrations", "021_commercial_event_expected_liability.sql"),
+      "utf8"
+    );
+    await pool.query(expectedLiabilitySql);
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS package_order_matrices (

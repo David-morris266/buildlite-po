@@ -21,6 +21,7 @@ import {
   submitCommercialEventOnServer,
   updateCommercialEventDraftOnServer,
   updateRecoveryStatusOnServer,
+  updateCommercialEventExpectedLiabilityOnServer,
 } from './commercialEventServerMutations';
 import {
   COMMERCIAL_EVENT_FINANCIAL_TREATMENTS,
@@ -52,6 +53,12 @@ import {
   normalizeCertificateStatusKey,
   normalizeRecoveryStatusKey,
 } from './commercialEventTypes';
+import {
+  EXPECTED_LIABILITY_AUDIT_ACTION,
+  EXPECTED_LIABILITY_TREATMENTS,
+  enrichExpectedLiabilityReadModel,
+  validateExpectedLiabilityIntent,
+} from './commercialEventExpectedLiability';
 
 export const COMMERCIAL_EVENTS_STORAGE_KEY = 'buildlite_commercial_events_v1';
 
@@ -121,6 +128,16 @@ function appendAuditEntry(
     newRecoveryStatus,
     priorCertificateStatus,
     newCertificateStatus,
+    priorExpectedTreatment,
+    newExpectedTreatment,
+    priorExpectedAmount,
+    newExpectedAmount,
+    priorEffectiveExpected,
+    newEffectiveExpected,
+    ceValueAtChange,
+    ceStatusAtChange,
+    priorCeVersion,
+    newCeVersion,
   } = {}
 ) {
   const entry = {
@@ -145,6 +162,16 @@ function appendAuditEntry(
   if (newCertificateStatus != null) {
     entry.newCertificateStatus = newCertificateStatus;
   }
+  if (priorExpectedTreatment != null) entry.priorExpectedTreatment = priorExpectedTreatment;
+  if (newExpectedTreatment != null) entry.newExpectedTreatment = newExpectedTreatment;
+  if (priorExpectedAmount !== undefined) entry.priorExpectedAmount = priorExpectedAmount;
+  if (newExpectedAmount !== undefined) entry.newExpectedAmount = newExpectedAmount;
+  if (priorEffectiveExpected !== undefined) entry.priorEffectiveExpected = priorEffectiveExpected;
+  if (newEffectiveExpected !== undefined) entry.newEffectiveExpected = newEffectiveExpected;
+  if (ceValueAtChange !== undefined) entry.ceValueAtChange = ceValueAtChange;
+  if (ceStatusAtChange != null) entry.ceStatusAtChange = ceStatusAtChange;
+  if (priorCeVersion != null) entry.priorCeVersion = priorCeVersion;
+  if (newCeVersion != null) entry.newCeVersion = newCeVersion;
 
   event.auditHistory = [...(event.auditHistory || []), entry];
   return entry;
@@ -204,7 +231,7 @@ function normalizeEvent(event) {
       : event.recoveryStatus || COMMERCIAL_EVENT_RECOVERY_STATUSES.notApplicable.key
   );
 
-  return {
+  const normalized = {
     ...event,
     financialTreatment: normalizeFinancialTreatmentKey(event.financialTreatment) || null,
     value: Number(event.value) || 0,
@@ -218,7 +245,14 @@ function normalizeEvent(event) {
         : COMMERCIAL_EVENT_RECOVERY_STATUSES.notApplicable.key,
     certificateStatus: normalizeCertificateStatusKey(event.certificateStatus),
     auditHistory: Array.isArray(event.auditHistory) ? event.auditHistory : [],
+    expectedTreatment: event.expectedTreatment || EXPECTED_LIABILITY_TREATMENTS.default,
+    expectedAmount: event.expectedAmount ?? null,
+    expectedReason: event.expectedReason ?? null,
+    expectedUpdatedAt: event.expectedUpdatedAt ?? null,
+    expectedUpdatedBy: event.expectedUpdatedBy ?? null,
   };
+
+  return enrichExpectedLiabilityReadModel(normalized);
 }
 
 function validateRecoveryPackageId(recoveryPackageId, developmentId, originPackageId) {
@@ -1066,6 +1100,71 @@ export function markPotentialContraChargeNotRequired(
   const saved = saveEvent(developmentId, event);
   if (saved) {
     notifyCommercialChanged({ developmentId, eventId, action: 'potential-contra-dismissed' });
+  }
+  return saved ? { ok: true, event: saved } : { ok: false, errors: ['Save failed'] };
+}
+
+export function updateCommercialEventExpectedLiability(
+  developmentId,
+  eventId,
+  body = {},
+  actor = sessionActor()
+) {
+  if (isCommercialEventServerAuthorityEnabled()) {
+    return updateCommercialEventExpectedLiabilityOnServer(developmentId, eventId, {
+      ...body,
+      actor,
+    });
+  }
+
+  const event = getCommercialEventById(developmentId, eventId);
+  if (!event) return { ok: false, errors: ['Event not found'] };
+
+  const expectedVersion = Number(body.expectedVersion ?? body.version ?? event.version);
+  if (event.version != null && Number.isInteger(Number(event.version)) && Number(event.version) !== expectedVersion) {
+    return { ok: false, errors: ['This Commercial Event was updated by another user. Refresh and try again.'], status: 409 };
+  }
+
+  const validated = validateExpectedLiabilityIntent(body, event);
+  if (!validated.ok) return { ok: false, errors: validated.errors };
+
+  const prior = enrichExpectedLiabilityReadModel(event);
+  const nextVersion = (Number(event.version) || 1) + 1;
+  const next = {
+    ...event,
+    expectedTreatment: validated.treatment,
+    expectedAmount: validated.expectedAmount,
+    expectedReason: validated.expectedReason,
+    expectedUpdatedAt: new Date().toISOString(),
+    expectedUpdatedBy: actor,
+    version: nextVersion,
+    updatedAt: new Date().toISOString(),
+    updatedBy: actor,
+  };
+
+  appendAuditEntry(next, EXPECTED_LIABILITY_AUDIT_ACTION, {
+    actor,
+    comment:
+      validated.treatment === EXPECTED_LIABILITY_TREATMENTS.default
+        ? 'Restored default expected-liability treatment'
+        : validated.expectedReason,
+    priorStatus: event.status,
+    newStatus: event.status,
+    priorExpectedTreatment: prior.expectedTreatment,
+    newExpectedTreatment: validated.treatment,
+    priorExpectedAmount: prior.expectedAmount,
+    newExpectedAmount: validated.expectedAmount,
+    priorEffectiveExpected: prior.expectedLiability,
+    newEffectiveExpected: validated.nextEffectiveExpected,
+    ceValueAtChange: event.value,
+    ceStatusAtChange: event.status,
+    priorCeVersion: event.version ?? 1,
+    newCeVersion: nextVersion,
+  });
+
+  const saved = saveEvent(developmentId, next);
+  if (saved) {
+    notifyCommercialChanged({ developmentId, eventId, action: 'expected-liability-changed' });
   }
   return saved ? { ok: true, event: saved } : { ok: false, errors: ['Save failed'] };
 }

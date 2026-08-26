@@ -249,6 +249,7 @@ export function getCommercialEventAuditActionLabel(action) {
     RECOVERY_STATUS_CHANGED: 'Recovery status changed',
     CERTIFICATE_STATUS_CHANGED: 'Certificate status changed',
     POTENTIAL_CONTRA_CHARGE_DISMISSED: 'Recovery not required',
+    EXPECTED_LIABILITY_CHANGED: 'Expected liability changed',
   };
   return labels[action] || action;
 }

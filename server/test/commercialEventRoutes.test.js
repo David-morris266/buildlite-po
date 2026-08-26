@@ -17,6 +17,7 @@ const app = createApp();
 const MIGRATION_004 = path.join(__dirname, "..", "migrations", "004_developments.sql");
 const MIGRATION_005 = path.join(__dirname, "..", "migrations", "005_packages.sql");
 const MIGRATION_006 = path.join(__dirname, "..", "migrations", "006_commercial_events.sql");
+const MIGRATION_021 = path.join(__dirname, "..", "migrations", "021_commercial_event_expected_liability.sql");
 
 const testDevelopmentIds = [];
 const testJobNumbers = [];
@@ -41,6 +42,7 @@ async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_004, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_005, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_006, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_021, "utf8"));
 }
 
 async function cleanup() {

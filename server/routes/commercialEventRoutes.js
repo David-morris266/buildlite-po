@@ -17,6 +17,7 @@ const {
   dismissPotentialContraCharge,
   createLinkedRecoveryFromOrigin,
   importCommercialEvents,
+  updateCommercialEventExpectedLiability,
   provisionalActor,
 } = require("../services/commercialEventRepository");
 
@@ -235,6 +236,35 @@ router.post("/:id/dismiss-potential-contra", async (req, res) => {
   } catch (err) {
     console.error("[CommercialEvents] dismiss potential contra error:", err);
     res.status(500).json({ message: "Failed to dismiss potential contra charge." });
+  }
+});
+
+router.patch("/:id/expected-liability", async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      return res.status(500).json({ message: "Database not configured" });
+    }
+
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+
+    const body = req.body || {};
+    const result = await updateCommercialEventExpectedLiability(active.id, req.params.id, body, {
+      actor: provisionalActor(body),
+    });
+
+    if (!result.ok) {
+      const payload = { message: result.message };
+      if (result.event) payload.event = result.event;
+      if (result.code) payload.code = result.code;
+      if (result.errors) payload.errors = result.errors;
+      return res.status(result.status || 400).json(payload);
+    }
+
+    res.json(result.event);
+  } catch (err) {
+    console.error("[CommercialEvents] expected liability error:", err);
+    res.status(500).json({ message: "Failed to update expected liability." });
   }
 });
 

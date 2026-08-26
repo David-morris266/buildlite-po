@@ -7,6 +7,27 @@
  * - orderKey:    explicit compatibility alias of packageId
  */
 
+const {
+  enrichExpectedLiabilityReadModel,
+} = require("./commercialEventExpectedLiability");
+
+const EXPECTED_LIABILITY_DOCUMENT_KEYS = [
+  "expectedTreatment",
+  "expectedAmount",
+  "expectedReason",
+  "expectedUpdatedAt",
+  "expectedUpdatedBy",
+  "potentialLiability",
+  "expectedLiability",
+  "effectiveExpectedLiability",
+  "isDefaultTreatment",
+  "isExpectedTreatmentEditable",
+  "canEditExpectedLiability",
+  "requiresReason",
+  "warningAboveSubmitted",
+  "expectedWarning",
+];
+
 const PROMOTED_DOCUMENT_KEYS = new Set([
   "id",
   "eventNumber",
@@ -42,7 +63,17 @@ const PROMOTED_DOCUMENT_KEYS = new Set([
   "createdBy",
   "updatedBy",
   "auditHistory",
+  ...EXPECTED_LIABILITY_DOCUMENT_KEYS,
 ]);
+
+function omitExpectedLiabilityWriteFields(document = {}) {
+  const next = { ...document };
+  for (const key of EXPECTED_LIABILITY_DOCUMENT_KEYS) {
+    delete next[key];
+  }
+  delete next.treatment;
+  return next;
+}
 
 function extractPayloadFromDocument(document = {}) {
   const payload = {};
@@ -69,7 +100,39 @@ function normalizeAuditEntry(entry) {
       entry.priorCertificateStatus ?? entry.prior_certificate_status ?? null,
     newCertificateStatus:
       entry.newCertificateStatus ?? entry.new_certificate_status ?? null,
+    priorExpectedTreatment:
+      entry.priorExpectedTreatment ?? entry.prior_expected_treatment ?? null,
+    newExpectedTreatment:
+      entry.newExpectedTreatment ?? entry.new_expected_treatment ?? null,
+    priorExpectedAmount: toNullableNumber(
+      entry.priorExpectedAmount ?? entry.prior_expected_amount
+    ),
+    newExpectedAmount: toNullableNumber(
+      entry.newExpectedAmount ?? entry.new_expected_amount
+    ),
+    priorEffectiveExpected: toNullableNumber(
+      entry.priorEffectiveExpected ?? entry.prior_effective_expected
+    ),
+    newEffectiveExpected: toNullableNumber(
+      entry.newEffectiveExpected ?? entry.new_effective_expected
+    ),
+    ceValueAtChange: toNullableNumber(entry.ceValueAtChange ?? entry.ce_value_at_change),
+    ceStatusAtChange: entry.ceStatusAtChange ?? entry.ce_status_at_change ?? null,
+    priorCeVersion: toNullableInteger(entry.priorCeVersion ?? entry.prior_ce_version),
+    newCeVersion: toNullableInteger(entry.newCeVersion ?? entry.new_ce_version),
   };
+}
+
+function toNullableNumber(value) {
+  if (value == null || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toNullableInteger(value) {
+  if (value == null || value === "") return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? parsed : null;
 }
 
 function rowToDocument(row, auditRows = []) {
@@ -115,9 +178,17 @@ function rowToDocument(row, auditRows = []) {
     updatedBy: row.updated_by ?? null,
     auditHistory: auditRows.map(normalizeAuditEntry).filter(Boolean),
     ...payload,
+    expectedTreatment: row.expected_treatment || "default",
+    expectedAmount:
+      row.expected_amount != null && row.expected_amount !== ""
+        ? Number(row.expected_amount)
+        : null,
+    expectedReason: row.expected_reason ?? null,
+    expectedUpdatedAt: row.expected_updated_at ?? null,
+    expectedUpdatedBy: row.expected_updated_by ?? null,
   };
 
-  return document;
+  return enrichExpectedLiabilityReadModel(document);
 }
 
 function auditRowToEntry(row) {
@@ -133,12 +204,24 @@ function auditRowToEntry(row) {
     priorCertificateStatus: row.prior_certificate_status,
     newCertificateStatus: row.new_certificate_status,
     timestamp: row.created_at,
+    priorExpectedTreatment: row.prior_expected_treatment,
+    newExpectedTreatment: row.new_expected_treatment,
+    priorExpectedAmount: row.prior_expected_amount,
+    newExpectedAmount: row.new_expected_amount,
+    priorEffectiveExpected: row.prior_effective_expected,
+    newEffectiveExpected: row.new_effective_expected,
+    ceValueAtChange: row.ce_value_at_change,
+    ceStatusAtChange: row.ce_status_at_change,
+    priorCeVersion: row.prior_ce_version,
+    newCeVersion: row.new_ce_version,
   });
 }
 
 module.exports = {
   PROMOTED_DOCUMENT_KEYS,
+  EXPECTED_LIABILITY_DOCUMENT_KEYS,
   extractPayloadFromDocument,
+  omitExpectedLiabilityWriteFields,
   rowToDocument,
   auditRowToEntry,
   normalizeAuditEntry,

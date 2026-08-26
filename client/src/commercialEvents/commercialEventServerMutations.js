@@ -14,6 +14,7 @@ import {
   closeCommercialEvent as apiCloseCommercialEvent,
   dismissPotentialContra as apiDismissPotentialContra,
   createLinkedRecovery as apiCreateLinkedRecovery,
+  updateExpectedLiability as apiUpdateExpectedLiability,
   CommercialEventApiError,
 } from '../api/commercialEvents';
 import {
@@ -259,6 +260,25 @@ export async function updateRecoveryStatusOnServer(
       actor,
     });
     return patchOne(developmentId, document, { action: 'recovery-status-changed' });
+  } catch (error) {
+    return mapApiError(error);
+  }
+}
+
+export async function updateCommercialEventExpectedLiabilityOnServer(
+  developmentId,
+  eventId,
+  body = {}
+) {
+  try {
+    const document = await apiUpdateExpectedLiability(eventId, {
+      treatment: body.treatment,
+      expectedAmount: body.expectedAmount,
+      reason: body.reason,
+      expectedVersion: body.expectedVersion ?? body.version,
+      actor: body.actor || sessionActor(),
+    });
+    return patchOne(developmentId, document, { action: 'expected-liability-changed' });
   } catch (error) {
     return mapApiError(error);
   }

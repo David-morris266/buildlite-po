@@ -62,6 +62,28 @@ describe('commercialEventServerMapper', () => {
     expect(event.auditHistory[0].timestamp).toBe('2026-01-16T10:00:00.000Z');
   });
 
+  it('exposes derived expected-liability fields on a submitted event', () => {
+    const event = normalizeServerCommercialEvent({
+      id: 'ce-el',
+      packageId: ORDER_KEY,
+      developmentId: 'dev-001',
+      eventNumber: 'CE-2001',
+      eventType: 'variation',
+      category: 'design',
+      responsibility: 'employer',
+      description: 'Submitted variation',
+      value: 20000,
+      status: 'submitted',
+      version: 2,
+      expectedTreatment: 'default',
+    });
+    expect(event.potentialLiability).toBe(20000);
+    expect(event.expectedLiability).toBe(20000);
+    expect(event.expectedTreatment).toBe('default');
+    expect(event.canEditExpectedLiability).toBe(true);
+    expect(event.warningAboveSubmitted).toBe(false);
+  });
+
   it('preserves packageUuid separately from orderKey packageId', () => {
     const event = normalizeServerCommercialEvent({
       id: 'ce-002',

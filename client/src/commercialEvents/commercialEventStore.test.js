@@ -20,6 +20,7 @@ import {
   rejectCommercialEvent,
   submitCommercialEvent,
   updateCommercialEventDraft,
+  updateCommercialEventExpectedLiability,
 } from './commercialEventStore';
 import {
   COMMERCIAL_EVENT_STATUSES,
@@ -91,6 +92,10 @@ describe('commercialEventStore', () => {
     });
     expect(submitted.ok).toBe(true);
     expect(submitted.event.status).toBe(COMMERCIAL_EVENT_STATUSES.submitted.key);
+    expect(submitted.event.expectedTreatment).toBe('default');
+    expect(submitted.event.expectedAmount).toBeNull();
+    expect(submitted.event.expectedLiability).toBe(5000);
+    expect(submitted.event.potentialLiability).toBe(5000);
 
     const approved = approveCommercialEvent(DEV_ID, eventId, {
       actor: 'Approver',
@@ -178,5 +183,38 @@ describe('commercialEventStore', () => {
       ...listCommercialEventsByDevelopment('dev-002'),
     ];
     expect(events.map((event) => event.eventNumber)).toEqual(['CE-0001', 'CE-0002']);
+  });
+
+  it('establishes default expected liability on submit without extra action', () => {
+    const created = createCommercialEvent(DEV_ID, basePayload({ value: 20000 }));
+    expect(created.event.expectedLiability).toBe(0);
+    const submitted = submitCommercialEvent(DEV_ID, created.event.id);
+    expect(submitted.event.expectedTreatment).toBe('default');
+    expect(submitted.event.expectedAmount).toBeNull();
+    expect(submitted.event.expectedLiability).toBe(20000);
+  });
+
+  it('override / restore default expected treatment is local-authoritative when flag is off', () => {
+    const created = createCommercialEvent(DEV_ID, basePayload({ value: 20000 }));
+    const submitted = submitCommercialEvent(DEV_ID, created.event.id);
+    const overridden = updateCommercialEventExpectedLiability(DEV_ID, created.event.id, {
+      treatment: 'override',
+      expectedAmount: 15000,
+      reason: 'Likely settlement',
+      expectedVersion: submitted.event.version,
+    });
+    expect(overridden.ok).toBe(true);
+    expect(overridden.event.expectedLiability).toBe(15000);
+    expect(overridden.event.value).toBe(20000);
+    expect(overridden.event.status).toBe(COMMERCIAL_EVENT_STATUSES.submitted.key);
+
+    const restored = updateCommercialEventExpectedLiability(DEV_ID, created.event.id, {
+      treatment: 'default',
+      expectedVersion: overridden.event.version,
+    });
+    expect(restored.ok).toBe(true);
+    expect(restored.event.expectedTreatment).toBe('default');
+    expect(restored.event.expectedAmount).toBeNull();
+    expect(restored.event.expectedLiability).toBe(20000);
   });
 });
