@@ -20,12 +20,12 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | Repository | `buildlite-po` (historic GitHub name: `dmcc-cvr-system`) |
 | Programme | Doc 67 — Persistence Architecture & Migration Blueprint |
 | Last completed product slice | **BL-033D.x.5 COMPLETE** (Prelims landing UX consolidation). Human visual UAT **PASSED**. |
-| Last persistence slice implemented | **BL-038B BANKED. BL-038C IMPLEMENTED; human UAT + SELECT-only forensic PASS; SAFE TO BANK, not yet banked.** Previous product bank **BL-034D** at `6d11491`. |
-| Last design-authority slice | **HD-038-1 / HD-038-2 / HD-038-3 RESOLVED** (docs only, after BL-038A). HD-001 / HD-002 / HD-008 remain **resolved**. Detailed Selling Costs remains unstarted. **BL-038B BANKED. BL-038C implemented and UAT/forensic passed.** |
+| Last persistence slice implemented | **BL-038C BANKED** at `b036bc9` (human UAT + SELECT-only forensic PASS). Expected Liability is live in authoritative CVR Final Forecast. |
+| Last design-authority slice | **HD-038-1 / HD-038-2 / HD-038-3 RESOLVED** (docs only, after BL-038A). HD-001 / HD-002 / HD-008 remain **resolved**. Detailed Selling Costs remains unstarted. **BL-038C BANKED** at `b036bc9`. |
 | Test isolation | BL-028B.3a — server tests fail closed unless `TEST_DATABASE_URL` is a separate database |
 | Housekeeping checkpoint | BL-ASUS-001 (this document) |
 | Durable intent / deferred decisions | `docs/PRODUCT_CONSTITUTION.md` |
-| **NEXT** | **Bank BL-038C.** Human approval UAT proved 5218 moved from System £10,000 + Expected £20,000 to System £30,000 + Expected £0 while Final remained £30,000. SELECT-only forensic PASS. Keep Test Site 1 P04 Draft; no P05, Hawthorn, Detailed Selling Costs, BL-038D/038E, or UAT-CC-001 adoption. |
+| **NEXT** | **BL-038E — snapshot/Create Next integrity.** This is a pre-Hawthorn correctness gate. BL-038D drilldown/detail UX is deferred pending pilot evidence. Keep Test Site 1 P04 Draft; no P05, Hawthorn changes, Detailed Selling Costs, or UAT-CC-001 adoption. |
 
 ---
 
@@ -69,7 +69,7 @@ Authoritative persistence architecture: **Doc 67** in BuildLite Master Documenta
 | **BL-037C** | Controlled missing-line CVR integration | **COMPLETE / BANKED** at `c5f4c73`. Prelims Draft **Add to CVR**; first QS overlay edit on fact-only auto-rows uses 037A. Mixed-case overlay identity corrected during UAT. Adopt remains a separate action. Selling Costs adoption **not started**. |
 | **BL-038A** | CE-linked expected liability design preflight | **COMPLETE (docs/design).** HD-001 plus HD-038-1/2/3 settled. No product code. |
 | **BL-038B** | CE expected-liability model / override / audit foundation | **BANKED.** Implementation PASS. Automated verification PASS. Human UAT PASS. Forensic PASS. Migration `021` on `buildlite_test` and local `buildlite_clone`. Compact CE treatment control. |
-| **BL-038C** | CE Expected Liability in authoritative CVR Final Forecast | **IMPLEMENTED; HUMAN UAT PASS; SELECT-only forensic PASS; SAFE TO BANK, not yet banked.** Final = System + CE Expected + Adjustment. Expected fact-only rows need no overlay. Snapshot schema/lifecycle unchanged. |
+| **BL-038C** | CE Expected Liability in authoritative CVR Final Forecast | **BANKED at `b036bc9`. HUMAN UAT PASS; SELECT-only forensic PASS.** Final = System + CE Expected + Adjustment. Expected fact-only rows need no overlay. Snapshot schema/lifecycle unchanged. |
 
 BL-030 is fully complete. **BL-031D** cut CVR/ledger runtime to Postgres when local flags are ON, and applies the live commercial formulas on the CVR. **BL-031E** freezes that position onto an immutable snapshot at Approve & Lock. **BL-031F** copies persisted QS period inputs into the next Draft period. Persistence sprints must not add unrelated product features (Doc 67 §28).
 
@@ -1211,7 +1211,9 @@ Documentation / design-authority settlement after founding-principles reconcilia
 
 **BL-038B BANKED.** Implementation PASS. Automated verification PASS. Human UAT PASS. Forensic PASS. CE expected-liability model, override, and audit exist. **BL-038C now implements additive Expected in Final Forecast without changing System Forecast.** Full wording: `docs/PRODUCT_CONSTITUTION.md` HD-001.
 
-**BL-038C:** implementation complete; human approval-transition UAT PASS; SELECT-only post-UAT forensic PASS. Safe to bank; not yet banked.
+**BL-038C BANKED** at `b036bc9`; human approval-transition UAT PASS and SELECT-only post-UAT forensic PASS.
+
+**Post-038C pilot gate:** BL-038D's remaining CE/CVR drilldown and detail UX is useful but not required before a supervised SME pilot; defer it pending pilot evidence. BL-038E is required before Hawthorn because locked snapshots do not yet freeze CE Expected Liability explicitly, and Create Next needs regression proof that live CE transitions recompose without rewriting or obscuring the prior period.
 
 ## HD-038-1 / HD-038-2 / HD-038-3 — RESOLVED
 
@@ -1265,7 +1267,7 @@ Later UX only (not in this bank): when Review is Up to date, hide/disable Adopt 
 
 ## Next action
 
-**NEXT:** **Bank BL-038C.** Existing throwaway CE-0024 approval UAT and forensic proved 5218 Committed/System/Final £30k, CE Expected £0, adjustment/accrual £0, P01 still Draft with zero snapshots. Keep Test Site 1 P04 Draft. Do **not** create P05, Adopt UAT-CC-001, alter Hawthorn, start BL-038D/038E, or start Detailed Selling Costs.
+**NEXT:** **BL-038E — CE Expected Liability snapshot/Create Next integrity.** It is a pre-Hawthorn correctness gate: freeze and restore Expected explicitly in locked CVRs and prove later CE transitions/Create Next do not rewrite or make the prior position unexplainable. BL-038D drilldown/detail UX is **DEFERRED pending pilot evidence**. Keep Test Site 1 P04 Draft. Do **not** create P05, Adopt UAT-CC-001, alter Hawthorn, or start Detailed Selling Costs.
 
 Do **not** alter P01/P02/P03 `reporting_month` except by a future explicit historic-correction feature. Do not delete programme row `9ff45e90-8412-4e3e-a6d9-45a0d6abd177`. Do not delete P04 `0f513191-cd25-4812-834f-37dcf66487e0` except by a later controlled commercial task.
 
