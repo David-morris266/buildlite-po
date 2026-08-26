@@ -1,7 +1,7 @@
 /**
  * BL-038B — Pure CE expected-liability derivation (HD-001 / HD-038).
  * Client mirror of server/services/commercialEventExpectedLiability.js.
- * Does not write CVR money.
+ * Does not write CVR money. BL-038C consumes the derived value in the CVR engine.
  */
 
 import { COMMERCIAL_EVENT_RELATIONSHIP_TYPES, COMMERCIAL_EVENT_STATUSES } from './commercialEventTypes';

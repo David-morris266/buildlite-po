@@ -1,6 +1,6 @@
 /**
  * BL-038B — Pure CE expected-liability derivation (HD-001 / HD-038).
- * Does not write CVR money. Close engine must ignore this until BL-038C.
+ * Does not write CVR money. BL-038C consumes the derived value in the close engine.
  */
 
 const {

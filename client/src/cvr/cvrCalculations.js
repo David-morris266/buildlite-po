@@ -126,6 +126,7 @@ export function buildCvrTotals(rows) {
     certified: sumNullable(rows.map((row) => row.certified)),
     actualCost: sumNullable(rows.map((row) => row.actualCost)),
     systemForecast: sumNullable(rows.map((row) => row.systemForecast)),
+    expectedLiability: sumNullable(rows.map((row) => row.expectedLiability)),
     outstandingCertified: sumNullable(rows.map((row) => row.outstandingCertified)),
     commercialAdjustment: sumNullable(rows.map((row) => row.commercialAdjustment)),
     manualAccrual: sumNullable(rows.map((row) => row.manualAccrual)),

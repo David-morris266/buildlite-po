@@ -43,19 +43,26 @@ export function calculateSystemForecast({ committed, actualCost, currentBudget }
   return 0;
 }
 
-export function calculateFinalForecast(systemForecast, commercialAdjustment = 0) {
+export function calculateFinalForecast(
+  systemForecast,
+  commercialAdjustment = 0,
+  expectedLiability = 0,
+) {
+  const expected = roundMoney(expectedLiability) ?? 0;
   const adjustment = roundMoney(commercialAdjustment) ?? 0;
 
   if (systemForecast == null || systemForecast === '') {
-    return adjustment === 0 ? null : adjustment;
+    const forecast = roundMoney(expected + adjustment);
+    return forecast === 0 ? null : forecast;
   }
 
   const system = roundMoney(systemForecast);
   if (system == null) {
-    return adjustment === 0 ? null : adjustment;
+    const forecast = roundMoney(expected + adjustment);
+    return forecast === 0 ? null : forecast;
   }
 
-  return roundMoney(system + adjustment);
+  return roundMoney(system + expected + adjustment);
 }
 
 export function getAdjustmentState(commercialAdjustment) {
@@ -121,8 +128,13 @@ export function enrichCvrForecastRow(row) {
   });
 
   const commercialAdjustment = roundMoney(row.commercialAdjustment) ?? 0;
+  const expectedLiability = roundMoney(row.expectedLiability) ?? 0;
   const manualAccrual = roundMoney(row.manualAccrual) ?? 0;
-  const finalForecast = calculateFinalForecast(systemForecast, commercialAdjustment);
+  const finalForecast = calculateFinalForecast(
+    systemForecast,
+    commercialAdjustment,
+    expectedLiability,
+  );
   const currentCost = calculateIncurredCost(row.actualCost, manualAccrual);
   const costToComplete = calculateCostToComplete(finalForecast, row.actualCost, manualAccrual);
   const variance = calculateVariance(row.currentBudget, finalForecast);
@@ -132,6 +144,7 @@ export function enrichCvrForecastRow(row) {
     manualAccrual,
     currentCost,
     systemForecast,
+    expectedLiability,
     commercialAdjustment,
     commercialReason: String(row.commercialReason || ''),
     finalForecast,

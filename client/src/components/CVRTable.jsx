@@ -87,6 +87,12 @@ function CVRTable({ rows, totals, onRowSelect, onBudgetChange, readOnly = false 
                 Current Cost
               </th>
               <th className="dev-cvr__money-col">System Forecast</th>
+              <th
+                className="dev-cvr__money-col"
+                title="Expected liability from submitted contract-value Commercial Events"
+              >
+                CE Expected
+              </th>
               <th className="dev-cvr__money-col">Final Forecast</th>
               <th className="dev-cvr__money-col">CTC</th>
               <th className="dev-cvr__money-col">Variance</th>
@@ -135,6 +141,7 @@ function CVRTable({ rows, totals, onRowSelect, onBudgetChange, readOnly = false 
                   <td className="dev-cvr__money-col">{row.manualAccrualLabel}</td>
                   <td className="dev-cvr__money-col">{row.currentCostLabel}</td>
                   <td className="dev-cvr__money-col">{row.systemForecastLabel}</td>
+                  <td className="dev-cvr__money-col">{row.expectedLiabilityLabel}</td>
                   <td className="dev-cvr__money-col">{row.finalForecastLabel}</td>
                   <td className="dev-cvr__money-col">
                     <CtcCell label={row.costToCompleteLabel} value={row.costToComplete} />
@@ -146,7 +153,7 @@ function CVRTable({ rows, totals, onRowSelect, onBudgetChange, readOnly = false 
               ))
             ) : (
               <tr>
-                <td colSpan={12} className="po-data-table__empty">
+                <td colSpan={13} className="po-data-table__empty">
                   No cost codes yet. Add a cost code or import ledger / approve
                   purchase orders to populate the CVR.
                 </td>
@@ -179,6 +186,9 @@ function CVRTable({ rows, totals, onRowSelect, onBudgetChange, readOnly = false 
                 </td>
                 <td className="dev-cvr__money-col">
                   <strong>{totals.systemForecastLabel}</strong>
+                </td>
+                <td className="dev-cvr__money-col">
+                  <strong>{totals.expectedLiabilityLabel}</strong>
                 </td>
                 <td className="dev-cvr__money-col">
                   <strong>{totals.finalForecastLabel}</strong>

@@ -30,6 +30,7 @@ const {
   sourceReadinessDocument,
 } = require("./cvrCloseSources");
 const { isApprovedSubcontractPo } = require("./packagePoExtract");
+const { effectiveExpectedLiability } = require("./commercialEventExpectedLiability");
 
 function isRecoveryCommercialEvent(event) {
   return event?.relationshipType === RECOVERY_RELATIONSHIP_TYPE;
@@ -212,6 +213,21 @@ function buildActualsByCostCode(transactions) {
   return { totals, labels };
 }
 
+function buildExpectedLiabilityByCostCode(events) {
+  const totals = new Map();
+  const labels = new Map();
+  for (const event of events || []) {
+    const amount = effectiveExpectedLiability(event);
+    if (!Number.isFinite(amount) || Math.abs(amount) < 0.005) continue;
+    const costCode = event.costCode || event.costCodeKey;
+    const key = normaliseCostCodeKey(costCode);
+    if (!key) continue;
+    addAmount(totals, key, amount);
+    if (!labels.has(key)) labels.set(key, buildCostCodeLabel(key, costCode));
+  }
+  return { totals, labels };
+}
+
 function collectCostCodeKeys(sources, inputs) {
   const keys = new Set();
   for (const source of sources) {
@@ -251,6 +267,7 @@ function snapshotRowFromEnriched(row) {
     actualCost: moneyOrZero(row.actualCost),
     currentCost: moneyOrZero(row.currentCost),
     systemForecast: moneyOrZero(row.systemForecast),
+    expectedLiability: moneyOrZero(row.expectedLiability),
     finalForecast: moneyOrZero(row.finalForecast),
     costToComplete: moneyOrZero(row.costToComplete),
     outstandingCertified: moneyOrZero(row.outstandingCertified),
@@ -306,6 +323,7 @@ async function buildCvrCloseCandidate({
   }
 
   const actuals = buildActualsByCostCode(transactions);
+  const expectedLiabilities = buildExpectedLiabilityByCostCode(events);
   const manualByKey = new Map();
   for (const input of inputs) {
     const key = normaliseCostCodeKey(input.costCodeKey);
@@ -315,7 +333,10 @@ async function buildCvrCloseCandidate({
     }
   }
 
-  const allKeys = collectCostCodeKeys([commitments, certified, actuals], inputs);
+  const allKeys = collectCostCodeKeys(
+    [commitments, certified, actuals, expectedLiabilities],
+    inputs
+  );
   const rows = [...allKeys].map((key) => {
     const manual = manualByKey.get(key);
     const hasManualBudget =
@@ -328,6 +349,7 @@ async function buildCvrCloseCandidate({
       commitments.labels.get(key) ||
       certified.labels.get(key) ||
       actuals.labels.get(key) ||
+      expectedLiabilities.labels.get(key) ||
       buildCostCodeLabel(key);
 
     const committed = commitments.totals.has(key)
@@ -359,6 +381,7 @@ async function buildCvrCloseCandidate({
       committed: roundMoney(committed) ?? 0,
       certified: roundMoney(certifiedValue) ?? 0,
       actualCost: roundMoney(actualCost) ?? 0,
+      expectedLiability: roundMoney(expectedLiabilities.totals.get(key)) ?? 0,
       manualAccrual: manual?.manualAccrual ?? 0,
     });
   });
@@ -403,6 +426,7 @@ module.exports = {
   buildCommitmentsByCostCode,
   buildCertifiedByCostCode,
   buildActualsByCostCode,
+  buildExpectedLiabilityByCostCode,
   buildSubcontractOrders,
   isRecoveryCommercialEvent,
   isApprovedContractValueEvent,

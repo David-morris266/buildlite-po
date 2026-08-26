@@ -3,7 +3,6 @@
  */
 
 import { enrichPoWithDevelopmentRef } from '../developments/poDevelopmentRefStore';
-import { getPoDevelopmentId } from '../developments/developmentPoHelpers';
 import {
   getPoCommittedNet,
   getPoCostCode,
@@ -36,6 +35,8 @@ import {
   costCodesMatch,
 } from './cvrCalculations';
 import { enrichCvrForecastRow, getAdjustmentState } from './cvrForecastEngine';
+import { listCommercialEventsByDevelopment } from '../commercialEvents/commercialEventStore';
+import { effectiveExpectedLiability } from '../commercialEvents/commercialEventExpectedLiability';
 import {
   isCvrHistoricSnapshotPeriod,
   isCvrLegacyLockedPeriod,
@@ -149,6 +150,21 @@ export function buildActualsByCostCode(developmentId) {
   return { totals, labels };
 }
 
+export function buildExpectedLiabilityByCostCode(developmentId) {
+  const totals = new Map();
+  const labels = new Map();
+  for (const event of listCommercialEventsByDevelopment(developmentId)) {
+    const amount = effectiveExpectedLiability(event);
+    if (!Number.isFinite(amount) || Math.abs(amount) < 0.005) continue;
+    const costCode = event.costCode || event.costCodeKey;
+    const key = normaliseCostCodeKey(costCode);
+    if (!key) continue;
+    totals.set(key, (totals.get(key) || 0) + amount);
+    if (!labels.has(key)) labels.set(key, buildCostCodeLabel(key, costCode));
+  }
+  return { totals, labels };
+}
+
 export function buildCertifiedByCostCode(developmentId, pos = []) {
   const totals = new Map();
   const labels = new Map();
@@ -204,9 +220,15 @@ export function buildCvrRows(developmentId, options = {}) {
   const commitments = buildCommitmentsByCostCode(developmentId, pos);
   const certified = buildCertifiedByCostCode(developmentId, pos);
   const actuals = buildActualsByCostCode(developmentId);
+  const expectedLiabilities = buildExpectedLiabilityByCostCode(developmentId);
   const manualCentres = listCostCentres(developmentId, periodKey);
 
-  const allKeys = collectCostCodeKeys([commitments, certified, actuals]);
+  const allKeys = collectCostCodeKeys([
+    commitments,
+    certified,
+    actuals,
+    expectedLiabilities,
+  ]);
   const manualByKey = new Map();
 
   for (const centre of manualCentres) {
@@ -225,6 +247,7 @@ export function buildCvrRows(developmentId, options = {}) {
       commitments.labels.get(key) ||
       certified.labels.get(key) ||
       actuals.labels.get(key) ||
+      expectedLiabilities.labels.get(key) ||
       buildCostCodeLabel(key);
 
     const hasManualBudget =
@@ -254,6 +277,7 @@ export function buildCvrRows(developmentId, options = {}) {
         actualCost: actuals.unavailable
           ? null
           : actuals.totals.get(key) ?? (hasManualBudget ? 0 : null),
+        expectedLiability: expectedLiabilities.totals.get(key) ?? 0,
         commercialAdjustment: manual?.commercialAdjustment ?? 0,
         commercialReason: manual?.commercialReason || '',
         adjustmentHistory: manual?.adjustmentHistory || [],
@@ -294,6 +318,7 @@ function emptyCvrSummary() {
     actualCost: null,
     outstandingCertified: null,
     systemForecast: null,
+    expectedLiability: null,
     commercialAdjustment: null,
     manualAccrual: null,
     currentCost: null,
@@ -314,6 +339,7 @@ function summaryFromTotals(totals, ledgerReady = true) {
     actualCost: ledgerReady ? totals.actualCost : null,
     outstandingCertified: ledgerReady ? totals.outstandingCertified : null,
     systemForecast: totals.systemForecast,
+    expectedLiability: totals.expectedLiability,
     commercialAdjustment: totals.commercialAdjustment,
     manualAccrual: totals.manualAccrual,
     currentCost: ledgerReady ? totals.currentCost : null,
@@ -349,6 +375,7 @@ function snapshotRowToCvrRow(row) {
     actualCost: row.actualCost,
     currentCost: row.currentCost,
     systemForecast: row.systemForecast,
+    expectedLiability: row.expectedLiability ?? 0,
     finalForecast: row.finalForecast,
     forecastFinalCost: row.finalForecast,
     costToComplete: row.costToComplete,
@@ -378,6 +405,7 @@ function historicTotalsFromSnapshot(snapshot, rows) {
     manualAccrual: header.manualAccrual ?? fromRows.manualAccrual,
     currentCost: header.currentCost ?? fromRows.currentCost,
     systemForecast: header.systemForecast ?? fromRows.systemForecast,
+    expectedLiability: header.expectedLiability ?? fromRows.expectedLiability,
     commercialAdjustment: header.commercialAdjustment ?? fromRows.commercialAdjustment,
     finalForecast: header.finalForecast ?? fromRows.finalForecast,
     forecastFinalCost: header.finalForecast ?? fromRows.forecastFinalCost,

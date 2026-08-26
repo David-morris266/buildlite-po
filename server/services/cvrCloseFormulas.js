@@ -66,19 +66,22 @@ function calculateSystemForecast({ committed, actualCost, currentBudget }) {
   return 0;
 }
 
-function calculateFinalForecast(systemForecast, commercialAdjustment = 0) {
+function calculateFinalForecast(systemForecast, commercialAdjustment = 0, expectedLiability = 0) {
+  const expected = roundMoney(expectedLiability) ?? 0;
   const adjustment = roundMoney(commercialAdjustment) ?? 0;
 
   if (systemForecast == null || systemForecast === "") {
-    return adjustment === 0 ? null : adjustment;
+    const forecast = roundMoney(expected + adjustment);
+    return forecast === 0 ? null : forecast;
   }
 
   const system = roundMoney(systemForecast);
   if (system == null) {
-    return adjustment === 0 ? null : adjustment;
+    const forecast = roundMoney(expected + adjustment);
+    return forecast === 0 ? null : forecast;
   }
 
-  return roundMoney(system + adjustment);
+  return roundMoney(system + expected + adjustment);
 }
 
 function calculateIncurredCost(actualCost, manualAccrual = 0) {
@@ -201,8 +204,13 @@ function enrichCvrForecastRow(row) {
   });
 
   const commercialAdjustment = roundMoney(row.commercialAdjustment) ?? 0;
+  const expectedLiability = roundMoney(row.expectedLiability) ?? 0;
   const manualAccrual = roundMoney(row.manualAccrual) ?? 0;
-  const finalForecast = calculateFinalForecast(systemForecast, commercialAdjustment);
+  const finalForecast = calculateFinalForecast(
+    systemForecast,
+    commercialAdjustment,
+    expectedLiability
+  );
   const currentCost = calculateIncurredCost(row.actualCost, manualAccrual);
   const costToComplete = calculateCostToComplete(
     finalForecast,
@@ -220,6 +228,7 @@ function enrichCvrForecastRow(row) {
     manualAccrual,
     currentCost,
     systemForecast,
+    expectedLiability,
     commercialAdjustment,
     finalForecast,
     costToComplete,
@@ -235,6 +244,7 @@ function buildCvrTotals(rows) {
     certified: sumNullable(rows.map((row) => row.certified)) ?? 0,
     actualCost: sumNullable(rows.map((row) => row.actualCost)) ?? 0,
     systemForecast: sumNullable(rows.map((row) => row.systemForecast)) ?? 0,
+    expectedLiability: sumNullable(rows.map((row) => row.expectedLiability)) ?? 0,
     outstandingCertified: sumNullable(rows.map((row) => row.outstandingCertified)) ?? 0,
     commercialAdjustment: sumNullable(rows.map((row) => row.commercialAdjustment)) ?? 0,
     manualAccrual: sumNullable(rows.map((row) => row.manualAccrual)) ?? 0,

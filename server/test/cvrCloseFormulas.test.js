@@ -61,6 +61,11 @@ test("final forecast = system forecast + commercial adjustment", () => {
   assert.equal(calculateFinalForecast(50250, -250), 50000);
 });
 
+test("BL-038C final forecast adds Expected without changing adjustment", () => {
+  assert.equal(calculateFinalForecast(10000, 5000, 20000), 35000);
+  assert.equal(calculateFinalForecast(10000, 2000, 25000), 37000);
+});
+
 test("current cost = actual + manual accrual", () => {
   assert.equal(calculateIncurredCost(0, 100), 100);
   assert.equal(calculateIncurredCost(1000, 400), 1400);

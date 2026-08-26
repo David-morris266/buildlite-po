@@ -330,12 +330,12 @@ async function insertCommercialEvent({
       INSERT INTO commercial_events (
         id, client_id, development_id, package_id, order_key, event_number,
         event_type, category, responsibility, description, value, status,
-        relationship_type, vat_treatment, payload
+        relationship_type, vat_treatment, cost_code, payload
       )
       VALUES (
         $1, $2, $3, $4, $5, $6,
         $7, 'commercial', 'commercial', $8, $9, $10,
-        $11, 'standard', '{}'::jsonb
+        $11, 'standard', $12, '{}'::jsonb
       )
     `,
     [
@@ -350,6 +350,7 @@ async function insertCommercialEvent({
       value,
       status,
       relationshipType,
+      pkg.costCode,
     ]
   );
   trackCe(id);
@@ -473,6 +474,7 @@ function reconcileTotals(result) {
     "manualAccrual",
     "currentCost",
     "systemForecast",
+    "expectedLiability",
     "commercialAdjustment",
     "finalForecast",
     "costToComplete",
@@ -524,7 +526,7 @@ if (!isDbConfigured()) {
     assert.equal(await snapshotCount(), before);
   });
 
-  test("BL-038B submitted default expected liability does not move CVR money", async () => {
+  test("BL-038C submitted default expected liability moves Final only", async () => {
     const world = await setupBase();
     const snapshotsBefore = await snapshotCount();
     const before = await buildCvrCloseCandidate({
@@ -553,9 +555,10 @@ if (!isDbConfigured()) {
       certified: Number(rowBefore.certified),
       actualCost: Number(rowBefore.actualCost),
       systemForecast: Number(rowBefore.systemForecast),
+      expectedLiability: 20000,
       commercialAdjustment: Number(rowBefore.commercialAdjustment),
-      finalForecast: Number(rowBefore.finalForecast),
-      costToComplete: Number(rowBefore.costToComplete),
+      finalForecast: Number(rowBefore.finalForecast) + 20000,
+      costToComplete: Number(rowBefore.costToComplete) + 20000,
     });
     assert.equal(after.snapshot.periodId, before.snapshot.periodId);
     assert.equal(after.snapshot.periodKey, before.snapshot.periodKey);

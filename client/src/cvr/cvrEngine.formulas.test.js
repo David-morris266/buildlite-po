@@ -58,6 +58,7 @@ import {
   clearCommercialEventsStore,
   createCommercialEvent,
   submitCommercialEvent,
+  updateCommercialEventExpectedLiability,
 } from '../commercialEvents/commercialEventStore';
 import { COMMERCIAL_EVENT_FINANCIAL_TREATMENTS } from '../commercialEvents/commercialEventFinancialTreatment';
 import { COMMERCIAL_EVENT_RELATIONSHIP_TYPES, COMMERCIAL_EVENT_TYPES } from '../commercialEvents/commercialEventTypes';
@@ -94,6 +95,23 @@ function seedApprovedEvent(overrides = {}) {
   return approveCommercialEvent(DEV, created.event.id).event;
 }
 
+function seedSubmittedEvent(overrides = {}) {
+  const created = createCommercialEvent(DEV, {
+    packageId: ORDER_KEY,
+    poNumber: 'S0012',
+    supplierId: 'wipe',
+    costCode: '5231',
+    eventType: COMMERCIAL_EVENT_TYPES.variation.key,
+    category: 'commercial',
+    subcategory: 'scopeChange',
+    responsibility: 'commercial',
+    description: 'Expected liability event',
+    value: 20000,
+    ...overrides,
+  });
+  return submitCommercialEvent(DEV, created.event.id).event;
+}
+
 describe('BL-031D live commercial formulas', () => {
   let networkGuard;
 
@@ -128,6 +146,39 @@ describe('BL-031D live commercial formulas', () => {
     });
     const commitments = buildCommitmentsByCostCode(DEV, []);
     expect(commitments.totals.get('5231')).toBe(50250);
+  });
+
+  it('BL-038C renders submitted Expected additively without moving System', () => {
+    seedSubmittedEvent();
+    createOrOpenDraftPeriod(DEV);
+    const row = buildCvrRows(DEV, { periodKey: 'P01' })
+      .find((item) => item.costCodeKey === '5231');
+    expect(row.committed).toBe(50000);
+    expect(row.systemForecast).toBe(50000);
+    expect(row.expectedLiability).toBe(20000);
+    expect(row.finalForecast).toBe(70000);
+  });
+
+  it('BL-038C browser path applies override and generic adjustment additively', () => {
+    const submitted = seedSubmittedEvent();
+    updateCommercialEventExpectedLiability(DEV, submitted.id, {
+      treatment: 'override',
+      amount: 15000,
+      reason: 'Current QS expected outturn',
+    });
+    createOrOpenDraftPeriod(DEV);
+    addCostCentre(DEV, {
+      costCodeLabel: '5231 — Cleaning',
+      costCodeKey: '5231',
+      commercialAdjustment: 5000,
+      commercialReason: 'Generic QS adjustment',
+    }, 'P01');
+    const row = buildCvrRows(DEV, { periodKey: 'P01' })
+      .find((item) => item.costCodeKey === '5231');
+    expect(row.systemForecast).toBe(50000);
+    expect(row.expectedLiability).toBe(15000);
+    expect(row.commercialAdjustment).toBe(5000);
+    expect(row.finalForecast).toBe(70000);
   });
 
   it('approved direct recovery −£100 does not reduce commitment', () => {
