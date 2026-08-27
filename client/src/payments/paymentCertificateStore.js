@@ -901,7 +901,7 @@ export function addRecoveryLineToCertificate(
     return { ok: false, errors: ['Recovery event must belong to this package.'] };
   }
 
-  const eligibilityReason = getRecoveryDeductionEligibilityReason(event);
+  const eligibilityReason = getRecoveryDeductionEligibilityReason(event, orderKey);
   if (eligibilityReason) {
     return { ok: false, errors: [eligibilityReason] };
   }

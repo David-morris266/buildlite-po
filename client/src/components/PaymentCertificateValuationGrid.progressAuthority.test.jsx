@@ -110,6 +110,10 @@ function changeInput(element, value) {
   element.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
+function pressEnter(element) {
+  element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+}
+
 function summaryValue(label) {
   const dt = [...document.querySelectorAll('dt')].find((node) => node.textContent === label);
   return dt?.nextElementSibling?.textContent || '';
@@ -249,6 +253,9 @@ describe('PaymentCertificateValuationGrid Stage Details progress (BL-030C UAT)',
     await act(async () => {
       changeInput(pctInput, '50');
     });
+    await act(async () => {
+      pressEnter(pctInput);
+    });
     await flushPromises();
     await flushPromises();
 
@@ -289,6 +296,132 @@ describe('PaymentCertificateValuationGrid Stage Details progress (BL-030C UAT)',
     expect(summaryValue('Matrix valuation')).toMatch(/£750\.00/);
   });
 
+  it('treats Cert 2 input as cumulative progress and persists only the derived movement', async () => {
+    const certificate1 = draftCertificate({
+      id: 'cccccccc-bbbb-4ccc-8ddd-ffffffffffff',
+      certificateNumber: 1,
+      status: 'locked',
+      progress: {
+        [JOISTS_CELL_ID]: {
+          plotId: 'plot-1-2',
+          stageKey: 'Joists',
+          thisCertificatePct: 25,
+        },
+      },
+      valuationSnapshot: {
+        cells: [
+          {
+            plotId: 'plot-1-2',
+            stageKey: 'Joists',
+            thisCertificatePct: 25,
+          },
+        ],
+      },
+    });
+    serverCert = draftCertificate({ certificateNumber: 2 });
+    upsertCachedCertificate(PACKAGE_UUID, certificate1);
+    upsertCachedCertificate(PACKAGE_UUID, serverCert);
+
+    await renderDetail();
+    await openJoistsStageDetails();
+
+    const panel = document.querySelector('[aria-label="Stage details"]');
+    const pctInput = document.getElementById('po-cert-detail-pct');
+    expect(panel?.textContent).toMatch(/Previous/);
+    expect(panel?.textContent).toMatch(/Progress to date/);
+    expect(pctInput.value).toBe('25');
+
+    await act(async () => {
+      changeInput(pctInput, '752');
+    });
+    expect(pctInput.value).toBe('752');
+    expect(patches).toHaveLength(0);
+
+    await act(async () => {
+      changeInput(pctInput, '75');
+    });
+    expect(pctInput.value).toBe('75');
+    expect(patches).toHaveLength(0);
+
+    await act(async () => {
+      pressEnter(pctInput);
+    });
+    await flushPromises();
+    await flushPromises();
+
+    expect(patches).toHaveLength(1);
+    expect(patches[0].progress[JOISTS_CELL_ID].thisCertificatePct).toBe(50);
+    expect(summaryValue('Matrix valuation')).toMatch(/£375\.00/);
+    expect(panel?.textContent).toMatch(/£187\.50/);
+    expect(panel?.textContent).toMatch(/£562\.50/);
+
+    await openJoistsStageDetails();
+    expect(document.getElementById('po-cert-detail-pct').value).toBe('75');
+  });
+
+  it('allows a temporary blank without committing or corrupting progress', async () => {
+    const certificate1 = draftCertificate({
+      id: 'eeeeeeee-bbbb-4ccc-8ddd-ffffffffffff',
+      certificateNumber: 1,
+      status: 'locked',
+      valuationSnapshot: {
+        cells: [{ plotId: 'plot-1-2', stageKey: 'Joists', thisCertificatePct: 25 }],
+      },
+    });
+    serverCert = draftCertificate({ certificateNumber: 2 });
+    upsertCachedCertificate(PACKAGE_UUID, certificate1);
+    upsertCachedCertificate(PACKAGE_UUID, serverCert);
+
+    await renderDetail();
+    await openJoistsStageDetails();
+    const pctInput = document.getElementById('po-cert-detail-pct');
+    expect(pctInput.value).toBe('25');
+
+    await act(async () => {
+      pctInput.focus();
+      changeInput(pctInput, '');
+    });
+    expect(pctInput.value).toBe('');
+    expect(patches).toHaveLength(0);
+
+    await act(async () => {
+      pressEnter(pctInput);
+    });
+    await flushPromises();
+    expect(patches).toHaveLength(0);
+    expect(document.getElementById('po-cert-detail-pct').value).toBe('');
+    expect(summaryValue('Matrix valuation')).toMatch(/£0\.00/);
+  });
+
+  it('rejects progress below the previously approved cumulative percentage', async () => {
+    const certificate1 = draftCertificate({
+      id: 'dddddddd-bbbb-4ccc-8ddd-ffffffffffff',
+      certificateNumber: 1,
+      status: 'locked',
+      valuationSnapshot: {
+        cells: [{ plotId: 'plot-1-2', stageKey: 'Joists', thisCertificatePct: 25 }],
+      },
+    });
+    serverCert = draftCertificate({ certificateNumber: 2 });
+    upsertCachedCertificate(PACKAGE_UUID, certificate1);
+    upsertCachedCertificate(PACKAGE_UUID, serverCert);
+
+    await renderDetail();
+    await openJoistsStageDetails();
+    await act(async () => {
+      changeInput(document.getElementById('po-cert-detail-pct'), '20');
+    });
+    await act(async () => {
+      pressEnter(document.getElementById('po-cert-detail-pct'));
+    });
+    await flushPromises();
+
+    expect(patches).toHaveLength(0);
+    expect(document.querySelector('[aria-label="Stage details"]')?.textContent).toMatch(
+      /Progress cannot be reduced below the previously certified 25%\./
+    );
+  });
+
   it('surfaces a PATCH failure on the certificate page instead of swallowing it', async () => {
     vi.stubGlobal(
       'fetch',
@@ -303,7 +436,12 @@ describe('PaymentCertificateValuationGrid Stage Details progress (BL-030C UAT)',
     await renderDetail();
     await openJoistsStageDetails();
     await act(async () => {
-      changeInput(document.getElementById('po-cert-detail-pct'), '50');
+      const input = document.getElementById('po-cert-detail-pct');
+      changeInput(input, '50');
+    });
+    await act(async () => {
+      const input = document.getElementById('po-cert-detail-pct');
+      pressEnter(input);
     });
     await flushPromises();
     await flushPromises();

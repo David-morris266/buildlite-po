@@ -23,10 +23,12 @@ import { formatMoney } from './poDrawerHelpers';
 import { getLinkedEventNavigationLabel } from '../commercialEvents/commercialEventNavigation';
 import { getCommercialEventLinkBadges } from '../commercialEvents/commercialEventRegisterBadges';
 import { getCommercialEventCertificationBadges } from '../commercialEvents/commercialEventCertificationOverlay';
+import { getCommercialEventRecoveryPresentation, getRecoveryCommercialStatusForPresentation } from '../commercialEvents/commercialEventRecoveryOverlay';
 import {
   COMMERCIAL_EVENT_STATUSES,
   COMMERCIAL_EVENT_TYPES,
   getCommercialEventStatusMeta,
+  getCommercialEventRecoveryStatusMeta,
 } from '../commercialEvents/commercialEventTypes';
 
 function StatusBadge({ statusKey }) {
@@ -36,6 +38,13 @@ function StatusBadge({ statusKey }) {
       {status.label}
     </span>
   );
+}
+
+function RecoveryLifecycleBadge({ event }) {
+  const presentation = getCommercialEventRecoveryPresentation(event, event.orderKey);
+  if (!presentation || presentation.unavailable || !presentation.presentationRecoveryStatus) return null;
+  const status = getCommercialEventRecoveryStatusMeta(presentation.presentationRecoveryStatus);
+  return <span className="po-status-badge po-status-badge--muted">{status.label}</span>;
 }
 
 function LinkBadge({ badge }) {
@@ -555,7 +564,8 @@ export default function DevelopmentCommercialEvents({
                       <td>{getDevelopmentCommercialTypeLabel(row.event.eventType)}</td>
                       <td>
                         <div className="po-ce-register__status-cell">
-                          <StatusBadge statusKey={row.event.status} />
+                          <StatusBadge statusKey={getRecoveryCommercialStatusForPresentation(row.event, row.event.orderKey)} />
+                          <RecoveryLifecycleBadge event={row.event} />
                           {certification ? (
                             <span
                               className={`po-ce-link-badge po-ce-link-badge--${certification.modifier}`}

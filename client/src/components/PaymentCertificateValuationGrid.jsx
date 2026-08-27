@@ -6,7 +6,7 @@ import {
   formatPctLabel,
   getPreviousCertificationDetails,
   PROGRESS_PRESETS,
-  validateThisCertificatePct,
+  validateProgressToDatePct,
   getCellVisualState,
 } from '../payments/paymentCertificateProgress';
 
@@ -201,6 +201,8 @@ function ValuationDetailPanel({
   onClose,
   onComplete,
   onPctChange,
+  onPctCommit,
+  onPctCancel,
   panelInputRef,
 }) {
   if (!cell) return null;
@@ -245,13 +247,13 @@ function ValuationDetailPanel({
         </div>
         <div className="po-cert-grid__detail-row">
           <span>
-            Previous
+            Previous certified
             <em className="po-cert-grid__detail-muted"> · {previousLabel}</em>
           </span>
           <strong>{formatPctLabel(cell.previousCumulativePct)}</strong>
         </div>
         <div className="po-cert-grid__detail-row po-cert-grid__detail-row--entry">
-          <span>This Certificate</span>
+          <span>Progress to date</span>
           {editable ? (
             <div className="po-cert-grid__detail-controls">
               <input
@@ -264,7 +266,21 @@ function ValuationDetailPanel({
                 step="0.1"
                 value={displayPct === 0 ? '' : displayPct}
                 onChange={(event) => onPctChange(cell.cellKey, event.target.value)}
-                aria-label={`This certificate percentage for ${cell.plotLabel} ${cell.stageLabel}`}
+                onBlur={(event) => {
+                  if (event.relatedTarget?.closest?.('.po-cert-grid__detail-complete')) return;
+                  onPctCommit(cell.cellKey, event.currentTarget.value);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    onPctCommit(cell.cellKey, event.currentTarget.value);
+                  }
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    onPctCancel(cell.cellKey);
+                  }
+                }}
+                aria-label={`Progress to date percentage for ${cell.plotLabel} ${cell.stageLabel}`}
               />
               <span className="po-cert-grid__detail-input-suffix">%</span>
               <button
@@ -276,7 +292,7 @@ function ValuationDetailPanel({
               </button>
             </div>
           ) : (
-            <strong>{formatPctLabel(cell.thisCertificatePct)}</strong>
+            <strong>{formatPctLabel(cell.cumulativePct)}</strong>
           )}
         </div>
         {errors.length ? (
@@ -287,7 +303,11 @@ function ValuationDetailPanel({
           </ul>
         ) : null}
         <div className="po-cert-grid__detail-row">
-          <span>Cumulative</span>
+          <span>This certificate</span>
+          <strong>{formatPctLabel(cell.thisCertificatePct)}</strong>
+        </div>
+        <div className="po-cert-grid__detail-row">
+          <span>Certified to date</span>
           <strong>{formatPctLabel(cell.cumulativePct)}</strong>
         </div>
 
@@ -608,12 +628,12 @@ export default function PaymentCertificateValuationGrid({
     setAnchorKey([...next][0] || null);
   }
 
-  function saveProgressPatch(patch) {
+  function saveProgressPatch(patch, displayPatch = null) {
     if (!patch || !Object.keys(patch).length) return;
     setInputDrafts((current) => {
       const next = { ...current };
-      Object.entries(patch).forEach(([cellKey, value]) => {
-        const pct = Number(value?.thisCertificatePct);
+      Object.entries(displayPatch || patch).forEach(([cellKey, value]) => {
+        const pct = Number(value?.progressToDatePct ?? value?.thisCertificatePct);
         next[cellKey] = Number.isFinite(pct) ? pct : 0;
       });
       return next;
@@ -648,7 +668,7 @@ export default function PaymentCertificateValuationGrid({
       const cell = map.get(cellKey);
       if (!cell) return;
       const rawEntry = updater(cell);
-      const validation = validateThisCertificatePct(
+      const validation = validateProgressToDatePct(
         cell.previousCumulativePct,
         rawEntry,
         options
@@ -658,37 +678,67 @@ export default function PaymentCertificateValuationGrid({
       }
     });
 
-    saveProgressPatch(patch);
+    saveProgressPatch(
+      patch,
+      Object.fromEntries(
+        Object.keys(patch).map((cellKey) => [
+          cellKey,
+          {
+            progressToDatePct:
+              map.get(cellKey).previousCumulativePct + patch[cellKey].thisCertificatePct,
+          },
+        ])
+      )
+    );
 
     setShowCustomPct(false);
     setCustomPct('');
   }
 
   function handlePctChange(cellKey, rawValue) {
+    setInputDrafts((current) => ({ ...current, [cellKey]: rawValue }));
+  }
+
+  function clearPctDraft(cellKey) {
+    setInputDrafts((current) => {
+      if (!Object.prototype.hasOwnProperty.call(current, cellKey)) return current;
+      const next = { ...current };
+      delete next[cellKey];
+      return next;
+    });
+  }
+
+  function commitPctDraft(cellKey, rawInput = inputDrafts[cellKey]) {
     const cell = cellMap().get(cellKey);
     if (!cell) return;
-    const validation = validateThisCertificatePct(
+    const rawValue = rawInput;
+    if (String(rawValue).trim() === '') {
+      clearPctDraft(cellKey);
+      return;
+    }
+    const validation = validateProgressToDatePct(
       cell.previousCumulativePct,
       rawValue
     );
 
-    if (rawValue === '' || validation.valid) {
-      saveProgressPatch({
-        [cellKey]: { thisCertificatePct: validation.pct },
-      });
-      return;
+    if (validation.valid) {
+      saveProgressPatch(
+        { [cellKey]: { thisCertificatePct: validation.pct } },
+        { [cellKey]: { progressToDatePct: validation.cumulativePct } }
+      );
     }
-
-    setInputDrafts((current) => ({ ...current, [cellKey]: rawValue }));
   }
 
   function getCellPresentation(cell) {
     const draft = inputDrafts[cell.cellKey];
-    const validation = validateThisCertificatePct(
-      cell.previousCumulativePct,
-      draft ?? cell.thisCertificatePct
-    );
-    const displayPct = draft ?? cell.thisCertificatePct;
+    const editingBlank = draft === '';
+    const validation = editingBlank
+      ? { valid: true, pct: cell.thisCertificatePct, errors: [] }
+      : validateProgressToDatePct(
+          cell.previousCumulativePct,
+          draft ?? cell.cumulativePct
+        );
+    const displayPct = draft ?? cell.cumulativePct;
     const visualState = getCellVisualState({
       cumulativePct: cell.cumulativePct,
       thisCertificatePct: validation.valid ? validation.pct : displayPct,
@@ -751,7 +801,9 @@ export default function PaymentCertificateValuationGrid({
               onSetPercentage={(pct) => {
                 applyToSelection(() => pct);
               }}
-              onClearSelection={() => applyToSelection(() => 0)}
+              onClearSelection={() =>
+                applyToSelection((cell) => cell.previousCumulativePct)
+              }
               customPct={customPct}
               onCustomPctChange={setCustomPct}
               onApplyCustomPct={() => {
@@ -834,17 +886,20 @@ export default function PaymentCertificateValuationGrid({
             onComplete={(cellKey) => {
               const cell = cellMap().get(cellKey);
               if (!cell) return;
-              const validation = validateThisCertificatePct(
+              const validation = validateProgressToDatePct(
                 cell.previousCumulativePct,
                 100,
                 { complete: true }
               );
               if (!validation.valid) return;
-              saveProgressPatch({
-                [cellKey]: { thisCertificatePct: validation.pct },
-              });
+              saveProgressPatch(
+                { [cellKey]: { thisCertificatePct: validation.pct } },
+                { [cellKey]: { progressToDatePct: validation.cumulativePct } }
+              );
             }}
             onPctChange={handlePctChange}
+            onPctCommit={commitPctDraft}
+            onPctCancel={clearPctDraft}
             panelInputRef={panelInputRef}
           />
         ) : null}

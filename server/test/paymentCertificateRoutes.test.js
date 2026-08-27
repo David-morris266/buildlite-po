@@ -791,6 +791,85 @@ if (!isDbConfigured()) {
     assert.equal(recoveryAfter.body.recoveredAmount, 0);
   });
 
+  test("18a. legacy closed partial recovery remains deductible only for its approved outstanding balance", async () => {
+    const active = await getActiveClient();
+    const { development, pkg, orderKey } = await setupPackage(active);
+    await putMatrix(pkg.id, validMatrixBody());
+    const recovery = await createApprovedCe(development, orderKey, {
+      eventType: "contraCharge",
+      financialTreatment: "recoverableDeduction",
+      value: -1000,
+      description: "Legacy partial recovery",
+    });
+
+    const first = await createCert(pkg.id);
+    const firstPatched = await patchCert(pkg.id, first.body.id, {
+      version: first.body.version,
+      commercialLines: [{
+        commercialEventId: recovery.id,
+        lineType: "recoveryDeduction",
+        amountThisCertificate: -400,
+      }],
+    });
+    assert.equal(firstPatched.status, 200, firstPatched.body?.message);
+    const firstSubmitted = await submitCert(pkg.id, first.body.id, {
+      version: firstPatched.body.version,
+    });
+    const firstApproved = await approveCert(pkg.id, first.body.id, {
+      version: firstSubmitted.body.version,
+    });
+    assert.equal(firstApproved.status, 200, firstApproved.body?.message);
+
+    // Reproduce the pre-guard persisted state without rewriting approved history.
+    await pool.query("UPDATE commercial_events SET status = $1 WHERE id = $2", [
+      "closed",
+      recovery.id,
+    ]);
+
+    const second = await createCert(pkg.id);
+    const overRemaining = await patchCert(pkg.id, second.body.id, {
+      version: second.body.version,
+      commercialLines: [{
+        commercialEventId: recovery.id,
+        lineType: "recoveryDeduction",
+        amountThisCertificate: -600.01,
+      }],
+    });
+    assert.equal(overRemaining.status, 400);
+    assert.match(String(overRemaining.body.message), /remaining|600/i);
+
+    const exactRemaining = await patchCert(pkg.id, second.body.id, {
+      version: second.body.version,
+      commercialLines: [{
+        commercialEventId: recovery.id,
+        lineType: "recoveryDeduction",
+        amountThisCertificate: -600,
+      }],
+    });
+    assert.equal(exactRemaining.status, 200, exactRemaining.body?.message);
+    assert.equal(exactRemaining.body.totals.recoveryDeductionSigned, -600);
+
+    const secondSubmitted = await submitCert(pkg.id, second.body.id, {
+      version: exactRemaining.body.version,
+    });
+    assert.equal(secondSubmitted.status, 200, secondSubmitted.body?.message);
+    const rejected = await rejectCert(pkg.id, second.body.id, {
+      version: secondSubmitted.body.version,
+      comment: "Prove rejected deductions do not count as recovered history",
+    });
+    assert.equal(rejected.status, 200, rejected.body?.message);
+
+    const afterRejected = await patchCert(pkg.id, rejected.body.id, {
+      version: rejected.body.version,
+      commercialLines: [{
+        commercialEventId: recovery.id,
+        lineType: "recoveryDeduction",
+        amountThisCertificate: -600,
+      }],
+    });
+    assert.equal(afterRejected.status, 200, afterRejected.body?.message);
+  });
+
   test("19. retention and VAT use package PO rates", async () => {
     const active = await getActiveClient();
     const { pkg } = await setupPackage(active, {

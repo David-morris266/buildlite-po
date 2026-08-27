@@ -227,3 +227,20 @@ export function formatSignedDisplayMoney(value) {
 
   return `−${formatted}`;
 }
+
+/** Exact currency presentation for commercial summary cards. */
+export function formatExactDisplayMoney(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '£0';
+  const hasPence = Math.abs(amount - Math.trunc(amount)) > Number.EPSILON;
+  return `£${Math.abs(amount).toLocaleString('en-GB', {
+    minimumFractionDigits: hasPence ? 2 : 0,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+export function formatSignedExactDisplayMoney(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount === 0) return '£0';
+  return `${amount > 0 ? '+' : '−'}${formatExactDisplayMoney(amount)}`;
+}

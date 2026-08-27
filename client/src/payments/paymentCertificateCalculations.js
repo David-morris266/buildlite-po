@@ -84,6 +84,27 @@ export function validateThisCertificatePct(
   return { pct, errors, valid: errors.length === 0 };
 }
 
+/** Convert cumulative QS progress-to-date input to the incremental movement persisted on this certificate. */
+export function validateProgressToDatePct(previousCumulativePct, rawEntry) {
+  const previous = normalizePct(previousCumulativePct);
+  const cumulativePct = normalizePct(rawEntry);
+  const errors = [];
+
+  if (cumulativePct < previous - 0.005) {
+    errors.push(`Progress cannot be reduced below the previously certified ${previous}%.`);
+  }
+  if (cumulativePct > 100.005) {
+    errors.push('Progress cannot exceed 100%.');
+  }
+
+  return {
+    cumulativePct,
+    pct: roundPct(cumulativePct - previous),
+    errors,
+    valid: errors.length === 0,
+  };
+}
+
 /**
  * Derive cumulative values for a valuation cell.
  */

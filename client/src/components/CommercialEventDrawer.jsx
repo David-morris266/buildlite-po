@@ -57,6 +57,10 @@ import {
   listCommercialEventFinancialTreatmentOptions,
 } from '../commercialEvents/commercialEventFinancialTreatment';
 import CommercialEventExpectedLiabilityPanel from './CommercialEventExpectedLiabilityPanel';
+import {
+  getCommercialEventRecoveryPresentation,
+  getRecoveryCommercialStatusForPresentation,
+} from '../commercialEvents/commercialEventRecoveryOverlay';
 
 const EMPTY_FORM = {
   eventType: COMMERCIAL_EVENT_TYPES.variation.key,
@@ -231,6 +235,18 @@ export default function CommercialEventDrawer({
     canFlagRecoverFromOtherSubcontractor({ eventType: form.eventType }) &&
     (!drawerEvent || canFlagRecoverFromOtherSubcontractor(drawerEvent));
   const showPotentialContraBanner = canShowPotentialContraBanner(drawerEvent);
+  const recoveryPresentation = isRecoveryEvent
+    ? getCommercialEventRecoveryPresentation(liveEvent, liveEvent?.orderKey)
+    : null;
+  const recoveryComplete = Boolean(
+    recoveryPresentation &&
+    !recoveryPresentation.unavailable &&
+    recoveryPresentation.remainingRecovery <= 0
+  );
+  const showRecoverySummary =
+    isRecoveryEvent &&
+    ['approved', 'closed'].includes(liveEvent?.status) &&
+    !['closed', 'writtenOff', 'fullyRecovered'].includes(liveEvent?.recoveryStatus);
 
   const subcategoryOptions = useMemo(() => {
     const category = getCommercialEventCategoryMeta(form.category);
@@ -518,9 +534,9 @@ export default function CommercialEventDrawer({
             <h2 className="po-ce-drawer__title">{drawerTitle}</h2>
             {liveEvent ? (
               <div className="po-ce-drawer__status">
-                <StatusBadge statusKey={liveEvent.status} />
+                <StatusBadge statusKey={getRecoveryCommercialStatusForPresentation(liveEvent, liveEvent.orderKey)} />
                 {isRecoveryEvent ? (
-                  <RecoveryStatusBadge recoveryStatusKey={liveEvent.recoveryStatus} />
+                  <RecoveryStatusBadge recoveryStatusKey={recoveryPresentation?.presentationRecoveryStatus || liveEvent.recoveryStatus} />
                 ) : null}
               </div>
             ) : null}
@@ -595,6 +611,32 @@ export default function CommercialEventDrawer({
           </section>
         ) : null}
 
+        {showRecoverySummary && !createContraStep && !dismissStep ? (
+          <section className="po-ce-drawer__potential-banner" role="status">
+            <div>
+              <strong>{recoveryComplete ? 'Recovery complete' : 'Outstanding recovery'}</strong>
+              {!recoveryComplete ? (
+                <p className="po-ce-drawer__helper">
+                  Use certificates to recover the balance. If the business will not pursue it,
+                  Mark Not Required records an auditable reason.
+                </p>
+              ) : null}
+              {recoveryPresentation && !recoveryPresentation.unavailable ? (
+                <dl className="po-ce-drawer__linked-facts">
+                  <div><dt>Recovery value</dt><dd>£{formatMoney(recoveryPresentation.recoveryMagnitude)}</dd></div>
+                  <div><dt>Recovered to date</dt><dd>£{formatMoney(recoveryPresentation.recoveredToDate)}</dd></div>
+                  <div><dt>Outstanding</dt><dd>£{formatMoney(recoveryPresentation.remainingRecovery)}</dd></div>
+                </dl>
+              ) : null}
+            </div>
+            {!recoveryComplete ? (
+              <button type="button" className="po-list-btn-secondary" onClick={() => setDismissStep(true)}>
+                Mark Not Required
+              </button>
+            ) : null}
+          </section>
+        ) : null}
+
         {dismissStep ? (
           <section className="po-ce-drawer__workflow">
             <h3>Mark recovery not required</h3>
@@ -602,7 +644,7 @@ export default function CommercialEventDrawer({
               Confirm that this cost will not be recovered from another subcontractor.
             </p>
             <label className="po-ce-drawer__field po-ce-drawer__field--wide">
-              <span>Comment (optional)</span>
+              <span>{isRecoveryEvent ? 'Reason (required)' : 'Comment (optional)'}</span>
               <textarea
                 rows={2}
                 value={dismissComment}
@@ -1033,7 +1075,7 @@ export default function CommercialEventDrawer({
             (canSubmitCommercialEvent(liveEvent.status) ||
               canApproveCommercialEvent(liveEvent.status) ||
               canRejectCommercialEvent(liveEvent.status) ||
-              canCloseCommercialEvent(liveEvent.status)) ? (
+              (canCloseCommercialEvent(liveEvent.status) && !isRecoveryEvent)) ? (
               <DrawerSection title="Workflow" tone="workflow">
                 <label className="po-ce-drawer__field po-ce-drawer__field--wide">
                   <span>Comment (optional)</span>
@@ -1071,7 +1113,7 @@ export default function CommercialEventDrawer({
                       Reject
                     </button>
                   ) : null}
-                  {canCloseCommercialEvent(liveEvent.status) ? (
+                  {canCloseCommercialEvent(liveEvent.status) && !isRecoveryEvent ? (
                     <button
                       type="button"
                       className="po-list-btn-secondary"

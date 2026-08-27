@@ -38,6 +38,7 @@ import {
 } from './commercialEventCertificateLifecycle';
 import {
   getCommercialEventRecoveryPresentation,
+  getRecoveryCommercialStatusForPresentation,
   resolveCertificateDerivedRecoveredAmount,
 } from './commercialEventRecoveryOverlay';
 import {
@@ -305,6 +306,7 @@ describe('BL-028B.2 certification & recovery overlay', () => {
       expect(presentation.certificateDerivedStatus).toBe(
         COMMERCIAL_EVENT_RECOVERY_STATUSES.partiallyRecovered.key
       );
+      expect(getRecoveryCommercialStatusForPresentation(event, ORDER_KEY)).toBe('approved');
     });
 
     it('14. full recovery', () => {
@@ -317,6 +319,38 @@ describe('BL-028B.2 certification & recovery overlay', () => {
       expect(presentation.certificateDerivedStatus).toBe(
         COMMERCIAL_EVENT_RECOVERY_STATUSES.fullyRecovered.key
       );
+      expect(getRecoveryCommercialStatusForPresentation(event, ORDER_KEY)).toBe('closed');
+    });
+
+    it('14A. legacy generic-closed partial recovery remains actionable from approved history', () => {
+      const event = seedApprovedRecovery();
+      approveCertWithRecoveryLine(event.id, 3000);
+      const staleClosed = asServerEvent(event, { status: 'closed', recoveryStatus: 'outstanding' });
+      expect(getRecoveryCommercialStatusForPresentation(staleClosed, ORDER_KEY)).toBe('approved');
+      expect(isRecoveryEligibleForCertificate(staleClosed, ORDER_KEY)).toBe(true);
+      expect(buildPackageRecoverySummary([staleClosed], ORDER_KEY)).toMatchObject({
+        outstandingRecoveries: 4500,
+        recoveredValue: 3000,
+        openRecoveryItems: 1,
+      });
+      const next = createDraftCertificate();
+      const tooMuch = addRecoveryLineToCertificate(
+        ORDER_KEY,
+        next.id,
+        staleClosed.id,
+        4500.01,
+        baseOrder
+      );
+      expect(tooMuch.ok).toBe(false);
+      expect(tooMuch.errors.join(' ')).toMatch(/remaining recovery/i);
+      const added = addRecoveryLineToCertificate(
+        ORDER_KEY,
+        next.id,
+        staleClosed.id,
+        4500,
+        baseOrder
+      );
+      expect(added.ok).toBe(true);
     });
 
     it('15. server recoveredAmount does not double count when authority ON', () => {

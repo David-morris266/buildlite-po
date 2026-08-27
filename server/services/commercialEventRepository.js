@@ -759,6 +759,15 @@ async function rejectCommercialEvent(clientId, id, { actor = null, comment = "" 
 }
 
 async function closeCommercialEvent(clientId, id, { actor = null, comment = "" } = {}) {
+  const existing = await findCommercialEventById(clientId, id);
+  if (!existing) return { ok: false, status: 404, message: "Commercial event not found." };
+  if (isRecoveryRelationshipType(existing.relationshipType)) {
+    return {
+      ok: false,
+      status: 400,
+      message: "Recovery events cannot use generic Close. Fully recover them through approved certificates or use Mark Not Required with a reason.",
+    };
+  }
   return applyWorkflowAction(clientId, id, {
     validate: (status) =>
       canCloseCommercialEvent(status) ? null : "Event cannot be closed in its current status",
@@ -777,6 +786,35 @@ async function dismissPotentialContraCharge(
   const existing = await findCommercialEventById(clientId, id);
   if (!existing) {
     return { ok: false, status: 404, message: "Commercial event not found." };
+  }
+  if (isRecoveryRelationshipType(existing.relationshipType)) {
+    if (!String(comment || "").trim()) {
+      return { ok: false, status: 400, message: "A reason is required to mark an outstanding recovery not required." };
+    }
+    if (existing.status !== COMMERCIAL_EVENT_STATUSES.approved && existing.status !== COMMERCIAL_EVENT_STATUSES.closed) {
+      return { ok: false, status: 400, message: "Only an approved recovery can be marked not required." };
+    }
+    const db = await pool.connect();
+    try {
+      await db.query("BEGIN");
+      const { rows } = await db.query(
+        `UPDATE commercial_events
+         SET status = 'closed', recovery_status = 'writtenOff', version = version + 1,
+             updated_at = NOW(), updated_by = $1
+         WHERE id = $2 AND client_id = $3 RETURNING *`,
+        [actor, id, clientId]
+      );
+      await insertAuditEntry(db, clientId, id, {
+        action: "POTENTIAL_CONTRA_CHARGE_DISMISSED", actor, comment: String(comment).trim(),
+        priorStatus: existing.status, newStatus: COMMERCIAL_EVENT_STATUSES.closed,
+        priorRecoveryStatus: existing.recoveryStatus, newRecoveryStatus: "writtenOff",
+      });
+      await db.query("COMMIT");
+      return { ok: true, event: await findCommercialEventById(clientId, rows[0].id) };
+    } catch (err) {
+      await db.query("ROLLBACK");
+      throw err;
+    } finally { db.release(); }
   }
   if (!existing.potentialContraCharge) {
     return { ok: false, status: 400, message: "Event is not flagged for potential contra charge" };

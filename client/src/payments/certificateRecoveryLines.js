@@ -132,9 +132,18 @@ export function getMaxRecoveryDeductionThisCertificate(
 export function isRecoveryEligibleForCertificate(event, orderKey = null) {
   if (!event?.id) return false;
   if (!isRecoveryCommercialEvent(event)) return false;
-  if (event.status !== COMMERCIAL_EVENT_STATUSES.approved.key) return false;
-
   const recoveryStatus = normalizeRecoveryStatusKey(event.recoveryStatus);
+  const legacyClosedActiveRecovery =
+    event.status === COMMERCIAL_EVENT_STATUSES.closed.key &&
+    Boolean(orderKey) &&
+    resolveCertificateDerivedRecoveredAmount(event, orderKey) > 0 &&
+    ![
+      COMMERCIAL_EVENT_RECOVERY_STATUSES.closed.key,
+      COMMERCIAL_EVENT_RECOVERY_STATUSES.writtenOff.key,
+      COMMERCIAL_EVENT_RECOVERY_STATUSES.fullyRecovered.key,
+    ].includes(recoveryStatus);
+  if (event.status !== COMMERCIAL_EVENT_STATUSES.approved.key && !legacyClosedActiveRecovery) return false;
+
   if (recoveryStatus === COMMERCIAL_EVENT_RECOVERY_STATUSES.closed.key) {
     return false;
   }
@@ -184,22 +193,31 @@ export function isRecoveryLineUnchanged(persistedLine, candidateLine) {
 export function isStaleDraftRecoveryLine(liveEvent, orderKey) {
   if (!liveEvent) return true;
   if (liveEvent.packageId !== orderKey) return true;
-  return Boolean(getRecoveryDeductionEligibilityReason(liveEvent));
+  return Boolean(getRecoveryDeductionEligibilityReason(liveEvent, orderKey));
 }
 
-export function getRecoveryDeductionEligibilityReason(event) {
+export function getRecoveryDeductionEligibilityReason(event, orderKey = null) {
   if (!event?.id) return 'Commercial event not found.';
   if (!isRecoveryCommercialEvent(event)) {
     return 'Only approved recovery events (linked or direct) can be deducted on a payment certificate.';
   }
-  if (event.status !== COMMERCIAL_EVENT_STATUSES.approved.key) {
+  const recoveryStatus = normalizeRecoveryStatusKey(event.recoveryStatus);
+  const legacyClosedActiveRecovery =
+    event.status === COMMERCIAL_EVENT_STATUSES.closed.key &&
+    Boolean(orderKey) &&
+    resolveCertificateDerivedRecoveredAmount(event, orderKey) > 0 &&
+    ![
+      COMMERCIAL_EVENT_RECOVERY_STATUSES.closed.key,
+      COMMERCIAL_EVENT_RECOVERY_STATUSES.writtenOff.key,
+      COMMERCIAL_EVENT_RECOVERY_STATUSES.fullyRecovered.key,
+    ].includes(recoveryStatus);
+  if (event.status !== COMMERCIAL_EVENT_STATUSES.approved.key && !legacyClosedActiveRecovery) {
     if (event.status === COMMERCIAL_EVENT_STATUSES.closed.key) {
       return 'Closed commercial events cannot be added as recovery deductions.';
     }
     return 'Only approved recovery events can be deducted on a payment certificate.';
   }
 
-  const recoveryStatus = normalizeRecoveryStatusKey(event.recoveryStatus);
   if (recoveryStatus === COMMERCIAL_EVENT_RECOVERY_STATUSES.fullyRecovered.key) {
     return 'This recovery has already been fully recovered.';
   }
@@ -215,38 +233,36 @@ export function getRecoveryDeductionEligibilityReason(event) {
   return null;
 }
 
-export function getStaleDraftRecoveryLineMessage(line, liveEvent) {
+export function getStaleDraftRecoveryLineMessage(line, liveEvent, orderKey = null) {
   const eventNumber = formatRecoveryEventNumber(line, liveEvent);
 
   if (!liveEvent) {
     return `${eventNumber} no longer exists. This recovery was added while the event was eligible, but it can no longer be deducted. Remove it before approving this certificate.`;
   }
 
-  if (liveEvent.status === COMMERCIAL_EVENT_STATUSES.closed.key) {
-    return `${eventNumber} is now Closed. This recovery was added while the event was eligible, but it can no longer be deducted. Remove it before approving this certificate.`;
-  }
-
-  const eligibilityReason = getRecoveryDeductionEligibilityReason(liveEvent);
+  const eligibilityReason = getRecoveryDeductionEligibilityReason(liveEvent, orderKey);
   if (eligibilityReason) {
+    if (liveEvent.status === COMMERCIAL_EVENT_STATUSES.closed.key) {
+      return `${eventNumber} is now Closed. This recovery was added while the event was eligible, but it can no longer be deducted. Remove it before approving this certificate.`;
+    }
     return `${eventNumber} is no longer eligible for deduction (${eligibilityReason}) Remove it before approving this certificate.`;
   }
 
   return null;
 }
 
-export function getStaleDraftRecoveryLineApprovalMessage(line, liveEvent) {
+export function getStaleDraftRecoveryLineApprovalMessage(line, liveEvent, orderKey = null) {
   const eventNumber = formatRecoveryEventNumber(line, liveEvent);
 
   if (!liveEvent) {
     return `${eventNumber} no longer exists. Remove this recovery line before approving the certificate.`;
   }
 
-  if (liveEvent.status === COMMERCIAL_EVENT_STATUSES.closed.key) {
-    return `${eventNumber} is now Closed and can no longer be deducted. Remove this recovery line before approving the certificate.`;
-  }
-
-  const eligibilityReason = getRecoveryDeductionEligibilityReason(liveEvent);
+  const eligibilityReason = getRecoveryDeductionEligibilityReason(liveEvent, orderKey);
   if (eligibilityReason) {
+    if (liveEvent.status === COMMERCIAL_EVENT_STATUSES.closed.key) {
+      return `${eventNumber} is now Closed and can no longer be deducted. Remove this recovery line before approving the certificate.`;
+    }
     return `${eventNumber} is no longer eligible for deduction. Remove this recovery line before approving the certificate.`;
   }
 
@@ -356,7 +372,7 @@ export function buildRecoveryDeductionDisplayRow({
     maxMagnitude: roundMoney(recoveryMagnitude - previouslyRecovered),
     liveEvent,
     stale,
-    staleReason: stale ? getStaleDraftRecoveryLineMessage(line, liveEvent) : null,
+    staleReason: stale ? getStaleDraftRecoveryLineMessage(line, liveEvent, orderKey) : null,
   };
 }
 
@@ -531,7 +547,7 @@ export function validateRecoveryLinesForCertificate({
     }
 
     if (forApproval && isStaleDraftRecoveryLine(liveEvent, orderKey)) {
-      errors.push(getStaleDraftRecoveryLineApprovalMessage(line, liveEvent));
+      errors.push(getStaleDraftRecoveryLineApprovalMessage(line, liveEvent, orderKey));
       continue;
     }
 
@@ -542,7 +558,7 @@ export function validateRecoveryLinesForCertificate({
       continue;
     }
 
-    const eligibilityReason = getRecoveryDeductionEligibilityReason(liveEvent);
+    const eligibilityReason = getRecoveryDeductionEligibilityReason(liveEvent, orderKey);
     if (eligibilityReason) {
       errors.push(`${line.sourceEventNumber || liveEvent.eventNumber}: ${eligibilityReason}`);
       continue;

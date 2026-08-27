@@ -177,6 +177,17 @@ export function getCommercialEventRecoveryPresentation(event, orderKey, options 
   };
 }
 
+export function getRecoveryCommercialStatusForPresentation(event, orderKey) {
+  const presentation = getCommercialEventRecoveryPresentation(event, orderKey);
+  if (!presentation || presentation.unavailable) return event?.status;
+  if (
+    presentation.ceNativeRecoveryStatus === COMMERCIAL_EVENT_RECOVERY_STATUSES.writtenOff.key ||
+    presentation.ceNativeRecoveryStatus === COMMERCIAL_EVENT_RECOVERY_STATUSES.closed.key
+  ) return 'closed';
+  if (event?.status === 'closed' && presentation.recoveredToDate <= 0) return 'closed';
+  return presentation.isFullyRecoveredByCertificates ? 'closed' : 'approved';
+}
+
 export function shouldPersistCertificateDrivenCeState() {
   return !isCommercialEventServerAuthorityEnabled();
 }

@@ -236,12 +236,22 @@ function certifiabilityReason(event) {
   return null;
 }
 
-function recoveryEligibilityReason(event) {
+function recoveryEligibilityReason(event, lockedCertificates = []) {
   if (!event?.id) return "Commercial event not found.";
   if (!isRecoveryCommercialEvent(event)) {
     return "Only approved recovery events can be deducted on a payment certificate.";
   }
-  if (event.status !== "approved") {
+  const previouslyRecovered = previouslyCertifiedAmount(
+    lockedCertificates,
+    event.id,
+    CERTIFICATE_LINE_TYPES.recoveryDeduction
+  );
+  const legacyClosedPartialRecovery =
+    event.status === "closed" &&
+    previouslyRecovered > 0 &&
+    previouslyRecovered < Math.abs(Number(event.value) || 0) - Number.EPSILON &&
+    !["closed", "writtenOff", "fullyRecovered"].includes(event.recoveryStatus);
+  if (event.status !== "approved" && !legacyClosedPartialRecovery) {
     return "Only approved recovery events can be deducted on a payment certificate.";
   }
   const recoveryStatus = event.recoveryStatus || "notApplicable";
@@ -313,7 +323,7 @@ function validateLinesAgainstEvents({
         continue;
       }
       seenRecovery.add(line.commercialEventId);
-      const reason = recoveryEligibilityReason(event);
+      const reason = recoveryEligibilityReason(event, lockedCertificates);
       if (reason) {
         errors.push(`${event.eventNumber || event.id}: ${reason}`);
         continue;

@@ -412,6 +412,23 @@ describe('BL-021B.3.2 development register UI wiring', () => {
     expect(String(source.default)).not.toMatch(/delete/i);
   });
 
+  it('shows recovery lifecycle separately from commercial status in both registers', async () => {
+    const development = await import('../components/DevelopmentCommercialEvents.jsx?raw');
+    const packageRegister = await import('../components/PackageCommercialEvents.jsx?raw');
+    expect(String(development.default)).toMatch(/RecoveryLifecycleBadge/);
+    expect(String(packageRegister.default)).toMatch(/RecoveryLifecycleBadge/);
+    expect(String(development.default)).toMatch(/presentationRecoveryStatus/);
+    expect(String(packageRegister.default)).toMatch(/presentationRecoveryStatus/);
+  });
+
+  it('presents completed recovery facts without an abandonment action', async () => {
+    const drawer = await import('../components/CommercialEventDrawer.jsx?raw');
+    expect(String(drawer.default)).toMatch(/Recovery complete/);
+    expect(String(drawer.default)).toMatch(/Recovery value/);
+    expect(String(drawer.default)).toMatch(/Recovered to date/);
+    expect(String(drawer.default)).toMatch(/!recoveryComplete/);
+  });
+
   it('shows New Commercial Event on the development register', async () => {
     const source = await import('../components/DevelopmentCommercialEvents.jsx?raw');
     expect(String(source.default)).toMatch(/New Commercial Event/);

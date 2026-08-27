@@ -3,6 +3,7 @@ import {
   calculateCertificateCellValues,
   resolveThisCertificatePct,
   sumPreviousApprovedProgress,
+  validateProgressToDatePct,
   validateThisCertificatePct,
 } from './paymentCertificateCalculations.js';
 
@@ -31,6 +32,34 @@ describe('resolveThisCertificatePct', () => {
     [90, 10],
   ])('completes remaining progress after %s%% previously approved', (previous, expected) => {
     expect(resolveThisCertificatePct(previous, 100, { complete: true })).toBe(expected);
+  });
+});
+
+describe('validateProgressToDatePct', () => {
+  it.each([
+    [0, 100, true, 100],
+    [25, 75, true, 50],
+    [25, 25, true, 0],
+    [25, 20, false, -5],
+    [25, 100, true, 75],
+  ])('previous %s%% and cumulative %s%% returns valid=%s and movement %s%%',
+    (previous, cumulative, valid, movement) => {
+      const result = validateProgressToDatePct(previous, cumulative);
+      expect(result.valid).toBe(valid);
+      expect(result.pct).toBe(movement);
+    });
+
+  it('rejects a reduction with the approved percentage in the message', () => {
+    expect(validateProgressToDatePct(25, 20).errors).toEqual([
+      'Progress cannot be reduced below the previously certified 25%.',
+    ]);
+  });
+
+  it('reloads a cumulative draft without compounding it', () => {
+    const movement = validateProgressToDatePct(25, 75).pct;
+    const reloadedProgressToDate = 25 + movement;
+    expect(reloadedProgressToDate).toBe(75);
+    expect(validateProgressToDatePct(25, reloadedProgressToDate).pct).toBe(50);
   });
 });
 

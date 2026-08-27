@@ -347,7 +347,7 @@ describe('BL-021B.3.3 package recovery KPIs', () => {
     const labels = findTextContent(dashboard).join(' ');
 
     expect(labels).toContain('Current contract');
-    expect(labels).toContain('£40k');
+    expect(labels).toContain('£40,000');
     expect(labels).toContain('Approved events');
     expect(labels).toContain('£0');
   });

@@ -1,4 +1,4 @@
-import { formatDisplayMoney, formatSignedDisplayMoney, formatPoDate, formatPoDateTime } from './poDrawerHelpers';
+import { formatDisplayMoney, formatSignedDisplayMoney, formatExactDisplayMoney, formatSignedExactDisplayMoney, formatPoDate, formatPoDateTime } from './poDrawerHelpers';
 
 function StatusBadge({ status }) {
   return (
@@ -258,20 +258,20 @@ export function SubcontractPackageDashboard({
 
   const formatCommercialMoney = (value, signed = false) => {
     if (commercialValuesPending) return 'Loading commercial data…';
-    return signed ? formatSignedDisplayMoney(value) : formatDisplayMoney(value);
+    return signed ? formatSignedExactDisplayMoney(value) : formatExactDisplayMoney(value);
   };
 
   const formatCertifiedMoney = (value, signed = false) => {
     if (certificateValuesPending) return 'Loading certificate data…';
     if (value == null) return '—';
-    return signed ? formatSignedDisplayMoney(value) : formatDisplayMoney(value);
+    return signed ? formatSignedExactDisplayMoney(value) : formatExactDisplayMoney(value);
   };
 
   const formatRemainingMoney = (value) => {
     if (commercialValuesPending) return 'Loading commercial data…';
     if (certificateValuesPending) return 'Loading certificate data…';
     if (value == null) return '—';
-    return formatDisplayMoney(Math.max(0, value));
+    return formatExactDisplayMoney(Math.max(0, value));
   };
 
   const progressTitle =
@@ -281,7 +281,7 @@ export function SubcontractPackageDashboard({
     ? [
         {
           label: 'Original order',
-          value: formatDisplayMoney(pkg.originalOrderValue),
+          value: formatExactDisplayMoney(pkg.originalOrderValue),
           modifier: 'default',
         },
         {
@@ -308,7 +308,7 @@ export function SubcontractPackageDashboard({
     : [
         {
           label: 'Original order',
-          value: formatDisplayMoney(pkg.originalOrderValue),
+          value: formatExactDisplayMoney(pkg.originalOrderValue),
           modifier: 'default',
         },
         {

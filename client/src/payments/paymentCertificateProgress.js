@@ -13,6 +13,7 @@ import {
   roundMoney,
   roundPct,
   validateThisCertificatePct as validateThisCertificatePctCore,
+  validateProgressToDatePct,
 } from './paymentCertificateCalculations';
 import {
   getCertificate,
@@ -175,6 +176,8 @@ export function getCellProgress(certificate, cellKey, matrix = null) {
 export function validateThisCertificatePct(previousCumulativePct, rawEntry, options) {
   return validateThisCertificatePctCore(previousCumulativePct, rawEntry, options);
 }
+
+export { validateProgressToDatePct };
 
 function listPriorApprovedCertificates(orderKey, certificate, order = null) {
   const resolved = resolveCertificatesForPackage(orderKey, order);

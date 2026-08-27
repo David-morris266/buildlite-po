@@ -7,8 +7,10 @@ import { buildPackageCommercialEventSummaryForPackage, formatSignedCommercialEve
 import { buildPackageRecoverySummary } from '../commercialEvents/commercialEventPackageRecoveryKpis';
 import { getCommercialEventLinkBadges } from '../commercialEvents/commercialEventRegisterBadges';
 import { getCommercialEventCertificationBadges } from '../commercialEvents/commercialEventCertificationOverlay';
+import { getCommercialEventRecoveryPresentation, getRecoveryCommercialStatusForPresentation } from '../commercialEvents/commercialEventRecoveryOverlay';
 import {
   getCommercialEventStatusMeta,
+  getCommercialEventRecoveryStatusMeta,
   getCommercialEventTypeMeta,
 } from '../commercialEvents/commercialEventTypes';
 
@@ -19,6 +21,13 @@ function StatusBadge({ statusKey }) {
       {status.label}
     </span>
   );
+}
+
+function RecoveryLifecycleBadge({ event, orderKey }) {
+  const presentation = getCommercialEventRecoveryPresentation(event, orderKey);
+  if (!presentation || presentation.unavailable || !presentation.presentationRecoveryStatus) return null;
+  const status = getCommercialEventRecoveryStatusMeta(presentation.presentationRecoveryStatus);
+  return <span className="po-status-badge po-status-badge--muted">{status.label}</span>;
 }
 
 function LinkBadge({ badge }) {
@@ -249,7 +258,8 @@ export default function PackageCommercialEvents({
                       <td className="po-ce-register__description">{event.description}</td>
                       <td>
                         <div className="po-ce-register__status-cell">
-                          <StatusBadge statusKey={event.status} />
+                          <StatusBadge statusKey={getRecoveryCommercialStatusForPresentation(event, order?.orderKey)} />
+                          <RecoveryLifecycleBadge event={event} orderKey={order?.orderKey} />
                           {certification ? (
                             <span
                               className={`po-ce-link-badge po-ce-link-badge--${certification.modifier}`}

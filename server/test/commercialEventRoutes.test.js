@@ -726,6 +726,38 @@ if (!isDbConfigured()) {
     assert.equal(approved.body.recoveryStatus, "outstanding");
   });
 
+  test("29A. outstanding recovery rejects generic close and Mark Not Required requires a reason", async () => {
+    const active = await getActiveClient();
+    const { development, orderKeyA } = await setupDevWithTwoPackages(active);
+    const created = await createCe(baseCePayload(development, orderKeyA, {
+      eventType: "contraCharge",
+      financialTreatment: "recoverableDeduction",
+      value: -1000,
+    }));
+    await request(app).post(`/api/commercial-events/${created.body.id}/submit`).send({});
+    await request(app).post(`/api/commercial-events/${created.body.id}/approve`).send({});
+
+    const closed = await request(app).post(`/api/commercial-events/${created.body.id}/close`).send({});
+    assert.equal(closed.status, 400);
+    assert.match(closed.body.message, /cannot use generic Close/i);
+
+    const noReason = await request(app)
+      .post(`/api/commercial-events/${created.body.id}/dismiss-potential-contra`)
+      .send({});
+    assert.equal(noReason.status, 400);
+    assert.match(noReason.body.message, /reason is required/i);
+
+    const abandoned = await request(app)
+      .post(`/api/commercial-events/${created.body.id}/dismiss-potential-contra`)
+      .send({ comment: "Commercial decision not to pursue", actor: "Test QS" });
+    assert.equal(abandoned.status, 200);
+    assert.equal(abandoned.body.status, "closed");
+    assert.equal(abandoned.body.recoveryStatus, "writtenOff");
+    const audit = abandoned.body.auditHistory.at(-1);
+    assert.equal(audit.action, "POTENTIAL_CONTRA_CHARGE_DISMISSED");
+    assert.equal(audit.comment, "Commercial decision not to pursue");
+  });
+
   test("30. direct recovery stored correctly", async () => {
     const active = await getActiveClient();
     const { development, orderKeyA } = await setupDevWithTwoPackages(active);
