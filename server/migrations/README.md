@@ -26,6 +26,8 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 | `018_development_prelims_item_provenance.sql` | BL-033D.x.3 COMPLETE: nullable template provenance on `development_prelims_items` + partial unique `(development_id, source_template_id, source_template_key)`. No unique on `cost_code_key`. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 setup UAT **PASSED**. Existing D.1 manual rows stay NULL; fourth template-instantiated row has provenance. |
 | `022_cvr_snapshot_expected_liability.sql` | BL-038E: nullable snapshot-header/row CE Expected Liability plus nullable row provenance. New locks use schema v3; pre-v3 snapshots remain NULL/unavailable rather than receiving fake £0. Applied by automated tests to `buildlite_test`; not applied to `buildlite_clone` pending controlled human UAT. |
 
+| `023_variation_orders.sql` | Variation Order foundation: tenant/package-scoped headers and atomic numbering, signed multi-code lines, explicit Commercial Event provenance/allocation links, corrective relationships, and audit. Additive only; no backfill and no monetary-engine integration. |
+
 ## Before applying to production
 
 1. Take a `pg_dump` backup.

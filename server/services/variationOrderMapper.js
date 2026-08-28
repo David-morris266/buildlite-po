@@ -1,0 +1,67 @@
+function money(value) {
+  return Number(value || 0);
+}
+
+function rowToVariationOrder(row, lines = [], sources = [], audit = []) {
+  return {
+    id: row.id,
+    clientId: row.client_id,
+    developmentId: row.development_id,
+    packageId: row.package_id,
+    orderKey: row.order_key,
+    sourcePoNumber: row.source_po_number,
+    supplierId: row.supplier_id,
+    variationOrderNumber: row.variation_order_number,
+    reference: row.reference,
+    description: row.description,
+    status: row.status,
+    vatTreatment: row.vat_treatment,
+    retentionTreatment: row.retention_treatment,
+    termsOverride: row.terms_override || {},
+    approvedAt: row.approved_at,
+    approvedBy: row.approved_by,
+    issuedAt: row.issued_at,
+    issuedBy: row.issued_by,
+    documentId: row.document_id,
+    documentReference: row.document_reference,
+    supersedesId: row.supersedes_id,
+    reversesId: row.reverses_id,
+    version: row.version,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    createdBy: row.created_by,
+    updatedBy: row.updated_by,
+    lines: lines.map((line) => ({
+      id: line.id,
+      lineNumber: line.line_number,
+      costCode: line.cost_code,
+      description: line.description,
+      netValue: money(line.net_value),
+      vatTreatment: line.vat_treatment,
+      retentionTreatment: line.retention_treatment,
+    })),
+    totalNetValue: lines.reduce((sum, line) => sum + money(line.net_value), 0),
+    sourceCommercialEvents: sources.map((source) => ({
+      id: source.commercial_event_id,
+      eventNumber: source.event_number,
+      description: source.description,
+      approvedValue: money(source.value),
+      allocatedValue: source.allocated_value == null ? null : money(source.allocated_value),
+      status: source.status,
+      costCode: source.cost_code,
+    })),
+    audit: audit.map((entry) => ({
+      id: entry.id,
+      action: entry.action,
+      actor: entry.actor,
+      comment: entry.comment,
+      priorStatus: entry.prior_status,
+      newStatus: entry.new_status,
+      priorVersion: entry.prior_version,
+      newVersion: entry.new_version,
+      createdAt: entry.created_at,
+    })),
+  };
+}
+
+module.exports = { rowToVariationOrder };

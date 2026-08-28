@@ -13,6 +13,7 @@ const paymentRoutes = require("./routes/paymentRoutes");
 const developmentRoutes = require("./routes/developmentRoutes");
 const packageRoutes = require("./routes/packageRoutes");
 const commercialEventRoutes = require("./routes/commercialEventRoutes");
+const variationOrderRoutes = require("./routes/variationOrderRoutes");
 const cvrRoutes = require("./routes/cvrRoutes");
 const ledgerRoutes = require("./routes/ledgerRoutes");
 const revenueSettingsRoutes = require("./routes/revenueSettingsRoutes");
@@ -54,6 +55,7 @@ function createApp() {
   app.use("/api/cost-codes", costCodeMasterRoutes);
   app.use("/api/packages", packageRoutes);
   app.use("/api/commercial-events", commercialEventRoutes);
+  app.use("/api/variation-orders", variationOrderRoutes);
 
   if (!isProduction()) {
     const developerRoutes = require("./routes/developerRoutes");
