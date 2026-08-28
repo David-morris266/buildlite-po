@@ -13,6 +13,7 @@ let a;
 let b;
 let ceA;
 let ceB;
+let workflowCe;
 
 async function seed(label) {
   const client = (await pool.query(
@@ -20,6 +21,10 @@ async function seed(label) {
     [`VO_${label}_${randomUUID().slice(0, 8)}`, `VO Tenant ${label}`]
   )).rows[0];
   clients.push(client.id);
+  await pool.query(
+    "INSERT INTO cost_codes(client_id,code,is_active) VALUES($1,'5218',true),($1,'5219',true) ON CONFLICT DO NOTHING",
+    [client.id]
+  );
   const development = `dev-vo-${label}-${randomUUID()}`;
   await pool.query(
     "INSERT INTO developments(id,client_id,job_number,development_name,status,payload) VALUES($1,$2,$3,$4,'live','{}')",
@@ -54,7 +59,7 @@ function body(seed, overrides = {}) {
 test.before(async () => {
   if (!isDbConfigured()) return;
   await prepareIntegrationTestDatabase(pool);
-  for (const name of ["004_developments.sql", "005_packages.sql", "006_commercial_events.sql", "021_commercial_event_expected_liability.sql", "023_variation_orders.sql"]) {
+  for (const name of ["004_developments.sql", "005_packages.sql", "006_commercial_events.sql", "021_commercial_event_expected_liability.sql", "023_variation_orders.sql", "024_variation_order_normal_source.sql"]) {
     await pool.query(sql(name));
   }
   a = await seed("A");
@@ -72,6 +77,13 @@ test.before(async () => {
      (id,client_id,development_id,package_id,order_key,event_number,event_type,category,responsibility,description,value,status,supplier_id,cost_code)
      VALUES($1,$2,$3,$4,$5,$6,'variation','commercial','commercial','Approved source B',1200,'approved',$7,'5218')`,
     [ceB, b.client.id, b.development, b.pkg.id, b.pkg.order_key, `CE-${randomUUID().slice(0, 8)}`, b.pkg.supplier_id]
+  );
+  workflowCe = `ce-vo-${randomUUID()}`;
+  await pool.query(
+    `INSERT INTO commercial_events
+     (id,client_id,development_id,package_id,order_key,event_number,event_type,category,responsibility,description,value,status,supplier_id,cost_code)
+     VALUES($1,$2,$3,$4,$5,$6,'variation','commercial','commercial','Workflow scope',2750,'approved',$7,'5218')`,
+    [workflowCe, a.client.id, a.development, a.pkg.id, a.pkg.order_key, `CE-${randomUUID().slice(0, 8)}`, a.pkg.supplier_id]
   );
 });
 
@@ -133,4 +145,74 @@ test("creating a VO has zero effect on existing package and CE monetary facts", 
   await repository.createDraftVariationOrder(a.client.id, body(a, { description: "No monetary effect" }));
   assert.deepEqual((await pool.query("SELECT version,payload FROM packages WHERE id=$1", [a.pkg.id])).rows, beforePackage);
   assert.deepEqual((await pool.query("SELECT value,status,version FROM commercial_events WHERE id=$1", [ceA])).rows, beforeCe);
+});
+
+test("approved CE creates one pre-populated editable VO without rewriting its source fact", async (t) => {
+  if (!isDbConfigured()) return t.skip("TEST_DATABASE_URL not configured");
+  const before = (await pool.query("SELECT value,description,status,version FROM commercial_events WHERE id=$1", [workflowCe])).rows;
+  let result = await repository.createDraftVariationOrderFromCommercialEvent(a.client.id, workflowCe, {}, { actor: "QS" });
+  assert.equal(result.ok, true, result.message);
+  let vo = result.variationOrder;
+  assert.equal(vo.displayReference, `${a.po}/${vo.variationOrderNumber}`);
+  assert.equal(vo.description, "Workflow scope");
+  assert.equal(vo.lines[0].costCode, "5218");
+  assert.equal(vo.lines[0].netValue, 2750);
+  result = await repository.createDraftVariationOrderFromCommercialEvent(a.client.id, workflowCe);
+  assert.equal(result.status, 409);
+  assert.equal(result.existingVariationOrder.id, vo.id);
+
+  result = await repository.updateDraftVariationOrder(a.client.id, vo.id, {
+    version: vo.version,
+    reference: vo.reference,
+    description: "Reviewed formal scope",
+    lines: [{ costCode: "5218", description: "Reviewed line", netValue: 2500 }],
+  }, { actor: "QS" });
+  assert.equal(result.ok, true, result.message);
+  vo = result.variationOrder;
+  assert.equal(vo.totalNetValue, 2500);
+  assert.deepEqual((await pool.query("SELECT value,description,status,version FROM commercial_events WHERE id=$1", [workflowCe])).rows, before);
+
+  vo = (await repository.transitionVariationOrder(a.client.id, vo.id, "submit", { version: vo.version }, { actor: "QS" })).variationOrder;
+  result = await repository.approveAndIssueVariationOrder(a.client.id, vo.id, { version: vo.version, comment: "Approved formal instruction" }, { actor: "CD" });
+  assert.equal(result.ok, true, result.message);
+  vo = result.variationOrder;
+  assert.equal(vo.status, "issued");
+  assert.equal(vo.approvedBy, "CD");
+  assert.equal(vo.issuedBy, "CD");
+  assert.deepEqual(vo.audit.slice(-2).map((entry) => entry.action), ["approve", "issue"]);
+  assert.equal((await repository.updateDraftVariationOrder(a.client.id, vo.id, { version: vo.version, description: "No", lines: vo.lines })).status, 409);
+});
+
+test("ineligible CE creation and atomic approve-and-issue fail closed", async (t) => {
+  if (!isDbConfigured()) return t.skip("TEST_DATABASE_URL not configured");
+  const ineligible = `ce-vo-${randomUUID()}`;
+  await pool.query(
+    `INSERT INTO commercial_events
+     (id,client_id,development_id,package_id,order_key,event_number,event_type,category,responsibility,description,value,status,supplier_id,cost_code)
+     VALUES($1,$2,$3,$4,$5,$6,'budgetTransfer','budget','commercial','No VO',100,'approved',$7,'5218')`,
+    [ineligible, a.client.id, a.development, a.pkg.id, a.pkg.order_key, `CE-${randomUUID().slice(0, 8)}`, a.pkg.supplier_id]
+  );
+  assert.equal((await repository.createDraftVariationOrderFromCommercialEvent(a.client.id, ineligible)).status, 409);
+
+  const ce = `ce-vo-${randomUUID()}`;
+  await pool.query(
+    `INSERT INTO commercial_events
+     (id,client_id,development_id,package_id,order_key,event_number,event_type,category,responsibility,description,value,status,supplier_id,cost_code)
+     VALUES($1,$2,$3,$4,$5,$6,'credit','commercial','commercial','Atomic issue',-100,'approved',$7,'5218')`,
+    [ce, a.client.id, a.development, a.pkg.id, a.pkg.order_key, `CE-${randomUUID().slice(0, 8)}`, a.pkg.supplier_id]
+  );
+  let vo = (await repository.createDraftVariationOrderFromCommercialEvent(a.client.id, ce)).variationOrder;
+  vo = (await repository.transitionVariationOrder(a.client.id, vo.id, "submit", { version: vo.version })).variationOrder;
+  await pool.query(`CREATE OR REPLACE FUNCTION bl_vo_fail_issue() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='issue' THEN RAISE EXCEPTION 'forced issue failure'; END IF; RETURN NEW; END $$`);
+  await pool.query(`CREATE TRIGGER bl_vo_fail_issue_trigger BEFORE INSERT ON variation_order_audit FOR EACH ROW EXECUTE FUNCTION bl_vo_fail_issue()`);
+  try {
+    const failed = await repository.approveAndIssueVariationOrder(a.client.id, vo.id, { version: vo.version, comment: "Issue" });
+    assert.equal(failed.ok, false);
+    const unchanged = await repository.getVariationOrder(a.client.id, vo.id);
+    assert.equal(unchanged.status, "submitted");
+    assert.equal(unchanged.approvedAt, null);
+  } finally {
+    await pool.query("DROP TRIGGER IF EXISTS bl_vo_fail_issue_trigger ON variation_order_audit");
+    await pool.query("DROP FUNCTION IF EXISTS bl_vo_fail_issue()");
+  }
 });

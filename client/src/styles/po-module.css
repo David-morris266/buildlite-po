@@ -10741,3 +10741,42 @@
   font-size: 0.88rem;
 }
 
+.vo-formal-footer {
+  margin-top: 24px;
+  padding: 18px;
+  border-top: 2px solid var(--brand-navy, #17324d);
+}
+
+.vo-print-document {
+  display: none;
+}
+
+@media print {
+  body * { visibility: hidden !important; }
+  .vo-print-document, .vo-print-document * { visibility: visible !important; }
+  .vo-print-document {
+    display: block;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    padding: 18mm;
+    box-sizing: border-box;
+    background: #fff;
+    color: #111;
+    font: 11pt/1.45 Arial, sans-serif;
+  }
+  .vo-print-document__header { border-bottom: 3px solid #17324d; padding-bottom: 12px; margin-bottom: 20px; }
+  .vo-print-document__header h1 { margin: 8px 0; font-size: 20pt; letter-spacing: .04em; }
+  .vo-print-document__company { margin: 0; font-weight: 700; }
+  .vo-print-document__reference { margin: 0; font-size: 15pt; font-weight: 700; }
+  .vo-print-document__facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; margin: 0 0 22px; }
+  .vo-print-document__facts div { break-inside: avoid; }
+  .vo-print-document__facts dt { color: #555; font-size: 9pt; text-transform: uppercase; }
+  .vo-print-document__facts dd { margin: 2px 0 0; font-weight: 600; }
+  .vo-print-document table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  .vo-print-document th, .vo-print-document td { border: 1px solid #999; padding: 8px; text-align: left; }
+  .vo-print-document th:last-child, .vo-print-document td:last-child { text-align: right; }
+  .vo-print-document__total { display: flex; justify-content: space-between; padding: 12px; border: 2px solid #17324d; font-size: 15pt; }
+  .vo-print-document__terms { margin-top: 22px; }
+  .vo-print-document__authorisation { margin-top: 30px; padding-top: 14px; border-top: 1px solid #555; }
+}

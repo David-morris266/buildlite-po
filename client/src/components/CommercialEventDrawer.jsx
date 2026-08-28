@@ -57,6 +57,9 @@ import {
   listCommercialEventFinancialTreatmentOptions,
 } from '../commercialEvents/commercialEventFinancialTreatment';
 import CommercialEventExpectedLiabilityPanel from './CommercialEventExpectedLiabilityPanel';
+import VariationOrderDrawer from './VariationOrderDrawer';
+import { createVariationOrderFromCommercialEvent, listVariationOrders } from '../api/variationOrders';
+import { canCreateVariationOrder, formatVariationOrderReference, variationOrderStatusLabel } from '../variationOrders/variationOrderPresentation';
 import {
   getCommercialEventRecoveryPresentation,
   getRecoveryCommercialStatusForPresentation,
@@ -209,6 +212,9 @@ export default function CommercialEventDrawer({
   const [selectedRecoveryPackageId, setSelectedRecoveryPackageId] = useState('');
   const [createContraComment, setCreateContraComment] = useState('');
   const [loadingPackages, setLoadingPackages] = useState(false);
+  const [variationOrder, setVariationOrder] = useState(null);
+  const [variationOrderOpen, setVariationOrderOpen] = useState(false);
+  const [variationOrderBusy, setVariationOrderBusy] = useState(false);
 
   const isCreate = mode === 'create';
 
@@ -296,6 +302,39 @@ export default function CommercialEventDrawer({
       });
     }
   }, [open, event, isCreate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!open || !drawerEvent?.id || !drawerEvent?.packageUuid) {
+      setVariationOrder(null);
+      return undefined;
+    }
+    listVariationOrders(drawerEvent.packageUuid)
+      .then((items) => {
+        if (!cancelled) setVariationOrder((items || []).find((item) => item.status !== 'rejected' && item.sourceCommercialEvents?.some((source) => source.id === drawerEvent.id)) || null);
+      })
+      .catch(() => { if (!cancelled) setVariationOrder(null); });
+    return () => { cancelled = true; };
+  }, [open, drawerEvent?.id, drawerEvent?.packageUuid]);
+
+  async function handleCreateVariationOrder() {
+    setVariationOrderBusy(true);
+    setErrors([]);
+    try {
+      const created = await createVariationOrderFromCommercialEvent(drawerEvent.id);
+      setVariationOrder(created);
+      setVariationOrderOpen(true);
+    } catch (error) {
+      if (error.body?.existingVariationOrder) {
+        setVariationOrder(error.body.existingVariationOrder);
+        setVariationOrderOpen(true);
+      } else {
+        setErrors([error.message || 'Unable to create Variation Order']);
+      }
+    } finally {
+      setVariationOrderBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!open || createContraStep !== 'picker' || !order?.developmentId) return;
@@ -1133,6 +1172,23 @@ export default function CommercialEventDrawer({
               onApply={handleExpectedLiabilityApply}
             />
 
+            {variationOrder || canCreateVariationOrder(liveEvent) ? (
+              <DrawerSection title="Variation Order" tone="workflow">
+                {variationOrder ? (
+                  <div className="po-ce-drawer__linked-summary">
+                    <p><strong>{formatVariationOrderReference(variationOrder)}</strong> — {variationOrderStatusLabel(variationOrder.status)}</p>
+                    <p className="po-ce-drawer__helper">Formal instruction against Purchase Order {variationOrder.sourcePoNumber}.</p>
+                    <button type="button" className="po-btn-primary" onClick={() => setVariationOrderOpen(true)}>Open Variation Order</button>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="po-ce-drawer__helper">Create a formal order amendment from this approved Commercial Event. The CE fact and Current Contract calculation are not changed.</p>
+                    <button type="button" disabled={variationOrderBusy} className="po-btn-primary" onClick={handleCreateVariationOrder}>{variationOrderBusy ? 'Creating…' : 'Create Variation Order'}</button>
+                  </div>
+                )}
+              </DrawerSection>
+            ) : null}
+
             {liveEvent.auditHistory?.length ? (
               <DrawerSection title="Audit trail" defaultOpen={false} tone="audit">
                 <ol className="po-ce-drawer__audit-list">
@@ -1168,6 +1224,7 @@ export default function CommercialEventDrawer({
           </>
         ) : null}
       </div>
+      <VariationOrderDrawer open={variationOrderOpen} variationOrder={variationOrder} onClose={() => setVariationOrderOpen(false)} onChanged={setVariationOrder} />
     </PODrawerShell>
   );
 }

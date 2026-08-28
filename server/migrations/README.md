@@ -27,6 +27,7 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 | `022_cvr_snapshot_expected_liability.sql` | BL-038E: nullable snapshot-header/row CE Expected Liability plus nullable row provenance. New locks use schema v3; pre-v3 snapshots remain NULL/unavailable rather than receiving fake £0. Applied by automated tests to `buildlite_test`; not applied to `buildlite_clone` pending controlled human UAT. |
 
 | `023_variation_orders.sql` | Variation Order foundation: tenant/package-scoped headers and atomic numbering, signed multi-code lines, explicit Commercial Event provenance/allocation links, corrective relationships, and audit. Additive only; no backfill and no monetary-engine integration. |
+| `024_variation_order_normal_source.sql` | One-CE-to-one-normal-VO concurrency guard for the initial user workflow. Nullable normal-source CE identity; corrective/future allocated links remain supported separately. No monetary integration or backfill. |
 
 ## Before applying to production
 
