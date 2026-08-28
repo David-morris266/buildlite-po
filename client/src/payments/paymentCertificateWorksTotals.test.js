@@ -9,6 +9,58 @@ vi.stubGlobal('localStorage', {
   clear: () => storage.clear(),
 });
 
+describe('cumulative retention safety', () => {
+  it('matches the Clearview two-credit retention, VAT and net sequence', () => {
+    const first = buildCertificateWorksTotals(matrixCells(0), {
+      commercialLines: [{ lineType: 'valueInclusion', amountThisCertificate: -1500 }],
+      previousGrossWorks: 36000,
+      previousRetentionHeld: 1800,
+      priorRetentionRates: [0.05],
+      vatRate: 0.2,
+      retentionRate: 0.05,
+    });
+    expect(first.retention).toBe(-75);
+    expect(first.cumulativeRetentionHeld).toBe(1725);
+    expect(first.vat).toBe(-285);
+    expect(first.netPayment).toBe(-1710);
+    const second = buildCertificateWorksTotals(matrixCells(0), {
+      commercialLines: [{ lineType: 'valueInclusion', amountThisCertificate: -1500 }],
+      previousGrossWorks: 34500,
+      previousRetentionHeld: 1725,
+      priorRetentionRates: [0.05, 0.05],
+      vatRate: 0.2,
+      retentionRate: 0.05,
+    });
+    expect(second.retention).toBe(-75);
+    expect(second.cumulativeRetentionHeld).toBe(1650);
+  });
+
+  it('releases all held retention at zero and rejects cumulative gross below zero', () => {
+    const toZero = calculateRetentionMovement({ currentGross: -1000, retentionRate: 0.05, previousGross: 1000, previousRetentionHeld: 50, priorRates: [0.05] });
+    expect(toZero.retention).toBe(-50);
+    expect(toZero.cumulativeRetentionHeld).toBe(0);
+    const invalid = calculateRetentionMovement({ currentGross: -1000.01, retentionRate: 0.05, previousGross: 1000, previousRetentionHeld: 50, priorRates: [0.05] });
+    expect(invalid.valid).toBe(false);
+    expect(invalid.errors.join(' ')).toMatch(/below £0/);
+  });
+
+  it('never releases more retention than held and excludes recovery deductions', () => {
+    const capped = calculateRetentionMovement({ currentGross: -1000, retentionRate: 0.05, previousGross: 1000, previousRetentionHeld: 20, priorRates: [0.05] });
+    expect(capped.retention).toBe(-20);
+    expect(capped.cumulativeRetentionHeld).toBe(0);
+    const totals = buildCertificateWorksTotals(matrixCells(1000), {
+      commercialLines: [{ lineType: 'recoveryDeduction', amountThisCertificate: -900 }],
+      previousGrossWorks: 1000,
+      previousRetentionHeld: 50,
+      priorRetentionRates: [0.05],
+      vatRate: 0,
+      retentionRate: 0.05,
+    });
+    expect(totals.retention).toBe(50);
+    expect(totals.netPayment).toBe(50);
+  });
+});
+
 import { saveCompanySettings } from '../admin/companyStore';
 import {
   approveCommercialEvent,
@@ -29,6 +81,7 @@ import {
 import {
   buildCertificateCommercialTotals,
   buildCertificateWorksTotals,
+  calculateRetentionMovement,
   buildMatrixOnlyCertificateTotals,
   summarizeCertificateProgress,
 } from './paymentCertificateProgress';

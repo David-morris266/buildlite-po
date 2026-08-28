@@ -219,6 +219,9 @@ function lockedDocumentsFromRows(rows) {
       return {
         certificateNumber: row.certificate_number,
         status: row.status,
+        grossValue: row.gross_value,
+        retention: row.retention,
+        retentionRate: row.retention_rate,
         progress: payload.progress || {},
         commercialLines: payload.commercialLines || [],
         valuationSnapshot: payload.valuationSnapshot || null,
@@ -434,7 +437,7 @@ async function patchCertificateForPackage(clientId, packageId, certificateId, bo
         : currentPayload.commercialLines;
 
     const matrix = await loadMatrixDocument(clientId, packageId, dbClient);
-    if (parsed.progressEntries && matrix) {
+    if ((parsed.progressEntries || parsed.commercialLines) && matrix) {
       const live = buildLiveValuation({
         matrix,
         progress: nextProgress,
@@ -448,7 +451,7 @@ async function patchCertificateForPackage(clientId, packageId, certificateId, bo
         await dbClient.query("ROLLBACK");
         return { ok: false, status: 400, message: live.errors[0], errors: live.errors };
       }
-    } else if (parsed.progressEntries && !matrix) {
+    } else if ((parsed.progressEntries || parsed.commercialLines) && !matrix) {
       await dbClient.query("ROLLBACK");
       return { ok: false, status: 400, message: "A plot-stage order matrix is required." };
     }

@@ -401,6 +401,8 @@ export function buildCertificateWorksTotals(
     currentContractValue = 0,
     previousGrossWorks = 0,
     previousCommercialEventCertified = 0,
+    previousRetentionHeld = 0,
+    priorRetentionRates = [],
     vatRate = DEFAULT_VAT_RATE,
     retentionRate = DEFAULT_RETENTION_RATE,
   } = {}
@@ -425,7 +427,14 @@ export function buildCertificateWorksTotals(
     currentContractValue == null ? null : roundMoney(currentContractValue);
   const remainingContract =
     contract == null ? null : roundMoney(contract - certifiedToDate);
-  const retention = roundMoney(grossWorksThisCertificate * retentionRate);
+  const retentionResult = calculateRetentionMovement({
+    currentGross: grossWorksThisCertificate,
+    retentionRate,
+    previousGross: previousGrossWorks,
+    previousRetentionHeld,
+    priorRates: priorRetentionRates,
+  });
+  const retention = retentionResult.valid ? retentionResult.retention : 0;
   const vat = roundMoney((grossWorksThisCertificate - retention) * vatRate);
   const netPayment = roundMoney(
     grossWorksThisCertificate - retention + recoveryDeductionSigned + vat
@@ -446,11 +455,52 @@ export function buildCertificateWorksTotals(
     remainingContract,
     currentContractValue: contract,
     retention,
+    retentionErrors: retentionResult.errors,
+    cumulativeRetentionHeld: retentionResult.cumulativeRetentionHeld,
+    retentionRateChangeDeferred: retentionResult.retentionRateChangeDeferred,
     vat,
     netPayment,
     overCertified: contract != null && certifiedToDate > contract + Number.EPSILON,
     contractTotal: contract,
     contractValueUnavailable: contract == null,
+  };
+}
+
+export function calculateRetentionMovement({
+  currentGross,
+  retentionRate,
+  previousGross = 0,
+  previousRetentionHeld = 0,
+  priorRates = [],
+}) {
+  const newCumulativeGross = roundMoney(previousGross + currentGross);
+  if (newCumulativeGross < -Number.EPSILON) {
+    return {
+      valid: false,
+      errors: ['This certificate would reduce cumulative certified gross below £0.'],
+      newCumulativeGross,
+      retention: 0,
+      cumulativeRetentionHeld: Math.max(0, roundMoney(previousRetentionHeld)),
+      retentionRateChangeDeferred: false,
+    };
+  }
+
+  const held = roundMoney(Math.max(0, previousRetentionHeld));
+  const rateChanged = priorRates.some(
+    (rate) => Math.abs(Number(rate) - retentionRate) > Number.EPSILON
+  );
+  const uncappedMovement = rateChanged
+    ? roundMoney(currentGross * retentionRate)
+    : roundMoney(Math.max(0, newCumulativeGross * retentionRate) - held);
+  const retention = roundMoney(Math.max(-held, uncappedMovement));
+
+  return {
+    valid: true,
+    errors: [],
+    retention,
+    newCumulativeGross,
+    cumulativeRetentionHeld: roundMoney(Math.max(0, held + retention)),
+    retentionRateChangeDeferred: rateChanged,
   };
 }
 
@@ -594,6 +644,13 @@ export function summarizeCertificateProgress(orderKey, certificateId, order = nu
   const previousGrossWorks = calculatePreviousApprovedGrossWorks(orderKey, certificate);
   const previousCommercialEventCertified =
     calculatePreviousApprovedCommercialEventGross(orderKey, certificate);
+  const priorCertificates = listPriorApprovedCertificates(orderKey, certificate, order);
+  const previousRetentionHeld = roundMoney(
+    priorCertificates.reduce((sum, item) => sum + (Number(item.retention) || 0), 0)
+  );
+  const priorRetentionRates = priorCertificates
+    .map((item) => Number(item.retentionRate))
+    .filter(Number.isFinite);
 
   const vatRate = getOrderVatRate(order);
   const retentionRate = getOrderRetentionRate(order);
@@ -603,6 +660,8 @@ export function summarizeCertificateProgress(orderKey, certificateId, order = nu
     currentContractValue,
     previousGrossWorks,
     previousCommercialEventCertified,
+    previousRetentionHeld,
+    priorRetentionRates,
     vatRate,
     retentionRate,
   });

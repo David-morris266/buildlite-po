@@ -123,6 +123,54 @@ describe('approved snapshot and Cert 2 previous progress (BL-030C)', () => {
     expect(summary.grid.cells.some((cell) => cell.plotLabel === 'Plot 3 added')).toBe(false);
   });
 
+  it('keeps a locked pre-fix negative-credit certificate on its frozen financials', () => {
+    replaceCachedCertificates(PACKAGE_UUID, [{
+      id: 'cert-locked-credit',
+      packageUuid: PACKAGE_UUID,
+      orderKey: ORDER_KEY,
+      certificateNumber: 5,
+      status: 'locked',
+      grossValue: -1500,
+      netValue: -1710,
+      retention: -75,
+      vat: -285,
+      version: 6,
+      progress: {},
+      commercialLines: [],
+      valuationSnapshot: {
+        snapshotVersion: 1,
+        capturedAt: '2026-08-27T18:22:56.817Z',
+        totals: {
+          grossWorksThisCertificate: -1500,
+          retention: -75,
+          vat: -285,
+          netPayment: -1710,
+        },
+        cells: [{
+          cellId: buildStableCellId('plot-1', 'First Fix'),
+          plotId: 'plot-1',
+          plotLabel: 'Historic Plot 1',
+          stageKey: 'First Fix',
+          stageLabel: 'First Fix',
+          contractValue: 10000,
+          previousCumulativePct: 40,
+          thisCertificatePct: 0,
+          cumulativePct: 40,
+          previousValue: 4000,
+          thisCertificateValue: 0,
+          certifiedToDateValue: 4000,
+          remainingValue: 6000,
+        }],
+      },
+    }]);
+    const summary = summarizeCertificateProgress(ORDER_KEY, 'cert-locked-credit', order);
+    expect(summary.frozenTotals).toBe(true);
+    expect(summary.totals.grossWorksThisCertificate).toBe(-1500);
+    expect(summary.totals.retention).toBe(-75);
+    expect(summary.totals.vat).toBe(-285);
+    expect(summary.totals.netPayment).toBe(-1710);
+  });
+
   it('Cert 2 previous cumulative % follows stable identity after reorder/add/value change', () => {
     const previous = getPreviousProgressForCell(ORDER_KEY, { certificateNumber: 2 }, '1::1', {
       order,

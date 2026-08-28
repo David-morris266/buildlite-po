@@ -146,10 +146,67 @@ function sumRecoverySignedLines(commercialLines = []) {
   );
 }
 
+function cumulativeRetentionPosition(lockedCertificates = []) {
+  return (lockedCertificates || [])
+    .filter((certificate) => !certificate.status || certificate.status === "locked")
+    .reduce(
+    (position, certificate) => ({
+      previousGross: roundMoney(position.previousGross + toNumber(certificate.grossValue)),
+      previousRetentionHeld: roundMoney(
+        position.previousRetentionHeld + toNumber(certificate.retention)
+      ),
+      priorRates: [
+        ...position.priorRates,
+        Number(certificate.retentionRate),
+      ].filter(Number.isFinite),
+    }),
+    { previousGross: 0, previousRetentionHeld: 0, priorRates: [] }
+  );
+}
+
+function calculateRetentionMovement({
+  currentGross,
+  retentionRate,
+  previousGross = 0,
+  previousRetentionHeld = 0,
+  priorRates = [],
+}) {
+  const newCumulativeGross = roundMoney(previousGross + currentGross);
+  if (newCumulativeGross < -Number.EPSILON) {
+    return {
+      ok: false,
+      errors: ["This certificate would reduce cumulative certified gross below £0."],
+      newCumulativeGross,
+    };
+  }
+
+  const held = roundMoney(Math.max(0, previousRetentionHeld));
+  const rateChanged = priorRates.some(
+    (rate) => Math.abs(rate - retentionRate) > Number.EPSILON
+  );
+  const uncappedMovement = rateChanged
+    ? roundMoney(currentGross * retentionRate)
+    : roundMoney(Math.max(0, newCumulativeGross * retentionRate) - held);
+  const retention = roundMoney(Math.max(-held, uncappedMovement));
+  const cumulativeRetentionHeld = roundMoney(Math.max(0, held + retention));
+
+  return {
+    ok: true,
+    errors: [],
+    retention,
+    newCumulativeGross,
+    cumulativeRetentionHeld,
+    retentionRateChangeDeferred: rateChanged,
+  };
+}
+
 function buildCertificateWorksTotals(cells, {
   commercialLines = [],
   vatRate = DEFAULT_VAT_RATE,
   retentionRate = DEFAULT_RETENTION_RATE,
+  previousGross = 0,
+  previousRetentionHeld = 0,
+  priorRates = [],
 } = {}) {
   const matrixGrossThisCertificate = roundMoney(
     cells.reduce((sum, cell) => sum + toNumber(cell.thisCertificateValue), 0)
@@ -159,7 +216,14 @@ function buildCertificateWorksTotals(cells, {
     matrixGrossThisCertificate + commercialEventGrossThisCertificate
   );
   const recoveryDeductionSigned = sumRecoverySignedLines(commercialLines);
-  const retention = roundMoney(grossWorksThisCertificate * retentionRate);
+  const retentionResult = calculateRetentionMovement({
+    currentGross: grossWorksThisCertificate,
+    retentionRate,
+    previousGross,
+    previousRetentionHeld,
+    priorRates,
+  });
+  const retention = retentionResult.ok ? retentionResult.retention : 0;
   const vat = roundMoney((grossWorksThisCertificate - retention) * vatRate);
   const netPayment = roundMoney(
     grossWorksThisCertificate - retention + recoveryDeductionSigned + vat
@@ -175,6 +239,9 @@ function buildCertificateWorksTotals(cells, {
     netPayment,
     vatRate,
     retentionRate,
+    retentionErrors: retentionResult.errors || [],
+    cumulativeRetentionHeld: retentionResult.cumulativeRetentionHeld,
+    retentionRateChangeDeferred: retentionResult.retentionRateChangeDeferred || false,
   };
 }
 
@@ -191,6 +258,7 @@ function buildLiveValuation({
   }
 
   const rates = getPackageVatAndRetentionRates(pos);
+  const retentionPosition = cumulativeRetentionPosition(lockedCertificates);
   const cells = [];
   const progressErrors = [];
 
@@ -254,7 +322,12 @@ function buildLiveValuation({
     commercialLines,
     vatRate: rates.vatRate,
     retentionRate: rates.retentionRate,
+    ...retentionPosition,
   });
+
+  if (totals.retentionErrors.length) {
+    return { ok: false, errors: totals.retentionErrors, cells, totals };
+  }
 
   return {
     ok: true,
@@ -306,6 +379,8 @@ module.exports = {
   previousCumulativeForCell,
   sumValueInclusionLines,
   sumRecoverySignedLines,
+  cumulativeRetentionPosition,
+  calculateRetentionMovement,
   buildCertificateWorksTotals,
   buildLiveValuation,
   buildValuationSnapshot,
