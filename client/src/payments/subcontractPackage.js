@@ -39,6 +39,7 @@ export function buildPackageViewModel(order) {
 
   const originalOrderValue = commercialDisplay.originalPoCommitment;
   const approvedCommercialMovement = commercialDisplay.approvedCommercialEventMovement;
+  const issuedVariationOrderMovement = commercialDisplay.issuedVariationOrderMovement || 0;
   const pendingCommercialMovement = commercialDisplay.pendingCommercialEventValue;
   const currentContractValue = commercialDisplay.currentPackageValue;
 
@@ -80,6 +81,7 @@ export function buildPackageViewModel(order) {
     committedValue,
     originalOrderValue,
     approvedCommercialMovement,
+    issuedVariationOrderMovement,
     pendingCommercialMovement,
     currentContractValue,
     commercialEventsReady: commercialDisplay.commercialEventsReady !== false,

@@ -26,6 +26,7 @@ const CLOSE_SOURCE_KEYS = [
   "inputs",
   "purchaseOrders",
   "commercialEvents",
+  "variationOrders",
   "certificates",
   "ledger",
 ];

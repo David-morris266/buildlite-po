@@ -35,6 +35,7 @@ const {
   isEligibleContractValueEvent,
   normalizeTreatment,
 } = require("./commercialEventExpectedLiability");
+const { buildContractAuthority } = require("./variationOrderAuthority");
 
 function isRecoveryCommercialEvent(event) {
   return event?.relationshipType === RECOVERY_RELATIONSHIP_TYPE;
@@ -122,17 +123,19 @@ function addAmount(map, key, amount) {
   map.set(key, (map.get(key) || 0) + amount);
 }
 
-function buildCommitmentsByCostCode(developmentId, pos, events) {
+function buildCommitmentsByCostCode(developmentId, pos, events, variationOrders = []) {
   const totals = new Map();
   const labels = new Map();
 
   for (const order of buildSubcontractOrders(pos, developmentId)) {
     const key = normaliseCostCodeKey(order.costCode);
     if (!key) continue;
-    const movement = approvedContractValueMovement(
-      eventsForOrder(events, order.orderKey)
-    );
-    const amount = Number(order.committedValue) + movement;
+    const authority = buildContractAuthority({
+      originalOrderValue: order.committedValue,
+      events: eventsForOrder(events, order.orderKey),
+      variationOrders: variationOrders.filter((vo) => vo.orderKey === order.orderKey),
+    });
+    const amount = authority.currentContract;
     addAmount(totals, key, Number.isFinite(amount) ? amount : 0);
     if (!labels.has(key)) {
       labels.set(key, buildCostCodeLabel(key, order.costCode));
@@ -331,10 +334,11 @@ async function buildCvrCloseCandidate({
   const inputs = sources.inputs.value || [];
   const pos = sources.purchaseOrders.value || [];
   const events = sources.commercialEvents.value || [];
+  const variationOrders = sources.variationOrders?.value || [];
   const certificates = sources.certificates.value || [];
   const transactions = sources.ledger.value || [];
 
-  const commitments = buildCommitmentsByCostCode(developmentId, pos, events);
+  const commitments = buildCommitmentsByCostCode(developmentId, pos, events, variationOrders);
   const certified = buildCertifiedByCostCode(developmentId, pos, certificates);
   if (certified.incomplete.length) {
     return notReadyResult({

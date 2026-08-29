@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import VariationOrderDrawer from '../components/VariationOrderDrawer';
 import { canCreateVariationOrder, formatVariationOrderReference } from './variationOrderPresentation';
 import { createVariationOrderFromCommercialEvent } from '../api/variationOrders';
+import { COMMERCIAL_CHANGED } from '../commercial/commercialEvents';
 
 const approved = {
   id: 'ce-1', status: 'approved', eventType: 'variation',
@@ -50,6 +51,9 @@ describe('Variation Order CE workflow', () => {
     expect(container.textContent).not.toContain('Save Draft');
     expect([...container.querySelectorAll('input,textarea')].every((input) => input.disabled)).toBe(true);
     expect(container.textContent).toContain('Print / Save PDF');
+    expect(container.querySelector('.vo-lines-table__cost')).not.toBeNull();
+    expect(container.querySelector('.vo-lines-table__description')).not.toBeNull();
+    expect(container.querySelector('.vo-lines-table__value')).not.toBeNull();
     const printDocument = container.querySelector('.vo-print-document');
     expect(printDocument.textContent).toContain('VARIATION ORDER / FORMAL INSTRUCTION');
     expect(printDocument.textContent).toContain('You are instructed to carry out the following variation');
@@ -57,6 +61,17 @@ describe('Variation Order CE workflow', () => {
     expect(printDocument.textContent).toContain('amends and does not replace');
     expect(printDocument.textContent).not.toContain('Audit history');
     expect(printDocument.querySelectorAll('button,input,textarea,select')).toHaveLength(0);
+  });
+
+  it('notifies package/CVR readers after Approve & Issue', async () => {
+    const changed = vi.fn();
+    window.addEventListener(COMMERCIAL_CHANGED, changed);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: async () => JSON.stringify(vo('issued')) }));
+    await act(async () => root.render(<VariationOrderDrawer open variationOrder={vo('submitted')} onClose={() => {}} />));
+    await act(async () => container.querySelector('.po-btn-primary').click());
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(changed.mock.calls[0][0].detail).toMatchObject({ source: 'variation-order', status: 'issued' });
+    window.removeEventListener(COMMERCIAL_CHANGED, changed);
   });
 
   it.each(['draft', 'submitted'])('does not offer formal printing while %s', async (status) => {

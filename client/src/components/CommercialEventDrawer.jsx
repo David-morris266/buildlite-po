@@ -1177,7 +1177,11 @@ export default function CommercialEventDrawer({
                 {variationOrder ? (
                   <div className="po-ce-drawer__linked-summary">
                     <p><strong>{formatVariationOrderReference(variationOrder)}</strong> — {variationOrderStatusLabel(variationOrder.status)}</p>
-                    <p className="po-ce-drawer__helper">Formal instruction against Purchase Order {variationOrder.sourcePoNumber}.</p>
+                    <p className="po-ce-drawer__helper">
+                      {variationOrder.status === 'issued'
+                        ? `Formally instructed through this Variation Order against Purchase Order ${variationOrder.sourcePoNumber}. Its signed VO value now supersedes this CE as contractual authority.`
+                        : `Formal instruction against Purchase Order ${variationOrder.sourcePoNumber}. This CE remains the monetary authority until Issue.`}
+                    </p>
                     <button type="button" className="po-btn-primary" onClick={() => setVariationOrderOpen(true)}>Open Variation Order</button>
                   </div>
                 ) : (

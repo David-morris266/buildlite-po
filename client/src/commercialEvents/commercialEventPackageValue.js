@@ -88,6 +88,19 @@ export function buildPackageCommercialDisplayFields(order) {
   const developmentId = resolvePackageDevelopmentId(order);
   const orderKey = order?.orderKey || null;
   const originalPoCommitment = toNumber(order?.committedValue);
+  const authority = order?.currentContractProvenance;
+  if (authority) {
+    return {
+      originalPoCommitment: toNumber(authority.originalOrder),
+      approvedCommercialEventMovement: toNumber(authority.approvedUninstructedValue),
+      approvedUninstructedCommercialEventMovement: toNumber(authority.approvedUninstructedValue),
+      issuedVariationOrderMovement: toNumber(authority.issuedVariationOrderValue),
+      currentPackageValue: toNumber(authority.currentContract),
+      pendingCommercialEventValue: toNumber(authority.pendingEventValue),
+      commercialEventsReady: true,
+      supersededCommercialEventIds: authority.supersededCommercialEventIds || [],
+    };
+  }
 
   if (!developmentId || !orderKey) {
     return {

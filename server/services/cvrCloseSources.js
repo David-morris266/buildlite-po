@@ -19,6 +19,8 @@ const {
 } = require("./packagePoExtract");
 const { rowToDocument: certificateRowToDocument } = require("./paymentCertificateMapper");
 const { CLOSE_SOURCE_KEYS } = require("./cvrCloseConstants");
+const { listVariationOrderAuthorityFacts } = require("./variationOrderAuthority");
+const { isApprovedPo, getPoCommittedNet, getPoNumber } = require("./purchaseOrderAuthority");
 
 async function runQuery(dbClient, text, params) {
   if (dbClient) return dbClient.query(text, params);
@@ -31,22 +33,6 @@ function sourceFailure(reason, extra = {}) {
 
 function sourceOk(value, extra = {}) {
   return { loaded: true, ready: true, value, ...extra };
-}
-
-function isApprovedPo(po) {
-  if (!po || po.archived === true) return false;
-  const approval = String(po.approval?.status || "").toLowerCase();
-  const status = String(po.status || "").toLowerCase();
-  return approval === "approved" || status === "approved";
-}
-
-function getPoCommittedNet(po) {
-  const n = Number(po?.subtotal ?? po?.totals?.net ?? po?.amount ?? 0);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function getPoNumber(po) {
-  return po?.poNumber || po?.po_number || null;
 }
 
 async function resolvePoDevelopmentId(clientId, po, caches, dbClient = null) {
@@ -180,6 +166,15 @@ async function loadCvrCloseSources({ clientId, developmentId, periodId, dbClient
     sources.commercialEvents = sourceFailure("commercial-events-query-failed", {
       error: err.message,
     });
+    return { ok: false, sources };
+  }
+
+  try {
+    sources.variationOrders = sourceOk(
+      await listVariationOrderAuthorityFacts(dbClient || { query }, clientId, { developmentId })
+    );
+  } catch (err) {
+    sources.variationOrders = sourceFailure("variation-orders-query-failed", { error: err.message });
     return { ok: false, sources };
   }
 

@@ -10747,6 +10747,18 @@
   border-top: 2px solid var(--brand-navy, #17324d);
 }
 
+.vo-lines-table { table-layout: fixed; width: 100%; }
+.vo-lines-table__cost { width: 18%; }
+.vo-lines-table__description { width: auto; }
+.vo-lines-table__value { width: 12rem; }
+.vo-lines-table input { width: 100%; box-sizing: border-box; }
+.vo-lines-table td:last-child input { text-align: right; }
+
+@media (max-width: 720px) {
+  .vo-lines-table__cost { width: 24%; }
+  .vo-lines-table__value { width: 8rem; }
+}
+
 .vo-print-document {
   display: none;
 }

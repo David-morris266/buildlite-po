@@ -54,6 +54,7 @@ export function mergeServerPackagesWithPoOrders(serverPackages = [], poOrders = 
         const poNumbers = serverPkg.poNumbers || [];
         return {
           ...defaults,
+          ...serverPkg,
           packageId: serverPkg.id,
           orderKey: serverPkg.orderKey,
           developmentId: serverPkg.developmentId,
@@ -68,7 +69,9 @@ export function mergeServerPackagesWithPoOrders(serverPackages = [], poOrders = 
       }
 
       return {
+        ...defaults,
         ...poOrder,
+        ...serverPkg,
         packageId: serverPkg.id,
         orderKey: serverPkg.orderKey,
         developmentId: serverPkg.developmentId || poOrder.developmentId,

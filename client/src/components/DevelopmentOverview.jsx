@@ -98,6 +98,7 @@ export function PackageTable({
             <col className="dev-workspace__packages-col dev-workspace__packages-col--supplier" />
             <col className="dev-workspace__packages-col dev-workspace__packages-col--cost-code" />
             <col className="dev-workspace__packages-col dev-workspace__packages-col--approved" />
+            <col className="dev-workspace__packages-col dev-workspace__packages-col--approved" />
             <col className="dev-workspace__packages-col dev-workspace__packages-col--current" />
             <col className="dev-workspace__packages-col dev-workspace__packages-col--action" />
           </colgroup>
@@ -106,7 +107,10 @@ export function PackageTable({
               <th scope="col">Supplier</th>
               <th scope="col">Cost code</th>
               <th scope="col" className="dev-workspace__packages-num">
-                <abbr title="Approved commercial events">Approved</abbr>
+                <abbr title="Approved uninstructed commercial events">Uninstructed</abbr>
+              </th>
+              <th scope="col" className="dev-workspace__packages-num">
+                <abbr title="Issued Variation Orders">Issued VOs</abbr>
               </th>
               <th scope="col" className="dev-workspace__packages-num">
                 <abbr title="Current package value">Current</abbr>
@@ -161,6 +165,11 @@ export function PackageTable({
                       : formatSignedDisplayMoney(
                           commercialDisplay.approvedCommercialEventMovement
                         )}
+                  </span>
+                </td>
+                <td className="dev-workspace__packages-num">
+                  <span className="dev-workspace__packages-money">
+                    {commercialValuesPending ? 'Loading commercial data…' : formatSignedDisplayMoney(commercialDisplay.issuedVariationOrderMovement || 0)}
                   </span>
                 </td>
                 <td className="dev-workspace__packages-num">

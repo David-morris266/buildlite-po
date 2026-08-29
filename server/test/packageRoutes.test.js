@@ -495,6 +495,15 @@ if (!isDbConfigured()) {
     assert.equal(list.body[0].supplierLabel, "Mucky Plasterers");
     assert.ok(list.body[0].materialisedAt);
     assert.equal(list.body[0].committedValue, undefined);
+    assert.deepEqual(list.body[0].currentContractProvenance, {
+      originalOrder: 50000,
+      approvedUninstructedValue: 0,
+      issuedVariationOrderValue: 0,
+      pendingEventValue: 0,
+      currentContract: 50000,
+      supersededCommercialEventIds: [],
+      issuedVariationOrderCount: 0,
+    });
   });
 
   test("POST materialise-from-po creates/refreshes package membership for PO group", async () => {

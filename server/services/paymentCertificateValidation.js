@@ -221,6 +221,9 @@ function isRecoveryLine(line) {
 
 function certifiabilityReason(event) {
   if (!event?.id) return "Commercial event not found.";
+  if (event.issuedVariationOrderId) {
+    return "This commercial event is formally instructed by an Issued Variation Order and is no longer an independent certificate source.";
+  }
   if (event.status !== "approved") {
     return "Only approved commercial events can be included on a certificate.";
   }

@@ -172,11 +172,12 @@ describe('buildPackageViewModel commercial display fields', () => {
     const labels = findTextContent(dashboard).join(' ');
 
     expect(labels).toContain('Original order');
-    expect(labels).toContain('Approved events');
+    expect(labels).toContain('Uninstructed events');
+    expect(labels).toContain('Issued VOs');
     expect(labels).toContain('Current contract');
     expect(labels).toContain('Certified gross');
     expect(labels).toContain('Remaining');
-    expect(labels).toContain('+£2.5k');
+    expect(labels).toContain('+£2,500');
     expect(labels).not.toContain('Approved variations');
   });
 });

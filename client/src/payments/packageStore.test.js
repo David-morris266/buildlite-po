@@ -63,6 +63,12 @@ describe('packageIdentityMerge', () => {
         costCode: '0120',
         supplierLabel: 'Sparktastic',
         poNumbers: ['S0001'],
+        currentContractProvenance: {
+          originalOrder: 100000,
+          approvedUninstructedValue: 0,
+          issuedVariationOrderValue: 4500,
+          currentContract: 104500,
+        },
       },
     ];
     const poOrders = [
@@ -92,6 +98,7 @@ describe('packageIdentityMerge', () => {
     expect(merged[0].committedValue).toBe(100000);
     expect(merged[0].supplierLabel).toBe('Sparktastic Live');
     expect(merged[0].commercialContextReady).toBe(true);
+    expect(merged[0].currentContractProvenance).toEqual(serverPackages[0].currentContractProvenance);
   });
 
   it('marks server-only fallback rows as not commercially ready when POs are unresolved', () => {

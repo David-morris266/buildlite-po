@@ -274,8 +274,7 @@ export function SubcontractPackageDashboard({
     return formatExactDisplayMoney(Math.max(0, value));
   };
 
-  const progressTitle =
-    'Gross certified ÷ current contract. Approved commercial events increase contract value but are not yet certifiable on certificates until BL-025.2+.';
+  const progressTitle = 'Gross certified ÷ current contract.';
 
   const cards = compact
     ? [
@@ -285,9 +284,14 @@ export function SubcontractPackageDashboard({
           modifier: 'default',
         },
         {
-          label: 'Approved events',
+          label: 'Uninstructed events',
           value: formatCommercialMoney(pkg.approvedCommercialMovement, true),
           modifier: pkg.approvedCommercialMovement >= 0 ? 'default' : 'accent',
+        },
+        {
+          label: 'Issued VOs',
+          value: formatCommercialMoney(pkg.issuedVariationOrderMovement, true),
+          modifier: pkg.issuedVariationOrderMovement >= 0 ? 'default' : 'accent',
         },
         {
           label: 'Current contract',
@@ -312,9 +316,14 @@ export function SubcontractPackageDashboard({
           modifier: 'default',
         },
         {
-          label: 'Approved events',
+          label: 'Uninstructed events',
           value: formatCommercialMoney(pkg.approvedCommercialMovement, true),
           modifier: pkg.approvedCommercialMovement >= 0 ? 'default' : 'accent',
+        },
+        {
+          label: 'Issued VOs',
+          value: formatCommercialMoney(pkg.issuedVariationOrderMovement, true),
+          modifier: pkg.issuedVariationOrderMovement >= 0 ? 'default' : 'accent',
         },
         {
           label: 'Current contract',

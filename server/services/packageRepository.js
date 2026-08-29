@@ -4,6 +4,8 @@
 
 const { pool, query } = require("../db");
 const { rowToDocument } = require("./packageMapper");
+const { buildContractAuthority, listContractEventFacts, listVariationOrderAuthorityFacts } = require("./variationOrderAuthority");
+const { isApprovedPo, getPoCommittedNet } = require("./purchaseOrderAuthority");
 
 async function runQuery(dbClient, text, params) {
   if (dbClient) {
@@ -35,6 +37,43 @@ async function loadPoNumbersForPackages(clientId, packageIds = []) {
   return map;
 }
 
+async function loadOriginalOrderValues(clientId, packageIds = []) {
+  if (!packageIds.length) return new Map();
+  const { rows } = await query(
+    `SELECT ppo.package_id, po.po_number, po.payload
+       FROM package_purchase_orders ppo
+       JOIN purchase_orders po ON po.client_id=ppo.client_id AND po.po_number=ppo.po_number
+      WHERE ppo.client_id=$1 AND ppo.package_id=ANY($2::uuid[])`,
+    [clientId, packageIds]
+  );
+  const totals = new Map();
+  for (const row of rows) {
+    const po = row.payload && typeof row.payload === "object" ? { ...row.payload } : {};
+    if (!po.poNumber) po.poNumber = row.po_number;
+    if (!isApprovedPo(po)) continue;
+    totals.set(row.package_id, (totals.get(row.package_id) || 0) + getPoCommittedNet(po));
+  }
+  return totals;
+}
+
+async function enrichContractAuthority(clientId, documents, { developmentId = null } = {}) {
+  if (!documents.length) return documents;
+  const events = await listContractEventFacts({ query }, clientId, { developmentId, packageIds: documents.map((item) => item.id) });
+  const vos = await listVariationOrderAuthorityFacts({ query }, clientId, {
+    developmentId,
+    packageIds: documents.map((item) => item.id),
+  });
+  const originalOrders = await loadOriginalOrderValues(clientId, documents.map((item) => item.id));
+  return documents.map((document) => ({
+    ...document,
+    currentContractProvenance: buildContractAuthority({
+      originalOrderValue: originalOrders.get(document.id) || 0,
+      events: events.filter((event) => event.packageUuid === document.id || event.packageId === document.orderKey),
+      variationOrders: vos.filter((vo) => vo.packageId === document.id),
+    }),
+  }));
+}
+
 async function listPackagesForDevelopment(clientId, developmentId) {
   const { rows } = await query(
     `
@@ -52,7 +91,7 @@ async function listPackagesForDevelopment(clientId, developmentId) {
     rows.map((row) => row.id)
   );
 
-  return rows.map((row) => rowToDocument(row, poMap.get(row.id) || []));
+  return enrichContractAuthority(clientId, rows.map((row) => rowToDocument(row, poMap.get(row.id) || [])), { developmentId });
 }
 
 async function findPackageRowById(clientId, packageId) {
@@ -73,7 +112,7 @@ async function findPackageById(clientId, packageId) {
   if (!row) return null;
 
   const poMap = await loadPoNumbersForPackages(clientId, [row.id]);
-  return rowToDocument(row, poMap.get(row.id) || []);
+  return (await enrichContractAuthority(clientId, [rowToDocument(row, poMap.get(row.id) || [])]))[0];
 }
 
 async function findPackageByOrderKey(clientId, orderKey) {
@@ -90,7 +129,7 @@ async function findPackageByOrderKey(clientId, orderKey) {
   if (!rows[0]) return null;
 
   const poMap = await loadPoNumbersForPackages(clientId, [rows[0].id]);
-  return rowToDocument(rows[0], poMap.get(rows[0].id) || []);
+  return (await enrichContractAuthority(clientId, [rowToDocument(rows[0], poMap.get(rows[0].id) || [])]))[0];
 }
 
 async function developmentExistsForClient(clientId, developmentId) {

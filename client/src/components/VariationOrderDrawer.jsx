@@ -4,6 +4,7 @@ import { formatMoney, formatPoDateTime } from './poDrawerHelpers';
 import { approveAndIssueVariationOrder, submitVariationOrder, updateVariationOrder } from '../api/variationOrders';
 import { formatVariationOrderReference, variationOrderStatusLabel } from '../variationOrders/variationOrderPresentation';
 import { getCompanySettings } from '../admin/companyStore';
+import { notifyCommercialChanged } from '../commercial/commercialEvents';
 
 function formFrom(vo) {
   return {
@@ -31,7 +32,12 @@ export default function VariationOrderDrawer({ open, variationOrder, onClose, on
     setForm((current) => ({ ...current, lines: current.lines.map((line, lineIndex) => lineIndex === index ? { ...line, [field]: value } : line) }));
   }
 
-  function apply(next) { setVo(next); setForm(formFrom(next)); onChanged?.(next); }
+  function apply(next) {
+    setVo(next);
+    setForm(formFrom(next));
+    onChanged?.(next);
+    notifyCommercialChanged({ source: 'variation-order', variationOrderId: next.id, packageId: next.packageId, status: next.status });
+  }
 
   async function run(action) {
     setBusy(true); setError('');
@@ -66,7 +72,7 @@ export default function VariationOrderDrawer({ open, variationOrder, onClose, on
         </dl></div></section>
         <section className="po-ce-drawer__section"><div className="po-ce-drawer__section-body">
           <label className="po-ce-drawer__field po-ce-drawer__field--wide"><span>Description / scope</span><textarea rows={4} value={form.description} disabled={!draft} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
-          <div className="po-table-wrap"><table className="po-data-table"><thead><tr><th>Cost code</th><th>Description</th><th style={{ textAlign: 'right' }}>Signed net value</th></tr></thead><tbody>
+          <div className="po-table-wrap"><table className="po-data-table vo-lines-table"><colgroup><col className="vo-lines-table__cost" /><col className="vo-lines-table__description" /><col className="vo-lines-table__value" /></colgroup><thead><tr><th>Cost code</th><th>Description</th><th style={{ textAlign: 'right' }}>Signed net value</th></tr></thead><tbody>
             {form.lines.map((line, index) => <tr key={line.id || index}><td><input value={line.costCode} disabled={!draft} onChange={(e) => setLine(index, 'costCode', e.target.value)} /></td><td><input value={line.description} disabled={!draft} onChange={(e) => setLine(index, 'description', e.target.value)} /></td><td><input type="number" step="0.01" value={line.netValue} disabled={!draft} onChange={(e) => setLine(index, 'netValue', e.target.value)} /></td></tr>)}
           </tbody><tfoot><tr><th colSpan="2">Total Variation Order</th><th style={{ textAlign: 'right' }}>£{formatMoney(total)}</th></tr></tfoot></table></div>
           <p>VAT treatment: {form.vatTreatment === 'inherit' ? 'Inherited from the original order' : form.vatTreatment}. Retention and terms: {form.retentionTreatment === 'inherit' ? 'Inherited from the original order' : form.retentionTreatment}.</p>

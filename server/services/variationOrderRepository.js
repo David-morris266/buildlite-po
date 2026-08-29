@@ -8,6 +8,7 @@ const {
   RETENTION_TREATMENTS,
 } = require("./variationOrderConstants");
 const { CERTIFIABLE_EVENT_TYPES } = require("./paymentCertificateConstants");
+const { buildVariationOrderCertificationReadiness } = require("./variationOrderAuthority");
 
 function actorFrom(body = {}) {
   return body.actor || body.updatedBy || body.createdBy || null;
@@ -56,7 +57,7 @@ async function loadVariationOrder(clientId, id, db = null) {
      WHERE vo.client_id=$1 AND vo.id=$2`, [clientId, id]
   );
   if (!header.rows[0]) return null;
-  const [lines, sources, audit] = await Promise.all([
+  const [lines, sources, audit, certificates] = await Promise.all([
     run.query("SELECT * FROM variation_order_lines WHERE client_id = $1 AND variation_order_id = $2 ORDER BY line_number", [clientId, id]),
     run.query(`SELECT l.*, ce.event_number, ce.description, ce.value, ce.status, ce.cost_code
                FROM variation_order_commercial_events l
@@ -64,8 +65,31 @@ async function loadVariationOrder(clientId, id, db = null) {
                WHERE l.client_id = $1 AND l.variation_order_id = $2
                ORDER BY ce.event_number`, [clientId, id]),
     run.query("SELECT * FROM variation_order_audit WHERE client_id = $1 AND variation_order_id = $2 ORDER BY created_at, id", [clientId, id]),
+    run.query("SELECT payload FROM package_payment_certificates WHERE client_id=$1 AND package_id=$2 AND status='locked'", [clientId, header.rows[0].package_id]),
   ]);
-  return rowToVariationOrder(header.rows[0], lines.rows, sources.rows, audit.rows);
+  const sourceIds = new Set(sources.rows.map((source) => source.commercial_event_id));
+  let historicCertified = 0;
+  for (const certificate of certificates.rows) {
+    const payload = certificate.payload && typeof certificate.payload === "object" ? certificate.payload : {};
+    for (const line of payload.commercialLines || []) {
+      if (sourceIds.has(line.commercialEventId) && (!line.lineType || line.lineType === "valueInclusion")) {
+        historicCertified += Number(line.amountThisCertificate) || 0;
+      }
+    }
+  }
+  const document = rowToVariationOrder(header.rows[0], lines.rows, sources.rows, audit.rows);
+  document.certificationReadiness = buildVariationOrderCertificationReadiness({
+    status: document.status,
+    value: document.totalNetValue,
+    historicCertified,
+    lineCount: document.lines.length,
+  });
+  document.lines = document.lines.map((line) => ({
+    ...line,
+    remainingCertifiableValue: document.lines.length === 1
+      ? document.certificationReadiness.remainingCertifiableValue : null,
+  }));
+  return document;
 }
 
 async function getVariationOrder(clientId, id) {

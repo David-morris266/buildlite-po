@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildPackageCommercialEventSummary,
   buildPackageCommercialEventSummaryForPackage,
+  buildPackageCommercialDisplayFields,
   findLinkedCommercialEvents,
   resolveCurrentPackageValue,
 } from './commercialEventPackageValue';
@@ -25,6 +26,22 @@ function makeEvent(overrides = {}) {
 }
 
 describe('commercialEventPackageValue', () => {
+  it('uses server-authoritative Current Contract provenance when supplied', () => {
+    const display = buildPackageCommercialDisplayFields({
+      committedValue: 235000,
+      currentContractProvenance: {
+        originalOrder: 235000,
+        approvedUninstructedValue: 2000,
+        issuedVariationOrderValue: 4500,
+        currentContract: 241500,
+        supersededCommercialEventIds: ['ce-1'],
+      },
+    });
+    expect(display.approvedUninstructedCommercialEventMovement).toBe(2000);
+    expect(display.issuedVariationOrderMovement).toBe(4500);
+    expect(display.currentPackageValue).toBe(241500);
+    expect(display.supersededCommercialEventIds).toEqual(['ce-1']);
+  });
   it('preserves original order value for legacy packages with no events', () => {
     const summary = buildPackageCommercialEventSummary(125000, []);
     expect(summary.originalOrderValue).toBe(125000);

@@ -198,15 +198,19 @@ async function loadEventsByIds(clientId, packageId, ids, dbClient = null) {
   const { rows } = await runQuery(
     dbClient,
     `
-      SELECT *
-      FROM commercial_events
-      WHERE client_id = $1
-        AND id = ANY($2::text[])
+      SELECT ce.*, issued.id AS issued_variation_order_id
+      FROM commercial_events ce
+      LEFT JOIN variation_order_commercial_events link
+        ON link.client_id=ce.client_id AND link.commercial_event_id=ce.id
+      LEFT JOIN variation_orders issued
+        ON issued.client_id=link.client_id AND issued.id=link.variation_order_id AND issued.status='issued'
+      WHERE ce.client_id = $1
+        AND ce.id = ANY($2::text[])
     `,
     [clientId, ids]
   );
   for (const row of rows) {
-    map.set(row.id, ceRowToDocument(row, []));
+    map.set(row.id, { ...ceRowToDocument(row, []), issuedVariationOrderId: row.issued_variation_order_id || null });
   }
   return map;
 }
