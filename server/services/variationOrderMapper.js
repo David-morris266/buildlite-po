@@ -2,7 +2,7 @@ function money(value) {
   return Number(value || 0);
 }
 
-function rowToVariationOrder(row, lines = [], sources = [], audit = []) {
+function rowToVariationOrder(row, lines = [], sources = [], audit = [], allocations = []) {
   return {
     id: row.id,
     clientId: row.client_id,
@@ -54,6 +54,16 @@ function rowToVariationOrder(row, lines = [], sources = [], audit = []) {
       allocatedValue: source.allocated_value == null ? null : money(source.allocated_value),
       status: source.status,
       costCode: source.cost_code,
+    })),
+    sourceLineAllocations: allocations.map((allocation) => ({
+      variationOrderLineId: allocation.variation_order_line_id,
+      commercialEventId: allocation.commercial_event_id,
+      allocatedValue: money(allocation.allocated_value),
+      historicCertifiedValue: money(allocation.historic_certified_value),
+      allocationMethod: allocation.allocation_method,
+      historicAllocationMethod: allocation.historic_allocation_method,
+      createdAt: allocation.created_at,
+      createdBy: allocation.created_by,
     })),
     audit: audit.map((entry) => ({
       id: entry.id,

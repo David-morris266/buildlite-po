@@ -59,7 +59,7 @@ function body(seed, overrides = {}) {
 test.before(async () => {
   if (!isDbConfigured()) return;
   await prepareIntegrationTestDatabase(pool);
-  for (const name of ["004_developments.sql", "005_packages.sql", "006_commercial_events.sql", "021_commercial_event_expected_liability.sql", "023_variation_orders.sql", "024_variation_order_normal_source.sql"]) {
+  for (const name of ["004_developments.sql", "005_packages.sql", "006_commercial_events.sql", "021_commercial_event_expected_liability.sql", "023_variation_orders.sql", "024_variation_order_normal_source.sql", "025_variation_order_line_ce_allocations.sql"]) {
     await pool.query(sql(name));
   }
   a = await seed("A");
@@ -116,7 +116,8 @@ test("cross-tenant/package/development/CE relationships fail closed", async (t) 
 
 test("lifecycle, optimistic version, rejection and issued immutability", async (t) => {
   if (!isDbConfigured()) return t.skip("TEST_DATABASE_URL not configured");
-  let vo = (await repository.createDraftVariationOrder(a.client.id, body(a, { description: "Lifecycle" }))).variationOrder;
+  const lifecycleBody = { description: "Lifecycle", lines: [{ costCode: "5218", description: "Addition", netValue: 1200 }] };
+  let vo = (await repository.createDraftVariationOrder(a.client.id, body(a, lifecycleBody))).variationOrder;
   assert.equal((await repository.transitionVariationOrder(a.client.id, vo.id, "approve", { version: 1 })).status, 409);
   vo = (await repository.transitionVariationOrder(a.client.id, vo.id, "submit", { version: 1, actor: "QS" })).variationOrder;
   assert.equal((await repository.transitionVariationOrder(a.client.id, vo.id, "approve", { version: 1 })).status, 409);
@@ -127,11 +128,11 @@ test("lifecycle, optimistic version, rejection and issued immutability", async (
   assert.equal(vo.status, "issued");
   assert.match((await repository.transitionVariationOrder(a.client.id, vo.id, "submit", { version: 4 })).message, /immutable/i);
 
-  const correction = await repository.createDraftVariationOrder(a.client.id, body(a, { description: "Correction", supersedesId: vo.id }));
+  const correction = await repository.createDraftVariationOrder(a.client.id, body(a, { ...lifecycleBody, description: "Correction", supersedesId: vo.id }));
   assert.equal(correction.ok, true, correction.message);
   assert.equal((await repository.createDraftVariationOrder(a.client.id, body(a, { reversesId: correction.variationOrder.id }))).status, 409);
 
-  let rejected = (await repository.createDraftVariationOrder(a.client.id, body(a, { description: "Reject" }))).variationOrder;
+  let rejected = (await repository.createDraftVariationOrder(a.client.id, body(a, { ...lifecycleBody, description: "Reject" }))).variationOrder;
   rejected = (await repository.transitionVariationOrder(a.client.id, rejected.id, "submit", { version: 1 })).variationOrder;
   assert.equal((await repository.transitionVariationOrder(a.client.id, rejected.id, "reject", { version: 2 })).status, 400);
   rejected = (await repository.transitionVariationOrder(a.client.id, rejected.id, "reject", { version: 2, comment: "Not authorised" })).variationOrder;
@@ -215,4 +216,162 @@ test("ineligible CE creation and atomic approve-and-issue fail closed", async (t
     await pool.query("DROP TRIGGER IF EXISTS bl_vo_fail_issue_trigger ON variation_order_audit");
     await pool.query("DROP FUNCTION IF EXISTS bl_vo_fail_issue()");
   }
+});
+
+async function createApprovedCe(seedData, value, label) {
+  const id = `ce-vo-${randomUUID()}`;
+  await pool.query(
+    `INSERT INTO commercial_events
+     (id,client_id,development_id,package_id,order_key,event_number,event_type,category,responsibility,description,value,status,supplier_id,cost_code)
+     VALUES($1,$2,$3,$4,$5,$6,$7,'commercial','commercial',$8,$9,'approved',$10,'5218')`,
+    [id, seedData.client.id, seedData.development, seedData.pkg.id, seedData.pkg.order_key,
+      `CE-${randomUUID().slice(0, 8)}`, value < 0 ? "credit" : "variation", label, value, seedData.pkg.supplier_id]
+  );
+  return id;
+}
+
+async function lockHistoricCeLine(seedData, commercialEventId, amount) {
+  const next = Number((await pool.query(
+    "SELECT COALESCE(MAX(certificate_number),0)+1 AS next FROM package_payment_certificates WHERE client_id=$1 AND package_id=$2",
+    [seedData.client.id, seedData.pkg.id]
+  )).rows[0].next);
+  await pool.query(
+    `INSERT INTO package_payment_certificates
+     (client_id,package_id,development_id,order_key,certificate_number,status,payload,
+      gross_value,net_value,matrix_gross,commercial_event_gross,recovery_signed,retention,vat,retention_rate,vat_rate)
+     VALUES($1,$2,$3,$4,$5,'locked',$6,$7,$7,0,$7,0,0,0,0.05,0.2)`,
+    [seedData.client.id, seedData.pkg.id, seedData.development, seedData.pkg.order_key, next,
+      JSON.stringify({ progress: {}, commercialLines: [{ id: `historic-${randomUUID()}`, commercialEventId, lineType: "valueInclusion", amountThisCertificate: amount }] }), amount]
+  );
+}
+
+async function saveAllocations(seedData, vo, allocations) {
+  return repository.updateDraftVariationOrder(seedData.client.id, vo.id, {
+    version: vo.version,
+    reference: vo.reference,
+    description: vo.description,
+    lines: vo.lines,
+    sourceLineAllocations: allocations,
+  }, { actor: "Allocation QS" });
+}
+
+test("single-line allocation and historic certification map automatically, including legacy issued compatibility", async (t) => {
+  if (!isDbConfigured()) return t.skip("TEST_DATABASE_URL not configured");
+  const s = await seed("AUTO");
+  const ce = await createApprovedCe(s, 5000, "Single line historic");
+  await lockHistoricCeLine(s, ce, 2000);
+  let vo = (await repository.createDraftVariationOrder(s.client.id, body(s, {
+    description: "Single line VO",
+    lines: [{ costCode: "5218", description: "Formal line", netValue: 4500 }],
+    sourceCommercialEvents: [{ commercialEventId: ce, allocatedValue: 5000 }],
+  }))).variationOrder;
+  vo = (await repository.transitionVariationOrder(s.client.id, vo.id, "submit", { version: vo.version })).variationOrder;
+  vo = (await repository.approveAndIssueVariationOrder(s.client.id, vo.id, { version: vo.version, comment: "Issue" })).variationOrder;
+  assert.equal(vo.sourceLineAllocations[0].allocationMethod, "single_line_auto");
+  assert.equal(vo.sourceLineAllocations[0].allocatedValue, 4500);
+  assert.equal(vo.sourceLineAllocations[0].historicCertifiedValue, 2000);
+  assert.equal(vo.lines[0].remainingCertifiableValue, 2500);
+  await pool.query("DELETE FROM variation_order_line_commercial_event_allocations WHERE variation_order_id=$1", [vo.id]);
+  const legacy = await repository.getVariationOrder(s.client.id, vo.id);
+  assert.equal(legacy.sourceLineAllocations[0].allocationMethod, "single_line_auto");
+  assert.equal(legacy.lines[0].remainingCertifiableValue, 2500);
+});
+
+test("multi-line authority is explicit; zero historic certification is automatic zero only", async (t) => {
+  if (!isDbConfigured()) return t.skip("TEST_DATABASE_URL not configured");
+  const s = await seed("MULTI_ZERO");
+  const ce = await createApprovedCe(s, 2000, "Split authority");
+  let vo = (await repository.createDraftVariationOrder(s.client.id, body(s, {
+    description: "Split VO", lines: [
+      { costCode: "5218", description: "Line one", netValue: 1500 },
+      { costCode: "5219", description: "Line two", netValue: 500 },
+    ], sourceCommercialEvents: [{ commercialEventId: ce, allocatedValue: 2000 }],
+  }))).variationOrder;
+  assert.equal((await repository.transitionVariationOrder(s.client.id, vo.id, "submit", { version: vo.version })).status, 409);
+  let saved = await saveAllocations(s, vo, vo.lines.map((line) => ({
+    variationOrderLineId: line.id, commercialEventId: ce,
+    allocatedValue: line.netValue, historicCertifiedValue: 0,
+  })));
+  assert.equal(saved.ok, true, saved.message);
+  vo = (await repository.transitionVariationOrder(s.client.id, vo.id, "submit", { version: saved.variationOrder.version })).variationOrder;
+  vo = (await repository.approveAndIssueVariationOrder(s.client.id, vo.id, { version: vo.version, comment: "Issue" })).variationOrder;
+  assert.deepEqual(vo.lines.map((line) => line.remainingCertifiableValue), [1500, 500]);
+  assert.ok(vo.sourceLineAllocations.every((item) => item.historicCertifiedValue === 0));
+});
+
+test("multi-line partial historic certification requires explicit signed line allocation and derives remaining authority", async (t) => {
+  if (!isDbConfigured()) return t.skip("TEST_DATABASE_URL not configured");
+  const s = await seed("MULTI_HIST");
+  const ce = await createApprovedCe(s, 2000, "Certified split authority");
+  await lockHistoricCeLine(s, ce, 1000);
+  let vo = (await repository.createDraftVariationOrder(s.client.id, body(s, {
+    description: "Certified split VO", lines: [
+      { costCode: "5218", description: "First", netValue: 1200 },
+      { costCode: "5219", description: "Second", netValue: 800 },
+    ], sourceCommercialEvents: [{ commercialEventId: ce, allocatedValue: 2000 }],
+  }))).variationOrder;
+  let saved = await saveAllocations(s, vo, [
+    { variationOrderLineId: vo.lines[0].id, commercialEventId: ce, allocatedValue: 1200, historicCertifiedValue: 600 },
+    { variationOrderLineId: vo.lines[1].id, commercialEventId: ce, allocatedValue: 800, historicCertifiedValue: 0 },
+  ]);
+  assert.equal((await repository.transitionVariationOrder(s.client.id, vo.id, "submit", { version: saved.variationOrder.version })).status, 409);
+  vo = saved.variationOrder;
+  saved = await saveAllocations(s, vo, [
+    { variationOrderLineId: vo.lines[0].id, commercialEventId: ce, allocatedValue: 1200, historicCertifiedValue: 600 },
+    { variationOrderLineId: vo.lines[1].id, commercialEventId: ce, allocatedValue: 800, historicCertifiedValue: 400 },
+  ]);
+  vo = (await repository.transitionVariationOrder(s.client.id, vo.id, "submit", { version: saved.variationOrder.version })).variationOrder;
+  vo = (await repository.approveAndIssueVariationOrder(s.client.id, vo.id, { version: vo.version, comment: "Issue" })).variationOrder;
+  assert.deepEqual(vo.lines.map((line) => line.remainingCertifiableValue), [600, 400]);
+});
+
+test("multiple sources allocate explicitly without inference; sign, over-allocation and isolation fail closed", async (t) => {
+  if (!isDbConfigured()) return t.skip("TEST_DATABASE_URL not configured");
+  const s = await seed("MANY");
+  const positive = await createApprovedCe(s, 1500, "Positive source");
+  const credit = await createApprovedCe(s, -500, "Credit source");
+  let vo = (await repository.createDraftVariationOrder(s.client.id, body(s, {
+    description: "Many-to-many VO", lines: [
+      { costCode: "5218", description: "Net addition", netValue: 1200 },
+      { costCode: "5219", description: "Net credit", netValue: -200 },
+    ], sourceCommercialEvents: [{ commercialEventId: positive }, { commercialEventId: credit }],
+  }))).variationOrder;
+  let saved = await saveAllocations(s, vo, [
+    { variationOrderLineId: vo.lines[0].id, commercialEventId: positive, allocatedValue: 1500, historicCertifiedValue: 0 },
+    { variationOrderLineId: vo.lines[0].id, commercialEventId: credit, allocatedValue: -300, historicCertifiedValue: 0 },
+    { variationOrderLineId: vo.lines[1].id, commercialEventId: credit, allocatedValue: -200, historicCertifiedValue: 0 },
+  ]);
+  assert.equal(saved.ok, true, saved.message);
+  vo = (await repository.transitionVariationOrder(s.client.id, vo.id, "submit", { version: saved.variationOrder.version })).variationOrder;
+  assert.equal(vo.status, "submitted");
+
+  const invalidVo = (await repository.createDraftVariationOrder(s.client.id, body(s, {
+    description: "Invalid allocation", lines: [{ costCode: "5218", description: "Line", netValue: 1600 }],
+    sourceCommercialEvents: [{ commercialEventId: positive }],
+  }))).variationOrder;
+  const invalid = await saveAllocations(s, invalidVo, [{ variationOrderLineId: invalidVo.lines[0].id, commercialEventId: positive, allocatedValue: 1600, historicCertifiedValue: 0 }]);
+  assert.equal((await repository.transitionVariationOrder(s.client.id, invalidVo.id, "submit", { version: invalid.variationOrder.version })).status, 409);
+});
+
+test("multi-line historically over-certified authority issues with explicit capped line allocation and a source-level exception", async (t) => {
+  if (!isDbConfigured()) return t.skip("TEST_DATABASE_URL not configured");
+  const s = await seed("OVER_CERT");
+  const ce = await createApprovedCe(s, 1000, "Historic exception");
+  await lockHistoricCeLine(s, ce, 1200);
+  let vo = (await repository.createDraftVariationOrder(s.client.id, body(s, {
+    description: "Over-certified VO", lines: [
+      { costCode: "5218", description: "First authority", netValue: 600 },
+      { costCode: "5219", description: "Second authority", netValue: 400 },
+    ], sourceCommercialEvents: [{ commercialEventId: ce, allocatedValue: 1000 }],
+  }))).variationOrder;
+  const saved = await saveAllocations(s, vo, [
+    { variationOrderLineId: vo.lines[0].id, commercialEventId: ce, allocatedValue: 600, historicCertifiedValue: 600 },
+    { variationOrderLineId: vo.lines[1].id, commercialEventId: ce, allocatedValue: 400, historicCertifiedValue: 400 },
+  ]);
+  vo = (await repository.transitionVariationOrder(s.client.id, vo.id, "submit", { version: saved.variationOrder.version })).variationOrder;
+  vo = (await repository.approveAndIssueVariationOrder(s.client.id, vo.id, { version: vo.version, comment: "Issue with historic exception" })).variationOrder;
+  assert.deepEqual(vo.lines.map((line) => line.remainingCertifiableValue), [0, 0]);
+  assert.equal(vo.sourceCertificationExceptions[0].overCertifiedAmount, 200);
+  assert.equal(vo.certificationReadiness.overCertifiedAmount, 200);
+  assert.equal(vo.certificationReadiness.certifiable, false);
 });

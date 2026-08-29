@@ -13,6 +13,11 @@ function formFrom(vo) {
     vatTreatment: vo?.vatTreatment || 'inherit',
     retentionTreatment: vo?.retentionTreatment || 'inherit',
     lines: (vo?.lines || []).map((line) => ({ ...line, netValue: String(line.netValue) })),
+    sourceLineAllocations: (vo?.sourceLineAllocations || []).map((item) => ({
+      ...item,
+      allocatedValue: String(item.allocatedValue),
+      historicCertifiedValue: String(item.historicCertifiedValue || 0),
+    })),
   };
 }
 
@@ -32,6 +37,20 @@ export default function VariationOrderDrawer({ open, variationOrder, onClose, on
     setForm((current) => ({ ...current, lines: current.lines.map((line, lineIndex) => lineIndex === index ? { ...line, [field]: value } : line) }));
   }
 
+  function allocationFor(lineId, commercialEventId) {
+    return form.sourceLineAllocations.find((item) => item.variationOrderLineId === lineId && item.commercialEventId === commercialEventId) || null;
+  }
+
+  function setAllocation(lineId, commercialEventId, field, value) {
+    setForm((current) => {
+      const exists = current.sourceLineAllocations.some((item) => item.variationOrderLineId === lineId && item.commercialEventId === commercialEventId);
+      const sourceLineAllocations = exists
+        ? current.sourceLineAllocations.map((item) => item.variationOrderLineId === lineId && item.commercialEventId === commercialEventId ? { ...item, [field]: value } : item)
+        : [...current.sourceLineAllocations, { variationOrderLineId: lineId, commercialEventId, allocatedValue: '', historicCertifiedValue: '0', [field]: value }];
+      return { ...current, sourceLineAllocations };
+    });
+  }
+
   function apply(next) {
     setVo(next);
     setForm(formFrom(next));
@@ -43,9 +62,9 @@ export default function VariationOrderDrawer({ open, variationOrder, onClose, on
     setBusy(true); setError('');
     try {
       if (action === 'save') {
-        apply(await updateVariationOrder(vo.id, { ...form, version: vo.version, lines: form.lines.map((line) => ({ ...line, netValue: Number(line.netValue) })) }));
+        apply(await updateVariationOrder(vo.id, { ...form, version: vo.version, lines: form.lines.map((line) => ({ ...line, netValue: Number(line.netValue) })), sourceLineAllocations: form.sourceLineAllocations.filter((item) => item.allocatedValue !== '').map((item) => ({ ...item, allocatedValue: Number(item.allocatedValue), historicCertifiedValue: Number(item.historicCertifiedValue || 0) })) }));
       } else if (action === 'submit') {
-        const saved = await updateVariationOrder(vo.id, { ...form, version: vo.version, lines: form.lines.map((line) => ({ ...line, netValue: Number(line.netValue) })) });
+        const saved = await updateVariationOrder(vo.id, { ...form, version: vo.version, lines: form.lines.map((line) => ({ ...line, netValue: Number(line.netValue) })), sourceLineAllocations: form.sourceLineAllocations.filter((item) => item.allocatedValue !== '').map((item) => ({ ...item, allocatedValue: Number(item.allocatedValue), historicCertifiedValue: Number(item.historicCertifiedValue || 0) })) });
         apply(await submitVariationOrder(saved.id, saved.version));
       } else {
         apply(await approveAndIssueVariationOrder(vo.id, vo.version, issueComment));
@@ -76,6 +95,7 @@ export default function VariationOrderDrawer({ open, variationOrder, onClose, on
             {form.lines.map((line, index) => <tr key={line.id || index}><td><input value={line.costCode} disabled={!draft} onChange={(e) => setLine(index, 'costCode', e.target.value)} /></td><td><input value={line.description} disabled={!draft} onChange={(e) => setLine(index, 'description', e.target.value)} /></td><td><input type="number" step="0.01" value={line.netValue} disabled={!draft} onChange={(e) => setLine(index, 'netValue', e.target.value)} /></td></tr>)}
           </tbody><tfoot><tr><th colSpan="2">Total Variation Order</th><th style={{ textAlign: 'right' }}>£{formatMoney(total)}</th></tr></tfoot></table></div>
           <p>VAT treatment: {form.vatTreatment === 'inherit' ? 'Inherited from the original order' : form.vatTreatment}. Retention and terms: {form.retentionTreatment === 'inherit' ? 'Inherited from the original order' : form.retentionTreatment}.</p>
+          {vo.sourceCommercialEvents?.length && (form.lines.length > 1 || vo.sourceCommercialEvents.length > 1) ? <div className="vo-allocation-readiness vo-screen-actions"><h3>Issue authority allocation</h3><p>Allocate each source CE explicitly to VO lines. Where historic certification exists, allocate that separately; BuildLite will not infer a distribution.</p>{vo.sourceCommercialEvents.map((source) => <div key={source.id} className="vo-allocation-source"><p><strong>{source.eventNumber}</strong> · CE authority £{formatMoney(source.approvedValue)} · Historic certified £{formatMoney(source.historicCertifiedValue || 0)}</p><div className="po-table-wrap"><table className="po-data-table"><thead><tr><th>VO line</th><th>Line value</th><th>CE authority allocated</th><th>Historic certified allocated</th></tr></thead><tbody>{form.lines.map((line) => { const allocation = allocationFor(line.id, source.id); return <tr key={`${source.id}-${line.id}`}><td>{line.costCode} · {line.description}</td><td>£{formatMoney(Number(line.netValue) || 0)}</td><td><input type="number" step="0.01" disabled={!draft} value={allocation?.allocatedValue ?? ''} onChange={(event) => setAllocation(line.id, source.id, 'allocatedValue', event.target.value)} /></td><td><input type="number" step="0.01" disabled={!draft || !(Number(source.historicCertifiedValue) || 0)} value={allocation?.historicCertifiedValue ?? '0'} onChange={(event) => setAllocation(line.id, source.id, 'historicCertifiedValue', event.target.value)} /></td></tr>; })}</tbody></table></div></div>)}</div> : null}
         </div></section>
         {draft ? <div className="po-ce-drawer__actions vo-screen-actions"><button disabled={busy} className="po-list-btn-secondary" onClick={() => run('save')}>Save Draft</button><button disabled={busy} className="po-btn-primary" onClick={() => run('submit')}>Submit</button></div> : null}
         {submitted ? <section className="po-ce-drawer__workflow vo-screen-actions"><label className="po-ce-drawer__field po-ce-drawer__field--wide"><span>Issue comment</span><textarea rows={2} value={issueComment} onChange={(e) => setIssueComment(e.target.value)} /></label><button disabled={busy} className="po-btn-primary" onClick={() => run('approveIssue')}>Approve &amp; Issue</button></section> : null}

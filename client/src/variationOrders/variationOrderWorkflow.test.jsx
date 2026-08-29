@@ -88,6 +88,35 @@ describe('Variation Order CE workflow', () => {
     expect(JSON.parse(options.body).actor).toBe('Test QS');
   });
 
+  it('shows compact explicit authority and historic allocation inputs for multi-line Draft VOs', async () => {
+    const draft = {
+      ...vo('draft'),
+      sourceCommercialEvents: [{ id: 'ce-1', eventNumber: 'CE-0001', approvedValue: 2000, historicCertifiedValue: 1000 }],
+      lines: [
+        { id: 'line-1', costCode: '5218', description: 'First line', netValue: 1200 },
+        { id: 'line-2', costCode: '5219', description: 'Second line', netValue: 800 },
+      ],
+      sourceLineAllocations: [
+        { variationOrderLineId: 'line-1', commercialEventId: 'ce-1', allocatedValue: 1200, historicCertifiedValue: 600 },
+        { variationOrderLineId: 'line-2', commercialEventId: 'ce-1', allocatedValue: 800, historicCertifiedValue: 400 },
+      ],
+      totalNetValue: 2000,
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: async () => JSON.stringify(draft) }));
+    await act(async () => root.render(<VariationOrderDrawer open variationOrder={draft} onClose={() => {}} />));
+    expect(container.textContent).toContain('Issue authority allocation');
+    expect(container.textContent).toContain('CE authority £2,000');
+    expect(container.textContent).toContain('Historic certified £1,000');
+    const allocationInputs = container.querySelectorAll('.vo-allocation-source input');
+    expect(allocationInputs).toHaveLength(4);
+    await act(async () => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Save Draft').click());
+    const payload = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(payload.sourceLineAllocations).toEqual([
+      expect.objectContaining({ variationOrderLineId: 'line-1', commercialEventId: 'ce-1', allocatedValue: 1200, historicCertifiedValue: 600 }),
+      expect.objectContaining({ variationOrderLineId: 'line-2', commercialEventId: 'ce-1', allocatedValue: 800, historicCertifiedValue: 400 }),
+    ]);
+  });
+
   it('CE drawer exposes create and linked-VO actions', async () => {
     const source = await import('../components/CommercialEventDrawer.jsx?raw');
     expect(String(source.default)).toContain('Create Variation Order');
