@@ -20,6 +20,11 @@ const CERTIFICATE_LINE_TYPES = {
   recoveryDeduction: "recoveryDeduction",
 };
 
+const CERTIFICATE_SOURCE_TYPES = {
+  commercialEvent: "commercialEvent",
+  variationOrder: "variationOrder",
+};
+
 const CERTIFIABLE_EVENT_TYPES = new Set([
   "variation",
   "credit",
@@ -81,6 +86,7 @@ module.exports = {
   CERTIFICATE_STATUSES,
   OPEN_CERTIFICATE_STATUSES,
   CERTIFICATE_LINE_TYPES,
+  CERTIFICATE_SOURCE_TYPES,
   CERTIFIABLE_EVENT_TYPES,
   VALUATION_SNAPSHOT_VERSION,
   DEFAULT_VAT_RATE,

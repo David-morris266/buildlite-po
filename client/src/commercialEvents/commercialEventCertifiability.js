@@ -32,6 +32,10 @@ export const CERTIFICATE_COMMERCIAL_LINE_TYPES = {
 export function isCommercialEventCertifiable(event) {
   if (!event?.id) return false;
 
+  if (event.issuedVariationOrderId) {
+    return false;
+  }
+
   if (event.status !== COMMERCIAL_EVENT_STATUSES.approved.key) {
     return false;
   }
@@ -49,6 +53,9 @@ export function isCommercialEventCertifiable(event) {
 
 export function getCommercialEventCertifiabilityReason(event) {
   if (!event?.id) return 'Commercial event not found.';
+  if (event.issuedVariationOrderId) {
+    return 'This commercial event is formally instructed by an Issued Variation Order and is no longer an independent certificate source.';
+  }
   if (event.status !== COMMERCIAL_EVENT_STATUSES.approved.key) {
     return 'Only approved commercial events can be included on a certificate.';
   }

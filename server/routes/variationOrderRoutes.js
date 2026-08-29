@@ -19,6 +19,15 @@ router.get("/", async (req, res) => {
   } catch (error) { console.error("[VariationOrders] list error:", error); res.status(500).json({ message: "Failed to list Variation Orders." }); }
 });
 
+router.get("/certificate-readiness/:packageId", async (req, res) => {
+  try {
+    const active = await activeClient(res); if (!active) return;
+    const lines = await repository.listCertificateReadyVariationOrderLines(active.id, req.params.packageId);
+    if (!lines) return res.status(404).json({ message: "Package not found." });
+    res.json({ lines });
+  } catch (error) { console.error("[VariationOrders] certificate readiness error:", error); res.status(500).json({ message: "Failed to load Issued Variation Order certificate authority." }); }
+});
+
 router.post("/", async (req, res) => {
   try {
     const active = await activeClient(res); if (!active) return;

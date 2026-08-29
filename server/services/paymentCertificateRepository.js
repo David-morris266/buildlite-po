@@ -10,6 +10,7 @@ const {
   isValidPackageUuid,
 } = require("./paymentCertificateConstants");
 const { buildValuationSnapshot, buildLiveValuation } = require("./paymentCertificateFinancials");
+const { loadVariationOrder } = require("./variationOrderRepository");
 const {
   documentToLockedColumns,
   payloadOf,
@@ -211,6 +212,15 @@ async function loadEventsByIds(clientId, packageId, ids, dbClient = null) {
   );
   for (const row of rows) {
     map.set(row.id, { ...ceRowToDocument(row, []), issuedVariationOrderId: row.issued_variation_order_id || null });
+  }
+  return map;
+}
+
+async function loadVariationOrdersByIds(clientId, ids, dbClient = null) {
+  const map = new Map();
+  for (const id of ids) {
+    const vo = await loadVariationOrder(clientId, id, dbClient || null);
+    if (vo) map.set(id, vo);
   }
   return map;
 }
@@ -461,8 +471,10 @@ async function patchCertificateForPackage(clientId, packageId, certificateId, bo
     }
 
     if (parsed.commercialLines) {
-      const eventIds = [...new Set(nextLines.map((line) => line.commercialEventId).filter(Boolean))];
+      const eventIds = [...new Set(nextLines.filter((line) => line.sourceType !== "variationOrder").map((line) => line.commercialEventId).filter(Boolean))];
+      const variationOrderIds = [...new Set(nextLines.filter((line) => line.sourceType === "variationOrder").map((line) => line.variationOrderId).filter(Boolean))];
       const eventsById = await loadEventsByIds(clientId, packageId, eventIds, dbClient);
+      const variationOrdersById = await loadVariationOrdersByIds(clientId, variationOrderIds, dbClient);
       const lineCheck = validateLinesAgainstEvents({
         lines: nextLines,
         eventsById,
@@ -471,6 +483,7 @@ async function patchCertificateForPackage(clientId, packageId, certificateId, bo
         lockedCertificates: lockedDocumentsFromRows(
           await listCertificateRows(clientId, packageId, dbClient)
         ),
+        variationOrdersById,
       });
       if (!lineCheck.ok) {
         await dbClient.query("ROLLBACK");
@@ -630,16 +643,17 @@ async function prepareApprovalInputs(dbClient, {
   const locked = lockedDocumentsFromRows(allRows).filter(
     (item) => item.certificateNumber < row.certificate_number
   );
-  const eventIds = [
-    ...new Set(payload.commercialLines.map((line) => line.commercialEventId).filter(Boolean)),
-  ];
+  const eventIds = [...new Set(payload.commercialLines.filter((line) => line.sourceType !== "variationOrder").map((line) => line.commercialEventId).filter(Boolean))];
+  const variationOrderIds = [...new Set(payload.commercialLines.filter((line) => line.sourceType === "variationOrder").map((line) => line.variationOrderId).filter(Boolean))];
   const eventsById = await loadEventsByIds(clientId, packageId, eventIds, dbClient);
+  const variationOrdersById = await loadVariationOrdersByIds(clientId, variationOrderIds, dbClient);
   const lineCheck = validateLinesAgainstEvents({
     lines: payload.commercialLines,
     eventsById,
     packageId: pkg.id,
     orderKey: pkg.order_key,
     lockedCertificates: locked,
+    variationOrdersById,
   });
   if (!lineCheck.ok) {
     return { ok: false, status: 400, message: lineCheck.errors[0], errors: lineCheck.errors };

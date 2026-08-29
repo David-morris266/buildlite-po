@@ -25,6 +25,7 @@ export default function PaymentCertificateCommercialEvents({
   certificate,
   editable,
   onLinesChanged,
+  children,
 }) {
   const [selectedEventId, setSelectedEventId] = useState('');
   const [feedback, setFeedback] = useState(null);
@@ -164,11 +165,11 @@ export default function PaymentCertificateCommercialEvents({
     <section className="po-module-card po-cert-detail__commercial-events">
       <div className="po-cert-detail__commercial-events-header">
         <div>
-          <h3 className="po-matrix-section__title">Commercial Events</h3>
+          <h3 className="po-matrix-section__title">Commercial Adjustments</h3>
           <p className="po-cert-detail__matrix-lead">
             {editable
-              ? 'Select approved commercial events to propose for valuation on this certificate. Lines are draft-only until certificate approval in a later sprint.'
-              : 'Frozen commercial event inclusions recorded on this certificate.'}
+              ? 'Add eligible Commercial Events or Issued Variation Orders to this certificate.'
+              : 'Frozen commercial adjustments recorded on this certificate.'}
           </p>
         </div>
       </div>
@@ -184,9 +185,7 @@ export default function PaymentCertificateCommercialEvents({
 
       {editable && eligibleEvents.length ? (
         <div className="po-cert-ce-add">
-          <label className="po-cert-ce-add__label" htmlFor="po-cert-ce-select">
-            Add eligible event
-          </label>
+          <h4 className="po-cert-ce-add__label">Add Commercial Event</h4>
           <div className="po-cert-ce-add__controls">
             <select
               id="po-cert-ce-select"
@@ -254,20 +253,23 @@ export default function PaymentCertificateCommercialEvents({
         </div>
       ) : null}
 
-      {editable && !eligibleEvents.length && !rows.length ? (
+      {editable && !eligibleEvents.length ? (
         <p className="po-cert-detail__readonly-note">
           No eligible approved commercial events are available for this package.
         </p>
       ) : null}
 
+      {children}
+
       <div className="po-cert-ce-table-wrap">
+        <h4 className="po-cert-ce-add__label">Included on this certificate</h4>
         <table className="po-data-table po-cert-ce-table">
           <thead>
             <tr>
-              <th>Event No.</th>
+              <th>Reference</th>
               <th>Type</th>
               <th>Description</th>
-              <th className="po-cert-ce-table__money">Approved Value</th>
+              <th className="po-cert-ce-table__money">Approved / Issued Value</th>
               <th className="po-cert-ce-table__money">Previously Certified</th>
               <th className="po-cert-ce-table__money">This Certificate</th>
               <th className="po-cert-ce-table__money">Remaining</th>
@@ -322,7 +324,7 @@ export default function PaymentCertificateCommercialEvents({
             ) : (
               <tr>
                 <td colSpan={editable ? 8 : 7} className="po-cert-ce-table__empty">
-                  No commercial events included on this certificate yet.
+                  No commercial adjustments included on this certificate yet.
                 </td>
               </tr>
             )}

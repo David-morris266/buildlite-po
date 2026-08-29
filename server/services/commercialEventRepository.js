@@ -109,7 +109,29 @@ async function findCommercialEventById(clientId, id, { includeAudit = true } = {
   const row = await findCommercialEventRow(clientId, id);
   if (!row) return null;
   const auditRows = includeAudit ? await loadAuditRows(clientId, id) : [];
-  return rowToDocument(row, auditRows);
+  const issued = await runQuery(
+    null,
+    `SELECT id
+       FROM variation_orders
+      WHERE client_id=$1
+        AND status='issued'
+        AND (
+          normal_source_commercial_event_id=$2
+          OR EXISTS (
+            SELECT 1 FROM variation_order_commercial_events link
+             WHERE link.client_id=$1
+               AND link.variation_order_id=variation_orders.id
+               AND link.commercial_event_id=$2
+          )
+        )
+      ORDER BY issued_at DESC, id
+      LIMIT 1`,
+    [clientId, id]
+  );
+  return rowToDocument(
+    { ...row, issued_variation_order_id: issued.rows[0]?.id || null },
+    auditRows
+  );
 }
 
 async function listCommercialEvents(clientId, filters = {}, dbClient = null) {
@@ -140,10 +162,27 @@ async function listCommercialEvents(clientId, filters = {}, dbClient = null) {
   const { rows } = await runQuery(
     dbClient,
     `
-      SELECT *
-      FROM commercial_events
-      WHERE ${clauses.join(" AND ")}
-      ORDER BY created_at ASC, event_number ASC
+      SELECT ce.*,
+        (
+          SELECT vo.id
+          FROM variation_orders vo
+          WHERE vo.client_id=ce.client_id
+            AND vo.status='issued'
+            AND (
+              vo.normal_source_commercial_event_id=ce.id
+              OR EXISTS (
+                SELECT 1 FROM variation_order_commercial_events link
+                WHERE link.client_id=ce.client_id
+                  AND link.variation_order_id=vo.id
+                  AND link.commercial_event_id=ce.id
+              )
+            )
+          ORDER BY vo.issued_at DESC, vo.id
+          LIMIT 1
+        ) AS issued_variation_order_id
+      FROM commercial_events ce
+      WHERE ${clauses.map((clause) => `ce.${clause}`).join(" AND ")}
+      ORDER BY ce.created_at ASC, ce.event_number ASC
     `,
     params
   );

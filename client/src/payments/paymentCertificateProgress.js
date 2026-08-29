@@ -704,7 +704,7 @@ export function buildCommercialEventsPreview(certificate) {
   const total = sumValueInclusionCommercialLines(lines);
 
   return {
-    label: 'Commercial Events this certificate',
+    label: 'Commercial Adjustments this certificate',
     value: formatSignedCommercialLineTotal(total),
     total,
     lineCount: lines.length,
@@ -757,7 +757,7 @@ export function buildCommercialSummaryItems(totals, { matrixReady = true } = {})
 
   if (totals.commercialEventGrossThisCertificate) {
     items.push({
-      label: 'Commercial Events',
+      label: 'Commercial Adjustments',
       value: formatSignedCommercialLineTotal(totals.commercialEventGrossThisCertificate),
     });
   }

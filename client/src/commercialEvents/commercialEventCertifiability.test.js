@@ -26,6 +26,12 @@ describe('commercialEventCertifiability', () => {
     expect(isCommercialEventCertifiable(makeEvent())).toBe(true);
   });
 
+  it('excludes an approved CE superseded by an Issued Variation Order', () => {
+    const event = makeEvent({ issuedVariationOrderId: 'vo-issued-1' });
+    expect(isCommercialEventCertifiable(event)).toBe(false);
+    expect(getCommercialEventCertifiabilityReason(event)).toMatch(/Issued Variation Order/i);
+  });
+
   it('allows approved credit events', () => {
     expect(
       isCommercialEventCertifiable(

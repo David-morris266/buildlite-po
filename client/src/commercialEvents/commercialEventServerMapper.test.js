@@ -26,6 +26,7 @@ describe('commercialEventServerMapper', () => {
       vat_treatment: 'standard',
       date_raised: '2026-01-15',
       status: 'approved',
+      issued_variation_order_id: 'vo-issued-1',
       linked_event_id: null,
       recovery_status: 'notApplicable',
       certificate_status: 'notIncluded',
@@ -53,6 +54,7 @@ describe('commercialEventServerMapper', () => {
     expect(event.packageUuid).toBe(PACKAGE_UUID);
     expect(event.value).toBe(20000);
     expect(event.status).toBe('approved');
+    expect(event.issuedVariationOrderId).toBe('vo-issued-1');
     expect(event.recoveryStatus).toBe('notApplicable');
     expect(event.certificateStatus).toBe('notIncluded');
     expect(event.recoveredAmount).toBe(0);

@@ -245,6 +245,21 @@ async function lockHistoricCeLine(seedData, commercialEventId, amount) {
   );
 }
 
+async function lockHistoricVoLine(seedData, variationOrderId, variationOrderLineId, amount) {
+  const next = Number((await pool.query(
+    "SELECT COALESCE(MAX(certificate_number),0)+1 AS next FROM package_payment_certificates WHERE client_id=$1 AND package_id=$2",
+    [seedData.client.id, seedData.pkg.id]
+  )).rows[0].next);
+  await pool.query(
+    `INSERT INTO package_payment_certificates
+     (client_id,package_id,development_id,order_key,certificate_number,status,payload,
+      gross_value,net_value,matrix_gross,commercial_event_gross,recovery_signed,retention,vat,retention_rate,vat_rate)
+     VALUES($1,$2,$3,$4,$5,'locked',$6,$7,$7,0,$7,0,0,0,0.05,0.2)`,
+    [seedData.client.id, seedData.pkg.id, seedData.development, seedData.pkg.order_key, next,
+      JSON.stringify({ progress: {}, commercialLines: [{ id: `historic-vo-${randomUUID()}`, lineType: "valueInclusion", sourceType: "variationOrder", variationOrderId, variationOrderLineId, amountThisCertificate: amount }] }), amount]
+  );
+}
+
 async function saveAllocations(seedData, vo, allocations) {
   return repository.updateDraftVariationOrder(seedData.client.id, vo.id, {
     version: vo.version,
@@ -271,10 +286,16 @@ test("single-line allocation and historic certification map automatically, inclu
   assert.equal(vo.sourceLineAllocations[0].allocatedValue, 4500);
   assert.equal(vo.sourceLineAllocations[0].historicCertifiedValue, 2000);
   assert.equal(vo.lines[0].remainingCertifiableValue, 2500);
+  let readiness = await repository.listCertificateReadyVariationOrderLines(s.client.id, s.pkg.id);
+  assert.equal(readiness.find((line) => line.variationOrderLineId === vo.lines[0].id).remainingCertifiableValue, 2500);
+  await lockHistoricVoLine(s, vo.id, vo.lines[0].id, 1000);
+  readiness = await repository.listCertificateReadyVariationOrderLines(s.client.id, s.pkg.id);
+  assert.equal(readiness.find((line) => line.variationOrderLineId === vo.lines[0].id).subsequentVoCertifiedValue, 1000);
+  assert.equal(readiness.find((line) => line.variationOrderLineId === vo.lines[0].id).remainingCertifiableValue, 1500);
   await pool.query("DELETE FROM variation_order_line_commercial_event_allocations WHERE variation_order_id=$1", [vo.id]);
   const legacy = await repository.getVariationOrder(s.client.id, vo.id);
   assert.equal(legacy.sourceLineAllocations[0].allocationMethod, "single_line_auto");
-  assert.equal(legacy.lines[0].remainingCertifiableValue, 2500);
+  assert.equal(legacy.lines[0].remainingCertifiableValue, 1500);
 });
 
 test("multi-line authority is explicit; zero historic certification is automatic zero only", async (t) => {

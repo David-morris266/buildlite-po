@@ -9,6 +9,7 @@ import {
   normalizeCommercialLines,
   validateCommercialLinesForCertificate,
 } from './certificateCommercialLines';
+import { buildVariationOrderCertificateLine, validateVariationOrderDraftAmount, variationOrderLineKey } from './certificateVariationOrderLines';
 import {
   applyRecoveryDeductionsOnCertificateApproval,
   buildRecoveryDeductionLineFromEvent,
@@ -875,6 +876,32 @@ export function removeCommercialLineFromCertificate(
   return updateCertificateCommercialLines(orderKey, certificateId, (currentLines) =>
     currentLines.filter((item) => item.id !== lineId)
   , order);
+}
+
+export function addVariationOrderLineToCertificate(orderKey, certificateId, authority, rawAmount, order = null) {
+  const certificate = resolveCertificateForMutation(orderKey, certificateId, order);
+  if (!certificate || !isCertificateEditable(certificate)) return { ok: false, errors: ['Only draft certificates can add Issued Variation Order lines.'] };
+  const amountCheck = validateVariationOrderDraftAmount(authority, rawAmount);
+  if (!amountCheck.valid) return { ok: false, errors: amountCheck.errors };
+  let duplicate = false;
+  const result = updateCertificateCommercialLines(orderKey, certificateId, (currentLines) => {
+    const wanted = variationOrderLineKey(authority);
+    if (currentLines.some((line) => line.sourceType === 'variationOrder' && variationOrderLineKey(line) === wanted)) {
+      duplicate = true;
+      return currentLines;
+    }
+    return [...currentLines, buildVariationOrderCertificateLine(authority, amountCheck.amount)];
+  }, order);
+  return duplicate ? { ok: false, errors: ['This Issued Variation Order line is already included on the certificate.'] } : result;
+}
+
+export function updateVariationOrderLineAmount(orderKey, certificateId, lineId, rawAmount, order = null) {
+  const certificate = resolveCertificateForMutation(orderKey, certificateId, order);
+  const line = normalizeCommercialLines(certificate?.commercialLines).find((item) => item.id === lineId && item.sourceType === 'variationOrder');
+  if (!line) return { ok: false, errors: ['Issued Variation Order certificate line not found.'] };
+  const validation = validateVariationOrderDraftAmount({ eligible: true, remainingCertifiableValue: line.sourceRemainingAtAdd }, rawAmount);
+  if (!validation.valid) return { ok: false, errors: validation.errors };
+  return updateCertificateCommercialLines(orderKey, certificateId, (currentLines) => currentLines.map((item) => item.id === lineId ? { ...item, amountThisCertificate: validation.amount } : item), order);
 }
 
 export function addRecoveryLineToCertificate(

@@ -180,6 +180,25 @@ export function buildCommercialLineDisplayRow({
   developmentId,
   liveEvent = null,
 }) {
+  if (line.sourceType === 'variationOrder') {
+    const sourceValue = toNumber(line.sourceValue);
+    const previouslyCertified = toNumber(line.sourcePreviouslyCertified);
+    const amountThisCertificate = toNumber(line.amountThisCertificate);
+    return {
+      ...line,
+      eventNumber: line.sourceReference,
+      typeLabel: 'Issued VO',
+      approvedValue: sourceValue,
+      previouslyCertified,
+      amountThisCertificate,
+      remaining: roundMoney(sourceValue - previouslyCertified - amountThisCertificate),
+      maxAmount: toNumber(line.sourceRemainingAtAdd),
+      liveEvent: null,
+      pendingResolution: false,
+      stale: false,
+      missing: false,
+    };
+  }
   const sourceEventValue = toNumber(line.sourceEventValue);
   const previouslyCertified = calculateCommercialEventCertifiedToDate(
     orderKey,
@@ -448,11 +467,24 @@ export function validateCommercialLinesForCertificate({
   );
   const errors = [];
   const seenEventIds = new Set();
+  const seenVariationOrderLines = new Set();
   const financialDataReady = developmentId
     ? isCommercialEventFinancialDataReady(developmentId)
     : true;
 
   for (const line of valueLines) {
+    if (line.sourceType === 'variationOrder') {
+      const key = `${line.variationOrderId || ''}:${line.variationOrderLineId || ''}`;
+      if (!line.variationOrderId || !line.variationOrderLineId) errors.push('Each Issued VO certificate line requires immutable VO and VO-line identity.');
+      if (seenVariationOrderLines.has(key)) errors.push(`Variation Order line ${line.sourceReference || line.variationOrderLineId} appears more than once on this certificate.`);
+      seenVariationOrderLines.add(key);
+      const amount = toNumber(line.amountThisCertificate);
+      const remaining = toNumber(line.sourceRemainingAtAdd);
+      if (!amount) errors.push(`${line.sourceReference || 'Variation Order'}: Enter an amount for this certificate.`);
+      else if (Math.sign(amount) !== Math.sign(remaining)) errors.push(`${line.sourceReference || 'Variation Order'}: Amount must preserve the Issued VO line sign.`);
+      else if (Math.abs(amount) > Math.abs(remaining) + 0.005) errors.push(`${line.sourceReference || 'Variation Order'}: Amount exceeds the available VO-line authority.`);
+      continue;
+    }
     if (!line.commercialEventId) {
       errors.push('Each commercial line must reference a commercial event.');
       continue;

@@ -4,6 +4,7 @@
 
 const {
   CERTIFICATE_LINE_TYPES,
+  CERTIFICATE_SOURCE_TYPES,
   CERTIFIABLE_EVENT_TYPES,
   FORBIDDEN_PATCH_KEYS,
   MAX_CERTIFICATE_PAYLOAD_BYTES,
@@ -142,9 +143,17 @@ function normalizeCommercialLinesInput(rawLines, errors) {
     if (!Number.isFinite(amount) || Math.abs(amount) > MAX_MONEY_ABS) {
       errors.push(`commercialLines[${index}].amountThisCertificate must be a finite number`);
     }
+    const sourceType = line.sourceType || (line.variationOrderId ? CERTIFICATE_SOURCE_TYPES.variationOrder : CERTIFICATE_SOURCE_TYPES.commercialEvent);
+    if (!Object.values(CERTIFICATE_SOURCE_TYPES).includes(sourceType)) errors.push(`commercialLines[${index}].sourceType is invalid`);
     const commercialEventId = String(line.commercialEventId || "").trim();
-    if (!commercialEventId) {
-      errors.push(`commercialLines[${index}].commercialEventId is required`);
+    const variationOrderId = String(line.variationOrderId || "").trim();
+    const variationOrderLineId = String(line.variationOrderLineId || "").trim();
+    if (sourceType === CERTIFICATE_SOURCE_TYPES.commercialEvent && !commercialEventId) errors.push(`commercialLines[${index}].commercialEventId is required`);
+    if (sourceType === CERTIFICATE_SOURCE_TYPES.variationOrder && (!variationOrderId || !variationOrderLineId)) errors.push(`commercialLines[${index}] requires variationOrderId and variationOrderLineId`);
+    if (sourceType === CERTIFICATE_SOURCE_TYPES.variationOrder) {
+      if (!String(line.sourceReference || "").trim() || !String(line.sourcePoNumber || "").trim() || !String(line.sourceCostCode || "").trim()) errors.push(`commercialLines[${index}] requires frozen VO reference, source PO and cost code`);
+      if (!Number.isFinite(toNumber(line.sourceValue))) errors.push(`commercialLines[${index}].sourceValue must be finite`);
+      if (!Number.isFinite(toNumber(line.sourcePreviouslyCertified)) || !Number.isFinite(toNumber(line.sourceRemainingAtAdd))) errors.push(`commercialLines[${index}] requires frozen previously-certified and remaining VO authority`);
     }
     const description = String(line.description || "");
     if (description.length > MAX_LABEL_LENGTH) {
@@ -154,6 +163,9 @@ function normalizeCommercialLinesInput(rawLines, errors) {
     return {
       id: String(line.id || `cel-${index}`).slice(0, 80),
       commercialEventId,
+      sourceType,
+      variationOrderId,
+      variationOrderLineId,
       lineType,
       amountThisCertificate: Number.isFinite(amount) ? roundMoney(amount) : 0,
       sourceEventNumber: String(line.sourceEventNumber || "").slice(0, MAX_LABEL_LENGTH),
@@ -161,6 +173,12 @@ function normalizeCommercialLinesInput(rawLines, errors) {
       description: description.slice(0, MAX_LABEL_LENGTH),
       sourceEventValue:
         line.sourceEventValue == null ? null : roundMoney(toNumber(line.sourceEventValue)),
+      sourceReference: String(line.sourceReference || "").slice(0, MAX_LABEL_LENGTH),
+      sourcePoNumber: String(line.sourcePoNumber || "").slice(0, MAX_LABEL_LENGTH),
+      sourceCostCode: String(line.sourceCostCode || "").slice(0, MAX_LABEL_LENGTH),
+      sourceValue: line.sourceValue == null ? null : roundMoney(toNumber(line.sourceValue)),
+      sourcePreviouslyCertified: line.sourcePreviouslyCertified == null ? null : roundMoney(toNumber(line.sourcePreviouslyCertified)),
+      sourceRemainingAtAdd: line.sourceRemainingAtAdd == null ? null : roundMoney(toNumber(line.sourceRemainingAtAdd)),
       createdAt: line.createdAt || null,
       createdBy: line.createdBy || null,
     };
@@ -291,12 +309,53 @@ function validateLinesAgainstEvents({
   packageId,
   orderKey,
   lockedCertificates,
+  variationOrdersById = new Map(),
 }) {
   const errors = [];
   const seenValue = new Set();
   const seenRecovery = new Set();
+  const seenVariationOrderLines = new Set();
 
   for (const line of lines || []) {
+    if (line.sourceType === CERTIFICATE_SOURCE_TYPES.variationOrder) {
+      const key = `${line.variationOrderId}:${line.variationOrderLineId}`;
+      if (seenVariationOrderLines.has(key)) {
+        errors.push(`Variation Order line ${line.sourceReference || line.variationOrderLineId} appears more than once.`);
+        continue;
+      }
+      seenVariationOrderLines.add(key);
+      const vo = variationOrdersById.get(line.variationOrderId);
+      const authorityLine = vo?.lines?.find((item) => item.id === line.variationOrderLineId);
+      if (!vo || vo.status !== "issued" || !authorityLine) {
+        errors.push(`Variation Order line ${line.sourceReference || line.variationOrderLineId} is not valid Issued authority.`);
+        continue;
+      }
+      if (vo.packageId !== packageId || (vo.orderKey && vo.orderKey !== orderKey)) {
+        errors.push(`Variation Order ${vo.displayReference || vo.id} does not belong to this package.`);
+        continue;
+      }
+      const amount = roundMoney(line.amountThisCertificate);
+      const remaining = roundMoney(authorityLine.remainingCertifiableValue || 0);
+      const overCertified = (vo.sourceCertificationExceptions || []).some((exception) =>
+        (authorityLine.authorityAllocations || []).some((allocation) => allocation.commercialEventId === exception.commercialEventId)
+      );
+      if (overCertified || Math.abs(remaining) < 0.005) {
+        errors.push(`${vo.displayReference}: This Issued Variation Order line has no certifiable authority remaining.`);
+        continue;
+      }
+      if (amount === 0) errors.push(`${vo.displayReference}: Enter an amount for this certificate.`);
+      else if (Math.sign(amount) !== Math.sign(remaining)) errors.push(`${vo.displayReference}: Certificate amount must preserve the Issued VO line sign.`);
+      else if (Math.abs(amount) > Math.abs(remaining) + 0.005) errors.push(`${vo.displayReference}: Amount cannot exceed the remaining VO-line authority of £${remaining.toFixed(2)}.`);
+      if (line.sourceValue != null && roundMoney(line.sourceValue) !== roundMoney(authorityLine.netValue)) errors.push(`${vo.displayReference} has changed since this line was added. Remove the line and add it again.`);
+      const authoritativePreviously = roundMoney(Number(authorityLine.historicCertifiedValue || 0) + Number(authorityLine.subsequentVoCertifiedValue || 0));
+      if (line.sourcePreviouslyCertified != null && roundMoney(line.sourcePreviouslyCertified) !== authoritativePreviously) errors.push(`${vo.displayReference} certification authority is stale. Remove the line and add it again.`);
+      if (line.sourceRemainingAtAdd != null && roundMoney(line.sourceRemainingAtAdd) !== remaining) errors.push(`${vo.displayReference} remaining authority is stale. Remove the line and add it again.`);
+      if (line.sourceReference && line.sourceReference !== vo.displayReference) errors.push(`Variation Order source reference does not match authoritative VO ${vo.displayReference}.`);
+      if (line.sourcePoNumber && line.sourcePoNumber !== vo.sourcePoNumber) errors.push(`Variation Order source Purchase Order does not match authoritative VO ${vo.displayReference}.`);
+      if (line.sourceCostCode && line.sourceCostCode !== authorityLine.costCode) errors.push(`Variation Order source cost code does not match authoritative line ${authorityLine.costCode}.`);
+      if (line.description !== authorityLine.description) errors.push(`Variation Order frozen description does not match authoritative line ${authorityLine.description}.`);
+      continue;
+    }
     const event = eventsById.get(line.commercialEventId);
     if (!event) {
       errors.push(

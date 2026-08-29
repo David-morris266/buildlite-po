@@ -3,6 +3,7 @@ import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import PaymentCertificateValuationGrid from './PaymentCertificateValuationGrid';
 import PaymentCertificateCommercialEvents from './PaymentCertificateCommercialEvents';
 import PaymentCertificateRecoveryDeductions from './PaymentCertificateRecoveryDeductions';
+import PaymentCertificateVariationOrders from './PaymentCertificateVariationOrders';
 import { buildCertificateDetailNavigation } from '../navigation/navigationBuilders';
 import {
   approveCertificate,
@@ -374,7 +375,16 @@ export default function PaymentCertificateDetail({
         certificate={certificate}
         editable={editable}
         onLinesChanged={refresh}
-      />
+      >
+        <PaymentCertificateVariationOrders
+          packageId={pkg?.id || order?.packageUuid || order?.packageId}
+          orderKey={order.orderKey}
+          order={order}
+          certificate={certificate}
+          editable={editable}
+          onLinesChanged={refresh}
+        />
+      </PaymentCertificateCommercialEvents>
 
       <PaymentCertificateRecoveryDeductions
         orderKey={order.orderKey}
@@ -390,7 +400,7 @@ export default function PaymentCertificateDetail({
       >
         <h3 className="po-matrix-section__title">Commercial Summary</h3>
         <p className="po-cert-detail__summary-lead">
-          Combined matrix valuation and commercial event lines. Recovery deductions reduce net
+          Combined matrix valuation and commercial adjustment lines. Recovery deductions reduce net
           payment only (after retention). VAT uses the package PO rate on gross works minus
           retention (transitional — per-line VAT treatment deferred).
         </p>

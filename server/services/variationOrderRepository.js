@@ -173,6 +173,51 @@ async function listVariationOrders(clientId, { packageId } = {}) {
   return Promise.all(rows.map((row) => loadVariationOrder(clientId, row.id)));
 }
 
+async function listCertificateReadyVariationOrderLines(clientId, packageId, db = null) {
+  const run = db || { query };
+  const packageResult = await run.query(
+    "SELECT id,development_id,order_key FROM packages WHERE client_id=$1 AND id=$2",
+    [clientId, packageId]
+  );
+  if (!packageResult.rows[0]) return null;
+  const ids = await run.query(
+    "SELECT id FROM variation_orders WHERE client_id=$1 AND package_id=$2 ORDER BY created_at,id",
+    [clientId, packageId]
+  );
+  const variationOrders = [];
+  for (const item of ids.rows) variationOrders.push(await loadVariationOrder(clientId, item.id, run));
+  return variationOrders.flatMap((vo) => (vo?.lines || []).map((line) => {
+    const lineExceptions = (vo.sourceCertificationExceptions || []).filter((exception) =>
+      (line.authorityAllocations || []).some((allocation) => allocation.commercialEventId === exception.commercialEventId)
+    );
+    const overCertifiedAmount = signedMoney(lineExceptions.reduce((sum, item) => sum + Number(item.overCertifiedAmount || 0), 0));
+    const remaining = signedMoney(line.remainingCertifiableValue || 0);
+    const eligible = vo.status === "issued" && Math.abs(remaining) > 0.005 && overCertifiedAmount === 0;
+    return {
+      variationOrderId: vo.id,
+      variationOrderLineId: line.id,
+      variationOrderReference: vo.displayReference,
+      variationOrderNumber: vo.variationOrderNumber,
+      sourcePoNumber: vo.sourcePoNumber,
+      developmentId: vo.developmentId,
+      packageId: vo.packageId,
+      orderKey: vo.orderKey,
+      costCode: line.costCode,
+      description: line.description,
+      issuedLineValue: signedMoney(line.netValue),
+      historicCeCertifiedValue: signedMoney(line.historicCertifiedValue || 0),
+      subsequentVoCertifiedValue: signedMoney(line.subsequentVoCertifiedValue || 0),
+      previouslyCertifiedValue: signedMoney(Number(line.historicCertifiedValue || 0) + Number(line.subsequentVoCertifiedValue || 0)),
+      remainingCertifiableValue: remaining,
+      fullyCertified: vo.status === "issued" && Math.abs(remaining) <= 0.005,
+      overCertifiedAmount,
+      exception: lineExceptions.length ? lineExceptions.map((item) => `${item.eventNumber}: £${Number(item.overCertifiedAmount).toFixed(2)} historically certified above Issued VO authority.`).join(" ") : null,
+      eligible,
+      status: vo.status,
+    };
+  }));
+}
+
 async function validateCorrectiveRelationship(db, clientId, packageId, id, label) {
   if (!id) return null;
   const { rows } = await db.query(
@@ -634,6 +679,8 @@ module.exports = {
   actorFrom,
   getVariationOrder,
   listVariationOrders,
+  loadVariationOrder,
+  listCertificateReadyVariationOrderLines,
   createDraftVariationOrder,
   createDraftVariationOrderFromCommercialEvent,
   updateDraftVariationOrder,

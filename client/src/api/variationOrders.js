@@ -41,6 +41,10 @@ export function getVariationOrder(id) {
   return request(`/api/variation-orders/${encodeURIComponent(id)}`);
 }
 
+export function listCertificateReadyVariationOrderLines(packageId) {
+  return request(`/api/variation-orders/certificate-readiness/${encodeURIComponent(packageId)}`);
+}
+
 export function createVariationOrderFromCommercialEvent(commercialEventId) {
   return request(`/api/variation-orders/from-commercial-event/${encodeURIComponent(commercialEventId)}`, json('POST'));
 }

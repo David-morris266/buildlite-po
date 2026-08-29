@@ -109,6 +109,8 @@ export function normalizeServerCommercialEvent(document) {
     poNumber: document.poNumber ?? document.po_number ?? '',
     supplierId: document.supplierId ?? document.supplier_id ?? '',
     costCode: document.costCode ?? document.cost_code ?? '',
+    issuedVariationOrderId:
+      document.issuedVariationOrderId ?? document.issued_variation_order_id ?? null,
     version: document.version,
     createdAt: document.createdAt ?? document.created_at ?? null,
     updatedAt: document.updatedAt ?? document.updated_at ?? null,

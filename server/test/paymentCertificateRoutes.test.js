@@ -20,6 +20,9 @@ const MIGRATION_005 = path.join(__dirname, "..", "migrations", "005_packages.sql
 const MIGRATION_006 = path.join(__dirname, "..", "migrations", "006_commercial_events.sql");
 const MIGRATION_007 = path.join(__dirname, "..", "migrations", "007_package_order_matrices.sql");
 const MIGRATION_008 = path.join(__dirname, "..", "migrations", "008_package_payment_certificates.sql");
+const MIGRATION_023 = path.join(__dirname, "..", "migrations", "023_variation_orders.sql");
+const MIGRATION_024 = path.join(__dirname, "..", "migrations", "024_variation_order_normal_source.sql");
+const MIGRATION_025 = path.join(__dirname, "..", "migrations", "025_variation_order_line_ce_allocations.sql");
 
 const testDevelopmentIds = [];
 const testPoNumbers = [];
@@ -49,10 +52,14 @@ async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_006, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_007, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_008, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_023, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_024, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_025, "utf8"));
 }
 
 async function cleanup() {
   if (testPackageIds.length) {
+    await pool.query("DELETE FROM variation_orders WHERE package_id = ANY($1::uuid[])", [testPackageIds]);
     await pool.query(
       "DELETE FROM package_payment_certificates WHERE package_id = ANY($1::uuid[])",
       [testPackageIds]
@@ -1116,5 +1123,81 @@ if (!isDbConfigured()) {
     const cannotDelete = await deleteCert(seeded.pkg.id, third.body.id);
     assert.equal(cannotDelete.status, 409);
     assert.equal(submittedDelete.status, 200);
+  });
+
+  test("25. Issued VO line persists as frozen valueInclusion and revalidates through Submit and Approve", async () => {
+    const active = await getActiveClient();
+    const setup = await setupPackage(active, { vatRateDefault: 0.2, retentionRateDefault: 0.05 });
+    await pool.query("INSERT INTO cost_codes(client_id,code,is_active) VALUES($1,'5218',true) ON CONFLICT (client_id,code) DO UPDATE SET is_active=true", [active.id]);
+    assert.ok([200, 201].includes((await putMatrix(setup.pkg.id, validMatrixBody())).status));
+    const ce = await createApprovedCe(setup.development, setup.orderKey, { value: 4500, description: "Formal VO certificate test" });
+    let response = await request(app).post(`/api/variation-orders/from-commercial-event/${ce.id}`).send({ actor: "QS" });
+    assert.equal(response.status, 201, response.body.message);
+    let vo = response.body;
+    response = await request(app).post(`/api/variation-orders/${vo.id}/submit`).send({ version: vo.version, actor: "QS" });
+    assert.equal(response.status, 200, response.body.message);
+    vo = response.body;
+    response = await request(app).post(`/api/variation-orders/${vo.id}/approve-and-issue`).send({ version: vo.version, actor: "CD", comment: "Issued" });
+    assert.equal(response.status, 200, response.body.message);
+    vo = response.body;
+
+    const ready = await request(app).get(`/api/variation-orders/certificate-readiness/${setup.pkg.id}`);
+    assert.equal(ready.status, 200);
+    const authority = ready.body.lines.find((line) => line.variationOrderId === vo.id);
+    assert.equal(authority.eligible, true);
+    assert.equal(authority.remainingCertifiableValue, 4500);
+
+    let certificate = (await createCert(setup.pkg.id)).body;
+    const eventRead = await request(app).get(`/api/commercial-events?packageId=${setup.pkg.id}`);
+    assert.equal(eventRead.status, 200);
+    assert.equal(eventRead.body.find((event) => event.id === ce.id).issuedVariationOrderId, vo.id);
+    const forgedCeLine = {
+      id: `ce-cert-${crypto.randomUUID()}`,
+      commercialEventId: ce.id,
+      lineType: "valueInclusion",
+      sourceType: "commercialEvent",
+      sourceEventNumber: ce.eventNumber,
+      sourceEventValue: 4500,
+      description: ce.description,
+      amountThisCertificate: 1000,
+    };
+    response = await patchCert(setup.pkg.id, certificate.id, {
+      version: certificate.version,
+      commercialLines: [forgedCeLine],
+    });
+    assert.equal(response.status, 400);
+    assert.match(response.body.message, /Issued Variation Order/i);
+
+    const frozenLine = {
+      id: `vo-cert-${crypto.randomUUID()}`,
+      lineType: "valueInclusion", sourceType: "variationOrder",
+      variationOrderId: authority.variationOrderId, variationOrderLineId: authority.variationOrderLineId,
+      sourceReference: authority.variationOrderReference, sourcePoNumber: authority.sourcePoNumber,
+      sourceCostCode: authority.costCode, description: authority.description,
+      sourceValue: authority.issuedLineValue, sourcePreviouslyCertified: authority.previouslyCertifiedValue,
+      sourceRemainingAtAdd: authority.remainingCertifiableValue, amountThisCertificate: 1000,
+    };
+    response = await patchCert(setup.pkg.id, certificate.id, { version: certificate.version, commercialLines: [frozenLine] });
+    assert.equal(response.status, 200, response.body.message);
+    certificate = response.body;
+    assert.equal(certificate.commercialLines[0].commercialEventId, "");
+    assert.equal(certificate.totals.grossWorksThisCertificate, 1000);
+    assert.equal(certificate.totals.retention, 50);
+    assert.equal(certificate.totals.vat, 190);
+    assert.equal(certificate.totals.netPayment, 1140);
+
+    response = await submitCert(setup.pkg.id, certificate.id, { version: certificate.version });
+    assert.equal(response.status, 200, response.body.message);
+    certificate = response.body;
+    response = await approveCert(setup.pkg.id, certificate.id, { version: certificate.version });
+    assert.equal(response.status, 200, response.body.message);
+    assert.equal(response.body.status, "locked");
+    assert.equal(response.body.commercialLines[0].sourceType, "variationOrder");
+    assert.equal(response.body.commercialLines[0].variationOrderId, vo.id);
+    assert.equal(response.body.commercialLines[0].variationOrderLineId, authority.variationOrderLineId);
+    assert.equal(response.body.commercialLines[0].sourceReference, authority.variationOrderReference);
+    assert.equal(response.body.commercialLines[0].amountThisCertificate, 1000);
+    const after = await request(app).get(`/api/variation-orders/certificate-readiness/${setup.pkg.id}`);
+    assert.equal(after.body.lines.find((line) => line.variationOrderLineId === authority.variationOrderLineId).remainingCertifiableValue, 3500);
   });
 }
