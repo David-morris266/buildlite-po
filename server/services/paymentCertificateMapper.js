@@ -76,6 +76,8 @@ function rowToDocument(row, auditRows = [], extras = {}) {
     progress: payload.progress && typeof payload.progress === "object" ? payload.progress : {},
     commercialLines: Array.isArray(payload.commercialLines) ? payload.commercialLines : [],
     valuationSnapshot: payload.valuationSnapshot || null,
+    submissionApplicationSnapshot: payload.submissionApplicationSnapshot || null,
+    lockedApplicationSnapshot: payload.lockedApplicationSnapshot || null,
     grossValue: frozen.grossWorksThisCertificate,
     netValue: frozen.netPayment,
     matrixGross: frozen.matrixGrossThisCertificate,

@@ -54,3 +54,6 @@ Applied files are recorded in `schema_migrations`.
 ## Rollback
 
 There are no automatic down migrations. Restore from backup if needed (see `docs/phase0/migration-run-log.md`).
+# 026 — Subcontract payment applications
+
+`026_subcontract_payment_applications.sql` adds tenant/package-scoped subcontractor application source facts and immutable revision/audit provenance. It does not backfill certificates, alter certificate money, calculate notices, or create payment terms.

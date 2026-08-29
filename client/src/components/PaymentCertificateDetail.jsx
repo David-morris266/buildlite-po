@@ -4,6 +4,7 @@ import PaymentCertificateValuationGrid from './PaymentCertificateValuationGrid';
 import PaymentCertificateCommercialEvents from './PaymentCertificateCommercialEvents';
 import PaymentCertificateRecoveryDeductions from './PaymentCertificateRecoveryDeductions';
 import PaymentCertificateVariationOrders from './PaymentCertificateVariationOrders';
+import PaymentCertificateApplication from './PaymentCertificateApplication';
 import { buildCertificateDetailNavigation } from '../navigation/navigationBuilders';
 import {
   approveCertificate,
@@ -368,6 +369,14 @@ export default function PaymentCertificateDetail({
           </p>
         ) : null}
       </div>
+
+      <PaymentCertificateApplication
+        packageId={pkg?.id || order?.packageUuid || order?.packageId}
+        certificate={certificate}
+        assessmentGross={summary?.totals?.grossWorksThisCertificate ?? certificate.grossValue}
+        editable={editable}
+        onChanged={refresh}
+      />
 
       <PaymentCertificateCommercialEvents
         orderKey={order.orderKey}

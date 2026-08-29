@@ -22,6 +22,8 @@ const {
   validateDraftPatchBody,
   validateLinesAgainstEvents,
 } = require("./paymentCertificateValidation");
+const { loadActiveApplicationForCertificate, mapRow: mapApplicationRow } = require("./paymentApplicationRepository");
+const { normalizeApplication } = require("./paymentApplicationNormalization");
 
 function isUniqueViolation(err) {
   return err && err.code === "23505";
@@ -249,6 +251,8 @@ function payloadFromRow(row) {
     progress: payload.progress && typeof payload.progress === "object" ? payload.progress : {},
     commercialLines: Array.isArray(payload.commercialLines) ? payload.commercialLines : [],
     valuationSnapshot: payload.valuationSnapshot || null,
+    submissionApplicationSnapshot: payload.submissionApplicationSnapshot || null,
+    lockedApplicationSnapshot: payload.lockedApplicationSnapshot || null,
   };
 }
 
@@ -507,6 +511,8 @@ async function patchCertificateForPackage(clientId, packageId, certificateId, bo
         JSON.stringify({
           progress: nextProgress,
           commercialLines: nextLines,
+          submissionApplicationSnapshot: currentPayload.submissionApplicationSnapshot,
+          lockedApplicationSnapshot: currentPayload.lockedApplicationSnapshot,
         }),
         parsed.certificateDate || null,
         actor || null,
@@ -591,6 +597,7 @@ async function submitCertificateForPackage(clientId, packageId, certificateId, b
       `
         UPDATE package_payment_certificates
         SET status = 'submitted',
+            payload = $5::jsonb,
             submitted_at = NOW(),
             submitted_by = $1,
             version = version + 1,
@@ -599,7 +606,7 @@ async function submitCertificateForPackage(clientId, packageId, certificateId, b
         WHERE client_id = $2 AND package_id = $3 AND id = $4
         RETURNING *
       `,
-      [actor || null, clientId, packageId, certificateId]
+      [actor || null, clientId, packageId, certificateId, JSON.stringify(await buildApplicationSnapshot(dbClient, clientId, packageId, row, prepared.snapshot.totals, prepared.payload, "submission"))]
     );
 
     await insertAudit(dbClient, {
@@ -677,6 +684,20 @@ async function prepareApprovalInputs(dbClient, {
   return { ok: true, payload, matrix, pos, locked, snapshot };
 }
 
+async function buildApplicationSnapshot(dbClient, clientId, packageId, row, totals, payload, kind) {
+  const applicationRow = await loadActiveApplicationForCertificate(clientId, packageId, row.id, dbClient);
+  const application = applicationRow ? await mapApplicationRow(clientId, applicationRow, null, dbClient) : null;
+  const snapshot = application ? {
+    application: { ...application, comparison: undefined, auditHistory: undefined },
+    comparison: normalizeApplication(application, totals),
+    capturedAt: new Date().toISOString(),
+  } : null;
+  return {
+    ...payload,
+    [kind === "locked" ? "lockedApplicationSnapshot" : "submissionApplicationSnapshot"]: snapshot,
+  };
+}
+
 async function approveCertificateForPackage(clientId, packageId, certificateId, body = {}, { actor } = {}) {
   if (!isValidPackageUuid(packageId)) return invalidPackageUuidResult();
   if (!isValidCertificateUuid(certificateId)) return invalidCertificateUuidResult();
@@ -724,10 +745,10 @@ async function approveCertificateForPackage(clientId, packageId, certificateId, 
     }
 
     const frozen = documentToLockedColumns(prepared.snapshot.totals);
-    const nextPayload = {
-      ...prepared.payload,
-      valuationSnapshot: prepared.snapshot.snapshot,
-    };
+    const nextPayload = await buildApplicationSnapshot(
+      dbClient, clientId, packageId, row, prepared.snapshot.totals,
+      { ...prepared.payload, valuationSnapshot: prepared.snapshot.snapshot }, "locked"
+    );
 
     const updated = await runQuery(
       dbClient,

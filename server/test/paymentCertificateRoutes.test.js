@@ -23,6 +23,7 @@ const MIGRATION_008 = path.join(__dirname, "..", "migrations", "008_package_paym
 const MIGRATION_023 = path.join(__dirname, "..", "migrations", "023_variation_orders.sql");
 const MIGRATION_024 = path.join(__dirname, "..", "migrations", "024_variation_order_normal_source.sql");
 const MIGRATION_025 = path.join(__dirname, "..", "migrations", "025_variation_order_line_ce_allocations.sql");
+const MIGRATION_026 = path.join(__dirname, "..", "migrations", "026_subcontract_payment_applications.sql");
 
 const testDevelopmentIds = [];
 const testPoNumbers = [];
@@ -55,10 +56,13 @@ async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_023, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_024, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_025, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_026, "utf8"));
 }
 
 async function cleanup() {
   if (testPackageIds.length) {
+    await pool.query("DELETE FROM subcontract_payment_application_audit WHERE application_id IN (SELECT id FROM subcontract_payment_applications WHERE package_id = ANY($1::uuid[]))", [testPackageIds]);
+    await pool.query("DELETE FROM subcontract_payment_applications WHERE package_id = ANY($1::uuid[])", [testPackageIds]);
     await pool.query("DELETE FROM variation_orders WHERE package_id = ANY($1::uuid[])", [testPackageIds]);
     await pool.query(
       "DELETE FROM package_payment_certificates WHERE package_id = ANY($1::uuid[])",
@@ -1199,5 +1203,67 @@ if (!isDbConfigured()) {
     assert.equal(response.body.commercialLines[0].amountThisCertificate, 1000);
     const after = await request(app).get(`/api/variation-orders/certificate-readiness/${setup.pkg.id}`);
     assert.equal(after.body.lines.find((line) => line.variationOrderLineId === authority.variationOrderLineId).remainingCertifiableValue, 3500);
+  });
+
+  test("26. application comparison freezes on Submit, refreshes after Reject, and locks immutably", async () => {
+    const active = await getActiveClient();
+    const seeded = await seedDraftWithProgress(active, progressEntry("plot-1", "First Fix", 10));
+    let certificate = seeded.certificate;
+    assert.equal(certificate.totals.grossWorksThisCertificate, 1000);
+
+    let response = await request(app).post(`/api/packages/${seeded.pkg.id}/payment-applications`).send({
+      certificateId: certificate.id, applicationReference: "APP-PC-001", receivedAt: "2026-08-29",
+      applicationBasis: "current_period_gross", currentPeriodGrossClaimed: 1500, actor: "QS",
+    });
+    assert.equal(response.status, 201, response.body.message);
+    let application = response.body;
+    assert.equal(application.retentionStated, null);
+
+    response = await submitCert(seeded.pkg.id, certificate.id, { version: certificate.version });
+    assert.equal(response.status, 200, response.body.message);
+    certificate = response.body;
+    assert.equal(certificate.submissionApplicationSnapshot.application.id, application.id);
+    assert.equal(certificate.submissionApplicationSnapshot.comparison.difference, -500);
+
+    response = await request(app).post(`/api/packages/${seeded.pkg.id}/payment-applications/${application.id}/revisions`).send({
+      applicationReference: "APP-PC-001", receivedAt: "2026-08-29", applicationBasis: "current_period_gross",
+      currentPeriodGrossClaimed: 1400, actor: "QS",
+    });
+    assert.equal(response.status, 409);
+
+    response = await rejectCert(seeded.pkg.id, certificate.id, { version: certificate.version, comment: "Reassess" });
+    assert.equal(response.status, 200, response.body.message);
+    certificate = response.body;
+    response = await request(app).post(`/api/packages/${seeded.pkg.id}/payment-applications/${application.id}/revisions`).send({
+      applicationReference: "APP-PC-001", receivedAt: "2026-08-29", applicationBasis: "current_period_gross",
+      currentPeriodGrossClaimed: 1400, actor: "QS", comment: "Corrected application",
+    });
+    assert.equal(response.status, 201, response.body.message);
+    application = response.body;
+
+    response = await request(app).get(`/api/packages/${seeded.pkg.id}/payment-applications?certificateId=${certificate.id}`);
+    assert.equal(response.status, 200, response.body.message);
+    const liveDraftApplication = response.body.applications.find((item) => item.status === "recorded");
+    assert.equal(liveDraftApplication.id, application.id);
+    assert.equal(liveDraftApplication.revisionNumber, 2);
+    assert.equal(liveDraftApplication.currentPeriodGrossClaimed, 1400);
+
+    response = await submitCert(seeded.pkg.id, certificate.id, { version: certificate.version });
+    assert.equal(response.status, 200, response.body.message);
+    certificate = response.body;
+    assert.equal(certificate.submissionApplicationSnapshot.application.id, application.id);
+    assert.equal(certificate.submissionApplicationSnapshot.comparison.difference, -400);
+
+    response = await approveCert(seeded.pkg.id, certificate.id, { version: certificate.version });
+    assert.equal(response.status, 200, response.body.message);
+    certificate = response.body;
+    assert.equal(certificate.lockedApplicationSnapshot.application.id, application.id);
+    assert.equal(certificate.lockedApplicationSnapshot.comparison.difference, -400);
+    const frozen = JSON.stringify(certificate.lockedApplicationSnapshot);
+    response = await request(app).post(`/api/packages/${seeded.pkg.id}/payment-applications/${application.id}/revisions`).send({
+      applicationReference: "APP-PC-001", receivedAt: "2026-08-29", applicationBasis: "current_period_gross", currentPeriodGrossClaimed: 1300,
+    });
+    assert.equal(response.status, 409);
+    assert.equal(JSON.stringify((await getCert(seeded.pkg.id, certificate.id)).body.lockedApplicationSnapshot), frozen);
   });
 }

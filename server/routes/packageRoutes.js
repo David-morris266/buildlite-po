@@ -29,6 +29,12 @@ const {
   rejectCertificateForPackage,
   deleteCertificateForPackage,
 } = require("../services/paymentCertificateRepository");
+const {
+  listApplications,
+  createApplication,
+  reviseApplication,
+  linkApplication,
+} = require("../services/paymentApplicationRepository");
 
 const router = express.Router();
 
@@ -116,6 +122,62 @@ function sendCertificateError(res, result) {
   if (result.certificate) payload.certificate = result.certificate;
   return res.status(result.status).json(payload);
 }
+
+router.get("/:packageId/payment-applications", async (req, res) => {
+  try {
+    if (!isDbConfigured()) return res.status(500).json({ message: "Database not configured" });
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+    const result = await listApplications(active.id, req.params.packageId, req.query.certificateId || null);
+    if (!result.ok) return sendCertificateError(res, result);
+    res.json({ applications: result.applications });
+  } catch (err) {
+    console.error("[Packages] list payment applications error:", err);
+    res.status(500).json({ message: "Failed to load subcontractor applications." });
+  }
+});
+
+router.post("/:packageId/payment-applications", async (req, res) => {
+  try {
+    if (!isDbConfigured()) return res.status(500).json({ message: "Database not configured" });
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+    const result = await createApplication(active.id, req.params.packageId, req.body || {});
+    if (!result.ok) return sendCertificateError(res, result);
+    res.status(result.status || 201).json(result.application);
+  } catch (err) {
+    console.error("[Packages] create payment application error:", err);
+    res.status(500).json({ message: "Failed to record subcontractor application." });
+  }
+});
+
+router.post("/:packageId/payment-applications/:applicationId/revisions", async (req, res) => {
+  try {
+    if (!isDbConfigured()) return res.status(500).json({ message: "Database not configured" });
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+    const result = await reviseApplication(active.id, req.params.packageId, req.params.applicationId, req.body || {});
+    if (!result.ok) return sendCertificateError(res, result);
+    res.status(result.status || 201).json(result.application);
+  } catch (err) {
+    console.error("[Packages] revise payment application error:", err);
+    res.status(500).json({ message: "Failed to revise subcontractor application." });
+  }
+});
+
+router.post("/:packageId/payment-applications/:applicationId/link", async (req, res) => {
+  try {
+    if (!isDbConfigured()) return res.status(500).json({ message: "Database not configured" });
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: "No active client set" });
+    const result = await linkApplication(active.id, req.params.packageId, req.params.applicationId, req.body || {});
+    if (!result.ok) return sendCertificateError(res, result);
+    res.json(result.application);
+  } catch (err) {
+    console.error("[Packages] link payment application error:", err);
+    res.status(500).json({ message: "Failed to link subcontractor application." });
+  }
+});
 
 router.get("/:packageId/certificates", async (req, res) => {
   try {

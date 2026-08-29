@@ -10792,3 +10792,18 @@
   .vo-print-document__terms { margin-top: 22px; }
   .vo-print-document__authorisation { margin-top: 30px; padding-top: 14px; border-top: 1px solid #555; }
 }
+.po-cert-application { margin: 1rem 0; }
+.po-cert-application__heading { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
+.po-cert-application__heading h3 { margin:0; }
+.po-cert-application__heading p { margin:.25rem 0 0; color:var(--po-muted,#667085); }
+.po-cert-application__form { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:.75rem; align-items:end; margin-top:1rem; }
+.po-cert-application__form label { display:grid; gap:.35rem; }
+.po-cert-application__source-meta,.po-cert-application__comparison,.po-cert-application__breakdown { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:.75rem; margin:1rem 0; }
+.po-cert-application__source-meta div { padding:.5rem 0; }
+.po-cert-application__source-meta dt { color:#667085; font-size:.8rem; }
+.po-cert-application__source-meta dd { margin:.25rem 0 0; font-weight:600; }
+.po-cert-application__comparison div,.po-cert-application__breakdown div { padding:.75rem; background:#f8fafc; border-radius:.5rem; }
+.po-cert-application__comparison dt,.po-cert-application__breakdown dt { color:#667085; font-size:.8rem; }
+.po-cert-application__comparison dd,.po-cert-application__breakdown dd { margin:.25rem 0 0; font-weight:700; }
+.po-cert-application__variance { color:#9a3412; font-weight:600; }
+@media (max-width:640px){.po-cert-application__heading{display:block}.po-cert-application__heading .po-status-badge{display:inline-block;margin-top:.75rem}}
