@@ -16,8 +16,8 @@ vi.mock('../payments/paymentCertificateStore', () => ({
   submitCertificate: (...args) => submitCertificate(...args),
   getCertificate: (...args) => getCertificate(...args),
   getCertificateStatusMeta: (status) => ({ label: status, modifier: status }),
-  isCertificateEditable: () => false,
-  isCertificateSubmitted: () => true,
+  isCertificateEditable: (certificate) => certificate?.status === 'draft',
+  isCertificateSubmitted: (certificate) => certificate?.status === 'submitted',
   rejectCertificate: vi.fn(),
   deleteCertificate: vi.fn(),
   updateCertificateProgress: vi.fn(),
@@ -103,15 +103,37 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     vi.clearAllMocks();
   });
 
-  function renderDetail() {
+  function renderDetail(onProgressChanged = vi.fn()) {
     act(() => {
       root.render(
         <PaymentCertificateDetail
           order={baseOrder}
           certificateId="cert-3"
           onBack={vi.fn()}
+          onProgressChanged={onProgressChanged}
         />
       );
+    });
+    return onProgressChanged;
+  }
+
+  function setDraftCertificate() {
+    const certificate = {
+      id: 'cert-3',
+      certificateNumber: 3,
+      status: 'draft',
+      commercialLines: [],
+    };
+    getCertificate.mockReturnValue(certificate);
+    summarizeCertificateProgress.mockReturnValue({
+      certificate,
+      totals: {
+        grossWorksThisCertificate: 0,
+        netPayment: 0,
+      },
+      matrix: {},
+      grid: { cells: [] },
+      matrixReady: true,
     });
   }
 
@@ -175,5 +197,57 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     await act(async () => {
       resolveApprove({ ok: true, certificate: { status: 'locked' } });
     });
+  });
+
+  it('opens a visible confirmation without submitting, then Cancel leaves the Draft untouched', () => {
+    setDraftCertificate();
+    renderDetail();
+
+    clickButton('Review & Submit');
+
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).toBeTruthy();
+    expect(dialog.textContent).toContain('Submit Payment Certificate for Approval?');
+    expect(dialog.textContent).toContain('freeze the current valuation and commercial assessment');
+    expect(submitCertificate).not.toHaveBeenCalled();
+
+    clickButton('Cancel');
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(submitCertificate).not.toHaveBeenCalled();
+  });
+
+  it('submits a valid £0 Draft once on final confirmation and closes on success', async () => {
+    setDraftCertificate();
+    submitCertificate.mockResolvedValue({ ok: true, certificate: { status: 'submitted' } });
+    const onProgressChanged = renderDetail();
+    clickButton('Review & Submit');
+
+    const dialog = document.querySelector('[role="dialog"]');
+    const confirm = [...dialog.querySelectorAll('button')].find((node) =>
+      node.textContent?.includes('Submit for Approval')
+    );
+    await act(async () => confirm.click());
+
+    expect(submitCertificate).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(onProgressChanged).toHaveBeenCalled();
+  });
+
+  it('keeps a server rejection visible and restores the final confirmation control', async () => {
+    setDraftCertificate();
+    submitCertificate.mockResolvedValue({ ok: false, errors: ['Submission rejected clearly.'] });
+    renderDetail();
+    clickButton('Review & Submit');
+
+    const dialog = document.querySelector('[role="dialog"]');
+    const confirm = [...dialog.querySelectorAll('button')].find((node) =>
+      node.textContent?.includes('Submit for Approval')
+    );
+    await act(async () => confirm.click());
+
+    expect(submitCertificate).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).toContain('Submission rejected clearly.');
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+    expect(confirm.disabled).toBe(false);
   });
 });

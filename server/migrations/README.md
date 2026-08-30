@@ -29,6 +29,8 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 | `023_variation_orders.sql` | Variation Order foundation: tenant/package-scoped headers and atomic numbering, signed multi-code lines, explicit Commercial Event provenance/allocation links, corrective relationships, and audit. Additive only; no backfill and no monetary-engine integration. |
 | `024_variation_order_normal_source.sql` | One-CE-to-one-normal-VO concurrency guard for the initial user workflow. Nullable normal-source CE identity; corrective/future allocated links remain supported separately. No monetary integration or backfill. |
 | `025_variation_order_line_ce_allocations.sql` | Explicit CE-to-VO-line signed allocation provenance. Multi-line Issue requires complete reconciled allocations; unambiguous single-line VO allocation remains compatible. Additive only; no backfill. |
+| `026_subcontract_payment_applications.sql` | Revisioned subcontract payment applications linked to Draft certificates; immutable submitted/locked comparison snapshots. |
+| `027_subcontract_terms_foundation.sql` | Tenant-owned versioned subcontract terms, defaults, PO overrides, immutable approval-time bindings and append-only audit. Additive only; no backfill. |
 
 ## Before applying to production
 

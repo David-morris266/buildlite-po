@@ -23,6 +23,7 @@ const prelimsItemRoutes = require("./routes/prelimsItemRoutes");
 const prelimsTemplateRoutes = require("./routes/prelimsTemplateRoutes");
 const costCodeClassificationRoutes = require("./routes/costCodeClassificationRoutes");
 const costCodeMasterRoutes = require("./routes/costCodeMasterRoutes");
+const subcontractTermsRoutes = require("./routes/subcontractTermsRoutes");
 
 function createApp() {
   const app = express();
@@ -56,6 +57,7 @@ function createApp() {
   app.use("/api/packages", packageRoutes);
   app.use("/api/commercial-events", commercialEventRoutes);
   app.use("/api/variation-orders", variationOrderRoutes);
+  app.use("/api/subcontract-terms", subcontractTermsRoutes);
 
   if (!isProduction()) {
     const developerRoutes = require("./routes/developerRoutes");

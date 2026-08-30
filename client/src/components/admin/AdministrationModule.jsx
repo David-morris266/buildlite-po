@@ -17,6 +17,7 @@ import AdminUsersPage from './AdminUsersPage';
 import AdminApprovalSettingsPage from './AdminApprovalSettingsPage';
 import AdminPrelimsTemplatesPage from './AdminPrelimsTemplatesPage';
 import AdminSetupDataImportPage from './AdminSetupDataImportPage';
+import AdminSubcontractTermsPage from './AdminSubcontractTermsPage';
 
 const showDeveloperTools = !import.meta.env.PROD;
 
@@ -153,6 +154,9 @@ export default function AdministrationModule({
         <AdminPrelimsTemplatesPage onBack={goToDashboard} />
       </AdministrationWorkspace>
     );
+  }
+  if (view === 'subcontract-terms') {
+    return <AdministrationWorkspace><AdminSubcontractTermsPage onBack={goToDashboard} /></AdministrationWorkspace>;
   }
   if (view === 'developer-tools' && showDeveloperTools) {
     return (

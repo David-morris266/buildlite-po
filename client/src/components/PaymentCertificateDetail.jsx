@@ -5,6 +5,7 @@ import PaymentCertificateCommercialEvents from './PaymentCertificateCommercialEv
 import PaymentCertificateRecoveryDeductions from './PaymentCertificateRecoveryDeductions';
 import PaymentCertificateVariationOrders from './PaymentCertificateVariationOrders';
 import PaymentCertificateApplication from './PaymentCertificateApplication';
+import PaymentCertificateTerms from './PaymentCertificateTerms';
 import { buildCertificateDetailNavigation } from '../navigation/navigationBuilders';
 import {
   approveCertificate,
@@ -48,10 +49,16 @@ function CertificateDialog({
   confirmClassName,
   confirmDisabled = false,
 }) {
+  const titleId = 'payment-certificate-dialog-title';
   return (
     <div className="po-cert-delete-backdrop" role="presentation">
-      <div className="po-cert-delete modal" role="dialog" aria-modal="true">
-        <h3>{title}</h3>
+      <div
+        className="po-cert-delete modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
+        <h3 id={titleId}>{title}</h3>
         {children}
         <div className="po-cert-delete__actions modal-actions">
           <button type="button" className="po-list-btn-secondary" onClick={onCancel}>
@@ -62,6 +69,7 @@ function CertificateDialog({
             className={confirmClassName || 'po-btn-primary'}
             onClick={onConfirm}
             disabled={confirmDisabled}
+            autoFocus
           >
             {confirmLabel}
           </button>
@@ -298,6 +306,11 @@ export default function PaymentCertificateDetail({
         <CertificateAuditHistory items={auditItems} />
       </header>
 
+      <PaymentCertificateTerms
+        certificate={certificate}
+        governingTerms={pkg?.governingTerms}
+      />
+
       {workflowFeedback?.type === 'error' && !dialog ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">
           {workflowFeedback.message}
@@ -322,7 +335,7 @@ export default function PaymentCertificateDetail({
                 setDialog('submit');
               }}
             >
-              Submit for Approval
+              Review &amp; Submit
             </button>
             <button
               type="button"
@@ -456,7 +469,7 @@ export default function PaymentCertificateDetail({
 
       {dialog === 'submit' ? (
         <CertificateDialog
-          title={`Submit Certificate No. ${certificate.certificateNumber} for approval?`}
+          title="Submit Payment Certificate for Approval?"
           confirmLabel="Submit for Approval"
           onCancel={() => {
             setWorkflowFeedback(null);
@@ -471,8 +484,9 @@ export default function PaymentCertificateDetail({
             </div>
           ) : null}
           <p>
-            Once submitted, this certificate becomes read-only until it is approved or
-            returned to draft.
+            This will freeze the current valuation and commercial assessment for review.
+            Certificate No. {certificate.certificateNumber} will become read-only until it
+            is approved or returned to Draft.
           </p>
         </CertificateDialog>
       ) : null}

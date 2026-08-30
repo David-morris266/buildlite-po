@@ -24,6 +24,7 @@ const {
 } = require("./paymentCertificateValidation");
 const { loadActiveApplicationForCertificate, mapRow: mapApplicationRow } = require("./paymentApplicationRepository");
 const { normalizeApplication } = require("./paymentApplicationNormalization");
+const { snapshotForPackage } = require("./subcontractTermsRepository");
 
 function isUniqueViolation(err) {
   return err && err.code === "23505";
@@ -513,6 +514,8 @@ async function patchCertificateForPackage(clientId, packageId, certificateId, bo
           commercialLines: nextLines,
           submissionApplicationSnapshot: currentPayload.submissionApplicationSnapshot,
           lockedApplicationSnapshot: currentPayload.lockedApplicationSnapshot,
+          submissionGoverningTermsSnapshot: currentPayload.submissionGoverningTermsSnapshot,
+          lockedGoverningTermsSnapshot: currentPayload.lockedGoverningTermsSnapshot,
         }),
         parsed.certificateDate || null,
         actor || null,
@@ -692,9 +695,11 @@ async function buildApplicationSnapshot(dbClient, clientId, packageId, row, tota
     comparison: normalizeApplication(application, totals),
     capturedAt: new Date().toISOString(),
   } : null;
+  const termsSnapshot = await snapshotForPackage(clientId, packageId, dbClient);
   return {
     ...payload,
     [kind === "locked" ? "lockedApplicationSnapshot" : "submissionApplicationSnapshot"]: snapshot,
+    [kind === "locked" ? "lockedGoverningTermsSnapshot" : "submissionGoverningTermsSnapshot"]: termsSnapshot,
   };
 }
 
@@ -942,6 +947,7 @@ module.exports = {
   createCertificateForPackage,
   patchCertificateForPackage,
   submitCertificateForPackage,
+  buildApplicationSnapshot,
   approveCertificateForPackage,
   rejectCertificateForPackage,
   deleteCertificateForPackage,

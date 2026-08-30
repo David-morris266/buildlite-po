@@ -12,6 +12,7 @@ const {
 } = require("../services/brandProfile");
 const { isProduction } = require("../utils/env");
 const { mapPOToContext, renderPOToPDF } = require("../services/pdf");
+const { bindOnApproval, resolveForPo } = require("../services/subcontractTermsRepository");
 
 const router = express.Router();
 
@@ -799,6 +800,7 @@ router.post("/po/:poNumber/approve", async (req, res) => {
   }
 
   const now = new Date().toISOString();
+  const proposedTerms = norm === "approved" ? await resolveForPo(active.id, po.poNumber) : null;
 
   po.status = norm === "approved" ? "Approved" : "Rejected";
   po.approval = {
@@ -814,21 +816,24 @@ router.post("/po/:poNumber/approve", async (req, res) => {
 
   const requiresPackageMaterialisation = norm === "approved" && isSubcontractPoType(po);
 
-  if (!requiresPackageMaterialisation) {
-    await dbSavePO(active.id, po);
-    return res.json(po);
-  }
-
   const dbClient = await pool.connect();
   try {
     await dbClient.query("BEGIN");
     await dbSavePOWithClient(dbClient, active.id, po);
 
-    const materialiseResult = await materialisePackageFromPoNumber(active.id, po.poNumber, {
+    if (norm === "approved") {
+      po.governingTerms = await bindOnApproval(active.id, po.poNumber, {
+        dbClient,
+        actor: approver || null,
+        resolvedTerms: proposedTerms,
+      });
+    }
+
+    const materialiseResult = requiresPackageMaterialisation ? await materialisePackageFromPoNumber(active.id, po.poNumber, {
       dbClient,
       actor: approver || null,
       requirePackage: true,
-    });
+    }) : { ok: true };
 
     if (!materialiseResult.ok) {
       await dbClient.query("ROLLBACK");
@@ -859,6 +864,7 @@ router.get("/po/:poNumber", async (req, res) => {
 
   const po = await dbGetPO(active.id, req.params.poNumber);
   if (!po) return res.status(404).json({ message: "PO not found" });
+  po.governingTerms = await resolveForPo(active.id, po.poNumber);
   res.json(po);
 });
 

@@ -83,6 +83,8 @@ export function normalizeServerPaymentCertificate(document) {
     valuationSnapshot: document.valuationSnapshot || document.valuation_snapshot || null,
     submissionApplicationSnapshot: document.submissionApplicationSnapshot || document.submission_application_snapshot || null,
     lockedApplicationSnapshot: document.lockedApplicationSnapshot || document.locked_application_snapshot || null,
+    submissionGoverningTermsSnapshot: document.submissionGoverningTermsSnapshot || document.submission_governing_terms_snapshot || null,
+    lockedGoverningTermsSnapshot: document.lockedGoverningTermsSnapshot || document.locked_governing_terms_snapshot || null,
     totals: document.totals && typeof document.totals === 'object' ? document.totals : null,
     grossValue: frozenMoney(document, 'grossValue', 'gross_value', 'grossWorksThisCertificate'),
     netValue: frozenMoney(document, 'netValue', 'net_value', 'netPayment'),

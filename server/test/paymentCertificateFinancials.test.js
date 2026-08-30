@@ -30,6 +30,28 @@ test("matrix-only totals keep matrix gross unchanged", () => {
   assert.equal(totals.netPayment, 19000);
 });
 
+test("a valid zero-value Draft valuation remains eligible for submission snapshotting", () => {
+  const live = buildLiveValuation({
+    matrix: {
+      id: "mx-zero",
+      version: 1,
+      layout: "plot-stage",
+      stages: ["Works"],
+      plots: [{ id: "plot-1", label: "Plot 1", values: [10000] }],
+    },
+    progress: {},
+    commercialLines: [],
+    lockedCertificates: [],
+    pos: [{ subtotal: 10000, vatRateDefault: 0.2, retentionRateDefault: 0.05 }],
+  });
+
+  assert.equal(live.ok, true);
+  assert.equal(live.totals.grossWorksThisCertificate, 0);
+  assert.equal(live.totals.retention, 0);
+  assert.equal(live.totals.vat, 0);
+  assert.equal(live.totals.netPayment, 0);
+});
+
 test("CE +£4k increases gross this certificate by £4k", () => {
   const totals = buildCertificateWorksTotals(matrixCells(20000), {
     commercialLines: [{ lineType: "valueInclusion", amountThisCertificate: 4000 }],

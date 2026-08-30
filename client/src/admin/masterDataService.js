@@ -68,6 +68,7 @@ export const ADMIN_VIEWS = [
   'users',
   'approval-settings',
   'prelims-templates',
+  'subcontract-terms',
   'developer-tools',
 ];
 
@@ -91,6 +92,7 @@ export function getAdminViewTitle(view) {
     users: 'Users',
     'approval-settings': 'Approval Settings',
     'prelims-templates': 'Prelims Templates',
+    'subcontract-terms': 'Subcontract Terms',
     'developer-tools': 'Developer Tools',
   };
   return titles[view] || 'Administration';

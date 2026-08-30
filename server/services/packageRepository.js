@@ -6,6 +6,7 @@ const { pool, query } = require("../db");
 const { rowToDocument } = require("./packageMapper");
 const { buildContractAuthority, listContractEventFacts, listVariationOrderAuthorityFacts } = require("./variationOrderAuthority");
 const { isApprovedPo, getPoCommittedNet } = require("./purchaseOrderAuthority");
+const { resolveForPackage } = require("./subcontractTermsRepository");
 
 async function runQuery(dbClient, text, params) {
   if (dbClient) {
@@ -64,14 +65,15 @@ async function enrichContractAuthority(clientId, documents, { developmentId = nu
     packageIds: documents.map((item) => item.id),
   });
   const originalOrders = await loadOriginalOrderValues(clientId, documents.map((item) => item.id));
-  return documents.map((document) => ({
+  return Promise.all(documents.map(async (document) => ({
     ...document,
+    governingTerms: await resolveForPackage(clientId, document.id),
     currentContractProvenance: buildContractAuthority({
       originalOrderValue: originalOrders.get(document.id) || 0,
       events: events.filter((event) => event.packageUuid === document.id || event.packageId === document.orderKey),
       variationOrders: vos.filter((vo) => vo.packageId === document.id),
     }),
-  }));
+  })));
 }
 
 async function listPackagesForDevelopment(clientId, developmentId) {

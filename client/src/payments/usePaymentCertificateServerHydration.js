@@ -31,15 +31,14 @@ export function derivePaymentCertificateUiState(loadState, errorMessage = '') {
   };
 }
 
-async function resolveHydrationPackageUuid(order) {
+async function resolveHydrationPackage(order) {
   const fromContext = resolvePackageUuidFromOrder(order);
-  if (fromContext) return fromContext;
-  if (!order?.orderKey) return null;
+  if (fromContext && order?.governingTerms) return order;
+  if (!order?.orderKey) return fromContext ? order : null;
   try {
-    const pkg = await fetchPackageByOrderKey(order.orderKey);
-    return pkg?.id || null;
+    return await fetchPackageByOrderKey(order.orderKey);
   } catch {
-    return null;
+    return fromContext ? order : null;
   }
 }
 
@@ -55,6 +54,9 @@ export function usePaymentCertificateServerHydration(order) {
     return packageUuid ? getCertificateLoadState(packageUuid) || 'idle' : 'idle';
   });
   const [loadError, setLoadError] = useState('');
+  const [governingTerms, setGoverningTerms] = useState(
+    () => order?.governingTerms || null
+  );
   const packageUuidHint =
     order?.packageUuid || order?.packageId || order?.id || null;
 
@@ -70,8 +72,10 @@ export function usePaymentCertificateServerHydration(order) {
     setLoadError('');
 
     (async () => {
-      const packageUuid = await resolveHydrationPackageUuid(order);
+      const hydratedPackage = await resolveHydrationPackage(order);
+      const packageUuid = resolvePackageUuidFromOrder(hydratedPackage);
       if (cancelled) return;
+      setGoverningTerms(hydratedPackage?.governingTerms || null);
       if (!packageUuid) {
         setLoadState('error');
         setLoadError(
@@ -102,5 +106,8 @@ export function usePaymentCertificateServerHydration(order) {
     };
   }, [authorityEnabled, orderKey, packageUuidHint]);
 
-  return derivePaymentCertificateUiState(loadState, loadError);
+  return {
+    ...derivePaymentCertificateUiState(loadState, loadError),
+    governingTerms,
+  };
 }

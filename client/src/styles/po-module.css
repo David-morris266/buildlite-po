@@ -4787,6 +4787,27 @@
 
 .po-cert-delete {
   width: min(420px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: var(--radius-md);
+  background: var(--panel, #111827);
+  color: var(--text, #f8fafc);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.58);
+}
+
+.po-cert-delete h3 {
+  margin: 0 0 12px;
+  color: var(--text, #f8fafc);
+  font-size: 1.25rem;
+  line-height: 1.3;
+}
+
+.po-cert-delete p {
+  margin: 0 0 20px;
+  color: var(--muted, #cbd5e1);
+  line-height: 1.55;
 }
 
 .po-cert-delete__actions {
@@ -4794,6 +4815,9 @@
   flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 .po-cert-delete__confirm {
@@ -10807,3 +10831,18 @@
 .po-cert-application__comparison dd,.po-cert-application__breakdown dd { margin:.25rem 0 0; font-weight:700; }
 .po-cert-application__variance { color:#9a3412; font-weight:600; }
 @media (max-width:640px){.po-cert-application__heading{display:block}.po-cert-application__heading .po-status-badge{display:inline-block;margin-top:.75rem}}
+.admin-terms-family { margin-top: 1.25rem; }
+.admin-terms-version { margin-top: .75rem; padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); box-shadow: 0 10px 30px rgba(0,0,0,.28); }
+.admin-terms-version__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.admin-terms-version__header strong { color: var(--text); }
+.admin-terms-version__status { text-transform: capitalize; color: var(--muted); font-weight: 600; }
+.admin-terms-form { display: grid; gap: 1rem; margin-top: 1rem; }
+.admin-terms-form__grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 1rem; }
+.admin-terms-rules-summary { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: .75rem; padding: .9rem; border: 1px solid var(--line); background: var(--panel-2); border-radius: 10px; }
+.admin-terms-rules-summary p { grid-column: 1 / -1; margin: 0; color: var(--muted); }
+.admin-terms-advanced { padding: .75rem; border: 1px dashed var(--border); border-radius: 10px; }
+.admin-terms-advanced[open] { display: grid; gap: .75rem; }
+.admin-terms-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .8rem; }
+.admin-terms-actions button { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
+.admin-terms-actions button:hover { border-color: var(--accent); color: var(--accent); }
+.admin-terms-message { margin: 1rem 0; padding: .75rem 1rem; border-radius: 8px; background: #ecfdf5; color: #166534; }

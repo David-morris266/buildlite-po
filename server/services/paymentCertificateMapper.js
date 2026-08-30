@@ -78,6 +78,8 @@ function rowToDocument(row, auditRows = [], extras = {}) {
     valuationSnapshot: payload.valuationSnapshot || null,
     submissionApplicationSnapshot: payload.submissionApplicationSnapshot || null,
     lockedApplicationSnapshot: payload.lockedApplicationSnapshot || null,
+    submissionGoverningTermsSnapshot: payload.submissionGoverningTermsSnapshot || null,
+    lockedGoverningTermsSnapshot: payload.lockedGoverningTermsSnapshot || null,
     grossValue: frozen.grossWorksThisCertificate,
     netValue: frozen.netPayment,
     matrixGross: frozen.matrixGrossThisCertificate,

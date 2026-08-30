@@ -139,4 +139,59 @@ describe('POReviewDrawerContent render stability', () => {
     expect(showSendIndex).toBeGreaterThan(-1);
     expect(supplierStateIndex).toBeLessThan(showSendIndex);
   });
+
+  it('describes Approved PO terms as an immutable approval-time binding', () => {
+    renderDrawer({
+      ...basePo,
+      status: 'Approved',
+      approval: { status: 'Approved' },
+      governingTerms: {
+        state: 'bound',
+        source: 'tenant_default',
+        version: {
+          familyName: 'Standard Subcontract Terms',
+          versionLabel: 'Standard 2026',
+          revisionNumber: 1,
+        },
+      },
+    });
+
+    expect(document.body.textContent).toContain('Bound contract terms');
+    expect(document.body.textContent).toContain('Standard Subcontract Terms · Standard 2026 · Revision 1');
+    expect(document.body.textContent).toContain('Source at approval');
+    expect(document.body.textContent).toContain('Company default');
+    expect(document.body.textContent).not.toContain('Resolved source');
+  });
+
+  it('retains live-resolution wording for a Pending Approval PO', () => {
+    renderDrawer({
+      ...basePo,
+      status: 'Pending Approval',
+      approval: { status: 'Pending' },
+      governingTerms: {
+        state: 'proposed',
+        source: 'tenant_default',
+        version: {
+          familyName: 'Standard Subcontract Terms',
+          versionLabel: 'Standard 2026 v2',
+          revisionNumber: 2,
+        },
+      },
+    });
+
+    expect(document.body.textContent).toContain('Proposed governing terms');
+    expect(document.body.textContent).toContain('Resolved source');
+    expect(document.body.textContent).toContain('Company default');
+  });
+
+  it('retains neutral legacy wording', () => {
+    renderDrawer({
+      ...basePo,
+      status: 'Approved',
+      approval: { status: 'Approved' },
+      governingTerms: { state: 'legacy', source: 'unconfigured', version: null },
+    });
+
+    expect(document.body.textContent).toContain('Legacy / not formally configured');
+  });
 });

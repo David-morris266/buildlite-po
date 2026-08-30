@@ -37,6 +37,25 @@ function DetailRow({ label, value }) {
   );
 }
 
+function formatTermsVersion(version) {
+  if (!version) return null;
+  return [
+    version.familyName,
+    version.versionLabel,
+    version.revisionNumber != null ? `Revision ${version.revisionNumber}` : null,
+  ].filter(Boolean).join(' · ');
+}
+
+function formatTermsSource(source) {
+  const labels = {
+    tenant_default: 'Company default',
+    development_default: 'Development default',
+    order_override: 'PO override',
+    legacy_confirmed: 'Prospectively confirmed legacy terms',
+  };
+  return labels[source] || String(source || '').replaceAll('_', ' ');
+}
+
 function CommercialGrid({ summary, compact = false }) {
   return (
     <dl
@@ -265,6 +284,27 @@ export default function POReviewDrawerContent({
             value={formatPoDate(po.createdAt || po.date)}
           />
           <DetailRow label="Cost code" value={po.costRef?.costCode} />
+        </DrawerSection>
+
+        <DrawerSection title="Contract terms">
+          {po.governingTerms?.state === 'bound' ? (
+            <>
+              <DetailRow label="Bound contract terms" value={formatTermsVersion(po.governingTerms.version)} />
+              <DetailRow label="Source at approval" value={formatTermsSource(po.governingTerms.source)} />
+            </>
+          ) : po.governingTerms?.state === 'proposed' ? (
+            <>
+              <DetailRow label="Proposed governing terms" value={formatTermsVersion(po.governingTerms.version)} />
+              <DetailRow label="Resolved source" value={formatTermsSource(po.governingTerms.source)} />
+            </>
+          ) : (
+            <DetailRow
+              label="Governing terms"
+              value={po.governingTerms?.state === 'legacy'
+                ? 'Legacy / not formally configured'
+                : 'Contract terms: Not configured'}
+            />
+          )}
         </DrawerSection>
 
         <DrawerSection title="Supplier">

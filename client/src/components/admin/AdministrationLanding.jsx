@@ -41,6 +41,13 @@ const CARD_META = {
     accent: 'commercial',
     status: 'Tailoring',
   },
+  'subcontract-terms': {
+    icon: '📄',
+    title: 'Subcontract Terms',
+    description: 'Versioned company terms and governing defaults.',
+    accent: 'procurement',
+    status: 'Foundation',
+  },
   'commercial-structure': {
     icon: '🧭',
     title: 'Commercial Cost Structure',
@@ -113,7 +120,7 @@ const GROUPS = [
   {
     id: 'procurement',
     title: 'Procurement',
-    cardIds: ['suppliers'],
+    cardIds: ['suppliers', 'subcontract-terms'],
   },
 ];
 

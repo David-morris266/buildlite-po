@@ -51,6 +51,7 @@ export default function SubcontractPackageWorkspace({
     certificatesLoading,
     certificatesReady,
     certificatesError,
+    governingTerms,
   } = usePaymentCertificateServerHydration(order);
 
   useEffect(() => {
@@ -79,7 +80,10 @@ export default function SubcontractPackageWorkspace({
     void matrixRefresh;
     void certRefresh;
     void commercialEventRefresh;
-    return buildPackageViewModel(order);
+    const viewModel = buildPackageViewModel(order);
+    return governingTerms
+      ? { ...viewModel, governingTerms }
+      : viewModel;
   }, [
     order,
     matrixRefresh,
@@ -91,6 +95,7 @@ export default function SubcontractPackageWorkspace({
     matricesReady,
     certificatesLoading,
     certificatesReady,
+    governingTerms,
   ]);
 
   const packageTitle = `${order.supplierLabel} – ${order.projectLabel}`;

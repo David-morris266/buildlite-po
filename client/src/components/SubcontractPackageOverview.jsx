@@ -67,6 +67,15 @@ export default function SubcontractPackageOverview({
 
       <PackageRecoveryPosition summary={pkg.recoverySummary} />
 
+      <section className="po-module-card">
+        <h2 className="po-matrix-section__title">Contract terms</h2>
+        <p>{pkg.governingTerms?.state === 'mixed'
+          ? 'Mixed contract terms — payment-rule readiness unavailable'
+          : pkg.governingTerms?.version
+            ? `${pkg.governingTerms.version.familyName} — revision ${pkg.governingTerms.version.revisionNumber}`
+            : pkg.governingTerms?.message || 'Contract terms: Not configured'}</p>
+      </section>
+
       <div className="po-package-overview__grid">
         <section className="po-module-card">
           <h2 className="po-matrix-section__title">Order Matrix</h2>
