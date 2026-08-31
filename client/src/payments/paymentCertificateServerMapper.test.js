@@ -13,6 +13,9 @@ describe('paymentCertificateServerMapper (BL-030B)', () => {
       certificateNumber: 2,
       status: 'locked',
       certificateDate: '2026-08-01',
+      contractualValuationDate: '2026-08-31',
+      paymentTimetable: { state: 'live', readiness: 'ready' },
+      hasSubmissionHistory: true,
       progress: { 'plot-1::Foundations': { thisCertificatePct: 50 } },
       commercialLines: [{ id: 'cel-1', amountThisCertificate: 1000 }],
       valuationSnapshot: { contractValue: 100000 },
@@ -35,6 +38,7 @@ describe('paymentCertificateServerMapper (BL-030B)', () => {
       certificateNumber: 2,
       status: 'locked',
       certificateDate: '2026-08-01',
+      contractualValuationDate: '2026-08-31',
       grossValue: 24000,
       netValue: 22800,
       version: 3,
@@ -44,6 +48,8 @@ describe('paymentCertificateServerMapper (BL-030B)', () => {
     expect(mapped.progress['plot-1::Foundations'].thisCertificatePct).toBe(50);
     expect(mapped.commercialLines).toHaveLength(1);
     expect(mapped.auditHistory[0].action).toBe('approved');
+    expect(mapped.paymentTimetable).toMatchObject({ state: 'live', readiness: 'ready' });
+    expect(mapped.hasSubmissionHistory).toBe(true);
   });
 
   it('maps approved status to locked and reads frozen totals aliases', () => {

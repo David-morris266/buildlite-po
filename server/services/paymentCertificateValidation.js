@@ -209,11 +209,17 @@ function validateDraftPatchBody(body = {}) {
       errors.push("certificateDate must be YYYY-MM-DD");
     }
   }
+  if (body.contractualValuationDate != null && body.contractualValuationDate !== "") {
+    const date = String(body.contractualValuationDate);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) errors.push("contractualValuationDate must be YYYY-MM-DD");
+  }
 
   const candidate = {
     progress: progressEntries ? progressEntriesToPayload(progressEntries) : undefined,
     commercialLines: commercialLines || undefined,
     certificateDate: body.certificateDate || undefined,
+    contractualValuationDate: Object.prototype.hasOwnProperty.call(body, "contractualValuationDate")
+      ? (body.contractualValuationDate || null) : undefined,
   };
 
   if (utf8ByteLength(candidate) > MAX_CERTIFICATE_PAYLOAD_BYTES) {
@@ -226,6 +232,7 @@ function validateDraftPatchBody(body = {}) {
     progressEntries,
     commercialLines,
     certificateDate: candidate.certificateDate,
+    contractualValuationDate: candidate.contractualValuationDate,
   };
 }
 

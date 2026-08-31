@@ -24,6 +24,8 @@ const MIGRATION_023 = path.join(__dirname, "..", "migrations", "023_variation_or
 const MIGRATION_024 = path.join(__dirname, "..", "migrations", "024_variation_order_normal_source.sql");
 const MIGRATION_025 = path.join(__dirname, "..", "migrations", "025_variation_order_line_ce_allocations.sql");
 const MIGRATION_026 = path.join(__dirname, "..", "migrations", "026_subcontract_payment_applications.sql");
+const MIGRATION_027 = path.join(__dirname, "..", "migrations", "027_subcontract_terms_foundation.sql");
+const MIGRATION_028 = path.join(__dirname, "..", "migrations", "028_payment_certificate_deadline_snapshots.sql");
 
 const testDevelopmentIds = [];
 const testPoNumbers = [];
@@ -57,10 +59,18 @@ async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_024, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_025, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_026, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_027, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_028, "utf8"));
 }
 
 async function cleanup() {
   if (testPackageIds.length) {
+    await pool.query("DELETE FROM package_payment_certificate_deadline_snapshots WHERE package_id = ANY($1::uuid[])", [testPackageIds]).catch(async error => {
+      if (!String(error.message).includes('immutable')) throw error;
+      await pool.query("ALTER TABLE package_payment_certificate_deadline_snapshots DISABLE TRIGGER trg_certificate_deadline_snapshot_immutable");
+      await pool.query("DELETE FROM package_payment_certificate_deadline_snapshots WHERE package_id = ANY($1::uuid[])", [testPackageIds]);
+      await pool.query("ALTER TABLE package_payment_certificate_deadline_snapshots ENABLE TRIGGER trg_certificate_deadline_snapshot_immutable");
+    });
     await pool.query("DELETE FROM subcontract_payment_application_audit WHERE application_id IN (SELECT id FROM subcontract_payment_applications WHERE package_id = ANY($1::uuid[]))", [testPackageIds]);
     await pool.query("DELETE FROM subcontract_payment_applications WHERE package_id = ANY($1::uuid[])", [testPackageIds]);
     await pool.query("DELETE FROM variation_orders WHERE package_id = ANY($1::uuid[])", [testPackageIds]);
@@ -456,6 +466,7 @@ if (!isDbConfigured()) {
     assert.equal(res.body.packageId, pkg.id);
     assert.equal(res.body.version, 1);
     assert.equal(res.body.certificateDate, "2026-08-17");
+    assert.equal(res.body.hasSubmissionHistory, false);
     assert.deepEqual(res.body.progress, {});
     assert.equal(res.body.valuationSnapshot, null);
   });
@@ -1265,5 +1276,58 @@ if (!isDbConfigured()) {
     });
     assert.equal(response.status, 409);
     assert.equal(JSON.stringify((await getCert(seeded.pkg.id, certificate.id)).body.lockedApplicationSnapshot), frozen);
+  });
+
+  test("27. timetable attempts append, rejection returns live, lock copies latest, and submitted history blocks delete", async () => {
+    const active = await getActiveClient();
+    const seeded = await seedDraftWithProgress(active, progressEntry("plot-1", "First Fix", 10));
+    let certificate = seeded.certificate;
+    let response = await request(app).patch(`/api/packages/${seeded.pkg.id}/certificates/${certificate.id}`).send({
+      version: certificate.version, contractualValuationDate: "2026-08-31",
+    });
+    assert.equal(response.status, 200, response.body.message);
+    certificate = response.body;
+    assert.equal(certificate.contractualValuationDate, "2026-08-31");
+    assert.equal(certificate.paymentTimetable.state, "live");
+    assert.equal(certificate.paymentTimetable.readiness, "review_required");
+
+    response = await submitCert(seeded.pkg.id, certificate.id, { version: certificate.version });
+    assert.equal(response.status, 200, response.body.message);
+    certificate = response.body;
+    assert.equal(certificate.paymentTimetable.state, "submission");
+    assert.equal(certificate.paymentTimetable.attemptNumber, 1);
+    const first = await pool.query("SELECT * FROM package_payment_certificate_deadline_snapshots WHERE certificate_id=$1 AND stage='submission'", [certificate.id]);
+    assert.equal(first.rowCount, 1);
+
+    response = await rejectCert(seeded.pkg.id, certificate.id, { version: certificate.version, comment: "Recheck cycle" });
+    assert.equal(response.status, 200, response.body.message);
+    certificate = response.body;
+    assert.equal(certificate.paymentTimetable.state, "live");
+    assert.equal(certificate.hasSubmissionHistory, true);
+    response = await request(app).patch(`/api/packages/${seeded.pkg.id}/certificates/${certificate.id}`).send({
+      version: certificate.version, contractualValuationDate: "2026-09-01",
+    });
+    assert.equal(response.status, 200, response.body.message);
+    certificate = response.body;
+    assert.equal(certificate.contractualValuationDate, "2026-09-01");
+    assert.equal(certificate.submissionGoverningTermsSnapshot.state, "unconfigured");
+    assert.equal(certificate.paymentTimetable.state, "live");
+    response = await request(app).delete(`/api/packages/${seeded.pkg.id}/certificates/${certificate.id}`).send({ version: certificate.version });
+    assert.equal(response.status, 409);
+    assert.match(response.body.message, /submission history/i);
+
+    response = await submitCert(seeded.pkg.id, certificate.id, { version: certificate.version });
+    assert.equal(response.status, 200, response.body.message);
+    certificate = response.body;
+    assert.equal(certificate.paymentTimetable.attemptNumber, 2);
+    const submittedTimetable = JSON.parse(JSON.stringify(certificate.paymentTimetable));
+    response = await approveCert(seeded.pkg.id, certificate.id, { version: certificate.version });
+    assert.equal(response.status, 200, response.body.message);
+    certificate = response.body;
+    assert.equal(certificate.paymentTimetable.state, "locked");
+    assert.equal(certificate.paymentTimetable.attemptNumber, 2);
+    assert.deepEqual(certificate.paymentTimetable.cycleInputs, submittedTimetable.cycleInputs);
+    assert.deepEqual(certificate.paymentTimetable.dates, submittedTimetable.dates);
+    assert.deepEqual(certificate.paymentTimetable.governingTermsSnapshot, submittedTimetable.governingTermsSnapshot);
   });
 }

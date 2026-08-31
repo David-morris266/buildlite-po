@@ -6,6 +6,7 @@ import PaymentCertificateRecoveryDeductions from './PaymentCertificateRecoveryDe
 import PaymentCertificateVariationOrders from './PaymentCertificateVariationOrders';
 import PaymentCertificateApplication from './PaymentCertificateApplication';
 import PaymentCertificateTerms from './PaymentCertificateTerms';
+import PaymentCertificateTimetable from './PaymentCertificateTimetable';
 import { buildCertificateDetailNavigation } from '../navigation/navigationBuilders';
 import {
   approveCertificate,
@@ -310,6 +311,12 @@ export default function PaymentCertificateDetail({
         certificate={certificate}
         governingTerms={pkg?.governingTerms}
       />
+      <PaymentCertificateTimetable
+        certificate={certificate}
+        orderKey={order.orderKey}
+        order={order}
+        onChanged={refresh}
+      />
 
       {workflowFeedback?.type === 'error' && !dialog ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">
@@ -337,13 +344,15 @@ export default function PaymentCertificateDetail({
             >
               Review &amp; Submit
             </button>
-            <button
-              type="button"
-              className="po-cert-workspace__link po-cert-workspace__link--danger"
-              onClick={() => onDeleteRequest?.(certificate)}
-            >
-              Delete Draft
-            </button>
+            {!certificate.hasSubmissionHistory ? (
+              <button
+                type="button"
+                className="po-cert-workspace__link po-cert-workspace__link--danger"
+                onClick={() => onDeleteRequest?.(certificate)}
+              >
+                Delete Draft
+              </button>
+            ) : null}
             <p className="po-cert-detail__readonly-note">
               Progress saves automatically as you work. Use Save Draft to confirm your latest changes.
             </p>

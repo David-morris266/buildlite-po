@@ -147,9 +147,9 @@ async function reviseApplication(clientId, packageId, applicationId, body = {}) 
   } catch(error){ await db.query("ROLLBACK"); throw error; } finally { db.release(); }
 }
 
-async function loadActiveApplicationForCertificate(clientId, packageId, certificateId, db = null) {
+async function loadActiveApplicationForCertificate(clientId, packageId, certificateId, db = null, { forUpdate = false } = {}) {
   const runner=db||{query};
-  const {rows}=await runner.query("SELECT * FROM subcontract_payment_applications WHERE client_id=$1 AND package_id=$2 AND certificate_id=$3 AND status='recorded' LIMIT 1",[clientId,packageId,certificateId]);
+  const {rows}=await runner.query(`SELECT * FROM subcontract_payment_applications WHERE client_id=$1 AND package_id=$2 AND certificate_id=$3 AND status='recorded' LIMIT 1 ${forUpdate?'FOR UPDATE':''}`,[clientId,packageId,certificateId]);
   return rows[0]||null;
 }
 

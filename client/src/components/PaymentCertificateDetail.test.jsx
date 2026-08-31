@@ -137,6 +137,28 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     });
   }
 
+  it('shows Delete Draft when the Draft has never been submitted', () => {
+    setDraftCertificate();
+    renderDetail();
+    expect(document.body.textContent).toContain('Delete Draft');
+  });
+
+  it('hides Delete Draft after a submitted certificate is rejected back to Draft', () => {
+    setDraftCertificate();
+    const certificate = { ...getCertificate(), hasSubmissionHistory: true };
+    getCertificate.mockReturnValue(certificate);
+    summarizeCertificateProgress.mockReturnValue({
+      certificate,
+      totals: { grossWorksThisCertificate: 0, netPayment: 0 },
+      matrix: {},
+      grid: { cells: [] },
+      matrixReady: true,
+    });
+    renderDetail();
+    expect(document.body.textContent).not.toContain('Delete Draft');
+    expect(document.body.textContent).toContain('Review & Submit');
+  });
+
   function clickButton(label) {
     const button = [...document.querySelectorAll('button')].find((node) =>
       node.textContent?.includes(label)

@@ -25,6 +25,13 @@ const {
 const { loadActiveApplicationForCertificate, mapRow: mapApplicationRow } = require("./paymentApplicationRepository");
 const { normalizeApplication } = require("./paymentApplicationNormalization");
 const { snapshotForPackage } = require("./subcontractTermsRepository");
+const {
+  timetableForRead,
+  insertSubmissionSnapshot,
+  copyLatestSubmissionToLocked,
+  hasSubmissionHistory,
+  loadApplication: loadTimetableApplication,
+} = require("./paymentCertificateTimetable");
 
 function isUniqueViolation(err) {
   return err && err.code === "23505";
@@ -254,12 +261,15 @@ function payloadFromRow(row) {
     valuationSnapshot: payload.valuationSnapshot || null,
     submissionApplicationSnapshot: payload.submissionApplicationSnapshot || null,
     lockedApplicationSnapshot: payload.lockedApplicationSnapshot || null,
+    submissionGoverningTermsSnapshot: payload.submissionGoverningTermsSnapshot || null,
+    lockedGoverningTermsSnapshot: payload.lockedGoverningTermsSnapshot || null,
   };
 }
 
 async function hydrateDocument(clientId, row, dbClient = null, extras = {}) {
   const auditRows = await loadAuditRows(clientId, row.id, dbClient);
-  return rowToDocument(row, auditRows, extras);
+  const paymentTimetable = await timetableForRead(dbClient, clientId, row.package_id, row);
+  return rowToDocument(row, auditRows, { ...extras, paymentTimetable });
 }
 
 async function computeLiveTotals(clientId, packageId, row, allRows, dbClient = null) {
@@ -502,10 +512,11 @@ async function patchCertificateForPackage(clientId, packageId, certificateId, bo
         UPDATE package_payment_certificates
         SET payload = $1::jsonb,
             certificate_date = COALESCE($2::date, certificate_date),
+            contractual_valuation_date = CASE WHEN $3::boolean THEN $4::date ELSE contractual_valuation_date END,
             version = version + 1,
             updated_at = NOW(),
-            updated_by = $3
-        WHERE client_id = $4 AND package_id = $5 AND id = $6
+            updated_by = $5
+        WHERE client_id = $6 AND package_id = $7 AND id = $8
         RETURNING *
       `,
       [
@@ -518,6 +529,8 @@ async function patchCertificateForPackage(clientId, packageId, certificateId, bo
           lockedGoverningTermsSnapshot: currentPayload.lockedGoverningTermsSnapshot,
         }),
         parsed.certificateDate || null,
+        parsed.contractualValuationDate !== undefined,
+        parsed.contractualValuationDate || null,
         actor || null,
         clientId,
         packageId,
@@ -528,7 +541,7 @@ async function patchCertificateForPackage(clientId, packageId, certificateId, bo
     await insertAudit(dbClient, {
       clientId,
       certificateId,
-      action: "edited",
+      action: parsed.contractualValuationDate !== undefined ? "payment_cycle_updated" : "edited",
       actor,
       priorStatus: CERTIFICATE_STATUSES.draft,
       newStatus: CERTIFICATE_STATUSES.draft,
@@ -595,6 +608,23 @@ async function submitCertificateForPackage(clientId, packageId, certificateId, b
       return prepared;
     }
 
+    const termsSnapshot = await snapshotForPackage(clientId, packageId, dbClient);
+    const applicationState = await loadTimetableApplication(dbClient, clientId, packageId, row.id, { forUpdate: true });
+    const applicationSnapshot = applicationState.document ? {
+      application: { ...applicationState.document, comparison: undefined, auditHistory: undefined },
+      comparison: normalizeApplication(applicationState.document, prepared.snapshot.totals),
+      capturedAt: new Date().toISOString(),
+    } : null;
+    const submissionPayload = {
+      ...prepared.payload,
+      submissionApplicationSnapshot: applicationSnapshot,
+      submissionGoverningTermsSnapshot: termsSnapshot,
+    };
+    await insertSubmissionSnapshot(dbClient, {
+      clientId, packageId, developmentId: pkg.development_id, certificateRow: row, actor,
+      terms: termsSnapshot, applicationState,
+    });
+
     const updated = await runQuery(
       dbClient,
       `
@@ -609,7 +639,7 @@ async function submitCertificateForPackage(clientId, packageId, certificateId, b
         WHERE client_id = $2 AND package_id = $3 AND id = $4
         RETURNING *
       `,
-      [actor || null, clientId, packageId, certificateId, JSON.stringify(await buildApplicationSnapshot(dbClient, clientId, packageId, row, prepared.snapshot.totals, prepared.payload, "submission"))]
+      [actor || null, clientId, packageId, certificateId, JSON.stringify(submissionPayload)]
     );
 
     await insertAudit(dbClient, {
@@ -750,10 +780,15 @@ async function approveCertificateForPackage(clientId, packageId, certificateId, 
     }
 
     const frozen = documentToLockedColumns(prepared.snapshot.totals);
-    const nextPayload = await buildApplicationSnapshot(
-      dbClient, clientId, packageId, row, prepared.snapshot.totals,
-      { ...prepared.payload, valuationSnapshot: prepared.snapshot.snapshot }, "locked"
-    );
+    const nextPayload = {
+      ...prepared.payload,
+      valuationSnapshot: prepared.snapshot.snapshot,
+      lockedApplicationSnapshot: prepared.payload.submissionApplicationSnapshot || null,
+      lockedGoverningTermsSnapshot: prepared.payload.submissionGoverningTermsSnapshot || null,
+    };
+    await copyLatestSubmissionToLocked(dbClient, {
+      clientId, packageId, developmentId: pkg.development_id, certificateRow: row, actor,
+    });
 
     const updated = await runQuery(
       dbClient,
@@ -919,6 +954,10 @@ async function deleteCertificateForPackage(clientId, packageId, certificateId, b
     if (row.status !== CERTIFICATE_STATUSES.draft) {
       await dbClient.query("ROLLBACK");
       return { ok: false, status: 409, message: "Only draft certificates can be deleted." };
+    }
+    if (await hasSubmissionHistory(dbClient, clientId, certificateId)) {
+      await dbClient.query("ROLLBACK");
+      return { ok: false, status: 409, message: "This certificate has submission history and must be retained as immutable audit evidence." };
     }
 
     await runQuery(

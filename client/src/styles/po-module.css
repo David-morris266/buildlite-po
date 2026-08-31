@@ -10857,3 +10857,16 @@
 .admin-terms-save-row { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
 .admin-terms-inline-success { color: #22c55e; font-weight: 700; }
 .admin-terms-inline-error { color: #ef4444; font-weight: 700; }
+.po-cert-timetable { margin: 1rem 0; }
+.po-cert-timetable__heading { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
+.po-cert-timetable__heading h3 { margin:0; }
+.po-cert-timetable__heading p { margin:.3rem 0 0; color:var(--po-muted,#667085); }
+.po-cert-timetable__editor { display:flex; gap:.75rem; align-items:end; flex-wrap:wrap; margin-top:1rem; }
+.po-cert-timetable__editor label { display:grid; gap:.35rem; font-weight:600; }
+.po-cert-timetable__dates { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:.75rem; margin:1rem 0 0; }
+.po-cert-timetable__dates div { padding:.75rem; background:var(--panel-2); border:1px solid var(--line); border-radius:.5rem; }
+.po-cert-timetable__dates dt { color:var(--muted); font-size:.8rem; text-transform:capitalize; }
+.po-cert-timetable__dates dd { margin:.25rem 0 0; color:var(--text); font-weight:700; }
+.po-cert-timetable__unavailable { margin:1rem 0 0; color:#92400e; }
+.po-cert-timetable__feedback--error { color:#b91c1c; }
+.po-cert-timetable__feedback--success { color:#166534; }

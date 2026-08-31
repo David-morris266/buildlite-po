@@ -31,6 +31,7 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 | `025_variation_order_line_ce_allocations.sql` | Explicit CE-to-VO-line signed allocation provenance. Multi-line Issue requires complete reconciled allocations; unambiguous single-line VO allocation remains compatible. Additive only; no backfill. |
 | `026_subcontract_payment_applications.sql` | Revisioned subcontract payment applications linked to Draft certificates; immutable submitted/locked comparison snapshots. |
 | `027_subcontract_terms_foundation.sql` | Tenant-owned versioned subcontract terms, defaults, PO overrides, immutable approval-time bindings and append-only audit. Additive only; no backfill. |
+| `028_payment_certificate_deadline_snapshots.sql` | Certificate contractual valuation date and immutable submitted/locked payment timetable snapshots. Additive only; no backfill. |
 
 ## Before applying to production
 

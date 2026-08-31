@@ -73,6 +73,7 @@ export function normalizeServerPaymentCertificate(document) {
     certificateNumber: Number(document.certificateNumber ?? document.certificate_number) || 0,
     status,
     certificateDate: toDateOnly(document.certificateDate || document.certificate_date),
+    contractualValuationDate: toDateOnly(document.contractualValuationDate || document.contractual_valuation_date),
     progress:
       document.progress && typeof document.progress === 'object' ? document.progress : {},
     commercialLines: Array.isArray(document.commercialLines)
@@ -85,6 +86,8 @@ export function normalizeServerPaymentCertificate(document) {
     lockedApplicationSnapshot: document.lockedApplicationSnapshot || document.locked_application_snapshot || null,
     submissionGoverningTermsSnapshot: document.submissionGoverningTermsSnapshot || document.submission_governing_terms_snapshot || null,
     lockedGoverningTermsSnapshot: document.lockedGoverningTermsSnapshot || document.locked_governing_terms_snapshot || null,
+    paymentTimetable: document.paymentTimetable || document.payment_timetable || null,
+    hasSubmissionHistory: Boolean(document.hasSubmissionHistory ?? document.has_submission_history),
     totals: document.totals && typeof document.totals === 'object' ? document.totals : null,
     grossValue: frozenMoney(document, 'grossValue', 'gross_value', 'grossWorksThisCertificate'),
     netValue: frozenMoney(document, 'netValue', 'net_value', 'netPayment'),
