@@ -10846,3 +10846,14 @@
 .admin-terms-actions button { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
 .admin-terms-actions button:hover { border-color: var(--accent); color: var(--accent); }
 .admin-terms-message { margin: 1rem 0; padding: .75rem 1rem; border-radius: 8px; background: #ecfdf5; color: #166534; }
+.admin-terms-payment-rules { display: grid; gap: 1rem; margin: 0; padding: 1rem; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.admin-terms-payment-rules legend { padding: 0 .4rem; font-weight: 700; }
+.admin-terms-offsets { display: grid; gap: .65rem; }
+.admin-terms-offset { display: grid; grid-template-columns: minmax(180px,1fr) 90px auto minmax(150px,220px); align-items: end; gap: .65rem; }
+.admin-terms-offset label { display: grid; gap: .25rem; }
+.admin-terms-preview { padding: .8rem; border-left: 3px solid var(--accent); background: var(--panel); }
+.admin-terms-preview p { margin: .35rem 0 0; color: var(--muted); }
+@media (max-width: 760px) { .admin-terms-offset { grid-template-columns: 1fr 90px; } }
+.admin-terms-save-row { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.admin-terms-inline-success { color: #22c55e; font-weight: 700; }
+.admin-terms-inline-error { color: #ef4444; font-weight: 700; }

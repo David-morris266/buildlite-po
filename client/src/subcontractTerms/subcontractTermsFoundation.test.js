@@ -18,9 +18,10 @@ describe('subcontract terms foundation',()=>{
     expect(po).toContain('Contract terms: Not configured');
     expect(pkg).toContain('Mixed contract terms — payment-rule readiness unavailable');
   });
-  it('does not introduce legal deadline or notice conclusions',()=>{
+  it('configures contractual timetable facts without introducing certificate or monetary conclusions',()=>{
     const page=readFileSync(new URL('../components/admin/AdminSubcontractTermsPage.jsx',import.meta.url),'utf8');
-    expect(page).not.toMatch(/due date|pay less|payment notice/i);
+    expect(page).toMatch(/Due date|Pay Less Notice deadline|Payment Notice deadline/);
+    expect(page).not.toMatch(/notified sum|application amount|assessment amount|pay less required/i);
     expect(page).toContain('authoritative role security is a future slice');
   });
 });

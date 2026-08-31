@@ -1,4 +1,5 @@
 const { pool, query } = require('../db');
+const { validatePaymentRulesV1 } = require('./paymentRulesV1');
 
 const run = (db, sql, params = []) => db ? db.query(sql, params) : query(sql, params);
 const who = (body = {}) => body.actor || body.updatedBy || body.createdBy || null;
@@ -51,6 +52,9 @@ async function list(clientId) {
 async function createFamily(clientId, body = {}) {
   const name = String(body.name || '').trim();
   if (!name) return fail(400, 'Name is required.');
+  const paymentRules=body.paymentRules||{configurationState:'incomplete'};
+  const rulesValidation=validatePaymentRulesV1(paymentRules,body.rulesSchemaVersion||1);
+  if(!rulesValidation.valid)return fail(400,rulesValidation.errors.join(' '));
   const db = await pool.connect();
   try {
     await db.query('BEGIN');
@@ -61,7 +65,7 @@ async function createFamily(clientId, body = {}) {
       (client_id,family_id,revision_number,version_label,rules_schema_version,payment_rules,
        source_document,created_by,updated_by) VALUES($1,$2,1,$3,$4,$5,$6,$7,$7) RETURNING id`,
       [clientId,family.id,body.versionLabel||null,Number(body.rulesSchemaVersion||1),
-       JSON.stringify(body.paymentRules||{}),JSON.stringify(body.sourceDocument||{}),who(body)])).rows[0];
+       JSON.stringify(paymentRules),JSON.stringify(body.sourceDocument||{}),who(body)])).rows[0];
     await audit(db,clientId,'family_created',{familyId:family.id,versionId:version.id,actor:who(body)});
     await db.query('COMMIT');
     return { ok:true, version:await mapVersion(clientId,version.id) };
@@ -73,7 +77,11 @@ async function createFamily(clientId, body = {}) {
 }
 
 async function updateDraft(clientId,id,body={}) {
+  const current=await mapVersion(clientId,id);
+  if(!current||current.status!=='draft')return fail(409,'Draft not found or version conflict. Published terms are immutable.');
   if (!body.paymentRules || typeof body.paymentRules !== 'object' || Array.isArray(body.paymentRules)) return fail(400,'paymentRules must be an object.');
+  const rulesValidation=validatePaymentRulesV1(body.paymentRules,body.rulesSchemaVersion||1);
+  if(!rulesValidation.valid)return fail(400,rulesValidation.errors.join(' '));
   const {rows}=await query(`UPDATE subcontract_terms_versions SET version_label=$3,effective_from=$4,
     rules_schema_version=$5,payment_rules=$6,source_document=$7,record_version=record_version+1,
     updated_by=$8,updated_at=NOW() WHERE client_id=$1 AND id=$2 AND status='draft'
@@ -85,6 +93,11 @@ async function updateDraft(clientId,id,body={}) {
 }
 
 async function publish(clientId,id,body={}) {
+  const current=await mapVersion(clientId,id);
+  if(!current||current.status!=='draft')return fail(409,'Only a Draft version can be published.');
+  const rulesValidation=validatePaymentRulesV1(current.paymentRules,current.rulesSchemaVersion);
+  if(!rulesValidation.complete)return fail(400,'Payment rules must be Complete and valid.');
+  if(!rulesValidation.valid)return fail(400,rulesValidation.errors.join(' '));
   const {rows}=await query(`UPDATE subcontract_terms_versions SET status='published',published_by=$3,
     published_at=NOW(),updated_by=$3,updated_at=NOW() WHERE client_id=$1 AND id=$2 AND status='draft' RETURNING id`,[clientId,id,who(body)]);
   if(!rows[0])return fail(409,'Only a Draft version can be published.');
