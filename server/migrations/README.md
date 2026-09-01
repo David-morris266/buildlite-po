@@ -32,6 +32,7 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 | `026_subcontract_payment_applications.sql` | Revisioned subcontract payment applications linked to Draft certificates; immutable submitted/locked comparison snapshots. |
 | `027_subcontract_terms_foundation.sql` | Tenant-owned versioned subcontract terms, defaults, PO overrides, immutable approval-time bindings and append-only audit. Additive only; no backfill. |
 | `028_payment_certificate_deadline_snapshots.sql` | Certificate contractual valuation date and immutable submitted/locked payment timetable snapshots. Additive only; no backfill. |
+| `029_payment_notice_authority.sql` | Payment Notice / Pay Less identities, immutable Prepared/Issued snapshots, audit and versioned intended-payment decisions. Additive only; no backfill. |
 
 ## Before applying to production
 
@@ -60,3 +61,6 @@ There are no automatic down migrations. Restore from backup if needed (see `docs
 # 026 — Subcontract payment applications
 
 `026_subcontract_payment_applications.sql` adds tenant/package-scoped subcontractor application source facts and immutable revision/audit provenance. It does not backfill certificates, alter certificate money, calculate notices, or create payment terms.
+### 029_payment_notice_authority.sql
+
+Additive Payment Notice / Pay Less authority foundation: stable notice identities, immutable Prepared/Issued snapshots, append-only lifecycle audit, and versioned intended-payment decisions. No backfill and no automatic notice creation or Issue.

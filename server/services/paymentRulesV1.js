@@ -75,7 +75,8 @@ function calculatePaymentDeadlines({rulesSnapshot,cycleInputs={}}={}) {
   }
   const rulesSchemaVersion=Number(rulesSnapshot.rulesSchemaVersion ?? rulesSnapshot.rules_schema_version ?? 1);
   const rules=rulesSnapshot.paymentRules ?? rulesSnapshot.payment_rules ?? rulesSnapshot;
-  const validation=validatePaymentRulesV1(rules,rulesSchemaVersion);
+  // V2 extends the notice authority configuration; its timetable graph remains V1.
+  const validation=validatePaymentRulesV1(rules,rulesSchemaVersion === 2 ? 1 : rulesSchemaVersion);
   if (validation.code === 'unsupported_rule_schema') return unavailable('unsupported_rule_schema',validation.errors,rulesSchemaVersion);
   if (rules?.configurationState === 'incomplete') return unavailable('incomplete_configuration',validation.errors.length?validation.errors:['Payment timetable configuration is incomplete.'],rulesSchemaVersion);
   if (!validation.valid) {

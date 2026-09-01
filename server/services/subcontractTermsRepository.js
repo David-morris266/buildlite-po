@@ -1,5 +1,5 @@
 const { pool, query } = require('../db');
-const { validatePaymentRulesV1 } = require('./paymentRulesV1');
+const { validatePaymentRules } = require('./paymentRulesV2');
 
 const run = (db, sql, params = []) => db ? db.query(sql, params) : query(sql, params);
 const who = (body = {}) => body.actor || body.updatedBy || body.createdBy || null;
@@ -53,7 +53,7 @@ async function createFamily(clientId, body = {}) {
   const name = String(body.name || '').trim();
   if (!name) return fail(400, 'Name is required.');
   const paymentRules=body.paymentRules||{configurationState:'incomplete'};
-  const rulesValidation=validatePaymentRulesV1(paymentRules,body.rulesSchemaVersion||1);
+  const rulesValidation=validatePaymentRules(paymentRules,body.rulesSchemaVersion||1);
   if(!rulesValidation.valid)return fail(400,rulesValidation.errors.join(' '));
   const db = await pool.connect();
   try {
@@ -80,7 +80,7 @@ async function updateDraft(clientId,id,body={}) {
   const current=await mapVersion(clientId,id);
   if(!current||current.status!=='draft')return fail(409,'Draft not found or version conflict. Published terms are immutable.');
   if (!body.paymentRules || typeof body.paymentRules !== 'object' || Array.isArray(body.paymentRules)) return fail(400,'paymentRules must be an object.');
-  const rulesValidation=validatePaymentRulesV1(body.paymentRules,body.rulesSchemaVersion||1);
+  const rulesValidation=validatePaymentRules(body.paymentRules,body.rulesSchemaVersion||1);
   if(!rulesValidation.valid)return fail(400,rulesValidation.errors.join(' '));
   const {rows}=await query(`UPDATE subcontract_terms_versions SET version_label=$3,effective_from=$4,
     rules_schema_version=$5,payment_rules=$6,source_document=$7,record_version=record_version+1,
@@ -95,7 +95,7 @@ async function updateDraft(clientId,id,body={}) {
 async function publish(clientId,id,body={}) {
   const current=await mapVersion(clientId,id);
   if(!current||current.status!=='draft')return fail(409,'Only a Draft version can be published.');
-  const rulesValidation=validatePaymentRulesV1(current.paymentRules,current.rulesSchemaVersion);
+  const rulesValidation=validatePaymentRules(current.paymentRules,current.rulesSchemaVersion);
   if(!rulesValidation.complete)return fail(400,'Payment rules must be Complete and valid.');
   if(!rulesValidation.valid)return fail(400,rulesValidation.errors.join(' '));
   const {rows}=await query(`UPDATE subcontract_terms_versions SET status='published',published_by=$3,

@@ -24,6 +24,7 @@ const prelimsTemplateRoutes = require("./routes/prelimsTemplateRoutes");
 const costCodeClassificationRoutes = require("./routes/costCodeClassificationRoutes");
 const costCodeMasterRoutes = require("./routes/costCodeMasterRoutes");
 const subcontractTermsRoutes = require("./routes/subcontractTermsRoutes");
+const paymentNoticeRoutes = require("./routes/paymentNoticeRoutes");
 
 function createApp() {
   const app = express();
@@ -58,6 +59,7 @@ function createApp() {
   app.use("/api/commercial-events", commercialEventRoutes);
   app.use("/api/variation-orders", variationOrderRoutes);
   app.use("/api/subcontract-terms", subcontractTermsRoutes);
+  app.use("/api", paymentNoticeRoutes);
 
   if (!isProduction()) {
     const developerRoutes = require("./routes/developerRoutes");

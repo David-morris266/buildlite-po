@@ -2,6 +2,7 @@ import {useEffect,useState} from 'react';
 import AdminPageShell from './AdminPageShell';
 import {cloneSubcontractTerms,createSubcontractTerms,listSubcontractTerms,publishSubcontractTerms,retireSubcontractTerms,setTenantSubcontractTermsDefault,updateSubcontractTermsDraft} from '../../api/subcontractTerms';
 import {anchorOptions,normalisePaymentRules,paymentRulesPreview} from '../../subcontractTerms/paymentRulesV1';
+import {noticeForMode,noticeModes,normalisePaymentRulesV2,paymentRulesV2Preview} from '../../subcontractTerms/paymentRulesV2';
 
 function DraftEditor({version,onSave}){
   const source=version.source_document||{};
@@ -9,11 +10,12 @@ function DraftEditor({version,onSave}){
   const [documentName,setDocumentName]=useState(source.name||'');
   const [documentReference,setDocumentReference]=useState(source.reference||'');
   const [checksum,setChecksum]=useState(source.sha256||'');
-  const [rules,setRules]=useState(()=>normalisePaymentRules(version.payment_rules));
+  const [schemaVersion,setSchemaVersion]=useState(Number(version.rules_schema_version||1));
+  const [rules,setRules]=useState(()=>Number(version.rules_schema_version)===2?normalisePaymentRulesV2(version.payment_rules):normalisePaymentRules(version.payment_rules));
   const [saveState,setSaveState]=useState({busy:false,message:''});
-  useEffect(()=>{setRules(normalisePaymentRules(version.payment_rules));},[version.record_version,version.payment_rules]);
+  useEffect(()=>{const v=Number(version.rules_schema_version||1);setSchemaVersion(v);setRules(v===2?normalisePaymentRulesV2(version.payment_rules):normalisePaymentRules(version.payment_rules));},[version.record_version,version.payment_rules,version.rules_schema_version]);
   const setSection=(section,field,value)=>setRules(current=>({...current,[section]:{...current[section],[field]:value}}));
-  async function submit(event){event.preventDefault();setSaveState({busy:true,message:''});const result=await onSave({...version,versionLabel:label,paymentRules:rules,sourceDocument:{...source,name:documentName,reference:documentReference,sha256:checksum,humanConfirmed:true},rulesSchemaVersion:1,recordVersion:version.record_version});setSaveState({busy:false,message:result.ok?'Draft saved.':result.message});}
+  async function submit(event){event.preventDefault();setSaveState({busy:true,message:''});const result=await onSave({...version,versionLabel:label,paymentRules:rules,sourceDocument:{...source,name:documentName,reference:documentReference,sha256:checksum,humanConfirmed:true},rulesSchemaVersion:schemaVersion,recordVersion:version.record_version});setSaveState({busy:false,message:result.ok?'Draft saved.':result.message});}
   return <form className="admin-terms-form" onSubmit={submit}>
     <div className="admin-terms-form__grid">
       <label className="dev-form__field"><span className="dev-form__label">Version label</span><input className="input" value={label} onChange={event=>setLabel(event.target.value)} /></label>
@@ -21,6 +23,7 @@ function DraftEditor({version,onSave}){
       <label className="dev-form__field"><span className="dev-form__label">Document reference</span><input className="input" value={documentReference} onChange={event=>setDocumentReference(event.target.value)} placeholder="Internal or external reference" /></label>
     </div>
     <fieldset className="admin-terms-payment-rules"><legend>Payment rules</legend>
+      <label className="dev-form__field"><span className="dev-form__label">Rules capability</span><select className="input" value={schemaVersion} onChange={event=>{const next=Number(event.target.value);setSchemaVersion(next);setRules(next===2?normalisePaymentRulesV2(rules):normalisePaymentRules(rules));}}><option value="1">V1 · timetable only</option><option value="2">V2 · timetable + notices</option></select></label>
       <div className="admin-terms-form__grid">
         <label className="dev-form__field"><span className="dev-form__label">Configuration state</span><select className="input" value={rules.configurationState} onChange={event=>setRules({...rules,configurationState:event.target.value})}><option value="incomplete">Incomplete</option><option value="complete">Complete</option></select></label>
         <label className="dev-form__field"><span className="dev-form__label">Jurisdiction</span><select className="input" value={rules.jurisdiction} onChange={event=>setRules({...rules,jurisdiction:event.target.value})}><option value="england_wales">England &amp; Wales</option></select></label>
@@ -33,7 +36,14 @@ function DraftEditor({version,onSave}){
         <RuleOffset label="Final date for payment" section="finalDateForPayment" rule={rules.finalDateForPayment} relativeOptions={[['due_date','due date']]} setSection={setSection}/>
         <RuleOffset label="Pay Less Notice deadline" section="payLessNoticeDeadline" rule={rules.payLessNoticeDeadline} relativeOptions={[['final_date_for_payment','final date for payment']]} setSection={setSection}/>
       </div>
-      <div className="admin-terms-preview"><strong>Plain-English preview</strong>{paymentRulesPreview(rules).map(line=><p key={line}>{line}</p>)}</div>
+      {schemaVersion===2?<fieldset className="admin-terms-payment-rules"><legend>Payment Notice and Pay Less authority</legend><div className="admin-terms-form__grid">
+        <label className="dev-form__field"><span className="dev-form__label">Payment Notice mode</span><select className="input" value={rules.notice.paymentNoticeMode} onChange={event=>setRules({...rules,notice:noticeForMode(event.target.value,rules.notice)})}><option value="">Select explicitly…</option>{noticeModes.map(([value,text])=><option key={value} value={value}>{text}</option>)}</select></label>
+        <label className="dev-form__field"><span className="dev-form__label">Payment Notice issuer</span><select className="input" value={rules.notice.paymentNoticeIssuer} onChange={event=>setRules({...rules,notice:{...rules.notice,paymentNoticeIssuer:event.target.value}})}><option value="">Select explicitly…</option><option value="company">Company</option><option value="specified_person">Specified person</option></select></label>
+        <label className="dev-form__field"><span className="dev-form__label">Pay Less issuer</span><select className="input" value={rules.notice.payLessIssuer} onChange={event=>setRules({...rules,notice:{...rules.notice,payLessIssuer:event.target.value}})}><option value="">Select explicitly…</option><option value="company">Company</option><option value="specified_person">Specified person</option></select></label>
+        <label><input type="checkbox" checked={rules.notice.basisOfCalculationRequired} onChange={event=>setRules({...rules,notice:{...rules.notice,basisOfCalculationRequired:event.target.checked}})}/> Basis of calculation required</label>
+        <label><input type="checkbox" checked={rules.notice.payLessWorkflowSupported} onChange={event=>setRules({...rules,notice:{...rules.notice,payLessWorkflowSupported:event.target.checked}})}/> Pay Less workflow supported</label>
+      </div></fieldset>:null}
+      <div className="admin-terms-preview"><strong>Plain-English preview</strong>{(schemaVersion===2?paymentRulesV2Preview(rules):paymentRulesPreview(rules)).map(line=><p key={line}>{line}</p>)}</div>
     </fieldset>
     <details className="admin-terms-advanced"><summary>Advanced structured data</summary>
       <p>Read-only developer representation. Normal administration does not require JSON.</p>

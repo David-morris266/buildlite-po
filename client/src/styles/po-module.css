@@ -10870,3 +10870,4 @@
 .po-cert-timetable__unavailable { margin:1rem 0 0; color:#92400e; }
 .po-cert-timetable__feedback--error { color:#b91c1c; }
 .po-cert-timetable__feedback--success { color:#166534; }
+.po-cert-notices{display:grid;gap:1rem}.po-cert-notices__heading{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start}.po-cert-notices__form{display:flex;flex-wrap:wrap;gap:.75rem;align-items:end}.po-cert-notices__form label{display:grid;gap:.35rem;min-width:12rem;flex:1}.po-cert-notices__facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(10rem,1fr));gap:.75rem}.po-cert-notices__facts div,.po-cert-notices__payless{padding:.75rem;border:1px solid var(--border-color,#394250);border-radius:.5rem;background:var(--panel-bg,#17202b)}.po-cert-notices__facts dt{color:var(--text-muted,#aeb8c5)}.po-cert-notices__facts dd{margin:.25rem 0 0;font-weight:700}

@@ -41,7 +41,7 @@ test('preserves date-only facts and converts receipt timestamps in Europe/London
 
 test('returns explicit readiness states and never infers money or notice requirements',()=>{
   assert.equal(calculatePaymentDeadlines({rulesSnapshot:snapshot({configurationState:'incomplete'})}).readiness,'incomplete_configuration');
-  assert.equal(calculatePaymentDeadlines({rulesSnapshot:{rulesSchemaVersion:2,paymentRules:complete()}}).readiness,'unsupported_rule_schema');
+  assert.equal(calculatePaymentDeadlines({rulesSnapshot:{rulesSchemaVersion:99,paymentRules:complete()}}).readiness,'unsupported_rule_schema');
   assert.equal(calculatePaymentDeadlines({rulesSnapshot:snapshot(complete({dueDate:{relativeTo:'anchor',direction:'after',days:1,dayBasis:'working'}}))}).readiness,'unsupported_day_basis');
   assert.equal(calculatePaymentDeadlines({rulesSnapshot:snapshot(),cycleInputs:{}}).readiness,'missing_anchor_date');
   assert.equal(calculatePaymentDeadlines({rulesSnapshot:{state:'mixed'}}).readiness,'review_required');
