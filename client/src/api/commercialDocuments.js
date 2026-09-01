@@ -1,0 +1,7 @@
+const API_BASE=(import.meta.env.VITE_API_URL||'http://localhost:3001').replace(/\/+$/,'');
+const actor=()=>typeof localStorage==='undefined'?null:(localStorage.getItem('userName')||localStorage.getItem('userEmail'));
+async function json(path,options={}){const response=await fetch(`${API_BASE}/api/commercial-documents${path}`,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});const body=await response.json().catch(()=>({}));if(!response.ok)throw new Error(body.message||'Commercial document request failed.');return body;}
+export const listCertificateDocuments=(packageId,certificateId)=>json(`/packages/${encodeURIComponent(packageId)}/certificates/${encodeURIComponent(certificateId)}`);
+export const generatePaymentCertificateDocument=(packageId,certificateId)=>json(`/packages/${encodeURIComponent(packageId)}/certificates/${encodeURIComponent(certificateId)}/payment-certificate`,{method:'POST',body:JSON.stringify({actor:actor()})});
+export const issueCommercialDocument=documentId=>json(`/${encodeURIComponent(documentId)}/issue`,{method:'POST',body:JSON.stringify({actor:actor()})});
+export const commercialDocumentPdfUrl=(documentId,{download=false}={})=>`${API_BASE}/api/commercial-documents/${encodeURIComponent(documentId)}/pdf${download?'?download=1':''}`;

@@ -8,6 +8,7 @@ import PaymentCertificateApplication from './PaymentCertificateApplication';
 import PaymentCertificateTerms from './PaymentCertificateTerms';
 import PaymentCertificateTimetable from './PaymentCertificateTimetable';
 import PaymentCertificateNotices from './PaymentCertificateNotices';
+import PaymentCertificateDocuments from './PaymentCertificateDocuments';
 import { buildCertificateDetailNavigation } from '../navigation/navigationBuilders';
 import {
   approveCertificate,
@@ -319,6 +320,7 @@ export default function PaymentCertificateDetail({
         onChanged={refresh}
       />
       <PaymentCertificateNotices certificate={certificate} packageId={pkg?.id || order?.packageUuid || order?.packageId} />
+      <PaymentCertificateDocuments certificate={certificate} packageId={pkg?.id || order?.packageUuid || order?.packageId} />
 
       {workflowFeedback?.type === 'error' && !dialog ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">

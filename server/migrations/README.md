@@ -64,3 +64,6 @@ There are no automatic down migrations. Restore from backup if needed (see `docs
 ### 029_payment_notice_authority.sql
 
 Additive Payment Notice / Pay Less authority foundation: stable notice identities, immutable Prepared/Issued snapshots, append-only lifecycle audit, and versioned intended-payment decisions. No backfill and no automatic notice creation or Issue.
+### 030 — Commercial documents
+
+`030_commercial_documents.sql` adds the generic tenant-scoped document envelope, frozen render/recipient payloads, PostgreSQL `BYTEA` PDF storage, SHA-256 evidence, generation/issue audit and database immutability protection. It performs no backfill and creates no document rows.
