@@ -4,7 +4,7 @@ const puppeteer=require('puppeteer');
 const Handlebars=require('../hbs-helpers');
 
 const TEMPLATE_DIR=path.join(__dirname,'..','templates','commercial-documents');
-const templates={payment_certificate:'payment-certificate-v1.hbs',payment_notice:'payment-notice-v1.hbs',combined_certificate_payment_notice:'combined-certificate-payment-notice-v1.hbs'};
+const templates={payment_certificate:'payment-certificate-v1.hbs',payment_notice:'payment-notice-v1.hbs',combined_certificate_payment_notice:'combined-certificate-payment-notice-v1.hbs',pay_less_notice:'pay-less-notice-v1.hbs'};
 
 function renderCommercialDocumentHtml(documentType,payload){
   const file=templates[documentType];if(!file)throw new Error(`Unsupported commercial document type: ${documentType}`);

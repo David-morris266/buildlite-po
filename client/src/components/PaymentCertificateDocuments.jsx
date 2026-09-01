@@ -1,8 +1,8 @@
 import {useEffect,useState} from 'react';
-import {commercialDocumentPdfUrl,generateCombinedCertificatePaymentNoticeDocument,generatePaymentCertificateDocument,generatePaymentNoticeDocument,issueCommercialDocument,listCertificateDocuments} from '../api/commercialDocuments';
+import {commercialDocumentPdfUrl,generateCombinedCertificatePaymentNoticeDocument,generatePayLessNoticeDocument,generatePaymentCertificateDocument,generatePaymentNoticeDocument,issueCommercialDocument,listCertificateDocuments} from '../api/commercialDocuments';
 
 const dateTime=value=>value?new Intl.DateTimeFormat('en-GB',{dateStyle:'medium',timeStyle:'short'}).format(new Date(value)):'—';
-const labels={payment_certificate:'Payment Certificate',payment_notice:'Payment Notice',combined_certificate_payment_notice:'Certificate + Payment Notice'};
+const labels={payment_certificate:'Payment Certificate',payment_notice:'Payment Notice',combined_certificate_payment_notice:'Certificate + Payment Notice',pay_less_notice:'Pay Less Notice'};
 export default function PaymentCertificateDocuments({certificate,packageId}){
   const [documents,setDocuments]=useState([]),[eligibility,setEligibility]=useState(null),[selectedType,setSelectedType]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
   async function load(){if(certificate?.status!=='locked'||!packageId||!certificate?.id)return;const result=await listCertificateDocuments(packageId,certificate.id);setDocuments(result.documents||[]);setEligibility(result.eligibility||null);}
@@ -11,7 +11,7 @@ export default function PaymentCertificateDocuments({certificate,packageId}){
   if(certificate?.status!=='locked')return null;
   const available=Object.entries(eligibility?.available||{}).filter(([,value])=>value).map(([type])=>type);
   const type=available.includes(selectedType)?selectedType:(available[0]||'');
-  const generate={payment_certificate:generatePaymentCertificateDocument,payment_notice:generatePaymentNoticeDocument,combined_certificate_payment_notice:generateCombinedCertificatePaymentNoticeDocument};
+  const generate={payment_certificate:generatePaymentCertificateDocument,payment_notice:generatePaymentNoticeDocument,combined_certificate_payment_notice:generateCombinedCertificatePaymentNoticeDocument,pay_less_notice:generatePayLessNoticeDocument};
   const issuedTypes=new Set(documents.filter(document=>document.status==='issued').map(document=>document.type));
   const generations=new Map();for(const document of [...documents].sort((a,b)=>new Date(a.generatedAt)-new Date(b.generatedAt)||a.id.localeCompare(b.id))){generations.set(document.id,(generations.get(`count:${document.type}`)||0)+1);generations.set(`count:${document.type}`,generations.get(document.id));}
   return <section className="po-module-card po-cert-documents" aria-labelledby="certificate-documents-heading"><div className="po-cert-notices__heading"><div><h3 id="certificate-documents-heading">Commercial documents</h3><p>Generated PDFs freeze existing authority. Document Issue is a separate explicit action.</p></div>{type?<div><label>Document type<select value={type} disabled={busy} onChange={event=>setSelectedType(event.target.value)}>{available.map(value=><option key={value} value={value}>{labels[value]}</option>)}</select></label><button className="po-btn-primary" disabled={busy} onClick={()=>act(()=>generate[type](packageId,certificate.id))}>{busy?'Working…':`Generate ${labels[type]}`}</button></div>:<p>No further document generation is currently available.</p>}</div>
