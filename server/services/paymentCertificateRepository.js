@@ -733,7 +733,8 @@ async function buildApplicationSnapshot(dbClient, clientId, packageId, row, tota
   };
 }
 
-async function approveCertificateForPackage(clientId, packageId, certificateId, body = {}, { actor } = {}) {
+async function approveCertificateForPackage(clientId, packageId, certificateId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CERTIFICATE_LOCK);
   if (!isValidPackageUuid(packageId)) return invalidPackageUuidResult();
   if (!isValidCertificateUuid(certificateId)) return invalidCertificateUuidResult();
 

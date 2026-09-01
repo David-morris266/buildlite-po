@@ -4,6 +4,9 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const { isProduction } = require("./utils/env");
+const { createClerkAuthAdapter, createTestAuthAdapter } = require('./auth/authAdapters');
+const { createAuthenticationMiddleware } = require('./auth/authMiddleware');
+const { PERMISSIONS } = require('./auth/permissions');
 
 const poRoutes = require("./routes/poRoutes");
 const jobRoutes = require("./routes/jobRoutes");
@@ -26,20 +29,33 @@ const costCodeMasterRoutes = require("./routes/costCodeMasterRoutes");
 const subcontractTermsRoutes = require("./routes/subcontractTermsRoutes");
 const paymentNoticeRoutes = require("./routes/paymentNoticeRoutes");
 const commercialDocumentRoutes = require("./routes/commercialDocumentRoutes");
+const authRoutes = require('./routes/authRoutes');
 
-function createApp() {
+function allowedOrigins() {
+  const configured = String(process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean);
+  return new Set([...configured, ...(!isProduction() ? ['http://localhost:5173', 'http://127.0.0.1:5173'] : [])]);
+}
+function defaultTestPrincipal(req) {
+  const requestedActor=req?.body?.approvedBy||req?.body?.issuedBy||req?.body?.actor||req?.body?.lockedBy||'Test Commercial Manager';
+  return { userId:'00000000-0000-0000-0000-000000000001', providerUserId:'test-user', displayName:requestedActor, email:'test@example.invalid', clientId:null, membershipId:'00000000-0000-0000-0000-000000000002', roleKey:'commercial_manager', roleName:'Commercial Manager', permissions:[...new Set(Object.values(PERMISSIONS))], memberships:[] };
+}
+
+function createApp(options = {}) {
   const app = express();
+  const authAdapter = options.authAdapter || ((process.env.BUILDLITE_SERVER_TEST === '1' || process.env.NODE_ENV === 'test') ? createTestAuthAdapter(options.testPrincipal || defaultTestPrincipal) : createClerkAuthAdapter());
+  const origins = allowedOrigins();
 
   app.use(
     cors({
-      origin: "*",
+      origin(origin, callback) { if (!origin || origins.has(origin)) return callback(null, true); return callback(new Error('Origin not allowed by BuildLite CORS policy.')); },
       methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-      allowedHeaders: "Content-Type, Authorization",
+      allowedHeaders: "Content-Type, Authorization, X-BuildLite-Client-Id",
+      credentials: true,
     })
   );
-  app.options("*", cors());
-
   app.use(express.json({ limit: "2mb" }));
+  app.use('/api', ...createAuthenticationMiddleware(authAdapter));
+  app.use('/api/auth', authRoutes);
 
   app.use("/api", poRoutes);
   app.use("/api/jobs", jobRoutes);

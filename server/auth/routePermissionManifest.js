@@ -1,0 +1,22 @@
+const { PERMISSIONS: P } = require('./permissions');
+const CRITICAL_ROUTE_PERMISSIONS = Object.freeze({
+  'POST /api/po/:poNumber/approve': P.PO_APPROVE,
+  'POST /api/commercial-events/:id/approve': P.CE_APPROVE,
+  'RECOVERY_WRITE_OFF': P.CE_RECOVERY_WRITE_OFF,
+  'POST /api/variation-orders/:id/approve': P.VO_APPROVE,
+  'POST /api/variation-orders/:id/issue': P.VO_ISSUE,
+  'POST /api/variation-orders/:id/approve-and-issue': P.VO_ISSUE,
+  'POST /api/developments/:developmentId/cvr/periods/:periodId/approve': P.CVR_LOCK,
+  'POST /api/packages/:packageId/certificates/:certificateId/approve': P.CERTIFICATE_LOCK,
+  'POST /api/packages/:packageId/certificates/:certificateId/intended-payments': P.INTENDED_PAYMENT_CONFIRM,
+  'POST /api/payment-notices/:noticeId/issue': `${P.PAYMENT_NOTICE_ISSUE}|${P.PAY_LESS_ISSUE}`,
+  'COMMERCIAL_DOCUMENT_GENERATE': P.DOCUMENT_GENERATE,
+  'POST /api/commercial-documents/:documentId/issue': P.DOCUMENT_ISSUE,
+  'GET /api/commercial-documents/:documentId/pdf': P.DOCUMENT_VIEW,
+  'POST /api/subcontract-terms/versions/:id/publish': P.TERMS_PUBLISH,
+  'PUT /api/subcontract-terms/default': P.TERMS_ASSIGN_DEFAULT,
+  'PUT /api/subcontract-terms/developments/:developmentId/default': P.TERMS_ASSIGN_DEFAULT,
+  'PUT /api/subcontract-terms/purchase-orders/:poNumber/override': P.TERMS_ASSIGN_OVERRIDE,
+  'POST /api/clients/active': P.TENANT_CONFIGURE,
+});
+module.exports = { CRITICAL_ROUTE_PERMISSIONS };

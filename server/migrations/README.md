@@ -67,3 +67,7 @@ Additive Payment Notice / Pay Less authority foundation: stable notice identitie
 ### 030 — Commercial documents
 
 `030_commercial_documents.sql` adds the generic tenant-scoped document envelope, frozen render/recipient payloads, PostgreSQL `BYTEA` PDF storage, SHA-256 evidence, generation/issue audit and database immutability protection. It performs no backfill and creates no document rows.
+
+### 031 — Authenticated identity and RBAC
+
+`031_rbac_identity_foundation.sql` adds provider-linked BuildLite users, tenant memberships, roles and an explicit permission catalogue. It seeds role/permission definitions only: no users, memberships, historic actors or commercial facts are backfilled.

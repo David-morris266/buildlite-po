@@ -4,6 +4,8 @@ const storage=require('./commercialDocumentStorage');
 const {buildPaymentCertificateRenderPayload}=require('./paymentCertificateDocumentPayload');
 const {buildNoticeDocumentRenderPayload,getDocumentEligibility}=require('./paymentNoticeDocumentPayload');
 const {renderCommercialDocumentPdf}=require('./commercialDocumentRenderer');
+const {assertServicePermission}=require('../auth/authorization');
+const {PERMISSIONS}=require('../auth/permissions');
 
 const fail=(status,message)=>({ok:false,status,message});
 const actor=body=>body?.actor||body?.generatedBy||body?.issuedBy||null;
@@ -13,6 +15,7 @@ const audit=(db,clientId,documentId,action,body,detail={})=>db.query(`INSERT INT
 async function listForCertificate(clientId,packageId,certificateId){const eligibility=await getDocumentEligibility({query},clientId,packageId,certificateId);if(!eligibility.ok)return eligibility;const rows=(await query(`SELECT * FROM commercial_documents WHERE client_id=$1 AND package_id=$2 AND certificate_id=$3 ORDER BY generated_at DESC,id DESC`,[clientId,packageId,certificateId])).rows;const documents=rows.map(map);const available={payment_certificate:eligibility.locked&&!documents.some(x=>x.type==='payment_certificate'&&x.status==='issued'),payment_notice:eligibility.locked&&eligibility.issuedPaymentNotice&&!documents.some(x=>x.type==='payment_notice'&&x.status==='issued'),combined_certificate_payment_notice:eligibility.locked&&eligibility.issuedPaymentNotice&&eligibility.noticeMode==='certificate_as_payment_notice'&&!documents.some(x=>x.type==='combined_certificate_payment_notice'&&x.status==='issued'),pay_less_notice:eligibility.locked&&eligibility.issuedPaymentNotice&&eligibility.issuedPayLessNotice&&!documents.some(x=>x.type==='pay_less_notice'&&x.status==='issued')};return {ok:true,documents,eligibility:{...eligibility,available}};}
 
 async function generatePaymentCertificate(client,packageId,certificateId,body={},options={}){
+  assertServicePermission(options.auth,PERMISSIONS.DOCUMENT_GENERATE);
   const built=await buildPaymentCertificateRenderPayload({query},client,packageId,certificateId);if(!built.ok)return built;
   const generatedAt=new Date().toISOString();const renderPayload={...built.renderPayload,document:{...built.renderPayload.document,generatedAt}};
   const render=options.render||renderCommercialDocumentPdf;const binary=Buffer.from(await render('payment_certificate',renderPayload));
@@ -29,6 +32,7 @@ async function generatePaymentCertificate(client,packageId,certificateId,body={}
 }
 
 async function generateNoticeDocument(client,packageId,certificateId,documentType,body={},options={}){
+  assertServicePermission(options.auth,PERMISSIONS.DOCUMENT_GENERATE);
   if(!['payment_notice','combined_certificate_payment_notice','pay_less_notice'].includes(documentType))return fail(400,'Unsupported document type.');
   const built=await buildNoticeDocumentRenderPayload({query},client,packageId,certificateId,documentType);if(!built.ok)return built;
   const generatedAt=new Date().toISOString();const renderPayload={...built.renderPayload,document:{...built.renderPayload.document,generatedAt}};
@@ -56,4 +60,13 @@ async function issueDocument(clientId,documentId,body={}){const db=await pool.co
   const updated=(await db.query(`UPDATE commercial_documents SET status='issued',issued_by=$3,issued_at=NOW(),version=version+1 WHERE client_id=$1 AND id=$2 AND status='generated' RETURNING *`,[clientId,documentId,actor(body)])).rows[0];await audit(db,clientId,documentId,'issued',body,{sha256:row.sha256});await db.query('COMMIT');return {ok:true,document:map(updated)};
 }catch(error){await db.query('ROLLBACK');throw error;}finally{db.release();}}
 
-module.exports={listForCertificate,generatePaymentCertificate,generateNoticeDocument,getDocument,getBinary,issueDocument};
+async function authorizedGetBinary(clientId,documentId,options={}) {
+  assertServicePermission(options.auth,PERMISSIONS.DOCUMENT_VIEW);
+  return getBinary(clientId,documentId);
+}
+async function authorizedIssueDocument(clientId,documentId,body={},options={}) {
+  assertServicePermission(options.auth,PERMISSIONS.DOCUMENT_ISSUE);
+  return issueDocument(clientId,documentId,body);
+}
+
+module.exports={listForCertificate,generatePaymentCertificate,generateNoticeDocument,getDocument,getBinary:authorizedGetBinary,issueDocument:authorizedIssueDocument};

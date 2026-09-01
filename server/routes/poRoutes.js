@@ -13,6 +13,8 @@ const {
 const { isProduction } = require("../utils/env");
 const { mapPOToContext, renderPOToPDF } = require("../services/pdf");
 const { bindOnApproval, resolveForPo } = require("../services/subcontractTermsRepository");
+const { requirePermission, actorFromAuth } = require('../auth/authorization');
+const { PERMISSIONS } = require('../auth/permissions');
 
 const router = express.Router();
 
@@ -779,7 +781,9 @@ router.post("/po/:poNumber/request-approval", async (req, res) => {
   res.json(po);
 });
 
-router.post("/po/:poNumber/approve", async (req, res) => {
+router.post("/po/:poNumber/approve", requirePermission(PERMISSIONS.PO_APPROVE), async (req, res) => {
+  const authenticatedActor = actorFromAuth(req.buildliteAuth, PERMISSIONS.PO_APPROVE).actor;
+  req.body = { ...req.body, approvedBy: authenticatedActor, actor: authenticatedActor, approver: authenticatedActor, approverEmail: req.buildliteAuth.email || "" };
   const active = await getActiveClient();
   if (!active) return res.status(404).json({ error: "No active client set" });
 

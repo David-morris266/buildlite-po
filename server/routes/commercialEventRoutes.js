@@ -22,11 +22,13 @@ const {
 } = require("../services/commercialEventRepository");
 
 const router = express.Router();
+const { requirePermission, actorFromAuth } = require('../auth/authorization');
+const { PERMISSIONS } = require('../auth/permissions');
 
 function workflowBody(req) {
   const body = req.body || {};
   return {
-    actor: provisionalActor(body),
+    actor: actorFromAuth(req.buildliteAuth, req.requiredPermission).actor,
     comment: body.comment || "",
   };
 }
@@ -175,13 +177,13 @@ router.post("/:id/submit", async (req, res) => {
   }
 });
 
-router.post("/:id/approve", async (req, res) => {
+router.post("/:id/approve", requirePermission(PERMISSIONS.CE_APPROVE), async (req, res) => {
   try {
     if (!isDbConfigured()) return res.status(500).json({ message: "Database not configured" });
     const active = await getActiveClient();
     if (!active) return res.status(404).json({ error: "No active client set" });
 
-    const result = await approveCommercialEvent(active.id, req.params.id, workflowBody(req));
+    const result = await approveCommercialEvent(active.id, req.params.id, workflowBody(req), { auth: req.buildliteAuth });
     if (!result.ok) return res.status(result.status || 400).json({ message: result.message });
     res.json(result.event);
   } catch (err) {
@@ -205,7 +207,7 @@ router.post("/:id/reject", async (req, res) => {
   }
 });
 
-router.post("/:id/close", async (req, res) => {
+router.post("/:id/close", requirePermission(PERMISSIONS.CE_CLOSE), async (req, res) => {
   try {
     if (!isDbConfigured()) return res.status(500).json({ message: "Database not configured" });
     const active = await getActiveClient();
@@ -220,7 +222,7 @@ router.post("/:id/close", async (req, res) => {
   }
 });
 
-router.post("/:id/dismiss-potential-contra", async (req, res) => {
+router.post("/:id/dismiss-potential-contra", requirePermission(PERMISSIONS.CE_RECOVERY_WRITE_OFF), async (req, res) => {
   try {
     if (!isDbConfigured()) return res.status(500).json({ message: "Database not configured" });
     const active = await getActiveClient();
@@ -229,7 +231,8 @@ router.post("/:id/dismiss-potential-contra", async (req, res) => {
     const result = await dismissPotentialContraCharge(
       active.id,
       req.params.id,
-      workflowBody(req)
+      workflowBody(req),
+      { auth: req.buildliteAuth }
     );
     if (!result.ok) return res.status(result.status || 400).json({ message: result.message });
     res.json(result.event);

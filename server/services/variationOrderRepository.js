@@ -1,4 +1,6 @@
 const { pool, query } = require("../db");
+const { assertServicePermission } = require('../auth/authorization');
+const { PERMISSIONS } = require('../auth/permissions');
 const { rowToVariationOrder } = require("./variationOrderMapper");
 const { allocateNextVariationOrderNumber } = require("./variationOrderNumbering");
 const {
@@ -588,7 +590,9 @@ async function validateVariationOrderForSubmit(db, clientId, row) {
   await validateAndCompleteLineAllocations(db, clientId, row, row.updated_by);
 }
 
-async function transitionVariationOrder(clientId, id, action, body = {}, { actor = actorFrom(body) } = {}) {
+async function transitionVariationOrder(clientId, id, action, body = {}, { actor = actorFrom(body), auth = null } = {}) {
+  if (action === 'approve') assertServicePermission(auth, PERMISSIONS.VO_APPROVE);
+  if (action === 'issue') assertServicePermission(auth, PERMISSIONS.VO_ISSUE);
   const transition = VARIATION_ORDER_TRANSITIONS[action];
   if (!transition) return fail(400, "Unknown Variation Order action.");
   const version = Number(body.version);
@@ -633,7 +637,8 @@ async function transitionVariationOrder(clientId, id, action, body = {}, { actor
   }
 }
 
-async function approveAndIssueVariationOrder(clientId, id, body = {}, { actor = actorFrom(body) } = {}) {
+async function approveAndIssueVariationOrder(clientId, id, body = {}, { actor = actorFrom(body), auth = null } = {}) {
+  assertServicePermission(auth, PERMISSIONS.VO_ISSUE);
   const version = Number(body.version);
   if (!Number.isInteger(version) || version < 1) return fail(400, "version is required.");
   const comment = String(body.comment || "").trim();

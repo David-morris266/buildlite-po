@@ -2,6 +2,8 @@ const express = require("express");
 const { isDbConfigured } = require("../db");
 const { getActiveClient } = require("../services/activeClient");
 const repository = require("../services/variationOrderRepository");
+const { requirePermission, actorFromAuth } = require('../auth/authorization');
+const { PERMISSIONS } = require('../auth/permissions');
 
 const router = express.Router();
 
@@ -62,19 +64,21 @@ router.put("/:id", async (req, res) => {
   } catch (error) { console.error("[VariationOrders] update error:", error); res.status(500).json({ message: "Failed to update Variation Order." }); }
 });
 
-router.post("/:id/approve-and-issue", async (req, res) => {
+router.post("/:id/approve-and-issue", requirePermission(PERMISSIONS.VO_ISSUE), async (req, res) => {
   try {
     const active = await activeClient(res); if (!active) return;
-    const result = await repository.approveAndIssueVariationOrder(active.id, req.params.id, req.body || {}, { actor: repository.actorFrom(req.body) });
+    const result = await repository.approveAndIssueVariationOrder(active.id, req.params.id, req.body || {}, { actor: actorFromAuth(req.buildliteAuth,PERMISSIONS.VO_ISSUE).actor, auth:req.buildliteAuth });
     res.status(result.status).json(result.ok ? result.variationOrder : { message: result.message });
   } catch (error) { console.error("[VariationOrders] approve and issue error:", error); res.status(500).json({ message: "Failed to approve and issue Variation Order." }); }
 });
 
 for (const action of ["submit", "approve", "issue", "reject"]) {
-  router.post(`/:id/${action}`, async (req, res) => {
+  const permission=action==='approve'?PERMISSIONS.VO_APPROVE:action==='issue'?PERMISSIONS.VO_ISSUE:null;
+  const middleware=permission?[requirePermission(permission)]:[];
+  router.post(`/:id/${action}`,...middleware, async (req, res) => {
     try {
       const active = await activeClient(res); if (!active) return;
-      const result = await repository.transitionVariationOrder(active.id, req.params.id, action, req.body || {}, { actor: repository.actorFrom(req.body) });
+      const result = await repository.transitionVariationOrder(active.id, req.params.id, action, req.body || {}, { actor: actorFromAuth(req.buildliteAuth,permission).actor, auth:req.buildliteAuth });
       res.status(result.status).json(result.ok ? result.variationOrder : { message: result.message });
     } catch (error) { console.error(`[VariationOrders] ${action} error:`, error); res.status(500).json({ message: `Failed to ${action} Variation Order.` }); }
   });

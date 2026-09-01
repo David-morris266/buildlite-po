@@ -4,6 +4,8 @@
 
 const crypto = require("crypto");
 const { pool, query } = require("../db");
+const { assertServicePermission } = require('../auth/authorization');
+const { PERMISSIONS } = require('../auth/permissions');
 const {
   rowToDocument,
   extractPayloadFromDocument,
@@ -774,7 +776,8 @@ async function submitCommercialEvent(clientId, id, { actor = null, comment = "" 
   });
 }
 
-async function approveCommercialEvent(clientId, id, { actor = null, comment = "" } = {}) {
+async function approveCommercialEvent(clientId, id, { actor = null, comment = "" } = {}, options = {}) {
+  assertServicePermission(options.auth, PERMISSIONS.CE_APPROVE);
   return applyWorkflowAction(clientId, id, {
     validate: (status) =>
       canApproveCommercialEvent(status) ? null : "Only submitted events can be approved",
@@ -820,8 +823,10 @@ async function closeCommercialEvent(clientId, id, { actor = null, comment = "" }
 async function dismissPotentialContraCharge(
   clientId,
   id,
-  { actor = null, comment = "" } = {}
+  { actor = null, comment = "" } = {},
+  options = {}
 ) {
+  assertServicePermission(options.auth, PERMISSIONS.CE_RECOVERY_WRITE_OFF);
   const existing = await findCommercialEventById(clientId, id);
   if (!existing) {
     return { ok: false, status: 404, message: "Commercial event not found." };

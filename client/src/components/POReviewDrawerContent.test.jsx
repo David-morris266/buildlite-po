@@ -22,11 +22,16 @@ vi.mock('../suppliers/usePoReviewLiveSupplier', () => ({
   })),
 }));
 
+vi.mock('../auth/BuildLiteAuthProvider', () => ({
+  useBuildLitePermission: vi.fn(() => false),
+}));
+
 vi.mock('./OrderMatrixDrawerSection', () => ({
   default: () => null,
 }));
 
 import { usePoReviewLiveSupplier } from '../suppliers/usePoReviewLiveSupplier';
+import { useBuildLitePermission } from '../auth/BuildLiteAuthProvider';
 
 const basePo = {
   poNumber: 'S0001',
@@ -47,6 +52,7 @@ describe('POReviewDrawerContent render stability', () => {
       loading: false,
       error: false,
     });
+    useBuildLitePermission.mockReturnValue(false);
   });
 
   afterEach(() => {
@@ -127,6 +133,33 @@ describe('POReviewDrawerContent render stability', () => {
     expect(document.body.textContent).not.toContain(
       'Supplier is pending approval'
     );
+  });
+
+  it('shows pending approval actions when authenticated principal has po.approve', () => {
+    useBuildLitePermission.mockReturnValue(true);
+    renderDrawer({
+      ...basePo,
+      status: 'Issued',
+      approval: { status: 'Pending', approverEmail: 'different@example.test' },
+      supplierId: 'sup-1',
+    }, { onApprove: vi.fn(), onReject: vi.fn() });
+
+    expect(document.body.textContent).toContain('Awaiting decision');
+    expect(document.body.textContent).toContain('Approve');
+    expect(document.body.textContent).toContain('Reject');
+  });
+
+  it('hides pending approval actions without authenticated po.approve permission', () => {
+    renderDrawer({
+      ...basePo,
+      status: 'Issued',
+      approval: { status: 'Pending', approverEmail: 'accounts@example.co.uk' },
+      supplierId: 'sup-1',
+    }, { onApprove: vi.fn(), onReject: vi.fn() });
+
+    expect(document.body.textContent).not.toContain('Awaiting decision');
+    expect(document.querySelector('.po-drawer-footer')?.textContent).not.toContain('Approve');
+    expect(document.querySelector('.po-drawer-footer')?.textContent).not.toContain('Reject');
   });
 
   it('declares supplier approval state before showSendForApproval', () => {

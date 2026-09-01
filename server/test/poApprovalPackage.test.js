@@ -8,6 +8,8 @@ const fs = require("fs");
 const path = require("path");
 const request = require("supertest");
 const createApp = require("../app");
+const { createTestAuthAdapter } = require('../auth/authAdapters');
+const { PERMISSIONS } = require('../auth/permissions');
 const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { buildSubcontractOrderKey } = require("../services/packageKey");
@@ -231,6 +233,31 @@ if (!isDbConfigured()) {
       assert.equal(pkg.order_key, orderKey);
       assert.deepEqual(pkg.poNumbers, [poNumber]);
       assert.equal(await countPackages(active.id), beforeCount + 1);
+      testPackageIds.push(pkg.id);
+    });
+
+    await t.test("authenticated PO approver overrides forged browser actor fields", async () => {
+      const active = await getActiveClient();
+      const development = await createDevelopment(active);
+      const supplierId = `sup-rbac-actor-${Date.now()}`;
+      await createApprovedSupplier(active.id, supplierId, "RBAC Actor Supplier");
+      const poNumber = `S-RBAC-ACTOR-${Date.now()}`;
+      await savePo(active.id, buildPendingPo({ poNumber, development, supplierId }));
+      const authApp = createApp({ authAdapter:createTestAuthAdapter({
+        userId:'rbac-user',providerUserId:'clerk-rbac-user',displayName:'Authenticated Manager',email:'manager@example.test',
+        clientId:active.id,membershipId:'rbac-membership',roleKey:'commercial_manager',roleName:'Commercial Manager',
+        permissions:[PERMISSIONS.PO_APPROVE],memberships:[],
+      }) });
+      const response = await request(authApp).post(`/api/po/${poNumber}/approve`).send({
+        status:'Approved',approver:'Forged Browser Actor',approvedBy:'Also Forged',approverEmail:'forged@example.test',
+      });
+      assert.equal(response.status,200);
+      assert.equal(response.body.approval.approver,'Authenticated Manager');
+      assert.equal(response.body.approval.approverEmail,'manager@example.test');
+      assert.equal(response.body.approval.history.at(-1).by,'Authenticated Manager');
+      const orderKey=buildSubcontractOrderKey(development.id,supplierId,'5218');
+      const pkg=await getPackageByOrderKey(active.id,orderKey);
+      assert.equal(pkg.created_by,'Authenticated Manager');
       testPackageIds.push(pkg.id);
     });
 

@@ -12,6 +12,8 @@
 const express = require("express");
 const { isDbConfigured } = require("../db");
 const { getActiveClient } = require("../services/activeClient");
+const { requirePermission, actorFromAuth } = require('../auth/authorization');
+const { PERMISSIONS } = require('../auth/permissions');
 const {
   approveCvrPeriod,
   createCostCodeInput,
@@ -186,7 +188,7 @@ router.post("/cvr/periods/:periodId/reject", async (req, res) => {
   }
 });
 
-router.post("/cvr/periods/:periodId/approve", async (req, res) => {
+router.post("/cvr/periods/:periodId/approve", requirePermission(PERMISSIONS.CVR_LOCK), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -200,7 +202,7 @@ router.post("/cvr/periods/:periodId/approve", async (req, res) => {
       req.params.developmentId,
       req.params.periodId,
       body,
-      { actor: provisionalActor(body) }
+      { actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.CVR_LOCK).actor, auth:req.buildliteAuth }
     );
     sendResult(res, result, 200, "period");
   } catch (err) {

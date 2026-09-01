@@ -348,6 +348,7 @@ async function rejectCvrPeriod(clientId, developmentId, periodId, body = {}, { a
 }
 
 async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, options = {}) {
+  require('../auth/authorization').assertServicePermission(options.auth, require('../auth/permissions').PERMISSIONS.CVR_LOCK);
   const { buildWholeCvrCloseCandidate } = require("./cvrCommercialClose");
   const { persistCvrPeriodSnapshot, isUniqueViolation: isSnapshotUnique } = require("./cvrSnapshotRepository");
 

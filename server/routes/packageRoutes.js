@@ -5,6 +5,8 @@
 const express = require("express");
 const { isDbConfigured } = require("../db");
 const { getActiveClient } = require("../services/activeClient");
+const { requirePermission, actorFromAuth } = require('../auth/authorization');
+const { PERMISSIONS } = require('../auth/permissions');
 const {
   findPackageById,
   findPackageByOrderKey,
@@ -290,7 +292,7 @@ router.post("/:packageId/certificates/:certificateId/submit", async (req, res) =
   }
 });
 
-router.post("/:packageId/certificates/:certificateId/approve", async (req, res) => {
+router.post("/:packageId/certificates/:certificateId/approve", requirePermission(PERMISSIONS.CERTIFICATE_LOCK), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -305,7 +307,7 @@ router.post("/:packageId/certificates/:certificateId/approve", async (req, res) 
       req.params.packageId,
       req.params.certificateId,
       body,
-      { actor: certificateActor(body) }
+      { actor: actorFromAuth(req.buildliteAuth,PERMISSIONS.CERTIFICATE_LOCK).actor, auth:req.buildliteAuth }
     );
     if (!result.ok) return sendCertificateError(res, result);
     res.json(result.certificate);

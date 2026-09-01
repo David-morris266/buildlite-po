@@ -570,8 +570,11 @@ export function isCurrentUserConfiguredApprover(po = null) {
 }
 
 /** Show Review entry points in List / detail for the configured approver. */
-export function canReviewAndApprovePo(po) {
+export function canReviewAndApprovePo(po, { hasPoApprovalPermission } = {}) {
   if (!po || !isPoAwaitingApproval(po)) return false;
+  if (typeof hasPoApprovalPermission === "boolean") {
+    return hasPoApprovalPermission;
+  }
   return isCurrentUserConfiguredApprover(po);
 }
 

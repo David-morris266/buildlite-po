@@ -18,6 +18,7 @@ import {
 import { resolvePoReviewSupplierApprovalState } from '../suppliers/supplierMasterSync';
 import { usePoReviewLiveSupplier } from '../suppliers/usePoReviewLiveSupplier';
 import OrderMatrixDrawerSection from './OrderMatrixDrawerSection';
+import { useBuildLitePermission } from '../auth/BuildLiteAuthProvider';
 
 function DrawerSection({ title, children, className = '' }) {
   return (
@@ -193,6 +194,7 @@ export default function POReviewDrawerContent({
   onOpenPackage,
 }) {
   const liveSupplierState = usePoReviewLiveSupplier(po);
+  const hasPoApprovalPermission = useBuildLitePermission('po.approve');
 
   if (!po) return null;
 
@@ -200,7 +202,7 @@ export default function POReviewDrawerContent({
   const summary = getCommercialSummary(po);
   const timeline = getApprovalTimelineEntries(po);
   const headerMeta = getDrawerHeaderMeta(po);
-  const showApproverActions = canReviewAndApprovePo(po);
+  const showApproverActions = canReviewAndApprovePo(po, { hasPoApprovalPermission });
   const {
     supplierPendingApproval,
     supplierApprovalLoading,
