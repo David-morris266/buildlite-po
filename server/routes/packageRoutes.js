@@ -37,6 +37,7 @@ const {
   reviseApplication,
   linkApplication,
 } = require("../services/paymentApplicationRepository");
+const applicationVariations = require('../services/applicationVariationRepository');
 
 const router = express.Router();
 
@@ -180,6 +181,13 @@ router.post("/:packageId/payment-applications/:applicationId/link", async (req, 
     res.status(500).json({ message: "Failed to link subcontractor application." });
   }
 });
+
+const variationResult=(res,result)=>result.ok?res.status(result.status||200).json(result.line?{line:result.line,itemId:result.itemId}:result):res.status(result.status).json({message:result.message});
+router.get('/:packageId/payment-applications/:applicationId/variation-lines',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_VIEW),async(req,res)=>{try{const active=await getActiveClient();variationResult(res,await applicationVariations.listLines(active.id,req.params.packageId,req.params.applicationId,req.buildliteAuth));}catch(error){res.status(error.status||500).json({message:error.message||'Failed to load application variations.'});}});
+router.post('/:packageId/payment-applications/:applicationId/variation-lines',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_CREATE),async(req,res)=>{try{const active=await getActiveClient();variationResult(res,await applicationVariations.addLine(active.id,req.params.packageId,req.params.applicationId,req.body||{},req.buildliteAuth));}catch(error){res.status(error.status||500).json({message:error.message||'Failed to record application variation.'});}});
+router.post('/:packageId/payment-applications/:applicationId/variation-lines/:lineId/match',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_CREATE),async(req,res)=>{try{const active=await getActiveClient();variationResult(res,await applicationVariations.matchLine(active.id,req.params.packageId,req.params.applicationId,req.params.lineId,req.body.variationAccountItemId,req.buildliteAuth));}catch(error){res.status(error.status||500).json({message:error.message||'Failed to match application variation.'});}});
+router.post('/:packageId/payment-applications/:applicationId/variation-lines/:lineId/create-variation',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_CREATE),async(req,res)=>{try{const active=await getActiveClient();variationResult(res,await applicationVariations.createVariation(active.id,req.params.packageId,req.params.applicationId,req.params.lineId,req.body||{},req.buildliteAuth));}catch(error){res.status(error.status||500).json({message:error.message||'Failed to create Variation Account item.'});}});
+router.post('/:packageId/payment-applications/:applicationId/variation-lines/:lineId/confirm-contractor-position',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_FORECAST_EDIT),async(req,res)=>{try{const active=await getActiveClient();variationResult(res,await applicationVariations.confirmContractorPosition(active.id,req.params.packageId,req.params.applicationId,req.params.lineId,req.body||{},req.buildliteAuth));}catch(error){res.status(error.status||500).json({message:error.message||'Failed to confirm contractor position.'});}});
 
 router.get("/:packageId/certificates", async (req, res) => {
   try {

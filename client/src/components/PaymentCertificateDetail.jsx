@@ -105,6 +105,17 @@ function CertificateAuditHistory({ items }) {
   );
 }
 
+export function resolveCertificatePackageId(certificate, pkg, order) {
+  return (
+    certificate?.packageUuid ||
+    certificate?.packageId ||
+    pkg?.id ||
+    order?.packageUuid ||
+    order?.packageId ||
+    null
+  );
+}
+
 export default function PaymentCertificateDetail({
   certificateId,
   order,
@@ -126,6 +137,7 @@ export default function PaymentCertificateDetail({
   }, [order, certificateId, refreshToken, pkg?.matrixLoadState, pkg?.matrixReady]);
 
   const certificate = summary?.certificate || getCertificate(order.orderKey, certificateId, order);
+  const authoritativePackageId = resolveCertificatePackageId(certificate, pkg, order);
   const certificatesPending = pkg?.certificatesReady === false;
   const status = getCertificateStatusMeta(certificate?.status);
   const commercialSummary = buildCommercialSummaryItems(summary?.totals, {
@@ -319,8 +331,8 @@ export default function PaymentCertificateDetail({
         order={order}
         onChanged={refresh}
       />
-      <PaymentCertificateNotices certificate={certificate} packageId={pkg?.id || order?.packageUuid || order?.packageId} />
-      <PaymentCertificateDocuments certificate={certificate} packageId={pkg?.id || order?.packageUuid || order?.packageId} />
+      <PaymentCertificateNotices certificate={certificate} packageId={authoritativePackageId} />
+      <PaymentCertificateDocuments certificate={certificate} packageId={authoritativePackageId} />
 
       {workflowFeedback?.type === 'error' && !dialog ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">
@@ -397,7 +409,7 @@ export default function PaymentCertificateDetail({
       </div>
 
       <PaymentCertificateApplication
-        packageId={pkg?.id || order?.packageUuid || order?.packageId}
+        packageId={authoritativePackageId}
         certificate={certificate}
         assessmentGross={summary?.totals?.grossWorksThisCertificate ?? certificate.grossValue}
         editable={editable}
@@ -412,7 +424,7 @@ export default function PaymentCertificateDetail({
         onLinesChanged={refresh}
       >
         <PaymentCertificateVariationOrders
-          packageId={pkg?.id || order?.packageUuid || order?.packageId}
+          packageId={authoritativePackageId}
           orderKey={order.orderKey}
           order={order}
           certificate={certificate}

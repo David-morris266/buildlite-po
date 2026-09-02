@@ -4,7 +4,8 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import PaymentCertificateDetail from './PaymentCertificateDetail';
+import PaymentCertificateDetail, { resolveCertificatePackageId } from './PaymentCertificateDetail';
+import { normalizeServerPaymentCertificate } from '../payments/paymentCertificateServerMapper';
 
 const approveCertificate = vi.fn();
 const submitCertificate = vi.fn();
@@ -271,5 +272,23 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     expect(document.body.textContent).toContain('Submission rejected clearly.');
     expect(document.querySelector('[role="dialog"]')).toBeTruthy();
     expect(confirm.disabled).toBe(false);
+  });
+});
+
+describe('PaymentCertificateDetail package identity', () => {
+  it('uses the real mapped server-certificate package UUID when the PO-derived view has no UUID', () => {
+    const certificate = normalizeServerPaymentCertificate({
+      id: 'cert-authoritative',
+      packageId: 'pkg-authoritative',
+      status: 'draft',
+    });
+
+    expect(certificate.packageUuid).toBe('pkg-authoritative');
+    expect(certificate.packageId).toBeUndefined();
+    expect(
+      resolveCertificatePackageId(certificate, {}, {
+        orderKey: 'dev::supplier::4330',
+      })
+    ).toBe('pkg-authoritative');
   });
 });

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPaymentApplication, listPaymentApplications, revisePaymentApplication } from '../api/paymentApplications';
 import { APPLICATION_BASES, comparePaymentApplication } from '../payments/paymentApplicationComparison';
+import PaymentApplicationVariations from './PaymentApplicationVariations';
 
 const labels = {
   [APPLICATION_BASES.currentPeriodGross]: 'Current-period gross',
@@ -61,6 +62,7 @@ export default function PaymentCertificateApplication({ packageId, certificate, 
       {comparison.comparable && comparison.difference!==0?<p className="po-cert-application__variance">Assessment differs from application.</p>:null}
       <button type="button" className="po-cert-workspace__link" onClick={()=>setAdvanced((value)=>!value)}>{advanced?'Hide source breakdown':'Show source breakdown'}</button>
       {advanced?<dl className="po-cert-application__breakdown"><div><dt>Gross claimed</dt><dd>{pounds(application.currentPeriodGrossClaimed??application.cumulativeGrossClaimed)}</dd></div><div><dt>Retention stated</dt><dd>{pounds(application.retentionStated)}</dd></div><div><dt>Contra / deductions</dt><dd>{pounds(application.contraDeductionsStated)}</dd></div><div><dt>VAT stated</dt><dd>{pounds(application.vatStated)}</dd></div><div><dt>Net requested</dt><dd>{pounds(application.netRequestedStated)}</dd></div></dl>:null}
+      <PaymentApplicationVariations packageId={packageId} application={application} editable={editable} onChanged={onChanged}/>
     </>:<p>No subcontractor application recorded.</p>}
   </section>;
 }

@@ -24,3 +24,11 @@ export async function revisePaymentApplication(packageId, applicationId, body) {
 export async function linkPaymentApplication(packageId, applicationId, certificateId) {
   return json(await fetch(url(packageId, `/${encodeURIComponent(applicationId)}/link`), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ certificateId }) }));
 }
+
+const variationUrl=(packageId,applicationId,suffix='')=>url(packageId,`/${encodeURIComponent(applicationId)}/variation-lines${suffix}`);
+export async function listApplicationVariations(packageId,applicationId){const body=await json(await fetch(variationUrl(packageId,applicationId)));return body.lines||[];}
+export async function addApplicationVariation(packageId,applicationId,body){const result=await json(await fetch(variationUrl(packageId,applicationId),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}));return result.line;}
+export async function matchApplicationVariation(packageId,applicationId,lineId,variationAccountItemId){const result=await json(await fetch(variationUrl(packageId,applicationId,`/${encodeURIComponent(lineId)}/match`),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({variationAccountItemId})}));return result.line;}
+export async function createVariationFromApplication(packageId,applicationId,lineId,body){return json(await fetch(variationUrl(packageId,applicationId,`/${encodeURIComponent(lineId)}/create-variation`),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}));}
+export async function confirmApplicationContractorPosition(packageId,applicationId,lineId,reason){return json(await fetch(variationUrl(packageId,applicationId,`/${encodeURIComponent(lineId)}/confirm-contractor-position`),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason})}));}
+export async function listPackageVariationAccount(packageId){const body=await json(await fetch(`${API_BASE}/api/variation-account?packageId=${encodeURIComponent(packageId)}`));return body.items||[];}

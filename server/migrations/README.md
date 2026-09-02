@@ -34,6 +34,7 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 | `028_payment_certificate_deadline_snapshots.sql` | Certificate contractual valuation date and immutable submitted/locked payment timetable snapshots. Additive only; no backfill. |
 | `029_payment_notice_authority.sql` | Payment Notice / Pay Less identities, immutable Prepared/Issued snapshots, audit and versioned intended-payment decisions. Additive only; no backfill. |
 | `033_package_variation_account.sql` | Package-scoped Variation Account identity, immutable QS Forecast/contractor histories, lifecycle audit, RBAC and Migration 032 compatibility bridge. Additive only; no backfill or financial integration. |
+| `034_application_variation_lines.sql` | Immutable application-revision variation evidence, deterministic VA reconciliation and authenticated audit. Additive only; no historic backfill or certificate financial integration. |
 
 ## Before applying to production
 
@@ -75,3 +76,7 @@ Additive Payment Notice / Pay Less authority foundation: stable notice identitie
 ### 033 — Package Variation Account foundation
 
 Additive VA-0 schema for package-scoped Variation Account identities, immutable QS Forecast and contractor-position histories, explicit lifecycle audit, authenticated RBAC permissions, stable per-package references, and a non-backfilled compatibility bridge to Migration 032 payment-discovered facts. It does not alter certificate, CE, VO, CVR, notice, release or document financial behaviour.
+
+### 034 — Application variation-line reconciliation
+
+Adds signed subcontract-application variation evidence with explicit claim arithmetic, manual matching/new-variation reconciliation, authenticated provenance and append-only audit. Existing applications receive no invented lines.
