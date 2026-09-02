@@ -30,6 +30,7 @@ const subcontractTermsRoutes = require("./routes/subcontractTermsRoutes");
 const paymentNoticeRoutes = require("./routes/paymentNoticeRoutes");
 const commercialDocumentRoutes = require("./routes/commercialDocumentRoutes");
 const authRoutes = require('./routes/authRoutes');
+const variationAccountRoutes = require('./routes/variationAccountRoutes');
 
 function allowedOrigins() {
   const configured = String(process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean);
@@ -78,6 +79,7 @@ function createApp(options = {}) {
   app.use("/api/subcontract-terms", subcontractTermsRoutes);
   app.use("/api", paymentNoticeRoutes);
   app.use("/api/commercial-documents", commercialDocumentRoutes);
+  app.use("/api/variation-account", variationAccountRoutes);
 
   if (!isProduction()) {
     const developerRoutes = require("./routes/developerRoutes");

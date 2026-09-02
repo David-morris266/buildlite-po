@@ -6,6 +6,8 @@ const PERMISSIONS = Object.freeze({
   DOCUMENT_ISSUE: 'document.issue', DOCUMENT_VIEW: 'document.view', TERMS_PUBLISH: 'terms.publish',
   TERMS_ASSIGN_DEFAULT: 'terms.assign_default', TERMS_ASSIGN_OVERRIDE: 'terms.assign_override', TENANT_CONFIGURE: 'tenant.configure',
   USERS_MANAGE: 'users.manage', ROLES_MANAGE: 'roles.manage', PAYMENT_RELEASE_APPROVE: 'payment_release.approve',
+  VARIATION_ACCOUNT_VIEW: 'variation_account.view', VARIATION_ACCOUNT_CREATE: 'variation_account.create',
+  VARIATION_ACCOUNT_FORECAST_EDIT: 'variation_account.forecast_edit', VARIATION_ACCOUNT_RESOLVE: 'variation_account.resolve',
 });
 
 module.exports = { PERMISSIONS };
