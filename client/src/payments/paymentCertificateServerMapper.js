@@ -86,6 +86,17 @@ export function normalizeServerPaymentCertificate(document) {
     lockedApplicationSnapshot: document.lockedApplicationSnapshot || document.locked_application_snapshot || null,
     submissionGoverningTermsSnapshot: document.submissionGoverningTermsSnapshot || document.submission_governing_terms_snapshot || null,
     lockedGoverningTermsSnapshot: document.lockedGoverningTermsSnapshot || document.locked_governing_terms_snapshot || null,
+    sourceAuthority: document.sourceAuthority || document.source_authority || null,
+    paymentDiscoveredItems: Array.isArray(document.paymentDiscoveredItems)
+      ? document.paymentDiscoveredItems
+      : Array.isArray(document.payment_discovered_items)
+        ? document.payment_discovered_items
+        : [],
+    variationAssessments: Array.isArray(document.variationAssessments)
+      ? document.variationAssessments
+      : Array.isArray(document.variation_assessments)
+        ? document.variation_assessments
+        : [],
     paymentTimetable: document.paymentTimetable || document.payment_timetable || null,
     hasSubmissionHistory: Boolean(document.hasSubmissionHistory ?? document.has_submission_history),
     totals: document.totals && typeof document.totals === 'object' ? document.totals : null,

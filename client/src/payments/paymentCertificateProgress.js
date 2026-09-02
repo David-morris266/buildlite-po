@@ -655,8 +655,23 @@ export function summarizeCertificateProgress(orderKey, certificateId, order = nu
   const vatRate = getOrderVatRate(order);
   const retentionRate = getOrderRetentionRate(order);
 
+  const assessedLines = [
+    ...normalizeCertificateCommercialLines(certificate),
+    ...(certificate.paymentDiscoveredItems || []).map((item) => ({
+      id: `payment-discovered:${item.id}`,
+      lineType: 'valueInclusion',
+      sourceType: 'paymentDiscovered',
+      amountThisCertificate: Number(item.signedAmount) || 0,
+    })),
+    ...(certificate.variationAssessments || []).map((item) => ({
+      id: `variation-assessment:${item.id}`,
+      lineType: 'valueInclusion',
+      sourceType: 'variationAccountAssessment',
+      amountThisCertificate: Number(item.currentAssessment) || 0,
+    })),
+  ];
   let totals = buildCertificateWorksTotals(grid.cells, {
-    commercialLines: normalizeCertificateCommercialLines(certificate),
+    commercialLines: assessedLines,
     currentContractValue,
     previousGrossWorks,
     previousCommercialEventCertified,

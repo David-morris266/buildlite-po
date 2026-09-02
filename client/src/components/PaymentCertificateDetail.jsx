@@ -9,6 +9,8 @@ import PaymentCertificateTerms from './PaymentCertificateTerms';
 import PaymentCertificateTimetable from './PaymentCertificateTimetable';
 import PaymentCertificateNotices from './PaymentCertificateNotices';
 import PaymentCertificateDocuments from './PaymentCertificateDocuments';
+import PaymentCertificateSourceAuthority from './PaymentCertificateSourceAuthority';
+import PaymentCertificateVariationAssessments from './PaymentCertificateVariationAssessments';
 import { buildCertificateDetailNavigation } from '../navigation/navigationBuilders';
 import {
   approveCertificate,
@@ -415,6 +417,15 @@ export default function PaymentCertificateDetail({
         editable={editable}
         onChanged={refresh}
       />
+
+      <PaymentCertificateVariationAssessments
+        packageId={authoritativePackageId}
+        certificate={certificate}
+        editable={editable}
+        onChanged={refresh}
+      />
+
+      <PaymentCertificateSourceAuthority certificate={certificate} />
 
       <PaymentCertificateCommercialEvents
         orderKey={order.orderKey}

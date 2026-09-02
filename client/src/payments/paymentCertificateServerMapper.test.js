@@ -15,6 +15,8 @@ describe('paymentCertificateServerMapper (BL-030B)', () => {
       certificateDate: '2026-08-01',
       contractualValuationDate: '2026-08-31',
       paymentTimetable: { state: 'live', readiness: 'ready' },
+      sourceAuthority: { state: 'captured', orderedWorkGross: 500, approvedPoAuthority: 1000, unapprovedCertifiedGross: 0 },
+      paymentDiscoveredItems: [{ id: 'pd-1', signedAmount: 200 }],
       hasSubmissionHistory: true,
       progress: { 'plot-1::Foundations': { thisCertificatePct: 50 } },
       commercialLines: [{ id: 'cel-1', amountThisCertificate: 1000 }],
@@ -49,7 +51,20 @@ describe('paymentCertificateServerMapper (BL-030B)', () => {
     expect(mapped.commercialLines).toHaveLength(1);
     expect(mapped.auditHistory[0].action).toBe('approved');
     expect(mapped.paymentTimetable).toMatchObject({ state: 'live', readiness: 'ready' });
+    expect(mapped.sourceAuthority).toMatchObject({ orderedWorkGross: 500, approvedPoAuthority: 1000 });
+    expect(mapped.paymentDiscoveredItems).toEqual([{ id: 'pd-1', signedAmount: 200 }]);
     expect(mapped.hasSubmissionHistory).toBe(true);
+  });
+
+  it('preserves snake-case source authority and empty discovered facts', () => {
+    const mapped = normalizeServerPaymentCertificate({
+      id: 'cert-authority',
+      status: 'draft',
+      source_authority: { state: 'captured', ordered_work_gross: 500 },
+      payment_discovered_items: [],
+    });
+    expect(mapped.sourceAuthority).toEqual({ state: 'captured', ordered_work_gross: 500 });
+    expect(mapped.paymentDiscoveredItems).toEqual([]);
   });
 
   it('maps approved status to locked and reads frozen totals aliases', () => {

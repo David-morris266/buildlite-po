@@ -24,6 +24,9 @@ const {
 } = require("./paymentCertificateValidation");
 const { loadActiveApplicationForCertificate, mapRow: mapApplicationRow } = require("./paymentApplicationRepository");
 const { normalizeApplication } = require("./paymentApplicationNormalization");
+const { buildPaymentCertificateSourceAuthority } = require('./paymentCertificateSourceAuthority');
+const { listPaymentDiscoveredItems, lockPaymentDiscoveredItems } = require('./paymentDiscoveredRepository');
+const {listAssessments:listVariationAssessments,lockAssessments:lockVariationAssessments}=require('./variationAccountCertificateAssessmentRepository');
 const { snapshotForPackage } = require("./subcontractTermsRepository");
 const {
   timetableForRead,
@@ -263,13 +266,16 @@ function payloadFromRow(row) {
     lockedApplicationSnapshot: payload.lockedApplicationSnapshot || null,
     submissionGoverningTermsSnapshot: payload.submissionGoverningTermsSnapshot || null,
     lockedGoverningTermsSnapshot: payload.lockedGoverningTermsSnapshot || null,
+    sourceAuthoritySnapshot: payload.sourceAuthoritySnapshot || null,
   };
 }
 
 async function hydrateDocument(clientId, row, dbClient = null, extras = {}) {
   const auditRows = await loadAuditRows(clientId, row.id, dbClient);
   const paymentTimetable = await timetableForRead(dbClient, clientId, row.package_id, row);
-  return rowToDocument(row, auditRows, { ...extras, paymentTimetable });
+  const paymentDiscoveredItems = await listPaymentDiscoveredItems(clientId,row.package_id,row.id,dbClient);
+  const variationAssessments=await listVariationAssessments(clientId,row.package_id,row.id,dbClient);
+  return rowToDocument(row, auditRows, { ...extras, paymentTimetable, paymentDiscoveredItems,variationAssessments });
 }
 
 async function computeLiveTotals(clientId, packageId, row, allRows, dbClient = null) {
@@ -280,15 +286,20 @@ async function computeLiveTotals(clientId, packageId, row, allRows, dbClient = n
   const locked = lockedDocumentsFromRows(allRows).filter(
     (item) => item.certificateNumber < row.certificate_number
   );
+  const paymentDiscoveredItems = await listPaymentDiscoveredItems(clientId,packageId,row.id,dbClient);
+  const variationAssessments=await listVariationAssessments(clientId,packageId,row.id,dbClient);
+  const discoveredLines = paymentDiscoveredItems.map(item=>({id:`payment-discovered:${item.id}`,lineType:'valueInclusion',sourceType:'paymentDiscovered',amountThisCertificate:item.signedAmount}));
+  const variationLines=variationAssessments.map(item=>({id:`variation-assessment:${item.id}`,lineType:'valueInclusion',sourceType:'variationAccountAssessment',amountThisCertificate:item.currentAssessment}));
   const live = buildLiveValuation({
     matrix,
     progress: payload.progress,
-    commercialLines: payload.commercialLines,
+    commercialLines: [...payload.commercialLines,...discoveredLines,...variationLines],
     lockedCertificates: locked,
     pos,
   });
   if (!live.ok) return { totals: null, errors: live.errors };
-  return { totals: live.totals };
+  const sourceAuthority=buildPaymentCertificateSourceAuthority({certificateId:row.id,matrixGross:live.totals.matrixGrossThisCertificate,approvedPos:pos,priorLockedCertificates:locked,commercialLines:payload.commercialLines,paymentDiscoveredItems,variationAssessments});
+  return { totals: live.totals, sourceAuthority };
 }
 
 async function listCertificatesForPackage(clientId, packageId) {
@@ -698,6 +709,8 @@ async function prepareApprovalInputs(dbClient, {
   if (!lineCheck.ok) {
     return { ok: false, status: 400, message: lineCheck.errors[0], errors: lineCheck.errors };
   }
+  const paymentDiscoveredItems=await listPaymentDiscoveredItems(clientId,packageId,row.id,dbClient);
+  const variationAssessments=await listVariationAssessments(clientId,packageId,row.id,dbClient);
 
   if (!matrix) {
     return { ok: true, payload, matrix: null, pos, locked };
@@ -706,7 +719,7 @@ async function prepareApprovalInputs(dbClient, {
   const snapshot = buildValuationSnapshot({
     matrix,
     progress: payload.progress,
-    commercialLines: payload.commercialLines,
+    commercialLines: [...payload.commercialLines,...paymentDiscoveredItems.map(item=>({id:`payment-discovered:${item.id}`,lineType:'valueInclusion',sourceType:'paymentDiscovered',amountThisCertificate:item.signedAmount,description:item.description})),...variationAssessments.map(item=>({id:`variation-assessment:${item.id}`,lineType:'valueInclusion',sourceType:'variationAccountAssessment',amountThisCertificate:item.currentAssessment,description:'Variation Account assessment'}))],
     lockedCertificates: locked,
     pos,
   });
@@ -714,7 +727,9 @@ async function prepareApprovalInputs(dbClient, {
     return { ok: false, status: 400, message: snapshot.errors[0], errors: snapshot.errors };
   }
 
-  return { ok: true, payload, matrix, pos, locked, snapshot };
+  const authorityLines=payload.commercialLines.map(line=>{const authority=line.sourceType==='variationOrder'?variationOrdersById.get(line.variationOrderId):eventsById.get(line.commercialEventId);return {...line,authorityStatus:authority?.status||null,authorityVersion:authority?.version??null};});
+  const sourceAuthority=buildPaymentCertificateSourceAuthority({certificateId:row.id,matrixGross:snapshot.totals.matrixGrossThisCertificate,approvedPos:pos,priorLockedCertificates:locked,commercialLines:authorityLines,paymentDiscoveredItems,variationAssessments});
+  return { ok: true, payload, matrix, pos, locked, snapshot,sourceAuthority,paymentDiscoveredItems,variationAssessments };
 }
 
 async function buildApplicationSnapshot(dbClient, clientId, packageId, row, totals, payload, kind) {
@@ -786,7 +801,10 @@ async function approveCertificateForPackage(clientId, packageId, certificateId, 
       valuationSnapshot: prepared.snapshot.snapshot,
       lockedApplicationSnapshot: prepared.payload.submissionApplicationSnapshot || null,
       lockedGoverningTermsSnapshot: prepared.payload.submissionGoverningTermsSnapshot || null,
+      sourceAuthoritySnapshot: {...prepared.sourceAuthority,capturedAt:new Date().toISOString(),capturedBy:auth?{userId:auth.userId,membershipId:auth.membershipId,providerUserId:auth.providerUserId,displayName:auth.displayName}:{displayName:actor||null}},
     };
+    await lockPaymentDiscoveredItems(dbClient,clientId,packageId,certificateId,auth);
+    await lockVariationAssessments(dbClient,clientId,packageId,certificateId,prepared.sourceAuthority,auth);
     await copyLatestSubmissionToLocked(dbClient, {
       clientId, packageId, developmentId: pkg.development_id, certificateRow: row, actor,
     });

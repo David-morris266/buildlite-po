@@ -33,8 +33,10 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 | `027_subcontract_terms_foundation.sql` | Tenant-owned versioned subcontract terms, defaults, PO overrides, immutable approval-time bindings and append-only audit. Additive only; no backfill. |
 | `028_payment_certificate_deadline_snapshots.sql` | Certificate contractual valuation date and immutable submitted/locked payment timetable snapshots. Additive only; no backfill. |
 | `029_payment_notice_authority.sql` | Payment Notice / Pay Less identities, immutable Prepared/Issued snapshots, audit and versioned intended-payment decisions. Additive only; no backfill. |
+| `032_payment_certificate_source_authority.sql` | Payment-discovered certificate facts, immutable lock-time source-authority provenance and additive CE/VO regularisation links. Additive only; no historic backfill. |
 | `033_package_variation_account.sql` | Package-scoped Variation Account identity, immutable QS Forecast/contractor histories, lifecycle audit, RBAC and Migration 032 compatibility bridge. Additive only; no backfill or financial integration. |
 | `034_application_variation_lines.sql` | Immutable application-revision variation evidence, deterministic VA reconciliation and authenticated audit. Additive only; no historic backfill or certificate financial integration. |
+| `035_variation_account_certificate_assessments.sql` | QS certificate assessments against canonical Variation Account items, immutable lock provenance and append-only audit. Additive only; no historic backfill. |
 
 ## Before applying to production
 
@@ -73,6 +75,11 @@ Additive Payment Notice / Pay Less authority foundation: stable notice identitie
 ### 031 — Authenticated identity and RBAC
 
 `031_rbac_identity_foundation.sql` adds provider-linked BuildLite users, tenant memberships, roles and an explicit permission catalogue. It seeds role/permission definitions only: no users, memberships, historic actors or commercial facts are backfilled.
+### 032_payment_certificate_source_authority.sql
+
+Adds first-class payment-discovered certificate facts, immutable lock provenance,
+and additive CE/VO regularisation links. It does not backfill or reinterpret
+historic locked certificates; those remain source-authority `not_captured`.
 ### 033 — Package Variation Account foundation
 
 Additive VA-0 schema for package-scoped Variation Account identities, immutable QS Forecast and contractor-position histories, explicit lifecycle audit, authenticated RBAC permissions, stable per-package references, and a non-backfilled compatibility bridge to Migration 032 payment-discovered facts. It does not alter certificate, CE, VO, CVR, notice, release or document financial behaviour.
@@ -80,3 +87,7 @@ Additive VA-0 schema for package-scoped Variation Account identities, immutable 
 ### 034 — Application variation-line reconciliation
 
 Adds signed subcontract-application variation evidence with explicit claim arithmetic, manual matching/new-variation reconciliation, authenticated provenance and append-only audit. Existing applications receive no invented lines.
+
+### 035 — Variation Account certificate assessments
+
+Adds signed QS certificate-assessment facts keyed to the canonical package Variation Account identity. Contractor claim, QS Forecast and certificate assessment remain separate; Migration 032 payment-discovered facts remain legacy compatibility evidence and are not backfilled or rewritten.

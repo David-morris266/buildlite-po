@@ -145,3 +145,12 @@ export async function deleteCertificateForPackage(packageId, certificateId, payl
   if (res.status === 204) return null;
   return handleJson(res);
 }
+
+export async function createPaymentDiscoveredItem(packageId, certificateId, payload) {
+  const res=await fetch(buildUrl(`${certificatesUrl(packageId,certificateId)}/payment-discovered`),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  return handleJson(res);
+}
+export async function deletePaymentDiscoveredItem(packageId,certificateId,itemId){const res=await fetch(buildUrl(`${certificatesUrl(packageId,certificateId)}/payment-discovered/${encodeURIComponent(itemId)}`),{method:'DELETE'});if(res.status===204)return null;return handleJson(res);}
+export async function listVariationAssessments(packageId,certificateId){const res=await fetch(buildUrl(`${certificatesUrl(packageId,certificateId)}/variation-assessments`));return handleJson(res);}
+export async function saveVariationAssessment(packageId,certificateId,payload){const res=await fetch(buildUrl(`${certificatesUrl(packageId,certificateId)}/variation-assessments`),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});return handleJson(res);}
+export async function withdrawVariationAssessment(packageId,certificateId,assessmentId){const res=await fetch(buildUrl(`${certificatesUrl(packageId,certificateId)}/variation-assessments/${encodeURIComponent(assessmentId)}`),{method:'DELETE'});if(res.status===204)return null;return handleJson(res);}

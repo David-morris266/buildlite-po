@@ -37,9 +37,18 @@ const {
   reviseApplication,
   linkApplication,
 } = require("../services/paymentApplicationRepository");
+const { createPaymentDiscoveredItem, deletePaymentDiscoveredItem } = require('../services/paymentDiscoveredRepository');
 const applicationVariations = require('../services/applicationVariationRepository');
+const vaAssessments = require('../services/variationAccountCertificateAssessmentRepository');
 
 const router = express.Router();
+
+router.post('/:packageId/certificates/:certificateId/payment-discovered',requirePermission(PERMISSIONS.CERTIFICATE_EDIT),async(req,res)=>{try{const active=await getActiveClient();if(!active)return res.status(404).json({message:'No active client set'});const result=await createPaymentDiscoveredItem(active.id,req.params.packageId,req.params.certificateId,req.body||{},req.buildliteAuth);if(!result.ok)return res.status(result.status).json({message:result.message});res.status(201).json(result.item);}catch(error){console.error('[Packages] create payment-discovered error:',error);res.status(error.status||500).json({message:error.message||'Failed to create payment-discovered item.'});}});
+router.delete('/:packageId/certificates/:certificateId/payment-discovered/:itemId',requirePermission(PERMISSIONS.CERTIFICATE_EDIT),async(req,res)=>{try{const active=await getActiveClient();if(!active)return res.status(404).json({message:'No active client set'});const result=await deletePaymentDiscoveredItem(active.id,req.params.packageId,req.params.certificateId,req.params.itemId,req.buildliteAuth);if(!result.ok)return res.status(result.status).json({message:result.message});res.status(204).end();}catch(error){res.status(error.status||500).json({message:error.message||'Failed to remove payment-discovered item.'});}});
+const assessmentResult=(res,result)=>result.ok?(result.status===204?res.status(204).end():res.status(result.status||200).json(result)):res.status(result.status).json({message:result.message});
+router.get('/:packageId/certificates/:certificateId/variation-assessments',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_VIEW),async(req,res)=>{try{const active=await getActiveClient();assessmentResult(res,await vaAssessments.listReadiness(active.id,req.params.packageId,req.params.certificateId,req.buildliteAuth));}catch(error){res.status(error.status||500).json({message:error.message||'Failed to load VA assessment readiness.'});}});
+router.post('/:packageId/certificates/:certificateId/variation-assessments',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_ASSESS),async(req,res)=>{try{const active=await getActiveClient();assessmentResult(res,await vaAssessments.saveAssessment(active.id,req.params.packageId,req.params.certificateId,req.body||{},req.buildliteAuth));}catch(error){res.status(error.status||500).json({message:error.message||'Failed to save VA assessment.'});}});
+router.delete('/:packageId/certificates/:certificateId/variation-assessments/:assessmentId',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_ASSESS),async(req,res)=>{try{const active=await getActiveClient();assessmentResult(res,await vaAssessments.withdrawAssessment(active.id,req.params.packageId,req.params.certificateId,req.params.assessmentId,req.buildliteAuth));}catch(error){res.status(error.status||500).json({message:error.message||'Failed to withdraw VA assessment.'});}});
 
 function provisionalActor(body = {}) {
   return body.updatedBy || body.createdBy || body.actor || null;

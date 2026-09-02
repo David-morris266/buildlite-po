@@ -13,6 +13,7 @@ const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { buildSubcontractOrderKey } = require("../services/packageKey");
 const { buildCellId } = require("../services/paymentCertificateCellIdentity");
+const { createPaymentDiscoveredItem } = require('../services/paymentDiscoveredRepository');
 
 const app = createApp();
 const MIGRATION_004 = path.join(__dirname, "..", "migrations", "004_developments.sql");
@@ -26,6 +27,8 @@ const MIGRATION_025 = path.join(__dirname, "..", "migrations", "025_variation_or
 const MIGRATION_026 = path.join(__dirname, "..", "migrations", "026_subcontract_payment_applications.sql");
 const MIGRATION_027 = path.join(__dirname, "..", "migrations", "027_subcontract_terms_foundation.sql");
 const MIGRATION_028 = path.join(__dirname, "..", "migrations", "028_payment_certificate_deadline_snapshots.sql");
+const MIGRATION_031 = path.join(__dirname, "..", "migrations", "031_rbac_identity_foundation.sql");
+const MIGRATION_032 = path.join(__dirname, "..", "migrations", "032_payment_certificate_source_authority.sql");
 
 const testDevelopmentIds = [];
 const testPoNumbers = [];
@@ -61,10 +64,21 @@ async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_026, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_027, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_028, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_031, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_032, "utf8"));
 }
 
 async function cleanup() {
   if (testPackageIds.length) {
+    await pool.query("ALTER TABLE package_payment_discovered_item_audit DISABLE TRIGGER trg_payment_discovered_audit_immutable");
+    await pool.query("ALTER TABLE package_payment_discovered_regularisation_links DISABLE TRIGGER trg_payment_discovered_links_immutable");
+    await pool.query("DELETE FROM package_payment_discovered_item_audit WHERE certificate_id IN (SELECT id FROM package_payment_certificates WHERE package_id = ANY($1::uuid[]))",[testPackageIds]);
+    await pool.query("DELETE FROM package_payment_discovered_regularisation_links WHERE payment_discovered_item_id IN (SELECT id FROM package_payment_discovered_items WHERE package_id = ANY($1::uuid[]))",[testPackageIds]);
+    await pool.query("ALTER TABLE package_payment_discovered_items DISABLE TRIGGER trg_payment_discovered_locked_fact");
+    await pool.query("DELETE FROM package_payment_discovered_items WHERE package_id = ANY($1::uuid[])",[testPackageIds]);
+    await pool.query("ALTER TABLE package_payment_discovered_items ENABLE TRIGGER trg_payment_discovered_locked_fact");
+    await pool.query("ALTER TABLE package_payment_discovered_regularisation_links ENABLE TRIGGER trg_payment_discovered_links_immutable");
+    await pool.query("ALTER TABLE package_payment_discovered_item_audit ENABLE TRIGGER trg_payment_discovered_audit_immutable");
     await pool.query("DELETE FROM package_payment_certificate_deadline_snapshots WHERE package_id = ANY($1::uuid[])", [testPackageIds]).catch(async error => {
       if (!String(error.message).includes('immutable')) throw error;
       await pool.query("ALTER TABLE package_payment_certificate_deadline_snapshots DISABLE TRIGGER trg_certificate_deadline_snapshot_immutable");
@@ -1329,5 +1343,36 @@ if (!isDbConfigured()) {
     assert.deepEqual(certificate.paymentTimetable.cycleInputs, submittedTimetable.cycleInputs);
     assert.deepEqual(certificate.paymentTimetable.dates, submittedTimetable.dates);
     assert.deepEqual(certificate.paymentTimetable.governingTermsSnapshot, submittedTimetable.governingTermsSnapshot);
+  });
+
+  test("28. authenticated payment-discovered creation hydrates and recalculates unapproved authority", async () => {
+    const active = await getActiveClient();
+    const seeded = await seedDraftWithProgress(active, progressEntry("plot-1", "First Fix", 50));
+    const userId = crypto.randomUUID();
+    const membershipId = crypto.randomUUID();
+    const providerUserId = `test-pd-${userId}`;
+    const role = await pool.query("SELECT id FROM roles WHERE key='commercial_manager'");
+    await pool.query(`INSERT INTO buildlite_users(id,auth_provider,provider_user_id,email_snapshot,display_name,status) VALUES($1,'clerk',$2,'qs@example.test','Payment QS','active')`,[userId,providerUserId]);
+    await pool.query(`INSERT INTO client_user_memberships(id,client_id,user_id,role_id,is_active) VALUES($1,$2,$3,$4,true)`,[membershipId,active.id,userId,role.rows[0].id]);
+    const auth={userId,membershipId,providerUserId,displayName:'Payment QS'};
+    let itemId;
+    try {
+      const created=await createPaymentDiscoveredItem(active.id,seeded.pkg.id,seeded.certificate.id,{description:'Additional works',signedAmount:200,basis:'On-account QS assessment'},auth);
+      assert.equal(created.ok,true); itemId=created.item.id;
+      const response=await getCert(seeded.pkg.id,seeded.certificate.id);
+      assert.equal(response.status,200);
+      assert.equal(response.body.paymentDiscoveredItems.length,1);
+      assert.equal(response.body.paymentDiscoveredItems[0].createdBy.providerUserId,providerUserId);
+      assert.equal(response.body.totals.commercialEventGrossThisCertificate,200);
+      assert.equal(response.body.sourceAuthority.paymentDiscoveredGross,200);
+      assert.equal(response.body.sourceAuthority.unapprovedCertifiedGross,200);
+      const audit=await pool.query(`SELECT actor_user_id,actor_membership_id,detail FROM package_payment_discovered_item_audit WHERE item_id=$1`,[itemId]);
+      assert.equal(audit.rows[0].actor_user_id,userId);
+      assert.equal(audit.rows[0].actor_membership_id,membershipId);
+    } finally {
+      if(itemId){await pool.query('ALTER TABLE package_payment_discovered_item_audit DISABLE TRIGGER trg_payment_discovered_audit_immutable');await pool.query('DELETE FROM package_payment_discovered_item_audit WHERE item_id=$1',[itemId]);await pool.query('ALTER TABLE package_payment_discovered_item_audit ENABLE TRIGGER trg_payment_discovered_audit_immutable');await pool.query('ALTER TABLE package_payment_discovered_items DISABLE TRIGGER trg_payment_discovered_locked_fact');await pool.query('DELETE FROM package_payment_discovered_items WHERE id=$1',[itemId]);await pool.query('ALTER TABLE package_payment_discovered_items ENABLE TRIGGER trg_payment_discovered_locked_fact');}
+      await pool.query('DELETE FROM client_user_memberships WHERE id=$1',[membershipId]);
+      await pool.query('DELETE FROM buildlite_users WHERE id=$1',[userId]);
+    }
   });
 }

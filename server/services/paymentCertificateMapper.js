@@ -77,6 +77,11 @@ function rowToDocument(row, auditRows = [], extras = {}) {
     progress: payload.progress && typeof payload.progress === "object" ? payload.progress : {},
     commercialLines: Array.isArray(payload.commercialLines) ? payload.commercialLines : [],
     valuationSnapshot: payload.valuationSnapshot || null,
+    sourceAuthority: payload.sourceAuthoritySnapshot || extras.sourceAuthority || (row.status === "locked"
+      ? require('./paymentCertificateSourceAuthority').legacySourceAuthority()
+      : null),
+    paymentDiscoveredItems: extras.paymentDiscoveredItems || [],
+    variationAssessments: extras.variationAssessments || [],
     submissionApplicationSnapshot: payload.submissionApplicationSnapshot || null,
     lockedApplicationSnapshot: payload.lockedApplicationSnapshot || null,
     submissionGoverningTermsSnapshot: payload.submissionGoverningTermsSnapshot || null,
