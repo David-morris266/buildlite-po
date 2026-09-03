@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installNetworkGuard } from '../test/networkGuard';
 
 const listPOs = vi.hoisted(() => vi.fn());
+const listVariationAccount = vi.hoisted(() => vi.fn());
+const listEligibleVariationAuthority = vi.hoisted(() => vi.fn());
 const certificateAuthorityEnabled = vi.hoisted(() => ({ value: false }));
 
 vi.mock('../api', () => ({
@@ -29,6 +31,12 @@ vi.mock('../payments/orderMatrixAuthority', () => ({
 
 vi.mock('../api/paymentCertificates', () => import('../test/mockPaymentCertificateApi'));
 vi.mock('../api/packages', () => import('../test/mockPackageApi'));
+vi.mock('../api/variationAccounts', () => ({
+  listVariationAccount,
+  listEligibleVariationAuthority,
+  allocateVariationAuthority: vi.fn(),
+  reverseVariationAuthority: vi.fn(),
+}));
 
 import {
   buildLockedServerCertificateFixture,
@@ -108,6 +116,8 @@ describe('Payment Certificates / package workspace certificate hydration (BL-030
       supplierLabel: 'Sparktastic Ltd',
     });
     listPOs.mockResolvedValue({ items: [sparktasticPo] });
+    listVariationAccount.mockResolvedValue([]);
+    listEligibleVariationAuthority.mockResolvedValue([]);
 
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -188,6 +198,46 @@ describe('Payment Certificates / package workspace certificate hydration (BL-030
 
     expect(document.body.textContent).toMatch(/£24k/);
     expect(document.body.textContent).not.toMatch(/Loading certificate data/i);
+  });
+
+  it('hydrates a PO-only package launch before loading VA data and package provenance', async () => {
+    seedMockPackage({
+      id: PACKAGE_UUID,
+      orderKey: ORDER_KEY,
+      developmentId: DEV_ID,
+      supplierId: 'sup-1786363489252',
+      costCode: '5215 — electrical — electrical',
+      supplierLabel: 'Sparktastic Ltd',
+      currentContractProvenance: {
+        originalOrder: 1000,
+        approvedUninstructedValue: 0,
+        issuedVariationOrderValue: 12000,
+        currentContract: 13000,
+      },
+    });
+    const poOnlyOrder = {
+      ...order,
+      id: ORDER_KEY,
+      packageId: undefined,
+      packageUuid: undefined,
+      committedValue: 1000,
+    };
+
+    await act(async () => {
+      root.render(
+        <SubcontractPackageWorkspace order={poOnlyOrder} initialTab="variation-account" />
+      );
+    });
+    await flushPromises();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    await flushPromises();
+
+    expect(listVariationAccount).toHaveBeenLastCalledWith(PACKAGE_UUID);
+    expect(document.body.textContent).toContain('Issued VOs');
+    expect(document.body.textContent).toContain('£12,000');
+    expect(document.body.textContent).not.toContain('Uninstructed Events+£12,000');
   });
 
   it('genuine loaded empty enables the existing create-certificate empty state', async () => {

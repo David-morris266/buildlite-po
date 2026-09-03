@@ -44,7 +44,9 @@ async function listItems(clientId, { packageId, status = null } = {}, auth, db =
   if (status) { params.push(status); suffix=` AND status=$${params.length}`; }
   const { rows } = await runWith(db)(
     `SELECT * FROM package_variation_account_items WHERE client_id=$1 AND package_id=$2${suffix} ORDER BY created_at,id`,params);
-  return rows.map(mapItem);
+  const items=rows.map(mapItem);
+  const authority=require('./variationAccountAuthorityRepository');
+  return Promise.all(items.map(async item=>({...item,authority:await authority.getProjection(clientId,item.id,auth,db)})));
 }
 
 async function getItem(clientId, id, auth, db = null) {
@@ -58,7 +60,9 @@ async function getItem(clientId, id, auth, db = null) {
     run('SELECT * FROM package_variation_account_lifecycle_audit WHERE client_id=$1 AND variation_account_item_id=$2 ORDER BY created_at,id',[clientId,id]),
     run('SELECT payment_discovered_item_id,linked_at FROM package_variation_account_payment_discovered_links WHERE client_id=$1 AND variation_account_item_id=$2 ORDER BY linked_at,id',[clientId,id]),
   ]);
-  return {...mapItem(rows[0]),
+  const mapped=mapItem(rows[0]);
+  const authority=await require('./variationAccountAuthorityRepository').getProjection(clientId,id,auth,db);
+  return {...mapped,authority,
     forecastHistory:forecasts.rows.map(row=>({id:row.id,priorValue:row.prior_qs_forecast==null?null:Number(row.prior_qs_forecast),newValue:Number(row.new_qs_forecast),reason:row.reason,itemVersion:Number(row.item_version),at:row.created_at,actor:{userId:row.actor_user_id,membershipId:row.actor_membership_id,providerUserId:row.actor_provider_user_id,displayName:row.actor_display_name}})),
     contractorPositionHistory:positions.rows.map(row=>({id:row.id,value:Number(row.contractor_value),contractorReference:row.contractor_reference,sourceType:row.source_type,sourceId:row.source_id,reason:row.reason,itemVersion:Number(row.item_version),at:row.created_at})),
     lifecycleHistory:lifecycle.rows.map(row=>({id:row.id,action:row.action,priorStatus:row.prior_status,newStatus:row.new_status,reason:row.reason,itemVersion:Number(row.item_version),at:row.created_at})),

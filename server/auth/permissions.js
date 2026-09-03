@@ -9,6 +9,7 @@ const PERMISSIONS = Object.freeze({
   VARIATION_ACCOUNT_VIEW: 'variation_account.view', VARIATION_ACCOUNT_CREATE: 'variation_account.create',
   VARIATION_ACCOUNT_FORECAST_EDIT: 'variation_account.forecast_edit', VARIATION_ACCOUNT_RESOLVE: 'variation_account.resolve',
   VARIATION_ACCOUNT_ASSESS: 'variation_account.assess',
+  VARIATION_ACCOUNT_AUTHORITY_ALLOCATE: 'variation_account.authority_allocate',
 });
 
 module.exports = { PERMISSIONS };

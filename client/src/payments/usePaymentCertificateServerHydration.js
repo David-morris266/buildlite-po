@@ -31,6 +31,25 @@ export function derivePaymentCertificateUiState(loadState, errorMessage = '') {
   };
 }
 
+export function mergeHydratedPackageIntoOrder(order, hydratedPackage) {
+  if (!hydratedPackage) return order;
+  const packageUuid =
+    hydratedPackage.id ||
+    hydratedPackage.packageId ||
+    hydratedPackage.packageUuid ||
+    order?.packageUuid ||
+    order?.packageId ||
+    null;
+  return {
+    ...order,
+    ...hydratedPackage,
+    packageId: packageUuid,
+    packageUuid,
+    orderKey: hydratedPackage.orderKey || order?.orderKey || null,
+    pos: order?.pos || hydratedPackage.pos || [],
+  };
+}
+
 async function resolveHydrationPackage(order) {
   const fromContext = resolvePackageUuidFromOrder(order);
   if (fromContext && order?.governingTerms) return order;
@@ -57,6 +76,9 @@ export function usePaymentCertificateServerHydration(order) {
   const [governingTerms, setGoverningTerms] = useState(
     () => order?.governingTerms || null
   );
+  const [hydratedPackage, setHydratedPackage] = useState(
+    () => order?.currentContractProvenance ? order : null
+  );
   const packageUuidHint =
     order?.packageUuid || order?.packageId || order?.id || null;
 
@@ -75,6 +97,7 @@ export function usePaymentCertificateServerHydration(order) {
       const hydratedPackage = await resolveHydrationPackage(order);
       const packageUuid = resolvePackageUuidFromOrder(hydratedPackage);
       if (cancelled) return;
+      setHydratedPackage(hydratedPackage || null);
       setGoverningTerms(hydratedPackage?.governingTerms || null);
       if (!packageUuid) {
         setLoadState('error');
@@ -109,5 +132,6 @@ export function usePaymentCertificateServerHydration(order) {
   return {
     ...derivePaymentCertificateUiState(loadState, loadError),
     governingTerms,
+    hydratedPackage,
   };
 }

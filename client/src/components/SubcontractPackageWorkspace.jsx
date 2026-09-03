@@ -11,13 +11,15 @@ import { buildPackageViewModel } from '../payments/subcontractPackage';
 import PackageCommercialEvents from './PackageCommercialEvents';
 import PackageCommercialHistory from './PackageCommercialHistory';
 import { usePackageWorkspaceAssistantScope } from '../commercialAssistant/usePackageWorkspaceAssistantScope';
-import { usePaymentCertificateServerHydration } from '../payments/usePaymentCertificateServerHydration';
+import { mergeHydratedPackageIntoOrder, usePaymentCertificateServerHydration } from '../payments/usePaymentCertificateServerHydration';
+import PackageVariationAccount from './PackageVariationAccount';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'matrix', label: 'Order Matrix' },
   { id: 'certificates', label: 'Certificates' },
   { id: 'variations', label: 'Commercial Events' },
+  { id: 'variation-account', label: 'Variation Account' },
   { id: 'history', label: 'History' },
 ];
 
@@ -52,7 +54,13 @@ export default function SubcontractPackageWorkspace({
     certificatesReady,
     certificatesError,
     governingTerms,
+    hydratedPackage,
   } = usePaymentCertificateServerHydration(order);
+
+  const authoritativeOrder = useMemo(
+    () => mergeHydratedPackageIntoOrder(order, hydratedPackage),
+    [order, hydratedPackage]
+  );
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -80,12 +88,12 @@ export default function SubcontractPackageWorkspace({
     void matrixRefresh;
     void certRefresh;
     void commercialEventRefresh;
-    const viewModel = buildPackageViewModel(order);
+    const viewModel = buildPackageViewModel(authoritativeOrder);
     return governingTerms
       ? { ...viewModel, governingTerms }
       : viewModel;
   }, [
-    order,
+    authoritativeOrder,
     matrixRefresh,
     certRefresh,
     commercialEventRefresh,
@@ -185,7 +193,7 @@ export default function SubcontractPackageWorkspace({
         {activeTab === 'matrix' ? (
           <OrderMatrixPlaceholderPreview
             embedded
-            order={order}
+            order={authoritativeOrder}
             hasMatrix={pkg.matrixExists}
             onCancel={() => setActiveTab('overview')}
             onMatrixImported={() => setMatrixRefresh((value) => value + 1)}
@@ -194,7 +202,7 @@ export default function SubcontractPackageWorkspace({
 
         {activeTab === 'certificates' ? (
           <PaymentCertificateWorkspace
-            order={order}
+            order={authoritativeOrder}
             pkg={pkg}
             refreshToken={certRefresh}
             certificateTarget={certificateTarget}
@@ -207,7 +215,7 @@ export default function SubcontractPackageWorkspace({
 
         {activeTab === 'variations' ? (
           <PackageCommercialEvents
-            order={order}
+            order={authoritativeOrder}
             refreshToken={commercialEventRefresh}
             commercialEventTarget={commercialEventTarget}
             commercialEventsLoading={commercialEventsLoading}
@@ -219,9 +227,13 @@ export default function SubcontractPackageWorkspace({
           />
         ) : null}
 
+        {activeTab === 'variation-account' ? (
+          <PackageVariationAccount packageId={pkg.packageUuid || pkg.id} />
+        ) : null}
+
         {activeTab === 'history' ? (
           <PackageCommercialHistory
-            order={order}
+            order={authoritativeOrder}
             refreshToken={commercialEventRefresh}
             certRefreshToken={certRefresh}
           />

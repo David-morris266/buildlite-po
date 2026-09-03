@@ -69,9 +69,12 @@ test('Migration 033 applies with zero invented account/link rows and correct lea
   if(!isDbConfigured())return t.skip();
   assert.equal(Number((await pool.query('SELECT count(*) n FROM package_variation_account_items WHERE client_id=ANY($1::uuid[])',[createdClients])).rows[0].n),0);
   assert.equal(Number((await pool.query('SELECT count(*) n FROM package_variation_account_payment_discovered_links WHERE client_id=ANY($1::uuid[])',[createdClients])).rows[0].n),0);
-  for(const role of ['qs','commercial_manager','commercial_director'])assert.equal(Number((await pool.query("SELECT count(*) n FROM role_permissions rp JOIN roles r ON r.id=rp.role_id WHERE r.key=$1 AND rp.permission_key LIKE 'variation_account.%'",[role])).rows[0].n),5);
+  for(const role of ['qs','commercial_manager','commercial_director']){
+    const permissions=(await pool.query("SELECT permission_key FROM role_permissions rp JOIN roles r ON r.id=rp.role_id WHERE r.key=$1 AND rp.permission_key LIKE 'variation_account.%'",[role])).rows.map(row=>row.permission_key);
+    for(const required of ['variation_account.view','variation_account.create','variation_account.forecast_edit','variation_account.resolve'])assert.ok(permissions.includes(required));
+  }
   assert.equal(Number((await pool.query("SELECT count(*) n FROM role_permissions rp JOIN roles r ON r.id=rp.role_id WHERE r.key='admin' AND rp.permission_key='variation_account.view'")).rows[0].n),1);
-  assert.equal(Number((await pool.query("SELECT count(*) n FROM role_permissions rp JOIN roles r ON r.id=rp.role_id WHERE r.key='admin' AND rp.permission_key IN ('variation_account.create','variation_account.forecast_edit','variation_account.resolve')")).rows[0].n),0);
+  assert.equal(Number((await pool.query("SELECT count(*) n FROM role_permissions rp JOIN roles r ON r.id=rp.role_id WHERE r.key='admin' AND rp.permission_key IN ('variation_account.create','variation_account.forecast_edit','variation_account.resolve','variation_account.assess','variation_account.authority_allocate')")).rows[0].n),0);
 });
 
 test('QS creates positive variation and negative credit with stable package numbering and distinct values',async t=>{

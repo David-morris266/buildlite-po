@@ -20,7 +20,7 @@ vi.mock('./paymentCertificateServerCache', () => ({
   rememberPackageUuidForOrderKey: vi.fn(),
 }));
 
-import { usePaymentCertificateServerHydration } from './usePaymentCertificateServerHydration';
+import { mergeHydratedPackageIntoOrder, usePaymentCertificateServerHydration } from './usePaymentCertificateServerHydration';
 
 function Probe({ order }) {
   const state = usePaymentCertificateServerHydration(order);
@@ -35,6 +35,36 @@ describe('Payment Certificate package terms hydration', () => {
     act(() => root?.unmount());
     host?.remove();
     vi.clearAllMocks();
+  });
+
+  it('merges the real server package UUID and contractual provenance over a PO-only workspace order', () => {
+    const merged = mergeHydratedPackageIntoOrder(
+      {
+        id: 'dev::supplier::4330',
+        orderKey: 'dev::supplier::4330',
+        committedValue: 1000,
+        pos: [{ poNumber: 'S0028' }],
+      },
+      {
+        id: '410ad8ad-2a2f-4f58-8d6a-e16c9d98f6e4',
+        orderKey: 'dev::supplier::4330',
+        currentContractProvenance: {
+          originalOrder: 1000,
+          approvedUninstructedValue: 0,
+          issuedVariationOrderValue: 12000,
+          currentContract: 13000,
+        },
+      }
+    );
+    expect(merged.packageId).toBe('410ad8ad-2a2f-4f58-8d6a-e16c9d98f6e4');
+    expect(merged.packageUuid).toBe('410ad8ad-2a2f-4f58-8d6a-e16c9d98f6e4');
+    expect(merged.pos).toEqual([{ poNumber: 'S0028' }]);
+    expect(merged.currentContractProvenance).toEqual({
+      originalOrder: 1000,
+      approvedUninstructedValue: 0,
+      issuedVariationOrderValue: 12000,
+      currentContract: 13000,
+    });
   });
 
   it('keeps the PO-bound Revision 1 as Draft authority after the tenant default changes to Revision 2', async () => {

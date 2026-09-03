@@ -37,6 +37,8 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 | `033_package_variation_account.sql` | Package-scoped Variation Account identity, immutable QS Forecast/contractor histories, lifecycle audit, RBAC and Migration 032 compatibility bridge. Additive only; no backfill or financial integration. |
 | `034_application_variation_lines.sql` | Immutable application-revision variation evidence, deterministic VA reconciliation and authenticated audit. Additive only; no historic backfill or certificate financial integration. |
 | `035_variation_account_certificate_assessments.sql` | QS certificate assessments against canonical Variation Account items, immutable lock provenance and append-only audit. Additive only; no historic backfill. |
+| `036_variation_account_authority_allocations.sql` | Explicit, signed CE/Issued-VO-line allocations and substitutions against canonical VA items. Additive and append-only; no backfill or CVR/Current Contract integration. |
+| `037_variation_account_substitution_corrections.sql` | Multiple immutable substitution facts per authority pair with exact cumulative predecessor/successor guards. Additive only; no backfill or history rewrite. |
 
 ## Before applying to production
 
@@ -91,3 +93,7 @@ Adds signed subcontract-application variation evidence with explicit claim arith
 ### 035 — Variation Account certificate assessments
 
 Adds signed QS certificate-assessment facts keyed to the canonical package Variation Account identity. Contractor claim, QS Forecast and certificate assessment remain separate; Migration 032 payment-discovered facts remain legacy compatibility evidence and are not backfilled or rewritten.
+
+### 036 — Variation Account authority allocations
+
+Adds immutable, explicit allocations of Approved CE and Issued VO-line authority to canonical VA items, plus explicit overlap substitution and append-only audit. It does not infer links, backfill history, create Payment Authority, or change Current Contract/CVR calculations.
