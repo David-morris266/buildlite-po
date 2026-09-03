@@ -10,6 +10,10 @@ const PERMISSIONS = Object.freeze({
   VARIATION_ACCOUNT_FORECAST_EDIT: 'variation_account.forecast_edit', VARIATION_ACCOUNT_RESOLVE: 'variation_account.resolve',
   VARIATION_ACCOUNT_ASSESS: 'variation_account.assess',
   VARIATION_ACCOUNT_AUTHORITY_ALLOCATE: 'variation_account.authority_allocate',
+  PAYMENT_APPROVAL_RUN_VIEW: 'payment_approval_run.view',
+  PAYMENT_AUTHORITY_APPROVE: 'payment_authority.approve',
+  PAYMENT_AUTHORITY_REVERSE: 'payment_authority.reverse',
+  PAYMENT_RELEASE_EXECUTE: 'payment_release.execute',
 });
 
 module.exports = { PERMISSIONS };

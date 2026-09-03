@@ -1,0 +1,10 @@
+const express=require('express');
+const repository=require('../services/paymentAuthorityRepository');
+const {requirePermission}=require('../auth/authorization');
+const {PERMISSIONS}=require('../auth/permissions');
+const router=express.Router();
+const clientId=req=>req.buildliteAuth.clientId;
+router.get('/queue',requirePermission(PERMISSIONS.PAYMENT_APPROVAL_RUN_VIEW),async(req,res)=>{try{res.json({items:await repository.listQueue(clientId(req),req.buildliteAuth)});}catch(error){res.status(error.status||500).json({message:error.message||'Failed to load Payment Approval Run.'});}});
+router.post('/runs',requirePermission(PERMISSIONS.PAYMENT_AUTHORITY_APPROVE),async(req,res)=>{try{const result=await repository.approveRun(clientId(req),req.body||{},req.buildliteAuth);res.status(result.status).json(result.ok?result:{message:result.message});}catch(error){res.status(error.status||500).json({message:error.message||'Failed to approve Payment Authority.'});}});
+router.post('/decisions/:id/reverse',requirePermission(PERMISSIONS.PAYMENT_AUTHORITY_REVERSE),async(req,res)=>{try{const result=await repository.reverseDecision(clientId(req),req.params.id,req.body||{},req.buildliteAuth);res.status(result.status).json(result.ok?result:{message:result.message});}catch(error){res.status(error.status||500).json({message:error.message||'Failed to reverse Payment Authority.'});}});
+module.exports=router;

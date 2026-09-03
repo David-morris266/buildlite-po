@@ -14,6 +14,12 @@ export default function BrandHeader({ activeTab, onTab }) {
       <nav className="nav">
         <CommercialAssistantIndicator />
         <button
+          className={`tab ${activeTab === "payment-approval" ? "active" : ""}`}
+          onClick={() => onTab("payment-approval")}
+        >
+          Payment Approval
+        </button>
+        <button
           className={`tab ${activeTab === "administration" ? "active" : ""}`}
           onClick={() => onTab("administration")}
         >

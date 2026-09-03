@@ -3,6 +3,7 @@ import POForm from "./components/POForm";
 import POList from "./components/POList";
 import POArchive from "./components/POArchive";
 import PaymentCertificates from "./components/PaymentCertificates";
+import PaymentApprovalRun from "./components/PaymentApprovalRun";
 import Developments from "./components/Developments";
 import CVRPortfolio from "./components/CVRPortfolio";
 import AdministrationModule from "./components/admin/AdministrationModule";
@@ -227,6 +228,9 @@ export default function App() {
               }
             />
           </CommercialWorkspace>
+        )}
+        {tab === "payment-approval" && (
+          <CommercialWorkspace><PaymentApprovalRun /></CommercialWorkspace>
         )}
       </main>
     </div>

@@ -16,7 +16,7 @@ const actor = auth => [auth.userId,auth.membershipId,auth.providerUserId,auth.di
 const text = value => String(value ?? '').trim();
 function requireActor(auth,permission){assertServicePermission(auth,permission);if(!auth?.userId||!auth?.membershipId||!auth?.providerUserId){const error=new Error('Authenticated BuildLite identity is required.');error.status=401;throw error;}}
 
-function mapAllocation(row){return {id:row.id,variationAccountItemId:row.variation_account_item_id,sourceType:row.source_type,commercialEventId:row.commercial_event_id,variationOrderLineId:row.variation_order_line_id,futureSourceId:row.future_source_id,allocatedAmount:Number(row.signed_allocated_amount),allocationKind:row.allocation_kind,reversesAllocationId:row.reverses_allocation_id,reason:row.reason,sourceStatus:row.source_status_snapshot,sourceValue:Number(row.source_value_snapshot),sourceReference:row.source_reference_snapshot,createdAt:row.created_at,createdBy:{userId:row.created_by_user_id,membershipId:row.created_by_membership_id,providerUserId:row.created_by_provider_user_id,displayName:row.created_by_display_name}};}
+function mapAllocation(row){return {id:row.id,variationAccountItemId:row.variation_account_item_id,sourceType:row.source_type,commercialEventId:row.commercial_event_id,variationOrderLineId:row.variation_order_line_id,futureSourceId:row.future_source_id,paymentAuthorityDecisionLineId:row.payment_authority_decision_line_id||null,allocatedAmount:Number(row.signed_allocated_amount),allocationKind:row.allocation_kind,reversesAllocationId:row.reverses_allocation_id,reason:row.reason,sourceStatus:row.source_status_snapshot,sourceValue:Number(row.source_value_snapshot),sourceReference:row.source_reference_snapshot,createdAt:row.created_at,createdBy:{userId:row.created_by_user_id,membershipId:row.created_by_membership_id,providerUserId:row.created_by_provider_user_id,displayName:row.created_by_display_name}};}
 function mapSubstitution(row){return {id:row.id,successorAllocationId:row.successor_allocation_id,predecessorAllocationId:row.predecessor_allocation_id,substitutedAmount:Number(row.signed_substituted_amount),reason:row.reason,createdAt:row.created_at};}
 
 function buildProjection({item,allocations=[],substitutions=[]}={}){
@@ -25,15 +25,17 @@ function buildProjection({item,allocations=[],substitutions=[]}={}){
   const sumPence=values=>values.reduce((sum,value)=>sum+toPence(value),0);
   const allocatedCe=fromPence(sumPence(allocations.filter(x=>x.sourceType==='commercial_event').map(x=>x.allocatedAmount)));
   const allocatedVo=fromPence(sumPence(allocations.filter(x=>x.sourceType==='variation_order_line').map(x=>x.allocatedAmount)));
+  const allocatedPaymentAuthority=fromPence(sumPence(allocations.filter(x=>x.sourceType==='payment_authority').map(x=>x.allocatedAmount)));
   const effectiveCe=fromPence(sumPence(projected.filter(x=>x.sourceType==='commercial_event').map(x=>x.effectiveAmount)));
   const effectiveVo=fromPence(sumPence(projected.filter(x=>x.sourceType==='variation_order_line').map(x=>x.effectiveAmount)));
-  const effectiveRecognised=fromPence(toPence(effectiveCe)+toPence(effectiveVo));
+  const effectivePaymentAuthority=fromPence(sumPence(projected.filter(x=>x.sourceType==='payment_authority').map(x=>x.effectiveAmount)));
+  const effectiveRecognised=fromPence(toPence(effectiveCe)+toPence(effectiveVo)+toPence(effectivePaymentAuthority));
   const forecast=money(item?.qsForecast);
   const mixedSign=forecast!==0&&effectiveRecognised!==0&&Math.sign(forecast)!==Math.sign(effectiveRecognised);
   const below=mixedSign||(effectiveRecognised>0?forecast<effectiveRecognised:effectiveRecognised<0?forecast>effectiveRecognised:false);
   const effectiveFinal=mixedSign?effectiveRecognised:effectiveRecognised>0?Math.max(forecast,effectiveRecognised):effectiveRecognised<0?Math.min(forecast,effectiveRecognised):forecast;
   const exception=mixedSign?'QS Forecast and effective recognised authority have opposing signs and require reconciliation.':below?`QS Forecast is below effective recognised authority by £${Math.abs(money(effectiveRecognised-forecast)).toFixed(2)}.`:null;
-  return {variationAccountItemId:item?.id||null,reference:item?.reference||null,qsForecast:forecast,allocatedCeAuthority:allocatedCe,allocatedVoAuthority:allocatedVo,effectiveCeAuthority:effectiveCe,effectiveVoAuthority:effectiveVo,effectiveRecognisedAuthority:effectiveRecognised,remainingForecastExposure:fromPence(toPence(effectiveFinal)-toPence(effectiveRecognised)),effectiveFinalExposure:money(effectiveFinal),forecastBelowAuthority:below,mixedSignAuthority:mixedSign,exception,allocations:projected,substitutions};
+  return {variationAccountItemId:item?.id||null,reference:item?.reference||null,qsForecast:forecast,allocatedCeAuthority:allocatedCe,allocatedVoAuthority:allocatedVo,allocatedPaymentAuthority,effectiveCeAuthority:effectiveCe,effectiveVoAuthority:effectiveVo,effectivePaymentAuthority,effectiveRecognisedAuthority:effectiveRecognised,remainingForecastExposure:fromPence(toPence(effectiveFinal)-toPence(effectiveRecognised)),effectiveFinalExposure:money(effectiveFinal),forecastBelowAuthority:below,mixedSignAuthority:mixedSign,exception,allocations:projected,substitutions};
 }
 
 async function loadItem(db,clientId,itemId,lock=false){return (await db.query(`SELECT * FROM package_variation_account_items WHERE client_id=$1 AND id=$2${lock?' FOR UPDATE':''}`,[clientId,itemId])).rows[0]||null;}

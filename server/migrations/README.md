@@ -97,3 +97,10 @@ Adds signed QS certificate-assessment facts keyed to the canonical package Varia
 ### 036 — Variation Account authority allocations
 
 Adds immutable, explicit allocations of Approved CE and Issued VO-line authority to canonical VA items, plus explicit overlap substitution and append-only audit. It does not infer links, backfill history, create Payment Authority, or change Current Contract/CVR calculations.
+### 038_payment_authority.sql
+
+VA-4A / PAR-1 adds immutable Payment Approval Runs, certificate decisions, locked-VA-assessment decision lines, explicit CE/VO support usage, real Payment Authority VA allocation provenance, append-only correction facts, and separated RBAC permissions. It performs no backfill and does not implement Payment Release or CVR integration.
+
+### 039_payment_authority_snapshot_hash_scheme.sql
+
+Adds an explicit canonical JSON SHA-256 scheme to new Payment Authority decisions. Existing decisions remain unversioned legacy evidence and are not relabelled or re-hashed.
