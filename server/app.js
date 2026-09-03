@@ -32,6 +32,7 @@ const commercialDocumentRoutes = require("./routes/commercialDocumentRoutes");
 const authRoutes = require('./routes/authRoutes');
 const variationAccountRoutes = require('./routes/variationAccountRoutes');
 const paymentAuthorityRoutes = require('./routes/paymentAuthorityRoutes');
+const paymentReleaseRoutes = require('./routes/paymentReleaseRoutes');
 
 function allowedOrigins() {
   const configured = String(process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean);
@@ -82,6 +83,7 @@ function createApp(options = {}) {
   app.use("/api/commercial-documents", commercialDocumentRoutes);
   app.use("/api/variation-account", variationAccountRoutes);
   app.use("/api/payment-authority", paymentAuthorityRoutes);
+  app.use("/api/payment-releases", paymentReleaseRoutes);
 
   if (!isProduction()) {
     const developerRoutes = require("./routes/developerRoutes");

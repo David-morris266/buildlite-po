@@ -1,6 +1,8 @@
 import CommercialAssistantIndicator from '../commercialAssistant/CommercialAssistantIndicator';
+import { useBuildLitePermission } from '../auth/BuildLiteAuthProvider';
 
 export default function BrandHeader({ activeTab, onTab }) {
+  const canReleasePayments = useBuildLitePermission('payment_release.execute');
   return (
     <header className="brandbar">
       <div className="brand-left">
@@ -19,6 +21,12 @@ export default function BrandHeader({ activeTab, onTab }) {
         >
           Payment Approval
         </button>
+        {canReleasePayments ? <button
+          className={`tab ${activeTab === "payment-release" ? "active" : ""}`}
+          onClick={() => onTab("payment-release")}
+        >
+          Payment Release
+        </button> : null}
         <button
           className={`tab ${activeTab === "administration" ? "active" : ""}`}
           onClick={() => onTab("administration")}

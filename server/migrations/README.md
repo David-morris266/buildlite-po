@@ -104,3 +104,7 @@ VA-4A / PAR-1 adds immutable Payment Approval Runs, certificate decisions, locke
 ### 039_payment_authority_snapshot_hash_scheme.sql
 
 Adds an explicit canonical JSON SHA-256 scheme to new Payment Authority decisions. Existing decisions remain unversioned legacy evidence and are not relabelled or re-hashed.
+
+### 040_payment_release.sql
+
+VA-4B adds immutable completed Payment Release batches/items and append-only audit for full release of authorised cash to Accounts. It adds the Finance role with `payment_release.execute`, creates no historic releases, and does not mean paid/exported or change certificate, VA, CE, VO, Current Contract or CVR authority.

@@ -34,7 +34,8 @@ test('migration 031 applies to buildlite_test and seeds only role/permission def
   await pool.query(migration);
   assert.equal(Number((await pool.query('SELECT COUNT(*) n FROM buildlite_users')).rows[0].n), existingUsers);
   assert.equal(Number((await pool.query('SELECT COUNT(*) n FROM client_user_memberships')).rows[0].n), existingMemberships);
-  assert.equal(Number((await pool.query('SELECT COUNT(*) n FROM roles')).rows[0].n), 6);
+  assert.ok(Number((await pool.query('SELECT COUNT(*) n FROM roles')).rows[0].n) >= 6);
+  assert.equal(Number((await pool.query("SELECT COUNT(*) n FROM roles WHERE key IN('site','buyer','qs','commercial_manager','commercial_director','admin')")).rows[0].n), 6);
   assert.ok(Number((await pool.query('SELECT COUNT(*) n FROM permissions')).rows[0].n) >= 40);
   assert.equal(Number((await pool.query(`SELECT COUNT(*) n FROM role_permissions rp JOIN roles r ON r.id=rp.role_id WHERE r.key='admin' AND rp.permission_key IN ('po.approve','certificate.lock','payment_release.approve')`)).rows[0].n), 0);
 });
@@ -73,5 +74,5 @@ test('critical financial route is denied before domain execution when permission
 
 test('critical-route manifest covers the pilot high-risk boundary', () => {
   const values = Object.values(CRITICAL_ROUTE_PERMISSIONS).join('|');
-  for (const permission of [PERMISSIONS.PO_APPROVE,PERMISSIONS.CE_APPROVE,PERMISSIONS.VO_ISSUE,PERMISSIONS.CVR_LOCK,PERMISSIONS.CERTIFICATE_LOCK,PERMISSIONS.INTENDED_PAYMENT_CONFIRM,PERMISSIONS.PAYMENT_NOTICE_ISSUE,PERMISSIONS.PAY_LESS_ISSUE,PERMISSIONS.DOCUMENT_GENERATE,PERMISSIONS.DOCUMENT_ISSUE,PERMISSIONS.DOCUMENT_VIEW,PERMISSIONS.TERMS_PUBLISH]) assert.match(values, new RegExp(permission.replace('.','\\.')));
+  for (const permission of [PERMISSIONS.PO_APPROVE,PERMISSIONS.CE_APPROVE,PERMISSIONS.VO_ISSUE,PERMISSIONS.CVR_LOCK,PERMISSIONS.CERTIFICATE_LOCK,PERMISSIONS.INTENDED_PAYMENT_CONFIRM,PERMISSIONS.PAYMENT_NOTICE_ISSUE,PERMISSIONS.PAY_LESS_ISSUE,PERMISSIONS.DOCUMENT_GENERATE,PERMISSIONS.DOCUMENT_ISSUE,PERMISSIONS.DOCUMENT_VIEW,PERMISSIONS.TERMS_PUBLISH,PERMISSIONS.PAYMENT_RELEASE_EXECUTE]) assert.match(values, new RegExp(permission.replace('.','\\.')));
 });

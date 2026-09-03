@@ -12,6 +12,8 @@ const CRITICAL_ROUTE_PERMISSIONS = Object.freeze({
   'GET /api/payment-authority/queue': P.PAYMENT_APPROVAL_RUN_VIEW,
   'POST /api/payment-authority/runs': P.PAYMENT_AUTHORITY_APPROVE,
   'POST /api/payment-authority/decisions/:id/reverse': P.PAYMENT_AUTHORITY_REVERSE,
+  'GET /api/payment-releases/queue': P.PAYMENT_RELEASE_EXECUTE,
+  'POST /api/payment-releases/batches': P.PAYMENT_RELEASE_EXECUTE,
   'POST /api/developments/:developmentId/cvr/periods/:periodId/approve': P.CVR_LOCK,
   'POST /api/packages/:packageId/certificates/:certificateId/approve': P.CERTIFICATE_LOCK,
   'POST /api/packages/:packageId/certificates/:certificateId/intended-payments': P.INTENDED_PAYMENT_CONFIRM,
