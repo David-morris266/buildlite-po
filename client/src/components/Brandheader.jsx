@@ -1,8 +1,13 @@
 import CommercialAssistantIndicator from '../commercialAssistant/CommercialAssistantIndicator';
-import { useBuildLitePermission } from '../auth/BuildLiteAuthProvider';
+import { useBuildLitePermission, useBuildLitePrincipal } from '../auth/BuildLiteAuthProvider';
 
 export default function BrandHeader({ activeTab, onTab }) {
   const canReleasePayments = useBuildLitePermission('payment_release.execute');
+  const canViewPaymentApproval = useBuildLitePermission('payment_approval_run.view');
+  const canCreatePo = useBuildLitePermission('po.create');
+  const principal = useBuildLitePrincipal();
+  const canAdmin = ['tenant.configure', 'users.manage', 'roles.manage', 'terms.publish']
+    .some(permission => principal?.permissions?.includes(permission));
   return (
     <header className="brandbar">
       <div className="brand-left">
@@ -15,24 +20,25 @@ export default function BrandHeader({ activeTab, onTab }) {
 
       <nav className="nav">
         <CommercialAssistantIndicator />
-        <button
+        <button className={`tab ${activeTab === "home" ? "active" : ""}`} onClick={() => onTab("home")}>Home</button>
+        {canViewPaymentApproval ? <button
           className={`tab ${activeTab === "payment-approval" ? "active" : ""}`}
           onClick={() => onTab("payment-approval")}
         >
           Payment Approval
-        </button>
+        </button> : null}
         {canReleasePayments ? <button
           className={`tab ${activeTab === "payment-release" ? "active" : ""}`}
           onClick={() => onTab("payment-release")}
         >
           Payment Release
         </button> : null}
-        <button
+        {canAdmin ? <button
           className={`tab ${activeTab === "administration" ? "active" : ""}`}
           onClick={() => onTab("administration")}
         >
           Administration
-        </button>
+        </button> : null}
         <button
           className={`tab ${activeTab === "cvrs" ? "active" : ""}`}
           onClick={() => onTab("cvrs")}
@@ -45,23 +51,17 @@ export default function BrandHeader({ activeTab, onTab }) {
         >
           Developments
         </button>
-        <button
+        {canCreatePo ? <button
           className={`tab ${activeTab === "form" ? "active" : ""}`}
           onClick={() => onTab("form")}
         >
           New Purchase Order
-        </button>
+        </button> : null}
         <button
           className={`tab ${activeTab === "list" ? "active" : ""}`}
           onClick={() => onTab("list")}
         >
           Purchase Orders
-        </button>
-        <button
-          className={`tab ${activeTab === "certificates" ? "active" : ""}`}
-          onClick={() => onTab("certificates")}
-        >
-          Payment Certificates
         </button>
         <button
           className={`tab ${activeTab === "archive" ? "active" : ""}`}

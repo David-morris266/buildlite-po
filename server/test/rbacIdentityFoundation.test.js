@@ -9,7 +9,7 @@ const { resolveBuildLitePrincipal, assertPermission } = require('../auth/authori
 const { PERMISSIONS } = require('../auth/permissions');
 const { CRITICAL_ROUTE_PERMISSIONS } = require('../auth/routePermissionManifest');
 const { pool, isDbConfigured } = require('../db');
-const { prepareIntegrationTestDatabase } = require('./integrationTestSetup');
+const { ensureActiveTestClient, prepareIntegrationTestDatabase } = require('./integrationTestSetup');
 
 const migration = fs.readFileSync(path.join(__dirname, '..', 'migrations', '031_rbac_identity_foundation.sql'), 'utf8');
 const principal = { userId:'user-1', providerUserId:'clerk-1', displayName:'Pilot QS', clientId:'client-1', membershipId:'membership-1', roleKey:'qs', roleName:'QS', permissions:[PERMISSIONS.COMMERCIAL_READ], memberships:[] };
@@ -58,11 +58,14 @@ test('permission assertion defaults to deny', () => {
 test('API returns 401 without identity and exposes authenticated BuildLite principal', async () => {
   const anonymous = createApp({authAdapter:createTestAuthAdapter(null)});
   assert.equal((await request(anonymous).get('/api/auth/me')).status, 401);
-  const authenticated = createApp({authAdapter:createTestAuthAdapter(principal)});
+  if (!isDbConfigured()) return;
+  const clientId = await ensureActiveTestClient(pool);
+  const authenticated = createApp({authAdapter:createTestAuthAdapter({...principal,clientId})});
   const response = await request(authenticated).get('/api/auth/me');
   assert.equal(response.status, 200);
   assert.equal(response.body.user.id, 'user-1');
   assert.deepEqual(response.body.permissions, [PERMISSIONS.COMMERCIAL_READ]);
+  assert.equal(typeof response.body.tenantReadiness.configured, 'boolean');
 });
 
 test('critical financial route is denied before domain execution when permission is absent', async () => {
