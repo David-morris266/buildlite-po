@@ -6,8 +6,9 @@ import CostCentreDrawer from './CostCentreDrawer';
 import CVRBudgetImportWizard from './CVRBudgetImportWizard';
 import CvrAddCostCodeDialog from './CvrAddCostCodeDialog';
 import { listPOs } from '../api';
+import { acknowledgeCvrVariationExposure } from '../api/cvrPeriods';
 import { subscribeCommercialChanged } from '../commercial/commercialEvents';
-import { buildCvrWorkspaceModel, formatCvrTotals } from '../cvr/cvrHelpers';
+import { buildCvrWorkspaceModel, formatCvrMoney, formatCvrTotals } from '../cvr/cvrHelpers';
 import { applyCostCentreSaveToCvrRow } from '../cvr/cvrForecastEngine';
 import { buildCvrTotals } from '../cvr/cvrCalculations';
 import {
@@ -130,7 +131,7 @@ function CvrAuditHistory({ items }) {
   );
 }
 
-function WorkflowDialog({ title, children, confirmLabel, onCancel, onConfirm }) {
+function WorkflowDialog({ title, children, confirmLabel, onCancel, onConfirm, confirmDisabled = false }) {
   return (
     <div className="dev-cvr-add-backdrop" role="presentation">
       <div className="dev-cvr-add modal" role="dialog" aria-modal="true">
@@ -140,7 +141,7 @@ function WorkflowDialog({ title, children, confirmLabel, onCancel, onConfirm }) 
           <button type="button" className="po-list-btn-secondary" onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" className="po-btn-primary" onClick={onConfirm}>
+          <button type="button" className="po-btn-primary" onClick={onConfirm} disabled={confirmDisabled}>
             {confirmLabel}
           </button>
         </div>
@@ -178,6 +179,7 @@ export default function CVRWorkspace({
   const [rejectComment, setRejectComment] = useState('');
   const [reportingMonthPrompt, setReportingMonthPrompt] = useState(null);
   const [reportingMonthBusy, setReportingMonthBusy] = useState(false);
+  const [acknowledging, setAcknowledging] = useState('');
 
   const period = useMemo(() => {
     void refreshToken;
@@ -211,6 +213,10 @@ export default function CVRWorkspace({
   const readOnly = !isCvrPeriodEditable(period);
   const submitted = isCvrPeriodSubmitted(period);
   const locked = isCvrPeriodLocked(period);
+  const variationExposure = locked ? period?.snapshot?.variationExposure : period?.variationExposure;
+  const requirements = variationExposure?.acknowledgementRequirements || [];
+  const acknowledgedKeys = new Set((variationExposure?.acknowledgements || []).map((entry) => `${entry.variationAccountItemId}:${entry.exceptionCode}`));
+  const missingAcknowledgements = requirements.filter((entry) => !acknowledgedKeys.has(`${entry.variationAccountItemId}:${entry.exceptionCode}`));
   const status = getCvrPeriodStatusMeta(period?.status);
   const auditItems = buildCvrPeriodAuditItems(period);
   const headerMeta = buildCvrPeriodHeaderMeta(period).filter(
@@ -475,6 +481,17 @@ export default function CVRWorkspace({
     refresh();
   }
 
+  async function handleAcknowledge(requirement) {
+    const key = `${requirement.variationAccountItemId}:${requirement.exceptionCode}`;
+    setAcknowledging(key);
+    try {
+      await acknowledgeCvrVariationExposure(development.id, period.id, requirement);
+      refresh();
+    } catch (error) {
+      window.alert(error?.message || 'Could not acknowledge Variation exposure.');
+    } finally { setAcknowledging(''); }
+  }
+
   async function handleReject() {
     const result = await Promise.resolve(
       rejectCvrPeriod(development.id, periodKey, rejectComment)
@@ -705,6 +722,31 @@ export default function CVRWorkspace({
 
       <CvrAuditHistory items={auditItems} />
 
+      {submitted && variationExposure?.stale ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          Variation exposure changed after this CVR was submitted. Reject to Draft, review the updated position and resubmit before Lock.
+          {variationExposure.staleReasons?.length ? ` ${variationExposure.staleReasons.join(', ')}` : ''}
+        </div>
+      ) : null}
+
+      {variationExposure?.state === 'legacy_not_captured' ? (
+        <div className="po-list-feedback po-list-feedback--info">VA exposure not captured for this reporting period.</div>
+      ) : null}
+
+      {submitted && requirements.length ? (
+        <section className="dev-cvr__notes-panel" aria-label="Variation exposure acknowledgements">
+          <h3>Variation exposure exceptions</h3>
+          {requirements.map((entry) => {
+            const key = `${entry.variationAccountItemId}:${entry.exceptionCode}`;
+            const done = acknowledgedKeys.has(key);
+            return <div key={key} className="dev-cvr__exception-row">
+              <span><strong>{entry.reference}</strong> · QS Forecast {formatCvrMoney(entry.qsForecast)} · floor {formatCvrMoney(entry.effectiveFloor)} · variance {formatCvrMoney(entry.variance)}</span>
+              {done ? <strong>Acknowledged</strong> : <button type="button" className="po-list-btn-secondary" disabled={Boolean(acknowledging)} onClick={() => void handleAcknowledge(entry)}>{acknowledging === key ? 'Acknowledging…' : 'Acknowledge'}</button>}
+            </div>;
+          })}
+        </section>
+      ) : null}
+
       {activeHeadFilter ? (
         <div className="cvr-workspace__family-filter" role="status">
           <span>
@@ -796,10 +838,12 @@ export default function CVRWorkspace({
           confirmLabel="Approve & Lock"
           onCancel={() => setDialog(null)}
           onConfirm={handleApprove}
+          confirmDisabled={Boolean(variationExposure?.stale || missingAcknowledgements.length)}
         >
           <p className="dev-cvr-add__lead">
             Locked periods become permanent historical records.
           </p>
+          {missingAcknowledgements.length ? <p className="po-list-feedback po-list-feedback--warning">Acknowledge {missingAcknowledgements.length} submitted Variation exposure exception{missingAcknowledgements.length === 1 ? '' : 's'} before Lock.</p> : null}
         </WorkflowDialog>
       ) : null}
 

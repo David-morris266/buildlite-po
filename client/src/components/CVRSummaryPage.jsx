@@ -33,6 +33,7 @@ import { ensureDraftCvrOverlayMemberOnServer } from '../cvr/cvrPeriodAuthorityWr
 import {
   ensureCvrPeriodAndInputsReady,
   getCvrPeriodReadiness,
+  refreshCvrPeriodsForDevelopment,
 } from '../cvr/cvrPeriodServerCache';
 import { isLedgerServerAuthorityEnabled } from '../ledger/ledgerAuthority';
 import {
@@ -202,10 +203,16 @@ export default function CVRSummaryPage({
 
   useEffect(() => {
     const unsubscribe = subscribeCommercialChanged(() => {
-      setLocalRefresh((value) => value + 1);
+      if (isCvrServerAuthorityEnabled()) {
+        refreshCvrPeriodsForDevelopment(development.id)
+          .catch(() => null)
+          .finally(() => setLocalRefresh((value) => value + 1));
+      } else {
+        setLocalRefresh((value) => value + 1);
+      }
     });
     return unsubscribe;
-  }, []);
+  }, [development.id]);
 
   useEffect(() => {
     if (
@@ -220,6 +227,7 @@ export default function CVRSummaryPage({
     (async () => {
       try {
         if (isCvrServerAuthorityEnabled()) {
+          await refreshCvrPeriodsForDevelopment(development.id);
           await ensureCvrPeriodAndInputsReady(development.id, periodKey);
         }
         if (isLedgerServerAuthorityEnabled()) {
@@ -547,6 +555,15 @@ export default function CVRSummaryPage({
           </dl>
         </div>
       </ApplicationPageHeader>
+
+      {summary.period?.status === 'submitted' && summary.period?.variationExposure?.stale ? (
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          Variation exposure changed after this CVR was submitted. Reject to Draft, review the updated position and resubmit before Lock.
+          {summary.period.variationExposure.staleReasons?.length
+            ? ` ${summary.period.variationExposure.staleReasons.join(', ')}`
+            : ''}
+        </div>
+      ) : null}
 
       {summary.historicUnavailable ? (
         <div className="po-list-feedback po-list-feedback--warning" role="status">

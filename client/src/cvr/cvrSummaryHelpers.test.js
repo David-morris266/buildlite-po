@@ -200,6 +200,47 @@ describe('buildTopCostVariances', () => {
     expect(ranked[1].costCodeLabel).toBe('C');
     expect(ranked[2].costCodeLabel).toBe('A');
   });
+
+  it('keeps the canonical worksheet facts when a Top Cost Variance opens the drawer', () => {
+    const variationExposureItem = {
+      variationAccountItemId: 'va-0001',
+      reference: 'VA-0001',
+      qsForecast: 17000,
+      effectiveRecognisedAuthority: 12000,
+      cumulativeLockedCertification: 8000,
+      authorityAlreadyInCurrentContract: 12000,
+      effectiveVaExposure: 17000,
+      vaExposureUplift: 5000,
+      remainingForecastExposure: 5000,
+    };
+    const [ranked] = buildTopCostVariances([{
+      id: 'auto-4330',
+      costCodeKey: '4330',
+      costCodeLabel: '4330 — Mastic & Sealing',
+      committed: 13000,
+      certified: 8000,
+      systemForecast: 13000,
+      expectedLiability: 0,
+      vaExposureUplift: 5000,
+      finalForecast: 18000,
+      variationExposureItems: [variationExposureItem],
+      currentBudget: 1000,
+      currentBudgetLabel: '£1,000.00',
+      finalForecastLabel: '£18,000.00',
+      variance: -17000,
+      varianceLabel: '−£17,000.00',
+      varianceState: 'overspend',
+    }]);
+
+    expect(ranked).toMatchObject({
+      committed: 13000,
+      certified: 8000,
+      systemForecast: 13000,
+      vaExposureUplift: 5000,
+      finalForecast: 18000,
+      variationExposureItems: [variationExposureItem],
+    });
+  });
 });
 
 describe('buildCommercialExceptions', () => {

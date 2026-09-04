@@ -52,7 +52,7 @@ import {
   resetCvrPeriodApiStore,
   seedMockCvrPeriod,
 } from '../test/mockCvrPeriodApi';
-import { __resetCvrPeriodServerCacheForTests } from '../cvr/cvrPeriodServerCache';
+import { __resetCvrPeriodServerCacheForTests, ensureCvrPeriodsReadyForDevelopment } from '../cvr/cvrPeriodServerCache';
 import CVRSummaryPage from './CVRSummaryPage';
 import CVRWorkspace from './CVRWorkspace';
 
@@ -190,6 +190,41 @@ describe('Create Next Period navigation (BL-031F)', () => {
     expect(createNextCvrPeriod).not.toHaveBeenCalled();
     expect(onBackToRegister).not.toHaveBeenCalled();
     expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('Summary refreshes authoritative submitted state, warns when stale and gates approval only', async () => {
+    __resetCvrPeriodServerCacheForTests();
+    resetCvrPeriodApiStore();
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({
+      id: PERIOD_ID,
+      developmentId: DEV.id,
+      status: 'submitted',
+      variationExposure: { state: 'submitted', captured: true, stale: false, staleReasons: [] },
+    }));
+    await ensureCvrPeriodsReadyForDevelopment(DEV.id);
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({
+      id: PERIOD_ID,
+      developmentId: DEV.id,
+      status: 'submitted',
+      submittedAt: '2026-09-03T12:46:18.711Z',
+      variationExposure: {
+        state: 'submitted',
+        captured: true,
+        stale: true,
+        staleReasons: ['variation_exposure_sources_changed'],
+        document: { calculationVersion: 'va_expected_exposure_v1', items: [{ variationAccountItemId: 'va-1', qsForecast: 17000, vaExposureUplift: 5000 }] },
+      },
+    }));
+    await act(async () => {
+      root.render(<CVRSummaryPage development={DEV} periodKey="P01" certificatesReady onContinueToCvr={vi.fn()} />);
+    });
+    await flush();
+    await flush();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Variation exposure changed after this CVR was submitted');
+    const labels = Array.from(container.querySelectorAll('button')).map(button => button.textContent.trim());
+    expect(labels).not.toContain('Approve & Lock');
+    expect(labels).toContain('Reject');
+    expect(labels).toContain('Open CVR Read Only');
   });
 
   it('Worksheet success returns to the CVR Register after a reporting month is chosen', async () => {

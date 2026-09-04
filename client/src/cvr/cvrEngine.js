@@ -221,6 +221,16 @@ export function buildCvrRows(developmentId, options = {}) {
   const certified = buildCertifiedByCostCode(developmentId, pos);
   const actuals = buildActualsByCostCode(developmentId);
   const expectedLiabilities = buildExpectedLiabilityByCostCode(developmentId);
+  const exposureDocument = options.period?.variationExposure?.document || options.period?.snapshot?.variationExposure?.document;
+  const variationExposureByCostCode = new Map();
+  for (const item of exposureDocument?.items || []) {
+    const key = normaliseCostCodeKey(item.costCode);
+    if (!key || item.vaExposureUplift == null) continue;
+    const entry = variationExposureByCostCode.get(key) || { pence: 0, items: [] };
+    entry.pence += Math.round(Number(item.vaExposureUplift) * 100);
+    entry.items.push(item);
+    variationExposureByCostCode.set(key, entry);
+  }
   const manualCentres = listCostCentres(developmentId, periodKey);
 
   const allKeys = collectCostCodeKeys([
@@ -229,6 +239,7 @@ export function buildCvrRows(developmentId, options = {}) {
     actuals,
     expectedLiabilities,
   ]);
+  for (const key of variationExposureByCostCode.keys()) allKeys.add(key);
   const manualByKey = new Map();
 
   for (const centre of manualCentres) {
@@ -278,6 +289,8 @@ export function buildCvrRows(developmentId, options = {}) {
           ? null
           : actuals.totals.get(key) ?? (hasManualBudget ? 0 : null),
         expectedLiability: expectedLiabilities.totals.get(key) ?? 0,
+        vaExposureUplift: (variationExposureByCostCode.get(key)?.pence || 0) / 100,
+        variationExposureItems: variationExposureByCostCode.get(key)?.items || [],
         commercialAdjustment: manual?.commercialAdjustment ?? 0,
         commercialReason: manual?.commercialReason || '',
         adjustmentHistory: manual?.adjustmentHistory || [],
@@ -319,6 +332,7 @@ function emptyCvrSummary() {
     outstandingCertified: null,
     systemForecast: null,
     expectedLiability: null,
+    vaExposureUplift: null,
     commercialAdjustment: null,
     manualAccrual: null,
     currentCost: null,
@@ -340,6 +354,7 @@ function summaryFromTotals(totals, ledgerReady = true) {
     outstandingCertified: ledgerReady ? totals.outstandingCertified : null,
     systemForecast: totals.systemForecast,
     expectedLiability: totals.expectedLiability,
+    vaExposureUplift: totals.vaExposureUplift,
     commercialAdjustment: totals.commercialAdjustment,
     manualAccrual: totals.manualAccrual,
     currentCost: ledgerReady ? totals.currentCost : null,
@@ -378,6 +393,8 @@ function snapshotRowToCvrRow(row) {
     expectedLiability:
       row.expectedLiabilityCaptured === false ? null : row.expectedLiability,
     expectedLiabilityCaptured: row.expectedLiabilityCaptured !== false,
+    vaExposureUplift: row.vaExposureUplift ?? 0,
+    variationExposureItems: row.variationExposureItems || [],
     expectedLiabilityProvenance: row.expectedLiabilityProvenance ?? null,
     finalForecast: row.finalForecast,
     forecastFinalCost: row.finalForecast,
@@ -412,6 +429,7 @@ function historicTotalsFromSnapshot(snapshot, rows) {
       header.expectedLiabilityCaptured === false
         ? null
         : header.expectedLiability ?? fromRows.expectedLiability,
+    vaExposureUplift: header.vaExposureUplift ?? fromRows.vaExposureUplift,
     commercialAdjustment: header.commercialAdjustment ?? fromRows.commercialAdjustment,
     finalForecast: header.finalForecast ?? fromRows.finalForecast,
     forecastFinalCost: header.finalForecast ?? fromRows.forecastFinalCost,

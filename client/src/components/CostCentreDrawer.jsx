@@ -254,6 +254,28 @@ export default function CostCentreDrawer({
           )}
         </DrawerSection>
 
+        {displayRow.variationExposureItems?.length ? (
+          <DrawerSection title="Variation Account exposure">
+            {displayRow.variationExposureItems.map((item) => (
+              <details key={item.variationAccountItemId} className="dev-cvr-drawer__variation-exposure">
+                <summary>{item.reference || 'Variation'} — {formatCvrMoney(item.vaExposureUplift)} CVR uplift</summary>
+                <dl className="dev-cvr-drawer__group-grid">
+                  <div><dt>Contractor Value</dt><dd>{formatCvrMoney(item.contractorValue)}</dd></div>
+                  <div><dt>Contractor Claim</dt><dd>{formatCvrMoney(item.contractorClaim)}</dd></div>
+                  <div><dt>QS Forecast</dt><dd>{formatCvrMoney(item.qsForecast)}</dd></div>
+                  <div><dt>Recognised Authority</dt><dd>{formatCvrMoney(item.effectiveRecognisedAuthority)}</dd></div>
+                  <div><dt>Authority in Current Contract</dt><dd>{formatCvrMoney(item.authorityAlreadyInCurrentContract)}</dd></div>
+                  <div><dt>Locked Certified Exposure</dt><dd>{formatCvrMoney(item.cumulativeLockedCertification)}</dd></div>
+                  <div><dt>Effective VA Exposure</dt><dd>{formatCvrMoney(item.effectiveVaExposure)}</dd></div>
+                  <div><dt>Remaining Forecast Exposure</dt><dd>{formatCvrMoney(item.remainingForecastExposure)}</dd></div>
+                </dl>
+                <p className="dev-cvr-drawer__field-hint">CE {formatCvrMoney(item.authorityComposition?.effectiveCommercialEvent)} · VO {formatCvrMoney(item.authorityComposition?.effectiveVariationOrder)} · Payment Authority {formatCvrMoney(item.authorityComposition?.effectivePaymentAuthority)}</p>
+                {item.exceptions?.length ? <p className="po-list-feedback po-list-feedback--warning">Exceptions: {item.exceptions.join(', ')}</p> : null}
+              </details>
+            ))}
+          </DrawerSection>
+        ) : null}
+
         <DrawerSection title="Forecast">
           <dl className="dev-cvr-drawer__group-grid dev-cvr-drawer__forecast-grid">
             <div>
@@ -269,6 +291,7 @@ export default function CostCentreDrawer({
                   formatCvrMoney(displayRow.commercialAdjustment)}
               </dd>
             </div>
+            <div><dt>VA Exposure Uplift</dt><dd>{formatCvrMoney(displayRow.vaExposureUplift)}</dd></div>
             <div>
               <dt>Final Forecast</dt>
               <dd>{formatCvrMoney(displayRow.finalForecast)}</dd>

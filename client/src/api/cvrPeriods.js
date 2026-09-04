@@ -124,6 +124,13 @@ export async function approveCvrPeriodForDevelopment(developmentId, periodId, pa
   return handleJson(res);
 }
 
+export async function acknowledgeCvrVariationExposure(developmentId, periodId, payload = {}) {
+  const res = await fetch(buildUrl(`${periodsUrl(developmentId, periodId)}/variation-exposure/acknowledgements`), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  });
+  return handleJson(res);
+}
+
 export async function listCvrPeriodInputs(developmentId, periodId) {
   const res = await fetch(buildUrl(inputsUrl(developmentId, periodId)));
   const data = await handleJson(res);

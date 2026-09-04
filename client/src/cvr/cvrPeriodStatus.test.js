@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canApproveCvrPeriod,
   canCreateNextCvrPeriod,
   formatNextPeriodKey,
   isCvrPeriodEditable,
@@ -22,6 +23,12 @@ describe('cvrPeriodStatus', () => {
     expect(isCvrPeriodEditable({ status: 'draft' })).toBe(true);
     expect(isCvrPeriodEditable({ status: 'submitted' })).toBe(false);
     expect(isCvrPeriodLocked({ status: 'locked' })).toBe(true);
+  });
+
+  it('allows approval only for a current submitted exposure snapshot', () => {
+    expect(canApproveCvrPeriod({ status: 'submitted', variationExposure: { stale: false } })).toBe(true);
+    expect(canApproveCvrPeriod({ status: 'submitted', variationExposure: { stale: true } })).toBe(false);
+    expect(canApproveCvrPeriod({ status: 'draft', variationExposure: { stale: false } })).toBe(false);
   });
 
   it('blocks next period when a draft exists', () => {

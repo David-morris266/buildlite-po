@@ -441,6 +441,7 @@ export function buildTopCostVariances(rows, limit = 5) {
   const ranked = rows
     .filter((row) => row.variance != null)
     .map((row) => ({
+      ...row,
       id: row.id,
       costCodeKey: row.costCodeKey,
       costCodeLabel: row.costCodeLabel,
@@ -737,7 +738,7 @@ function buildWorkflowActions(period, developmentId) {
     showContinue: true,
     continueLabel: draft ? 'Continue to CVR' : submitted ? 'Open CVR Read Only' : 'View Locked CVR',
     showSubmit: draft,
-    showApprove: submitted,
+    showApprove: submitted && period?.variationExposure?.stale !== true,
     showReject: submitted,
     showCreateNext: locked && canCreateNext,
   };

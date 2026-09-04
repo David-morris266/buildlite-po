@@ -104,6 +104,19 @@ function snapshotPlotToDocument(row) {
 
 function snapshotHeaderToDocument(header, rows = [], plots = []) {
   if (!header) return null;
+  const variationDocument = header.variation_exposure_snapshot || null;
+  const variationByCostCode = new Map();
+  for (const item of variationDocument?.items || []) {
+    const key = String(item.costCode || '').replace(/\s+/g, '').toLowerCase();
+    const entry = variationByCostCode.get(key) || { pence: 0, items: [] };
+    entry.pence += Math.round(Number(item.vaExposureUplift || 0) * 100);
+    entry.items.push(item);
+    variationByCostCode.set(key, entry);
+  }
+  const mappedRows = (rows || []).map(snapshotRowToDocument).filter(Boolean).map((row) => {
+    const entry = variationByCostCode.get(String(row.costCodeKey || '').replace(/\s+/g, '').toLowerCase());
+    return { ...row, vaExposureUplift: (entry?.pence || 0) / 100, variationExposureItems: entry?.items || [] };
+  });
   return {
     id: header.id,
     clientId: header.client_id,
@@ -142,9 +155,21 @@ function snapshotHeaderToDocument(header, rows = [], plots = []) {
     revenueSettingsId: header.revenue_settings_id ?? null,
     revenueSettingsVersion:
       header.revenue_settings_version == null ? null : Number(header.revenue_settings_version),
+    variationExposure: header.variation_exposure_submission_id
+      ? {
+          state: "locked",
+          captured: true,
+          submissionId: header.variation_exposure_submission_id,
+          calculationVersion: header.variation_exposure_calculation_version,
+          hashScheme: header.variation_exposure_hash_scheme,
+          hash: header.variation_exposure_sha256,
+          document: variationDocument,
+        }
+      : { state: "legacy_not_captured", captured: false },
     createdAt: toIso(header.created_at),
     createdBy: header.created_by ?? null,
-    rows: (rows || []).map(snapshotRowToDocument).filter(Boolean),
+    vaExposureUplift: mappedRows.reduce((sum, row) => Math.round((sum + Number(row.vaExposureUplift || 0)) * 100) / 100, 0),
+    rows: mappedRows,
     plots: (plots || []).map(snapshotPlotToDocument).filter(Boolean),
   };
 }

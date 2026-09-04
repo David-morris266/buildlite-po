@@ -56,7 +56,7 @@ export function canSubmitCvrPeriod(period) {
 }
 
 export function canApproveCvrPeriod(period) {
-  return isCvrPeriodSubmitted(period);
+  return isCvrPeriodSubmitted(period) && period?.variationExposure?.stale !== true;
 }
 
 export function canRejectCvrPeriod(period) {

@@ -91,8 +91,25 @@ test('QS creates positive variation and negative credit with stable package numb
 test('QS Forecast and confirmed contractor changes append immutable histories',async t=>{
   if(!isDbConfigured())return t.skip();
   let item=(await repository.createItem(a.client.id,a.pkg.id,{description:'History test',contractorValue:10000,qsForecast:8000,reason:'Initial'},qsAuth)).item;
+  const protectedBefore={
+    contractorValue:item.contractorValue,
+    allocations:Number((await pool.query('SELECT count(*) n FROM package_variation_account_authority_allocations WHERE variation_account_item_id=$1',[item.id])).rows[0].n),
+    assessments:Number((await pool.query('SELECT count(*) n FROM package_variation_account_certificate_assessments WHERE variation_account_item_id=$1',[item.id])).rows[0].n),
+    commercialEvents:Number((await pool.query('SELECT count(*) n FROM commercial_events WHERE client_id=$1 AND package_id=$2',[a.client.id,a.pkg.id])).rows[0].n),
+    variationOrders:Number((await pool.query('SELECT count(*) n FROM variation_orders WHERE client_id=$1 AND package_id=$2',[a.client.id,a.pkg.id])).rows[0].n),
+  };
   item=(await repository.updateForecast(a.client.id,item.id,{version:item.version,qsForecast:7500,reason:'Risk reassessed'},qsAuth)).item;
-  assert.equal(item.qsForecast,7500);assert.deepEqual(item.forecastHistory.map(row=>row.newValue),[8000,7500]);assert.equal(item.contractorValue,10000);
+  assert.equal(item.qsForecast,7500);assert.equal(item.version,2);assert.deepEqual(item.forecastHistory.map(row=>row.newValue),[8000,7500]);assert.equal(item.contractorValue,10000);
+  assert.equal(item.forecastHistory[1].priorValue,8000);assert.equal(item.forecastHistory[1].reason,'Risk reassessed');assert.equal(item.forecastHistory[1].itemVersion,2);
+  assert.equal(item.forecastHistory[1].actor.userId,qsAuth.userId);assert.equal(item.forecastHistory[1].actor.membershipId,qsAuth.membershipId);assert.equal(item.forecastHistory[1].actor.providerUserId,qsAuth.providerUserId);
+  const protectedAfter={
+    contractorValue:item.contractorValue,
+    allocations:Number((await pool.query('SELECT count(*) n FROM package_variation_account_authority_allocations WHERE variation_account_item_id=$1',[item.id])).rows[0].n),
+    assessments:Number((await pool.query('SELECT count(*) n FROM package_variation_account_certificate_assessments WHERE variation_account_item_id=$1',[item.id])).rows[0].n),
+    commercialEvents:Number((await pool.query('SELECT count(*) n FROM commercial_events WHERE client_id=$1 AND package_id=$2',[a.client.id,a.pkg.id])).rows[0].n),
+    variationOrders:Number((await pool.query('SELECT count(*) n FROM variation_orders WHERE client_id=$1 AND package_id=$2',[a.client.id,a.pkg.id])).rows[0].n),
+  };
+  assert.deepEqual(protectedAfter,protectedBefore);
   item=(await repository.recordContractorPosition(a.client.id,item.id,{version:item.version,contractorValue:12000,contractorReference:'REV-2',reason:'QS reconciled revised application'},qsAuth)).item;
   assert.equal(item.contractorValue,12000);assert.equal(item.qsForecast,7500);assert.deepEqual(item.contractorPositionHistory.map(row=>row.value),[10000,12000]);
   await assert.rejects(pool.query('UPDATE package_variation_account_forecast_history SET reason=$1 WHERE variation_account_item_id=$2',['rewrite',item.id]),/append-only/);

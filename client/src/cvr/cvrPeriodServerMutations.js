@@ -45,6 +45,7 @@ function mapApiError(error) {
     unknownCodes: body?.unknownCodes || null,
     inactiveCodes: body?.inactiveCodes || null,
     duplicateCodes: body?.duplicateCodes || null,
+    blockers: body?.blockers || null,
   };
 }
 

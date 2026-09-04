@@ -773,6 +773,9 @@ if (!isDbConfigured()) {
     assert.equal(locked.body.snapshotNote, SNAPSHOT_CREATED_NOTE);
     assert.ok(locked.body.snapshot);
     assert.equal(locked.body.snapshot.schemaVersion, 3);
+    assert.equal(locked.body.snapshot.variationExposure.state, "locked");
+    assert.equal(locked.body.snapshot.variationExposure.captured, true);
+    assert.deepEqual(locked.body.snapshot.variationExposure.document.items, []);
     assert.equal(Number(locked.body.snapshot.expectedLiability), 0);
     assert.equal(Number(locked.body.snapshot.forecastRevenue), 0);
     assert.equal(Number(locked.body.snapshot.securedRevenue), 0);

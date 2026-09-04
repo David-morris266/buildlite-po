@@ -10771,6 +10771,25 @@
   border-top: 2px solid var(--brand-navy, #17324d);
 }
 
+.dev-cvr__exception-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  border-top: 1px solid var(--po-border-subtle, #334155);
+}
+
+.dev-cvr-drawer__variation-exposure {
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--po-border-subtle, #334155);
+}
+
+.dev-cvr-drawer__variation-exposure summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
 .vo-lines-table { table-layout: fixed; width: 100%; }
 .vo-lines-table__cost { width: 18%; }
 .vo-lines-table__description { width: auto; }

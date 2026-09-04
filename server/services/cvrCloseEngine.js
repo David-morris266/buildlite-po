@@ -292,6 +292,8 @@ function snapshotRowFromEnriched(row) {
     currentCost: moneyOrZero(row.currentCost),
     systemForecast: moneyOrZero(row.systemForecast),
     expectedLiability: moneyOrZero(row.expectedLiability),
+    vaExposureUplift: moneyOrZero(row.vaExposureUplift),
+    variationExposureItems: Array.isArray(row.variationExposureItems) ? row.variationExposureItems : [],
     expectedLiabilityProvenance: Array.isArray(row.expectedLiabilityProvenance)
       ? row.expectedLiabilityProvenance
       : [],
@@ -313,6 +315,7 @@ async function buildCvrCloseCandidate({
   actor = null,
   dbClient = null,
   loadSources = loadCvrCloseSources,
+  variationExposureDocument = null,
 } = {}) {
   const loaded = await loadSources({ clientId, developmentId, periodId, dbClient });
   const sources = loaded.sources || {};
@@ -352,6 +355,15 @@ async function buildCvrCloseCandidate({
 
   const actuals = buildActualsByCostCode(transactions);
   const expectedLiabilities = buildExpectedLiabilityByCostCode(events);
+  const variationExposureByCostCode = new Map();
+  for (const item of variationExposureDocument?.items || []) {
+    const key = normaliseCostCodeKey(item.costCode);
+    if (!key || item.vaExposureUplift == null) continue;
+    const entry = variationExposureByCostCode.get(key) || { pence: 0, items: [] };
+    entry.pence += Math.round(Number(item.vaExposureUplift) * 100);
+    entry.items.push(item);
+    variationExposureByCostCode.set(key, entry);
+  }
   const manualByKey = new Map();
   for (const input of inputs) {
     const key = normaliseCostCodeKey(input.costCodeKey);
@@ -365,6 +377,7 @@ async function buildCvrCloseCandidate({
     [commitments, certified, actuals, expectedLiabilities],
     inputs
   );
+  for (const key of variationExposureByCostCode.keys()) allKeys.add(key);
   const rows = [...allKeys].map((key) => {
     const manual = manualByKey.get(key);
     const hasManualBudget =
@@ -410,6 +423,8 @@ async function buildCvrCloseCandidate({
       certified: roundMoney(certifiedValue) ?? 0,
       actualCost: roundMoney(actualCost) ?? 0,
       expectedLiability: roundMoney(expectedLiabilities.totals.get(key)) ?? 0,
+      vaExposureUplift: (variationExposureByCostCode.get(key)?.pence || 0) / 100,
+      variationExposureItems: variationExposureByCostCode.get(key)?.items || [],
       expectedLiabilityProvenance: expectedLiabilities.provenance.get(key) || [],
       manualAccrual: manual?.manualAccrual ?? 0,
     });

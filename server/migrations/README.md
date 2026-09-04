@@ -108,3 +108,11 @@ Adds an explicit canonical JSON SHA-256 scheme to new Payment Authority decision
 ### 040_payment_release.sql
 
 VA-4B adds immutable completed Payment Release batches/items and append-only audit for full release of authorised cash to Accounts. It adds the Finance role with `payment_release.execute`, creates no historic releases, and does not mean paid/exported or change certificate, VA, CE, VO, Current Contract or CVR authority.
+
+### 041_cvr_variation_exposure_snapshots.sql
+
+VA-5B adds immutable, canonical-hashed CVR submission-time Variation Account exposure attempts and links a Locked CVR snapshot to the exact reviewed submission. It performs no backfill; pre-VA CVRs remain legacy/not captured.
+
+### 042_cvr_variation_exposure_acknowledgements.sql
+
+VA-5C adds immutable, authenticated acknowledgements for calculable same-direction VA floor exceptions, bound to one exact submitted CVR exposure attempt. Hard blockers remain unacknowledgeable and no historic acknowledgement is fabricated.

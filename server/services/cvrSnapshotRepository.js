@@ -92,9 +92,14 @@ async function getSnapshotForPeriod(clientId, periodId, dbClient = null) {
   const exec = dbClient ? dbClient.query.bind(dbClient) : query;
   const header = await exec(
     `
-      SELECT *
-      FROM cvr_period_snapshots
-      WHERE client_id = $1 AND period_id = $2
+      SELECT snap.*, submitted.source_snapshot AS variation_exposure_snapshot,
+             submitted.source_snapshot_sha256 AS variation_exposure_sha256,
+             submitted.source_snapshot_hash_scheme AS variation_exposure_hash_scheme,
+             submitted.calculation_version AS variation_exposure_calculation_version
+      FROM cvr_period_snapshots snap
+      LEFT JOIN cvr_period_variation_exposure_submissions submitted
+        ON submitted.id=snap.variation_exposure_submission_id AND submitted.client_id=snap.client_id
+      WHERE snap.client_id = $1 AND snap.period_id = $2
       LIMIT 1
     `,
     [clientId, periodId]
@@ -126,7 +131,7 @@ async function getSnapshotForPeriod(clientId, periodId, dbClient = null) {
   return snapshotHeaderToDocument(header.rows[0], rows.rows, plots.rows);
 }
 
-async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodRow, snapshot, actor }) {
+async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodRow, snapshot, actor, variationExposureSubmissionId = null }) {
   const { rows } = await runQuery(
     dbClient,
     `
@@ -139,7 +144,7 @@ async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodR
         forecast_revenue, secured_revenue, remaining_forecast_revenue,
         plots_sold, plots_remaining, gross_profit, gross_margin_percent,
         revenue_assumptions, revenue_settings_id, revenue_settings_version,
-        created_by
+        created_by, variation_exposure_submission_id
       )
       VALUES (
         $1, $2, $3, $4, $5,
@@ -150,7 +155,7 @@ async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodR
         $21, $22, $23,
         $24, $25, $26, $27,
         $28::jsonb, $29, $30,
-        $31
+        $31, $32
       )
       RETURNING *
     `,
@@ -186,6 +191,7 @@ async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodR
       snapshot.revenueSettingsId || null,
       snapshot.revenueSettingsVersion == null ? null : Number(snapshot.revenueSettingsVersion),
       actor || snapshot.createdBy || null,
+      variationExposureSubmissionId,
     ]
   );
   return rows[0];
@@ -322,8 +328,9 @@ function verifyPersistedSnapshot(header, insertedRows, insertedPlots, snapshot) 
     snapshot.finalForecast,
     moneyNumber(snapshot.systemForecast) +
       moneyNumber(snapshot.expectedLiability) +
+      moneyNumber(snapshot.vaExposureUplift) +
       moneyNumber(snapshot.commercialAdjustment),
-    "header.Final = System + Expected + Adjustment"
+    "header.Final = System + Expected + VA Exposure + Adjustment"
   );
   for (const [camel, column] of SNAPSHOT_REVENUE_FIELDS) {
     assertSameMoney(header[column], snapshot[camel], `header.${camel}`);
@@ -366,8 +373,9 @@ function verifyPersistedSnapshot(header, insertedRows, insertedPlots, snapshot) 
       candidate.finalForecast,
       moneyNumber(candidate.systemForecast) +
         moneyNumber(candidate.expectedLiability) +
+        moneyNumber(candidate.vaExposureUplift) +
         moneyNumber(candidate.commercialAdjustment),
-      `${persisted.cost_code_key}.Final = System + Expected + Adjustment`
+      `${persisted.cost_code_key}.Final = System + Expected + VA Exposure + Adjustment`
     );
     assert.deepStrictEqual(
       persisted.expected_liability_provenance || [],
@@ -394,7 +402,7 @@ function verifyPersistedSnapshot(header, insertedRows, insertedPlots, snapshot) 
 
 async function persistCvrPeriodSnapshot(
   dbClient,
-  { clientId, developmentId, periodRow, candidate, actor, failAfter = null } = {}
+  { clientId, developmentId, periodRow, candidate, actor, failAfter = null, variationExposureSubmissionId = null } = {}
 ) {
   requireTransactionClient(dbClient);
   const snapshot = candidate?.snapshot;
@@ -463,6 +471,7 @@ async function persistCvrPeriodSnapshot(
     periodRow,
     snapshot,
     actor,
+    variationExposureSubmissionId,
   });
 
   if (failAfter === "duplicateHeader") {
@@ -472,6 +481,7 @@ async function persistCvrPeriodSnapshot(
       periodRow,
       snapshot,
       actor,
+      variationExposureSubmissionId,
     });
   }
 

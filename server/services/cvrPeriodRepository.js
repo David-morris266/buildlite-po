@@ -116,7 +116,24 @@ async function hydratePeriod(clientId, row, dbClient = null) {
   if (!row) return null;
   const audit = await loadAuditRows(clientId, row.id, dbClient);
   const snapshot = await getSnapshotForPeriod(clientId, row.id, dbClient);
-  return periodRowToDocument(row, audit, snapshot);
+  const document = periodRowToDocument(row, audit, snapshot);
+  const { buildLiveVariationExposure, compareSubmittedVariationExposure, acknowledgementRequirements, listAcknowledgements } = require('./cvrVariationExposureSnapshot');
+  if (row.status === CVR_PERIOD_STATUSES.draft) {
+    const live = await buildLiveVariationExposure(dbClient || { query }, clientId, row.development_id);
+    document.variationExposure = { state: 'live', captured: false, ...live };
+  } else if (row.status === CVR_PERIOD_STATUSES.submitted) {
+    const compared = await compareSubmittedVariationExposure(dbClient || { query }, { clientId, developmentId: row.development_id, periodId: row.id });
+    document.variationExposure = compared.legacy
+      ? { state: 'legacy_not_captured', captured: false, stale: false, staleReasons: [] }
+      : { state: 'submitted', captured: true, stale: compared.stale, staleReasons: compared.staleReasons, document: compared.submitted.source_snapshot, hash: compared.submitted.source_snapshot_sha256, hashScheme: compared.submitted.source_snapshot_hash_scheme, integrity: compared.integrity,
+          acknowledgementRequirements: acknowledgementRequirements(compared.submitted.source_snapshot),
+          acknowledgements: await listAcknowledgements(dbClient || { query }, clientId, compared.submitted.id) };
+  } else if (row.status === CVR_PERIOD_STATUSES.locked && document.snapshot?.variationExposure?.submissionId) {
+    const exposure = document.snapshot.variationExposure;
+    exposure.acknowledgementRequirements = acknowledgementRequirements(exposure.document);
+    exposure.acknowledgements = await listAcknowledgements(dbClient || { query }, clientId, exposure.submissionId);
+  }
+  return document;
 }
 
 async function listCvrPeriods(clientId, developmentId) {
@@ -322,14 +339,26 @@ async function patchCvrPeriod(clientId, developmentId, periodId, body = {}, { ac
 }
 
 async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, { actor } = {}) {
-  return transitionPeriod(clientId, developmentId, periodId, {
-    actor,
-    comment: body.comment || "",
-    fromStatus: CVR_PERIOD_STATUSES.draft,
-    toStatus: CVR_PERIOD_STATUSES.submitted,
-    action: CVR_PERIOD_AUDIT_ACTIONS.submitted,
-    setSubmitted: true,
-  });
+  const scoped = await developmentOr404(clientId, developmentId);
+  if (!scoped.ok) return scoped;
+  if (!isValidUuid(periodId)) return { ok: false, status: 400, message: "periodId must be a valid UUID." };
+  const { appendSubmittedVariationExposure } = require('./cvrVariationExposureSnapshot');
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query('BEGIN');
+    const row = await findPeriodRow(clientId, developmentId, periodId, dbClient, { forUpdate: true });
+    if (!row) { await dbClient.query('ROLLBACK'); return { ok: false, status: 404, message: 'CVR period not found.' }; }
+    if (row.status !== CVR_PERIOD_STATUSES.draft) { await dbClient.query('ROLLBACK'); return notDraftMutationResult(row.status); }
+    const exposure = await appendSubmittedVariationExposure(dbClient, { clientId, developmentId, periodId, actor });
+    if (!exposure.ok) {
+      await dbClient.query('ROLLBACK');
+      return { ok: false, status: 409, code: CVR_CLOSE_NOT_READY_CODE, message: 'Variation exposure is not ready to submit.', blockers: exposure.blockers };
+    }
+    const updated = (await dbClient.query(`UPDATE cvr_periods SET status='submitted',submitted_at=NOW(),submitted_by=$1,version=version+1,updated_at=NOW(),updated_by=$1 WHERE client_id=$2 AND development_id=$3 AND id=$4 AND status='draft' RETURNING *`, [actor || null, clientId, developmentId, periodId])).rows[0];
+    await insertAudit(dbClient, { clientId, periodId, action: CVR_PERIOD_AUDIT_ACTIONS.submitted, actor, comment: body.comment || '', priorStatus: row.status, newStatus: CVR_PERIOD_STATUSES.submitted });
+    await dbClient.query('COMMIT');
+    return { ok: true, period: await hydratePeriod(clientId, updated) };
+  } catch (err) { await dbClient.query('ROLLBACK'); throw err; } finally { dbClient.release(); }
 }
 
 async function rejectCvrPeriod(clientId, developmentId, periodId, body = {}, { actor } = {}) {
@@ -345,6 +374,25 @@ async function rejectCvrPeriod(clientId, developmentId, periodId, body = {}, { a
     action: CVR_PERIOD_AUDIT_ACTIONS.rejected,
     clearSubmitted: true,
   });
+}
+
+async function acknowledgeVariationExposureException(clientId, developmentId, periodId, body = {}, options = {}) {
+  require('../auth/authorization').assertServicePermission(options.auth, require('../auth/permissions').PERMISSIONS.CVR_LOCK);
+  if (!isValidUuid(periodId)) return { ok: false, status: 400, message: 'periodId must be a valid UUID.' };
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query('BEGIN');
+    const row = await findPeriodRow(clientId, developmentId, periodId, dbClient, { forUpdate: true });
+    if (!row) { await dbClient.query('ROLLBACK'); return { ok: false, status: 404, message: 'CVR period not found.' }; }
+    if (row.status !== CVR_PERIOD_STATUSES.submitted) { await dbClient.query('ROLLBACK'); return { ok: false, status: 409, message: 'Only a Submitted CVR exception can be acknowledged.' }; }
+    const result = await require('./cvrVariationExposureSnapshot').appendAcknowledgement(dbClient, {
+      clientId, developmentId, periodId, auth: options.auth, reason: body.reason,
+      requirement: { variationAccountItemId: body.variationAccountItemId, exceptionCode: body.exceptionCode },
+    });
+    if (!result.ok) { await dbClient.query('ROLLBACK'); return result; }
+    await dbClient.query('COMMIT');
+    return { ok: true, acknowledgement: result.acknowledgement, period: await getCvrPeriod(clientId, developmentId, periodId).then((value) => value.period) };
+  } catch (error) { await dbClient.query('ROLLBACK'); throw error; } finally { dbClient.release(); }
 }
 
 async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, options = {}) {
@@ -415,6 +463,27 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
       };
     }
 
+    const { compareSubmittedVariationExposure, acknowledgementRequirements, listAcknowledgements } = require('./cvrVariationExposureSnapshot');
+    const variationExposure = await compareSubmittedVariationExposure(dbClient, { clientId, developmentId, periodId });
+    if (variationExposure.legacy) {
+      // A period submitted before VA-5B remains truthful legacy evidence.
+    } else if (variationExposure.stale) {
+      await dbClient.query("ROLLBACK");
+      return { ok: false, status: 409, code: CVR_CLOSE_NOT_READY_CODE, message: "Variation exposure changed after this CVR was submitted. Reject, review and resubmit before Lock.", blockers: variationExposure.staleReasons.map((reason) => ({ source: 'variationAccount', reason })) };
+    }
+    if (!variationExposure.legacy) {
+      const required = acknowledgementRequirements(variationExposure.submitted.source_snapshot);
+      const acknowledgements = await listAcknowledgements(dbClient, clientId, variationExposure.submitted.id);
+      const acknowledged = new Set(acknowledgements.map((entry) => `${entry.variationAccountItemId}:${entry.exceptionCode}`));
+      const missing = required.filter((entry) => !acknowledged.has(`${entry.variationAccountItemId}:${entry.exceptionCode}`));
+      if (missing.length) {
+        await dbClient.query('ROLLBACK');
+        return { ok: false, status: 409, code: CVR_CLOSE_NOT_READY_CODE,
+          message: 'Acknowledge the submitted Variation exposure exceptions before Lock.',
+          blockers: missing.map((entry) => ({ source: 'variationAccount', reason: 'acknowledgement_required', ...entry })) };
+      }
+    }
+
     const candidate = await buildWholeCvrCloseCandidate({
       clientId,
       developmentId,
@@ -424,6 +493,7 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
       ...(loadSources ? { loadSources } : {}),
       ...(options.loadDevelopment ? { loadDevelopment: options.loadDevelopment } : {}),
       ...(options.loadSettingsRow ? { loadSettingsRow: options.loadSettingsRow } : {}),
+      variationExposureDocument: variationExposure.submitted?.source_snapshot || null,
     });
 
     if (
@@ -449,6 +519,7 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
       candidate,
       actor,
       failAfter,
+      variationExposureSubmissionId: variationExposure.submitted?.id || null,
     });
 
     if (failAfter === "period") {
@@ -543,6 +614,8 @@ function publicCloseBlockers(blockers) {
     plotNumbers: Array.isArray(item.plotNumbers) ? item.plotNumbers : undefined,
     message: item.message || undefined,
     costCodeKey: item.costCodeKey || null,
+    variationAccountItemId: item.variationAccountItemId || null,
+    reference: item.reference || null,
   }));
 }
 
@@ -1139,6 +1212,7 @@ async function upsertCostCodeInputs(clientId, developmentId, periodId, body = {}
 }
 
 module.exports = {
+  acknowledgeVariationExposureException,
   provisionalActor,
   listCvrPeriods,
   getCvrPeriod,

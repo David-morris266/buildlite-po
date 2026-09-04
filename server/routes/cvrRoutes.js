@@ -15,6 +15,7 @@ const { getActiveClient } = require("../services/activeClient");
 const { requirePermission, actorFromAuth } = require('../auth/authorization');
 const { PERMISSIONS } = require('../auth/permissions');
 const {
+  acknowledgeVariationExposureException,
   approveCvrPeriod,
   createCostCodeInput,
   createCvrPeriod,
@@ -208,6 +209,19 @@ router.post("/cvr/periods/:periodId/approve", requirePermission(PERMISSIONS.CVR_
   } catch (err) {
     console.error("[CVR] approve period error:", err);
     res.status(500).json({ message: "Failed to approve CVR period." });
+  }
+});
+
+router.post("/cvr/periods/:periodId/variation-exposure/acknowledgements", requirePermission(PERMISSIONS.CVR_LOCK), async (req, res) => {
+  try {
+    if (!isDbConfigured()) return res.status(500).json({ message: 'Database not configured' });
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: 'No active client set' });
+    const result = await acknowledgeVariationExposureException(active.id, req.params.developmentId, req.params.periodId, req.body || {}, { auth: req.buildliteAuth });
+    sendResult(res, result, 201, 'period');
+  } catch (err) {
+    console.error('[CVR] acknowledge Variation exposure error:', err);
+    res.status(err.status || 500).json({ message: err.message || 'Failed to acknowledge Variation exposure.' });
   }
 });
 

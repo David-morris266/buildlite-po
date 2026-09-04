@@ -57,6 +57,39 @@ describe('CVR period/input mappers (BL-031B)', () => {
     expect(listed[1].costCentres).toEqual([]);
   });
 
+  it('preserves live Variation Account exposure returned by the period API', () => {
+    const variationExposure = {
+      state: 'live',
+      captured: false,
+      document: {
+        calculationVersion: 'va_expected_exposure_v1',
+        items: [{
+          variationAccountItemId: 'va-0001',
+          reference: 'VA-0001',
+          costCode: '4330',
+          qsForecast: 17000,
+          effectiveRecognisedAuthority: 12000,
+          cumulativeLockedCertification: 8000,
+          authorityAlreadyInCurrentContract: 12000,
+          effectiveVaExposure: 17000,
+          vaExposureUplift: 5000,
+          remainingForecastExposure: 5000,
+        }],
+      },
+    };
+
+    const mapped = normalizeServerCvrPeriod({
+      ...buildServerCvrPeriodFixture({ periodKey: 'P01' }),
+      variationExposure,
+    });
+
+    expect(mapped.variationExposure).toEqual(variationExposure);
+    expect(mapped.variationExposure.document.items[0]).toMatchObject({
+      costCode: '4330',
+      vaExposureUplift: 5000,
+    });
+  });
+
   it('maps cost-code inputs including manualAccrual and labels', () => {
     const mapped = normalizeServerCvrCostCodeInput(
       buildServerCvrInputFixture({

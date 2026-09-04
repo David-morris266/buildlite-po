@@ -76,6 +76,10 @@ export function normalizeServerCvrPeriod(document, inputs = []) {
     developmentNotes: String(document.developmentNotes || ''),
     costCentres: costCentres.map(normalizeServerCvrCostCodeInput).filter(Boolean),
     snapshot,
+    variationExposure:
+      document.variationExposure && typeof document.variationExposure === 'object'
+        ? document.variationExposure
+        : null,
     snapshotDeferred,
     snapshotNote: document.snapshotNote || null,
     historicUnavailable: isCvrPeriodLocked({ status }) && !snapshot,

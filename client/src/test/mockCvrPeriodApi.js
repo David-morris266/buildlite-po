@@ -252,6 +252,7 @@ export function buildServerCvrPeriodFixture(overrides = {}) {
     approvedAt: overrides.approvedAt || null,
     approvedBy: overrides.approvedBy || null,
     auditHistory: overrides.auditHistory || [],
+    variationExposure: overrides.variationExposure || null,
     snapshot: overrides.snapshot === undefined ? null : overrides.snapshot,
     snapshotDeferred: overrides.snapshot
       ? false
@@ -690,6 +691,16 @@ export async function approveCvrPeriodForDevelopment(developmentId, periodId, pa
     snapshotNote: 'Immutable CVR snapshot created.',
   };
   return savePeriod(developmentId, next);
+}
+
+export async function acknowledgeCvrVariationExposure(developmentId, periodId, payload = {}) {
+  if (store.mutationShouldReject) throw store.mutationRejectError;
+  const period = findPeriod(developmentId, periodId);
+  if (!period) throw new Error('CVR period not found');
+  const exposure = period.variationExposure || {};
+  const acknowledgement = { id: `ack-${Date.now()}`, ...payload, acknowledgedAt: new Date().toISOString() };
+  period.variationExposure = { ...exposure, acknowledgements: [...(exposure.acknowledgements || []), acknowledgement] };
+  return period;
 }
 
 function saveInput(periodId, input) {
