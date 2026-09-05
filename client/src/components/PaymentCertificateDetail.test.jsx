@@ -11,6 +11,7 @@ const approveCertificate = vi.fn();
 const submitCertificate = vi.fn();
 const getCertificate = vi.fn();
 const summarizeCertificateProgress = vi.fn();
+const buildCertificateAuditItems = vi.fn(() => []);
 
 vi.mock('../payments/paymentCertificateStore', () => ({
   approveCertificate: (...args) => approveCertificate(...args),
@@ -25,12 +26,13 @@ vi.mock('../payments/paymentCertificateStore', () => ({
 }));
 
 vi.mock('../payments/paymentCertificateApproval', () => ({
-  buildCertificateAuditItems: () => [],
+  buildCertificateAuditItems: (...args) => buildCertificateAuditItems(...args),
   buildCertificateHeaderMeta: () => [],
 }));
 
 vi.mock('../payments/paymentCertificateProgress', () => ({
   buildCommercialSummaryItems: () => [],
+  formatMoneyLabel: (value) => value == null ? '—' : `£${Number(value).toFixed(2)}`,
   summarizeCertificateProgress: (...args) => summarizeCertificateProgress(...args),
 }));
 
@@ -50,6 +52,15 @@ vi.mock('./PaymentCertificateCommercialEvents', () => ({
 vi.mock('./PaymentCertificateRecoveryDeductions', () => ({
   default: () => <div>Recovery deductions</div>,
 }));
+
+vi.mock('./PaymentCertificateApplication', () => ({ default: () => <div>Subcontractor Application</div> }));
+vi.mock('./PaymentCertificateVariationAssessments', () => ({ default: () => <div>Variation Account assessment</div> }));
+vi.mock('./PaymentCertificateSourceAuthority', () => ({ default: () => <div>Source authority</div> }));
+vi.mock('./PaymentCertificateVariationOrders', () => ({ default: () => <div>Variation orders</div> }));
+vi.mock('./PaymentCertificateTerms', () => ({ default: () => <div>Governing Terms</div> }));
+vi.mock('./PaymentCertificateTimetable', () => ({ default: () => <div>Contractual Timetable</div> }));
+vi.mock('./PaymentCertificateNotices', () => ({ default: () => <div>Payment Notices</div> }));
+vi.mock('./PaymentCertificateDocuments', () => ({ default: () => <div>Commercial Documents</div> }));
 
 vi.mock('./layout/ApplicationPageHeader', () => ({
   default: ({ title, children }) => (
@@ -158,6 +169,47 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     renderDetail();
     expect(document.body.textContent).not.toContain('Delete Draft');
     expect(document.body.textContent).toContain('Review & Submit');
+  });
+
+  it('renders five freely selectable Draft stages while keeping Application and Matrix mounted', () => {
+    setDraftCertificate();
+    renderDetail();
+
+    const stageNav = document.querySelector('[aria-label="Certificate assessment stages"]');
+    expect(stageNav).toBeTruthy();
+    expect([...stageNav.querySelectorAll('button')].map((button) => button.textContent.trim())).toEqual([
+      '1Application',
+      '2Ordered Works',
+      '3Variations',
+      '4Reconcile',
+      '5Release',
+    ]);
+    expect(document.body.textContent).toContain('Subcontractor Application');
+    expect(document.body.textContent).toContain('Valuation grid');
+    const applicationNode = [...document.querySelectorAll('div')].find((node) => node.childNodes.length === 1 && node.textContent === 'Subcontractor Application');
+
+    clickButton('Ordered Works');
+    expect(document.querySelector('[aria-current="step"]').textContent).toContain('Ordered Works');
+    expect(document.body.textContent).toContain('Valuation grid');
+
+    clickButton('Variations');
+    expect(document.body.textContent).toContain('Existing certificate functionality will be brought into this stage in the next controlled slice.');
+    expect(document.body.textContent).toContain('Subcontractor Application');
+    expect(document.body.textContent).toContain('Valuation grid');
+    expect([...document.querySelectorAll('div')]).toContain(applicationNode);
+  });
+
+  it('uses the authoritative summary values in the compact Draft commercial strip', () => {
+    setDraftCertificate();
+    summarizeCertificateProgress.mockReturnValue({
+      ...summarizeCertificateProgress(),
+      totals: { grossWorksThisCertificate: 800, netPayment: 912 },
+    });
+    renderDetail();
+    const strip = document.querySelector('[aria-label="Commercial position"]');
+    expect(strip.textContent).toContain('Assessment£800.00');
+    expect(strip.textContent).toContain('Net£912.00');
+    expect(strip.textContent).toContain('Difference—');
   });
 
   function clickButton(label) {
@@ -272,6 +324,76 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     expect(document.body.textContent).toContain('Submission rejected clearly.');
     expect(document.querySelector('[role="dialog"]')).toBeTruthy();
     expect(confirm.disabled).toBe(false);
+  });
+
+  it('keeps genuine authority exceptions visible without restoring the long Draft record', () => {
+    setDraftCertificate();
+    const certificate = { ...getCertificate(), sourceAuthority: { unapprovedCertifiedGross: 200 } };
+    getCertificate.mockReturnValue(certificate);
+    summarizeCertificateProgress.mockReturnValue({
+      certificate,
+      totals: {
+        grossWorksThisCertificate: 1000,
+        retention: 50,
+        recoveryDeductionMagnitude: 0,
+        netPayment: 1140,
+        previousCertified: 0,
+        certifiedToDate: 1000,
+      },
+      matrix: {},
+      grid: { cells: [] },
+      matrixReady: true,
+    });
+    renderDetail();
+
+    const text = document.body.textContent;
+    expect(text.indexOf('Commercial position')).toBeLessThan(text.indexOf('Subcontractor Application'));
+    expect(text).not.toContain('Variation Account assessment');
+    expect(text.match(/Source authority/g)).toHaveLength(1);
+    expect(text).not.toContain('Contractual Timetable');
+    expect(text).toContain('Review & Submit');
+    expect(text).toContain('Unapproved certified gross is £200.00');
+    expect(text).toContain('£1000.00');
+    expect(text).toContain('£1140.00');
+    expect(text.match(/Subcontractor Application/g)).toHaveLength(1);
+    expect(text.match(/Valuation Matrix/g)).toHaveLength(1);
+  });
+
+  it('prioritises payment controls when Locked and collapses audit by default', async () => {
+    const certificate = {
+      id: 'cert-3',
+      certificateNumber: 3,
+      status: 'locked',
+      commercialLines: [],
+      lockedApplicationSnapshot: {
+        comparison: {
+          comparable: true,
+          applicationCurrentGross: 1500,
+          difference: -500,
+        },
+      },
+    };
+    buildCertificateAuditItems.mockReturnValue([{ id: 'locked', label: 'Approved', actor: 'David', dateLabel: '2 Sep' }]);
+    getCertificate.mockReturnValue(certificate);
+    summarizeCertificateProgress.mockReturnValue({
+      certificate,
+      totals: { grossWorksThisCertificate: 1000, retention: 50, recoveryDeductionMagnitude: 0, netPayment: 1140, previousCertified: 0, certifiedToDate: 1000 },
+      matrixReady: true,
+      fromValuationSnapshot: true,
+      grid: { cells: [] },
+    });
+    renderDetail();
+    await act(async () => {});
+
+    const text = document.body.textContent;
+    expect(text).toContain('Frozen commercial position');
+    expect(text).toContain('Difference−£500.00');
+    expect(text.indexOf('Subcontractor Application')).toBeLessThan(text.indexOf('Contractual Timetable'));
+    expect(text.indexOf('Contractual Timetable')).toBeLessThan(text.indexOf('Payment Notices'));
+    expect(text.indexOf('Payment Notices')).toBeLessThan(text.indexOf('Commercial Documents'));
+    expect(text.indexOf('Commercial Documents')).toBeLessThan(text.indexOf('Frozen Valuation Detail'));
+    expect(document.querySelector('.po-cert-detail__audit').open).toBe(false);
+    expect(text).toContain('approved and permanently locked');
   });
 });
 

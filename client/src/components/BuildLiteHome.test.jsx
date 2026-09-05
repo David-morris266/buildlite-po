@@ -24,7 +24,10 @@ describe('GP-1 BuildLite Home', () => {
   it('shows core navigation but hides permission-owned workflows', () => {
     const view = renderHome();
     expect(view.text()).toContain('Developments & Packages');
-    expect(view.text()).toContain('Applications & Certificates');
+    expect(view.text()).not.toContain('Applications & Certificates');
+    expect(view.text()).toContain('Open packages to manage applications, certificates, variations and commercial events.');
+    expect(view.text()).toContain('David Morris');
+    expect(view.text()).toContain('Company: Hawthorn');
     expect(view.text()).not.toContain('Payment Approval');
     expect(view.text()).not.toContain('Payment Release');
     expect(view.text()).not.toContain('New Purchase Order');

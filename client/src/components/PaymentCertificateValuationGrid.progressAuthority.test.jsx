@@ -243,7 +243,7 @@ describe('PaymentCertificateValuationGrid Stage Details progress (BL-030C UAT)',
   it('Stage Details Set % and Complete PATCH stable identity and update the live grid', async () => {
     await renderDetail();
     expect(document.body.textContent).toMatch(/Certificate No\. 1/);
-    expect(summaryValue('Matrix valuation')).toMatch(/£0\.00/);
+    expect(summaryValue('Assessment')).toMatch(/£0\.00/);
     expect(plot2JoistsCell()?.querySelector('.po-cert-grid__cell-pct')?.textContent).toBe('—');
 
     await openJoistsStageDetails();
@@ -271,8 +271,7 @@ describe('PaymentCertificateValuationGrid Stage Details progress (BL-030C UAT)',
     });
     expect(patches[0].progress['1::1']).toBeUndefined();
     expect(plot2JoistsCell()?.querySelector('.po-cert-grid__cell-pct')?.textContent).toBe('50%');
-    expect(summaryValue('Matrix valuation')).toMatch(/£375\.00/);
-    expect(summaryValue('Gross this certificate')).toMatch(/£375\.00/);
+    expect(summaryValue('Assessment')).toMatch(/£375\.00/);
 
     const complete = [...document.querySelector('[aria-label="Stage details"]').querySelectorAll('button')].find(
       (button) => button.textContent.includes('Complete')
@@ -293,7 +292,7 @@ describe('PaymentCertificateValuationGrid Stage Details progress (BL-030C UAT)',
       thisCertificatePct: 100,
     });
     expect(plot2JoistsCell()?.querySelector('.po-cert-grid__cell-pct')?.textContent).toBe('100% ✓');
-    expect(summaryValue('Matrix valuation')).toMatch(/£750\.00/);
+    expect(summaryValue('Assessment')).toMatch(/£750\.00/);
   });
 
   it('treats Cert 2 input as cumulative progress and persists only the derived movement', async () => {
@@ -351,7 +350,7 @@ describe('PaymentCertificateValuationGrid Stage Details progress (BL-030C UAT)',
 
     expect(patches).toHaveLength(1);
     expect(patches[0].progress[JOISTS_CELL_ID].thisCertificatePct).toBe(50);
-    expect(summaryValue('Matrix valuation')).toMatch(/£375\.00/);
+    expect(summaryValue('Assessment')).toMatch(/£375\.00/);
     expect(panel?.textContent).toMatch(/£187\.50/);
     expect(panel?.textContent).toMatch(/£562\.50/);
 
@@ -390,7 +389,7 @@ describe('PaymentCertificateValuationGrid Stage Details progress (BL-030C UAT)',
     await flushPromises();
     expect(patches).toHaveLength(0);
     expect(document.getElementById('po-cert-detail-pct').value).toBe('');
-    expect(summaryValue('Matrix valuation')).toMatch(/£0\.00/);
+    expect(summaryValue('Assessment')).toMatch(/£0\.00/);
   });
 
   it('rejects progress below the previously approved cumulative percentage', async () => {

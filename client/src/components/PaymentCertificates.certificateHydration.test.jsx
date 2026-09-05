@@ -31,6 +31,11 @@ vi.mock('../payments/orderMatrixAuthority', () => ({
 
 vi.mock('../api/paymentCertificates', () => import('../test/mockPaymentCertificateApi'));
 vi.mock('../api/packages', () => import('../test/mockPackageApi'));
+vi.mock('../api/paymentApplications', () => ({
+  listPaymentApplications: vi.fn().mockResolvedValue([]),
+  createPaymentApplication: vi.fn(),
+  revisePaymentApplication: vi.fn(),
+}));
 vi.mock('../api/variationAccounts', () => ({
   listVariationAccount,
   listEligibleVariationAuthority,
@@ -196,7 +201,7 @@ describe('Payment Certificates / package workspace certificate hydration (BL-030
     });
     await flushPromises();
 
-    expect(document.body.textContent).toMatch(/£24k/);
+    expect(document.body.textContent).toMatch(/£24,000/);
     expect(document.body.textContent).not.toMatch(/Loading certificate data/i);
   });
 

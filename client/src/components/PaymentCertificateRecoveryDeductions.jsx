@@ -153,6 +153,15 @@ export default function PaymentCertificateRecoveryDeductions({
     return buildSelectedRecoveryPreview(selectedEvent, orderKey, certificate.id);
   }, [selectedEvent, orderKey, certificate?.id]);
 
+  if (!rows.length && !eligibleEvents.length) {
+    return (
+      <section className="po-module-card po-cert-recoveries-empty">
+        <h3 className="po-matrix-section__title">Recoveries</h3>
+        <p>No recovery or contra deductions apply to this certificate.</p>
+      </section>
+    );
+  }
+
   return (
     <section className="po-module-card po-cert-detail__commercial-events">
       <div className="po-cert-detail__commercial-events-header">
@@ -160,7 +169,7 @@ export default function PaymentCertificateRecoveryDeductions({
           <h3 className="po-matrix-section__title">Recovery / Contra Deductions</h3>
           <p className="po-cert-detail__matrix-lead">
             {editable
-              ? 'Select approved linked recovery events to deduct from net payment. Amounts are stored as negative deductions; enter positive magnitudes below.'
+              ? 'Select an approved recovery and enter the amount to deduct from this certificate.'
               : 'Recovery deductions recorded on this certificate. These reduce net payment only — not gross works or retention.'}
           </p>
         </div>

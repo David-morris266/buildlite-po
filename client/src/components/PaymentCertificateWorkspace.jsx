@@ -93,6 +93,7 @@ export default function PaymentCertificateWorkspace({
   certificatesLoading = false,
   certificatesReady = true,
   certificatesError = '',
+  onDetailModeChange,
 }) {
   const [selectedCertificateId, setSelectedCertificateId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -125,6 +126,11 @@ export default function PaymentCertificateWorkspace({
       setSelectedCertificateId(certificateTarget.certificateId);
     }
   }, [certificateTarget?.certificateId, certificateTarget?.navigationKey]);
+
+  useEffect(() => {
+    onDetailModeChange?.(Boolean(selectedCertificateId));
+    return () => onDetailModeChange?.(false);
+  }, [selectedCertificateId, onDetailModeChange]);
 
   if (!workspace) return null;
 

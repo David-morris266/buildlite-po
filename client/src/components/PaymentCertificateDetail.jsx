@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import PaymentCertificateValuationGrid from './PaymentCertificateValuationGrid';
 import PaymentCertificateCommercialEvents from './PaymentCertificateCommercialEvents';
@@ -14,7 +14,6 @@ import PaymentCertificateVariationAssessments from './PaymentCertificateVariatio
 import { buildCertificateDetailNavigation } from '../navigation/navigationBuilders';
 import {
   approveCertificate,
-  deleteCertificate,
   getCertificate,
   getCertificateStatusMeta,
   isCertificateEditable,
@@ -25,12 +24,8 @@ import {
 } from '../payments/paymentCertificateStore';
 import {
   buildCertificateAuditItems,
-  buildCertificateHeaderMeta,
 } from '../payments/paymentCertificateApproval';
-import {
-  buildCommercialSummaryItems,
-  summarizeCertificateProgress,
-} from '../payments/paymentCertificateProgress';
+import { formatMoneyLabel, summarizeCertificateProgress } from '../payments/paymentCertificateProgress';
 import {
   getPackageDevelopmentName,
   getPackageDisplayName,
@@ -88,7 +83,7 @@ function CertificateAuditHistory({ items }) {
   if (!items.length) return null;
 
   return (
-    <details className="po-cert-detail__audit" open>
+    <details className="po-cert-detail__audit">
       <summary>Audit History</summary>
       <ul className="po-cert-detail__audit-list">
         {items.map((entry) => (
@@ -107,6 +102,50 @@ function CertificateAuditHistory({ items }) {
   );
 }
 
+function CertificateCommercialPosition({ totals, applicationComparison, locked }) {
+  const assessedGross = totals?.grossWorksThisCertificate ?? totals?.grossThisCertificate;
+  const applicationValue = applicationComparison?.comparable
+    ? applicationComparison.applicationCurrentGross
+    : null;
+  const difference = applicationComparison?.comparable
+    ? applicationComparison.difference
+    : null;
+  const differenceLabel = difference == null
+    ? null
+    : difference < 0
+      ? `−${formatMoneyLabel(Math.abs(difference))}`
+      : formatMoneyLabel(difference);
+  const primary = [
+    { label: 'Application', value: formatMoneyLabel(applicationValue) },
+    { label: 'Assessment', value: formatMoneyLabel(assessedGross) },
+    { label: 'Difference', value: differenceLabel || formatMoneyLabel(null) },
+    { label: 'Net', value: formatMoneyLabel(totals?.netPayment) },
+  ];
+
+  return (
+    <section className="po-cert-position" aria-label="Commercial position">
+      <div className="po-cert-position__heading">
+        <div>
+          <p className="po-cert-detail__eyebrow">{locked ? 'Frozen commercial position' : 'Commercial position'}</p>
+          <h3>Certificate assessment</h3>
+        </div>
+      </div>
+      <dl className="po-cert-position__primary">
+        {primary.map((item) => <div key={item.label}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}
+      </dl>
+    </section>
+  );
+}
+
+const DRAFT_STAGES = [
+  { id: 'application', label: 'Application' },
+  { id: 'ordered-works', label: 'Ordered Works' },
+  { id: 'variations', label: 'Variations' },
+  { id: 'reconcile', label: 'Reconcile' },
+  { id: 'release', label: 'Release' },
+];
+
+// eslint-disable-next-line react-refresh/only-export-components
 export function resolveCertificatePackageId(certificate, pkg, order) {
   return (
     certificate?.packageUuid ||
@@ -132,6 +171,8 @@ export default function PaymentCertificateDetail({
   const [draftSavedAt, setDraftSavedAt] = useState(null);
   const [workflowFeedback, setWorkflowFeedback] = useState(null);
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
+  const [applicationComparison, setApplicationComparison] = useState(null);
+  const [activeStage, setActiveStage] = useState('application');
 
   const summary = useMemo(() => {
     void refreshToken;
@@ -142,14 +183,26 @@ export default function PaymentCertificateDetail({
   const authoritativePackageId = resolveCertificatePackageId(certificate, pkg, order);
   const certificatesPending = pkg?.certificatesReady === false;
   const status = getCertificateStatusMeta(certificate?.status);
-  const commercialSummary = buildCommercialSummaryItems(summary?.totals, {
-    matrixReady: summary?.matrixReady !== false,
-  });
   const matrixReady = summary?.matrixReady !== false;
   const editable = isCertificateEditable(certificate) && matrixReady && !certificatesPending;
   const submitted = isCertificateSubmitted(certificate) && !certificatesPending;
   const auditItems = buildCertificateAuditItems(certificate);
-  const headerMeta = buildCertificateHeaderMeta(certificate);
+  const locked = String(certificate?.status || '').toLowerCase() === 'locked';
+  const lockedApplicationComparison = certificate?.lockedApplicationSnapshot?.comparison;
+  const submittedApplicationComparison = certificate?.submissionApplicationSnapshot?.comparison;
+
+  useEffect(() => {
+    const frozen = locked
+      ? lockedApplicationComparison
+      : String(certificate?.status || '').toLowerCase() === 'submitted'
+        ? submittedApplicationComparison
+        : null;
+    setApplicationComparison(frozen || null);
+  }, [certificate?.id, certificate?.version, certificate?.status, locked, lockedApplicationComparison, submittedApplicationComparison]);
+
+  const handleApplicationComparisonChanged = useCallback((comparison) => {
+    setApplicationComparison(comparison || null);
+  }, []);
 
   if (certificatesPending) {
     return (
@@ -280,61 +333,46 @@ export default function PaymentCertificateDetail({
           onBackToPackage: onBack,
         }).breadcrumbs}
         title={`Certificate No. ${certificate.certificateNumber}`}
-        lead="Payment Certificate"
+        lead={`${getPackageDevelopmentName(order)} · ${getPackageDisplayName(order)} · ${order.supplierLabel || 'Supplier not recorded'}`}
         onBack={onBack}
+        backLabel="Back to Certificates"
+        actions={<StatusBadge status={status} />}
       />
 
-      <header className="po-module-card po-cert-detail__header">
-        <div className="po-cert-detail__hero">
-          <div>
-            <p className="po-cert-detail__eyebrow">Payment Certificate</p>
-          </div>
-          <div className="po-cert-detail__status-wrap">
-            <StatusBadge status={status} />
-            {draftSavedAt && editable ? (
-              <span className="po-cert-detail__draft-saved">
-                Draft saved {new Date(draftSavedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            ) : null}
-          </div>
-        </div>
+      {draftSavedAt && editable ? (
+        <p className="po-cert-detail__draft-saved po-cert-detail__draft-saved--standalone">
+          Draft saved {new Date(draftSavedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+        </p>
+      ) : null}
 
-        <dl className="po-cert-detail__meta">
-          <div>
-            <dt>Package</dt>
-            <dd>{getPackageDisplayName(order)}</dd>
-          </div>
-          <div>
-            <dt>Supplier</dt>
-            <dd>{order.supplierLabel || '—'}</dd>
-          </div>
-          <div>
-            <dt>Development</dt>
-            <dd>{getPackageDevelopmentName(order)}</dd>
-          </div>
-          {headerMeta.map((item) => (
-            <div key={item.label}>
-              <dt>{item.label}</dt>
-              <dd>{item.value}</dd>
-            </div>
+      <CertificateCommercialPosition
+        totals={summary?.totals}
+        applicationComparison={applicationComparison}
+        locked={locked}
+      />
+
+      {editable ? (
+        <nav className="po-cert-stages" aria-label="Certificate assessment stages">
+          {DRAFT_STAGES.map((stage, index) => (
+            <button
+              key={stage.id}
+              type="button"
+              className={`po-cert-stages__tab${activeStage === stage.id ? ' po-cert-stages__tab--active' : ''}`}
+              aria-current={activeStage === stage.id ? 'step' : undefined}
+              onClick={() => setActiveStage(stage.id)}
+            >
+              <span>{index + 1}</span>{stage.label}
+            </button>
           ))}
-        </dl>
+        </nav>
+      ) : null}
 
-        <CertificateAuditHistory items={auditItems} />
-      </header>
-
-      <PaymentCertificateTerms
-        certificate={certificate}
-        governingTerms={pkg?.governingTerms}
-      />
-      <PaymentCertificateTimetable
-        certificate={certificate}
-        orderKey={order.orderKey}
-        order={order}
-        onChanged={refresh}
-      />
-      <PaymentCertificateNotices certificate={certificate} packageId={authoritativePackageId} />
-      <PaymentCertificateDocuments certificate={certificate} packageId={authoritativePackageId} />
+      {Number(certificate?.sourceAuthority?.unapprovedCertifiedGross || 0) !== 0 ? (
+        <div className="po-list-feedback po-list-feedback--warning po-cert-detail__authority-alert" role="status">
+          Unapproved certified gross is {formatMoneyLabel(certificate.sourceAuthority.unapprovedCertifiedGross)}.
+          Review Source authority before progressing this certificate.
+        </div>
+      ) : null}
 
       {workflowFeedback?.type === 'error' && !dialog ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">
@@ -410,22 +448,77 @@ export default function PaymentCertificateDetail({
         ) : null}
       </div>
 
-      <PaymentCertificateApplication
+      <div hidden={editable && activeStage !== 'application'}>
+        <PaymentCertificateApplication
+          packageId={authoritativePackageId}
+          certificate={certificate}
+          assessmentGross={summary?.totals?.grossWorksThisCertificate ?? certificate.grossValue}
+          editable={editable}
+          onChanged={refresh}
+          onComparisonChanged={handleApplicationComparisonChanged}
+        />
+      </div>
+
+      {locked ? (
+        <>
+          <PaymentCertificateTimetable certificate={certificate} orderKey={order.orderKey} order={order} onChanged={refresh} />
+          <PaymentCertificateTerms certificate={certificate} governingTerms={pkg?.governingTerms} />
+          <PaymentCertificateNotices certificate={certificate} packageId={authoritativePackageId} />
+          <PaymentCertificateDocuments certificate={certificate} packageId={authoritativePackageId} />
+          <section className="po-module-card po-cert-detail__matrix">
+            <h3 className="po-matrix-section__title">Frozen Valuation Detail</h3>
+            <p className="po-cert-detail__matrix-lead">Read-only valuation view. Approved commercial history is preserved.</p>
+            <PaymentCertificateValuationGrid
+              orderKey={order.orderKey}
+              certificate={certificate}
+              matrix={summary?.matrix}
+              valuationGrid={summary?.fromValuationSnapshot ? summary.grid : null}
+              developmentId={order.developmentId}
+              editable={false}
+              auditItems={auditItems}
+              matrixReady={summary?.matrixReady !== false}
+              matrixLoadState={summary?.matrixLoadState || 'loaded'}
+              matrixError={summary?.matrixError || null}
+              onProgressChange={handleProgressChange}
+            />
+          </section>
+        </>
+      ) : (
+        <section className="po-module-card po-cert-detail__matrix" hidden={editable && activeStage !== 'ordered-works'}>
+          <h3 className="po-matrix-section__title">Valuation Matrix</h3>
+          <p className="po-cert-detail__matrix-lead">
+            Click to select · double-click to open Stage Details · once open, click any cell to update the panel.
+          </p>
+          <PaymentCertificateValuationGrid
+            orderKey={order.orderKey}
+            certificate={certificate}
+            matrix={summary?.matrix}
+            valuationGrid={summary?.fromValuationSnapshot ? summary.grid : null}
+            developmentId={order.developmentId}
+            editable={editable && summary?.matrixReady !== false}
+            auditItems={auditItems}
+            matrixReady={summary?.matrixReady !== false}
+            matrixLoadState={summary?.matrixLoadState || 'loaded'}
+            matrixError={summary?.matrixError || null}
+            onProgressChange={handleProgressChange}
+          />
+        </section>
+      )}
+
+      {editable && ['variations', 'reconcile', 'release'].includes(activeStage) ? (
+        <section className="po-module-card po-cert-stage-placeholder" role="status">
+          <p className="po-cert-detail__eyebrow">Stage {DRAFT_STAGES.findIndex((stage) => stage.id === activeStage) + 1}</p>
+          <h3>{DRAFT_STAGES.find((stage) => stage.id === activeStage)?.label}</h3>
+          <p>Existing certificate functionality will be brought into this stage in the next controlled slice.</p>
+        </section>
+      ) : null}
+
+      {!editable ? <><PaymentCertificateVariationAssessments
         packageId={authoritativePackageId}
         certificate={certificate}
-        assessmentGross={summary?.totals?.grossWorksThisCertificate ?? certificate.grossValue}
         editable={editable}
         onChanged={refresh}
       />
-
-      <PaymentCertificateVariationAssessments
-        packageId={authoritativePackageId}
-        certificate={certificate}
-        editable={editable}
-        onChanged={refresh}
-      />
-
-      <PaymentCertificateSourceAuthority certificate={certificate} />
 
       <PaymentCertificateCommercialEvents
         orderKey={order.orderKey}
@@ -452,56 +545,21 @@ export default function PaymentCertificateDetail({
         onLinesChanged={refresh}
       />
 
-      <section
-        className="po-cert-detail__sticky-summary"
-        aria-label="Running commercial totals"
-      >
-        <h3 className="po-matrix-section__title">Commercial Summary</h3>
-        <p className="po-cert-detail__summary-lead">
-          Combined matrix valuation and commercial adjustment lines. Recovery deductions reduce net
-          payment only (after retention). VAT uses the package PO rate on gross works minus
-          retention (transitional — per-line VAT treatment deferred).
-        </p>
-        <dl className="po-cert-detail__commercial-grid po-cert-detail__commercial-grid--sticky">
-          {commercialSummary.map((item) => (
-            <div
-              key={item.label}
-              className={
-                item.emphasis
-                  ? 'po-cert-detail__commercial-item--emphasis'
-                  : item.modifier
-                    ? `po-cert-detail__commercial-item--${item.modifier}`
-                    : undefined
-              }
-            >
-              <dt>{item.label}</dt>
-              <dd>{item.value}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
+      <PaymentCertificateSourceAuthority certificate={certificate} />
 
-      <section className="po-module-card po-cert-detail__matrix">
-        <h3 className="po-matrix-section__title">Valuation Matrix</h3>
-        <p className="po-cert-detail__matrix-lead">
-          {editable
-            ? 'Click to select · double-click to open Stage Details · once open, click any cell to update the panel.'
-            : 'Read-only valuation view. Approved commercial history is preserved.'}
-        </p>
-        <PaymentCertificateValuationGrid
-          orderKey={order.orderKey}
-          certificate={certificate}
-          matrix={summary?.matrix}
-          valuationGrid={summary?.fromValuationSnapshot ? summary.grid : null}
-          developmentId={order.developmentId}
-          editable={editable && summary?.matrixReady !== false}
-          auditItems={auditItems}
-          matrixReady={summary?.matrixReady !== false}
-          matrixLoadState={summary?.matrixLoadState || 'loaded'}
-          matrixError={summary?.matrixError || null}
-          onProgressChange={handleProgressChange}
-        />
-      </section>
+      {!locked ? (
+        <>
+          <PaymentCertificateTerms certificate={certificate} governingTerms={pkg?.governingTerms} />
+          <PaymentCertificateTimetable certificate={certificate} orderKey={order.orderKey} order={order} onChanged={refresh} />
+          <PaymentCertificateNotices certificate={certificate} packageId={authoritativePackageId} />
+          <PaymentCertificateDocuments certificate={certificate} packageId={authoritativePackageId} />
+        </>
+      ) : null}
+
+      <section className="po-module-card po-cert-detail__supporting-evidence">
+        <h3 className="po-matrix-section__title">Audit &amp; supporting evidence</h3>
+        <CertificateAuditHistory items={auditItems} />
+      </section></> : null}
 
       {dialog === 'submit' ? (
         <CertificateDialog

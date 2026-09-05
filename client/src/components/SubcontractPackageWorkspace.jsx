@@ -48,6 +48,7 @@ export default function SubcontractPackageWorkspace({
   const [matrixRefresh, setMatrixRefresh] = useState(0);
   const [certRefresh, setCertRefresh] = useState(0);
   const [commercialEventRefresh, setCommercialEventRefresh] = useState(0);
+  const [certificateDetailActive, setCertificateDetailActive] = useState(false);
 
   const {
     certificatesLoading,
@@ -65,6 +66,10 @@ export default function SubcontractPackageWorkspace({
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'certificates') setCertificateDetailActive(false);
+  }, [activeTab]);
 
   useEffect(() => {
     if (commercialEventTarget?.eventId) {
@@ -118,12 +123,12 @@ export default function SubcontractPackageWorkspace({
 
   return (
     <div className="po-package-workspace">
-      <POPageHeader
+      {!certificateDetailActive ? <POPageHeader
         breadcrumbs={pageNavigation.breadcrumbs}
         title={pageNavigation.title}
         lead="Manage the commercial progress of this subcontract package — order matrix, payment certificates and commercial events."
         onBack={pageNavigation.onBack}
-      />
+      /> : null}
 
       {packageLaunchError ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">
@@ -149,15 +154,15 @@ export default function SubcontractPackageWorkspace({
         </div>
       ) : null}
 
-      <SubcontractPackageDashboard
+      {!certificateDetailActive ? <SubcontractPackageDashboard
         pkg={pkg}
         compact={activeTab === 'variations'}
         commercialEventsLoading={commercialEventsLoading}
         commercialEventsReady={commercialEventsReady}
         certificatesLoading={certificatesLoading}
         certificatesReady={certificatesReady}
-      />
-      {activeTab !== 'variations' ? (
+      /> : null}
+      {!certificateDetailActive && activeTab !== 'variations' ? (
         <SubcontractPackageSummary
           pkg={pkg}
           compact
@@ -166,7 +171,7 @@ export default function SubcontractPackageWorkspace({
         />
       ) : null}
 
-      <nav className="po-package-tabs" aria-label="Package sections">
+      {!certificateDetailActive ? <nav className="po-package-tabs" aria-label="Package sections">
         {TABS.map((tab) => (
           <button
             key={tab.id}
@@ -180,7 +185,7 @@ export default function SubcontractPackageWorkspace({
             {tab.label}
           </button>
         ))}
-      </nav>
+      </nav> : null}
 
       <div className="po-package-tab-panel">
         {activeTab === 'overview' ? (
@@ -210,6 +215,7 @@ export default function SubcontractPackageWorkspace({
             certificatesLoading={certificatesLoading}
             certificatesReady={certificatesReady}
             certificatesError={certificatesError}
+            onDetailModeChange={setCertificateDetailActive}
           />
         ) : null}
 

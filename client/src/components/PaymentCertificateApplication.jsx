@@ -13,7 +13,7 @@ const pounds = (value) => value == null ? 'Not supplied' : new Intl.NumberFormat
 const today = () => new Date().toISOString().slice(0,10);
 const initial = { applicationReference:'',receivedAt:today(),applicationBasis:APPLICATION_BASES.currentPeriodGross,currentPeriodGrossClaimed:'',cumulativeGrossClaimed:'',previousApplicationStated:'',previousCertifiedStated:'',retentionStated:'',contraDeductionsStated:'',vatStated:'',netRequestedStated:'',notes:'' };
 
-export default function PaymentCertificateApplication({ packageId, certificate, assessmentGross, editable, onChanged }) {
+export default function PaymentCertificateApplication({ packageId, certificate, assessmentGross, editable, onChanged, onComparisonChanged }) {
   const certificateStatus = String(certificate?.status || '').toLowerCase();
   const frozen = certificateStatus === 'locked'
     ? certificate?.lockedApplicationSnapshot || null
@@ -34,24 +34,26 @@ export default function PaymentCertificateApplication({ packageId, certificate, 
 
   useEffect(()=>{ if(application && editable) setForm({...initial,...application,receivedAt:String(application.receivedAt||'').slice(0,10)}); },[application?.id,editable]);
   const comparison=useMemo(()=>frozen?.comparison || comparePaymentApplication(application,assessmentGross),[frozen,application,assessmentGross]);
+  useEffect(()=>{ onComparisonChanged?.(comparison); },[comparison,onComparisonChanged]);
   const field=(key)=>(event)=>setForm((value)=>({...value,[key]:event.target.value}));
   const moneyField=(key,label)=><label><span>{label}</span><input className="input" type="number" step="0.01" value={form[key]??''} onChange={field(key)} /></label>;
   const save=async()=>{ setBusy(true);setError('');try{const body={...form,certificateId:certificate.id,actor:localStorage.getItem('userName')||localStorage.getItem('userEmail')||null};const saved=application?await revisePaymentApplication(packageId,application.id,body):await createPaymentApplication(packageId,body);setApplication(saved);onChanged?.();}catch(err){setError(err.message);}finally{setBusy(false);}};
 
   return <section className="po-module-card po-cert-application">
-    <div className="po-cert-application__heading"><div><h3>Subcontractor Application</h3><p>Record what the subcontractor applied for. BuildLite assessment remains separate.</p></div><span className="po-status-badge po-status-badge--pending">Notice readiness not yet configured</span></div>
+    <div className="po-cert-application__heading"><div><h3>Subcontractor Application</h3><p>Record what the subcontractor applied for.</p></div></div>
     {editable ? <div className="po-cert-application__form">
       <label><span>Application Ref</span><input className="input" value={form.applicationReference} onChange={field('applicationReference')} /></label>
-      <label><span>Received Date</span><input className="input" type="date" value={form.receivedAt} onChange={field('receivedAt')} /></label>
-      <label><span>Application Format / Basis</span><select className="input" value={form.applicationBasis} onChange={field('applicationBasis')}>{Object.entries(labels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
-      {form.applicationBasis===APPLICATION_BASES.currentPeriodGross?moneyField('currentPeriodGrossClaimed','Current-period gross'):null}
+      <label><span>Application Date</span><input className="input" type="date" value={form.receivedAt} onChange={field('receivedAt')} /></label>
+      {form.applicationBasis===APPLICATION_BASES.currentPeriodGross?moneyField('currentPeriodGrossClaimed','Application this period'):null}
       {form.applicationBasis===APPLICATION_BASES.cumulativeLessPreviousApplication?<>{moneyField('cumulativeGrossClaimed','Cumulative gross')}{moneyField('previousApplicationStated','Previous application')}</>:null}
       {form.applicationBasis===APPLICATION_BASES.cumulativeLessPreviousCertified?<>{moneyField('cumulativeGrossClaimed','Cumulative gross')}{moneyField('previousCertifiedStated','Previous certified')}</>:null}
       {form.applicationBasis===APPLICATION_BASES.netOnly?moneyField('netRequestedStated','Net requested'):null}
+      <label className="po-cert-application__basis"><span>Basis</span><select className="input" value={form.applicationBasis} onChange={field('applicationBasis')}>{Object.entries(labels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
       <button type="button" className="po-list-btn-secondary" disabled={busy} onClick={save}>{application?'Record revised application':'Record application'}</button>
     </div>:null}
     {error?<div className="po-list-feedback po-list-feedback--error" role="alert">{error}</div>:null}
-    {application?<>
+    {application && editable?<p className="po-cert-application__saved">Saved <span aria-hidden="true">·</span> Revision {application.revisionNumber||1}</p>:null}
+    {application && !editable?<>
       <dl className="po-cert-application__source-meta"><div><dt>Application Ref</dt><dd>{application.applicationReference}</dd></div><div><dt>Received</dt><dd>{String(application.receivedAt||'').slice(0,10)||'—'}</dd></div><div><dt>Basis</dt><dd>{labels[application.applicationBasis]||application.applicationBasis}</dd></div><div><dt>Revision</dt><dd>{application.revisionNumber||1}</dd></div></dl>
       <dl className="po-cert-application__comparison">
         <div><dt>Application</dt><dd>{comparison.comparable?pounds(comparison.applicationCurrentGross):'Not comparable'}</dd></div>
@@ -59,10 +61,11 @@ export default function PaymentCertificateApplication({ packageId, certificate, 
         <div><dt>Difference</dt><dd>{comparison.comparable?pounds(comparison.difference):'Not comparable'}</dd></div>
         <div><dt>Comparison basis</dt><dd>{comparison.comparisonBasis||comparison.reason}</dd></div>
       </dl>
-      {comparison.comparable && comparison.difference!==0?<p className="po-cert-application__variance">Assessment differs from application.</p>:null}
+      {comparison.comparable && comparison.difference!==0?<p className="po-cert-application__variance">Assessment differs from application. This is a commercial comparison, not a validation error.</p>:null}
       <button type="button" className="po-cert-workspace__link" onClick={()=>setAdvanced((value)=>!value)}>{advanced?'Hide source breakdown':'Show source breakdown'}</button>
       {advanced?<dl className="po-cert-application__breakdown"><div><dt>Gross claimed</dt><dd>{pounds(application.currentPeriodGrossClaimed??application.cumulativeGrossClaimed)}</dd></div><div><dt>Retention stated</dt><dd>{pounds(application.retentionStated)}</dd></div><div><dt>Contra / deductions</dt><dd>{pounds(application.contraDeductionsStated)}</dd></div><div><dt>VAT stated</dt><dd>{pounds(application.vatStated)}</dd></div><div><dt>Net requested</dt><dd>{pounds(application.netRequestedStated)}</dd></div></dl>:null}
       <PaymentApplicationVariations packageId={packageId} application={application} editable={editable} onChanged={onChanged}/>
-    </>:<p>No subcontractor application recorded.</p>}
+    </>:null}
+    {!application?<p>No subcontractor application recorded.</p>:null}
   </section>;
 }
