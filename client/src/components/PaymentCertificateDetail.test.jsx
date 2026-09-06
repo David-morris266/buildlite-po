@@ -207,6 +207,12 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     expect([...document.querySelectorAll('div')]).toContain(variationsNode);
     clickButton('Variations');
     expect([...document.querySelectorAll('div')]).toContain(variationsNode);
+
+    clickButton('Reconcile');
+    expect(document.body.textContent).toContain('Compare the contractor application with BuildLite');
+    expect(document.body.textContent).not.toContain('Existing certificate functionality will be brought into this stage in the next controlled slice.');
+    clickButton('Edit Ordered Works');
+    expect(document.querySelector('[aria-current="step"]').textContent).toContain('Ordered Works');
   });
 
   it('uses the authoritative summary values in the compact Draft commercial strip', () => {

@@ -12,6 +12,7 @@ import PaymentCertificateDocuments from './PaymentCertificateDocuments';
 import PaymentCertificateSourceAuthority from './PaymentCertificateSourceAuthority';
 import PaymentCertificateVariationAssessments from './PaymentCertificateVariationAssessments';
 import PaymentCertificateVariationsWorkspace from './PaymentCertificateVariationsWorkspace';
+import PaymentCertificateReconcile from './PaymentCertificateReconcile';
 import { buildCertificateDetailNavigation } from '../navigation/navigationBuilders';
 import {
   approveCertificate,
@@ -369,7 +370,7 @@ export default function PaymentCertificateDetail({
         </nav>
       ) : null}
 
-      {Number(certificate?.sourceAuthority?.unapprovedCertifiedGross || 0) !== 0 ? (
+      {activeStage !== 'reconcile' && Number(certificate?.sourceAuthority?.unapprovedCertifiedGross || 0) !== 0 ? (
         <div className="po-list-feedback po-list-feedback--warning po-cert-detail__authority-alert" role="status">
           {formatMoneyLabel(certificate.sourceAuthority.unapprovedCertifiedGross)} of this assessment has no prior commercial authority. Review before submitting.
         </div>
@@ -517,7 +518,16 @@ export default function PaymentCertificateDetail({
         </div>
       ) : null}
 
-      {editable && ['reconcile', 'release'].includes(activeStage) ? (
+      {editable && activeStage === 'reconcile' ? (
+        <PaymentCertificateReconcile
+          certificate={certificate}
+          totals={summary?.totals}
+          applicationComparison={applicationComparison}
+          onEditStage={setActiveStage}
+        />
+      ) : null}
+
+      {editable && activeStage === 'release' ? (
         <section className="po-module-card po-cert-stage-placeholder" role="status">
           <p className="po-cert-detail__eyebrow">Stage {DRAFT_STAGES.findIndex((stage) => stage.id === activeStage) + 1}</p>
           <h3>{DRAFT_STAGES.find((stage) => stage.id === activeStage)?.label}</h3>
