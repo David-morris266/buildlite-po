@@ -209,6 +209,7 @@ export default function SubcontractPackageWorkspace({
           <PaymentCertificateWorkspace
             order={authoritativeOrder}
             pkg={pkg}
+            developmentName={developmentName}
             refreshToken={certRefresh}
             certificateTarget={certificateTarget}
             onCertificatesChanged={() => setCertRefresh((value) => value + 1)}

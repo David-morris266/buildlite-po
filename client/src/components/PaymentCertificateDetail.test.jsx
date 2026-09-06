@@ -38,7 +38,7 @@ vi.mock('../payments/paymentCertificateProgress', () => ({
 
 vi.mock('../payments/paymentCertificate', () => ({
   getPackageDevelopmentName: () => 'Test Site 1',
-  getPackageDisplayName: () => 'Sparktastic Ltd',
+  getPackageDisplayName: () => 'Sparktastic Ltd Package',
 }));
 
 vi.mock('./PaymentCertificateValuationGrid', () => ({
@@ -55,6 +55,7 @@ vi.mock('./PaymentCertificateRecoveryDeductions', () => ({
 
 vi.mock('./PaymentCertificateApplication', () => ({ default: () => <div>Subcontractor Application</div> }));
 vi.mock('./PaymentCertificateVariationAssessments', () => ({ default: () => <div>Variation Account assessment</div> }));
+vi.mock('./PaymentCertificateVariationsWorkspace', () => ({ default: () => <div>Stage 3 variation workspace</div> }));
 vi.mock('./PaymentCertificateSourceAuthority', () => ({ default: () => <div>Source authority</div> }));
 vi.mock('./PaymentCertificateVariationOrders', () => ({ default: () => <div>Variation orders</div> }));
 vi.mock('./PaymentCertificateTerms', () => ({ default: () => <div>Governing Terms</div> }));
@@ -63,9 +64,10 @@ vi.mock('./PaymentCertificateNotices', () => ({ default: () => <div>Payment Noti
 vi.mock('./PaymentCertificateDocuments', () => ({ default: () => <div>Commercial Documents</div> }));
 
 vi.mock('./layout/ApplicationPageHeader', () => ({
-  default: ({ title, children }) => (
+  default: ({ title, lead, children }) => (
     <div>
       <h1>{title}</h1>
+      <p>{lead}</p>
       {children}
     </div>
   ),
@@ -115,7 +117,7 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     vi.clearAllMocks();
   });
 
-  function renderDetail(onProgressChanged = vi.fn()) {
+  function renderDetail(onProgressChanged = vi.fn(), props = {}) {
     act(() => {
       root.render(
         <PaymentCertificateDetail
@@ -123,6 +125,7 @@ describe('PaymentCertificateDetail workflow feedback', () => {
           certificateId="cert-3"
           onBack={vi.fn()}
           onProgressChanged={onProgressChanged}
+          {...props}
         />
       );
     });
@@ -193,10 +196,17 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     expect(document.body.textContent).toContain('Valuation grid');
 
     clickButton('Variations');
-    expect(document.body.textContent).toContain('Existing certificate functionality will be brought into this stage in the next controlled slice.');
+    expect(document.body.textContent).toContain('Stage 3 variation workspace');
+    expect(document.body.textContent).not.toContain('Existing certificate functionality will be brought into this stage in the next controlled slice.');
     expect(document.body.textContent).toContain('Subcontractor Application');
     expect(document.body.textContent).toContain('Valuation grid');
     expect([...document.querySelectorAll('div')]).toContain(applicationNode);
+    const variationsNode = [...document.querySelectorAll('div')].find((node) => node.childNodes.length === 1 && node.textContent === 'Stage 3 variation workspace');
+
+    clickButton('Application');
+    expect([...document.querySelectorAll('div')]).toContain(variationsNode);
+    clickButton('Variations');
+    expect([...document.querySelectorAll('div')]).toContain(variationsNode);
   });
 
   it('uses the authoritative summary values in the compact Draft commercial strip', () => {
@@ -349,14 +359,26 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     const text = document.body.textContent;
     expect(text.indexOf('Commercial position')).toBeLessThan(text.indexOf('Subcontractor Application'));
     expect(text).not.toContain('Variation Account assessment');
-    expect(text.match(/Source authority/g)).toHaveLength(1);
+    expect(text).not.toContain('Source authority');
     expect(text).not.toContain('Contractual Timetable');
     expect(text).toContain('Review & Submit');
-    expect(text).toContain('Unapproved certified gross is £200.00');
+    expect(text).toContain('£200.00 of this assessment has no prior commercial authority. Review before submitting.');
     expect(text).toContain('£1000.00');
     expect(text).toContain('£1140.00');
     expect(text.match(/Subcontractor Application/g)).toHaveLength(1);
     expect(text.match(/Valuation Matrix/g)).toHaveLength(1);
+  });
+
+  it('uses the known workspace development name and retains package and supplier identity', () => {
+    setDraftCertificate();
+    renderDetail(vi.fn(), { developmentName: 'Hawthorn Gardens UAT' });
+    expect(document.body.textContent).toContain('Hawthorn Gardens UAT · Sparktastic Ltd Package · Sparktastic Ltd');
+  });
+
+  it('falls back to the order development label when workspace identity is unavailable', () => {
+    setDraftCertificate();
+    renderDetail();
+    expect(document.body.textContent).toContain('Test Site 1 · Sparktastic Ltd Package · Sparktastic Ltd');
   });
 
   it('prioritises payment controls when Locked and collapses audit by default', async () => {

@@ -3,9 +3,10 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), eligible: vi.fn(), allocate: vi.fn(), reverse: vi.fn(), revise: vi.fn(), permissions: new Set() }));
+const mocks = vi.hoisted(() => ({ list: vi.fn(), eligible: vi.fn(), allocate: vi.fn(), reverse: vi.fn(), revise: vi.fn(), refresh: vi.fn(), permissions: new Set() }));
 vi.mock('../auth/BuildLiteAuthProvider', () => ({ useBuildLitePermission: permission => mocks.permissions.has(permission) }));
 vi.mock('../api/variationAccounts', () => ({ listVariationAccount: mocks.list, listEligibleVariationAuthority: mocks.eligible, allocateVariationAuthority: mocks.allocate, reverseVariationAuthority: mocks.reverse, reviseVariationForecast: mocks.revise }));
+vi.mock('../payments/paymentCertificateServerCache', () => ({ refreshCertificatesForPackage: mocks.refresh }));
 import PackageVariationAccount from './PackageVariationAccount';
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -15,7 +16,7 @@ function inputValue(element, value) {
 }
 
 async function render(items, sources = []) {
-  mocks.list.mockResolvedValue(items); mocks.eligible.mockResolvedValue(sources);
+  mocks.list.mockResolvedValue(items); mocks.eligible.mockResolvedValue(sources); mocks.refresh.mockResolvedValue([]);
   const host = document.createElement('div'); document.body.appendChild(host); const root = createRoot(host);
   await act(async () => root.render(<PackageVariationAccount packageId="pkg" />));
   await act(async () => Promise.resolve());
@@ -47,6 +48,81 @@ describe('PackageVariationAccount', () => {
   it('surfaces a forecast-below-authority exception', async () => {
     const { host, root } = await render([{ id: 'va2', reference: 'VA-0002', description: 'Exposure', qsForecast: 7000, authority: { effectiveRecognisedAuthority: 8000, remainingForecastExposure: 0, forecastBelowAuthority: true, exception: 'QS Forecast is below effective recognised authority by £1000.00.', allocations: [] } }]);
     expect(host.querySelector('[role="alert"]').textContent).toContain('below effective recognised authority');
+    await act(async () => root.unmount());
+  });
+
+  it('refreshes the package certificate cache before publishing an authority allocation change', async () => {
+    mocks.permissions.add('variation_account.authority_allocate');
+    const before = { id: 'va1', reference: 'VA-0001', description: 'Roof variation', qsForecast: 7000, status: 'active', authority: { effectiveRecognisedAuthority: 0, remainingForecastExposure: 7000, allocations: [] } };
+    const after = { ...before, authority: { allocatedCeAuthority: 7000, effectiveRecognisedAuthority: 7000, remainingForecastExposure: 0, allocations: [{ id: 'ce-a1', sourceType: 'commercial_event', sourceReference: 'CE-HG009', allocatedAmount: 7000, effectiveAmount: 7000, allocationKind: 'authority' }] } };
+    let cachedCertificate = { sourceAuthority: { unapprovedCertifiedGross: 4000 } };
+    const stage = document.createElement('div');
+    const onChanged = () => { stage.textContent = cachedCertificate.sourceAuthority.unapprovedCertifiedGross ? 'Unapproved variation assessment £4,000' : 'Approved CE £7,000 — no unapproved warning'; };
+    window.addEventListener('buildlite:commercial-changed', onChanged);
+    mocks.allocate.mockResolvedValue({ ok: true });
+    mocks.list.mockResolvedValueOnce([before]).mockResolvedValueOnce([after]);
+    mocks.eligible.mockResolvedValue([{ sourceType: 'commercial_event', sourceId: 'ce9', reference: 'CE-HG009', availableAmount: 8000 }]);
+    const { host, root } = await render([before], [{ sourceType: 'commercial_event', sourceId: 'ce9', reference: 'CE-HG009', availableAmount: 8000 }]);
+    mocks.refresh.mockImplementation(async packageId => {
+      expect(packageId).toBe('pkg');
+      cachedCertificate = { sourceAuthority: { unapprovedCertifiedGross: 0 } };
+      return [cachedCertificate];
+    });
+    const selects = host.querySelectorAll('select');
+    const inputs = Array.from(host.querySelectorAll('input'));
+    await act(async () => {
+      selects[0].value = 'commercial_event|ce9'; selects[0].dispatchEvent(new Event('change', { bubbles: true }));
+      inputValue(inputs[0], '7000'); inputValue(inputs.at(-1), 'Allocate approved authority');
+    });
+    await act(async () => Array.from(host.querySelectorAll('button')).find(button => button.textContent === 'Link authority').click());
+    expect(mocks.allocate).toHaveBeenCalledTimes(1);
+    expect(mocks.refresh).toHaveBeenCalledTimes(1);
+    expect(stage.textContent).toBe('Approved CE £7,000 — no unapproved warning');
+    expect(host.textContent).toContain('CE-HG009');
+    expect(host.textContent).toContain('£7,000.00');
+    window.removeEventListener('buildlite:commercial-changed', onChanged);
+    await act(async () => root.unmount());
+  });
+
+  it('surfaces certificate refresh failure without publishing a successful authority change', async () => {
+    mocks.permissions.add('variation_account.authority_allocate');
+    const changed = vi.fn(); window.addEventListener('buildlite:commercial-changed', changed);
+    const item = { id: 'va1', reference: 'VA-0001', description: 'Roof variation', qsForecast: 7000, status: 'active', authority: { allocations: [] } };
+    const { host, root } = await render([item], [{ sourceType: 'commercial_event', sourceId: 'ce9', reference: 'CE-HG009', availableAmount: 8000 }]);
+    mocks.allocate.mockResolvedValue({ ok: true }); mocks.refresh.mockRejectedValue(new Error('Certificate refresh failed'));
+    const selects = host.querySelectorAll('select'), inputs = Array.from(host.querySelectorAll('input'));
+    await act(async () => { selects[0].value = 'commercial_event|ce9'; selects[0].dispatchEvent(new Event('change', { bubbles: true })); inputValue(inputs[0], '7000'); inputValue(inputs.at(-1), 'Allocate approved authority'); });
+    await act(async () => Array.from(host.querySelectorAll('button')).find(button => button.textContent === 'Link authority').click());
+    expect(mocks.allocate).toHaveBeenCalledTimes(1);
+    expect(mocks.list).toHaveBeenCalledTimes(1);
+    expect(changed).not.toHaveBeenCalled();
+    expect(host.querySelector('[role="alert"]').textContent).toContain('Certificate refresh failed');
+    window.removeEventListener('buildlite:commercial-changed', changed);
+    await act(async () => root.unmount());
+  });
+
+  it('does not refresh or duplicate a failed authority allocation', async () => {
+    mocks.permissions.add('variation_account.authority_allocate');
+    const item = { id: 'va1', reference: 'VA-0001', description: 'Roof variation', qsForecast: 7000, status: 'active', authority: { allocations: [] } };
+    const { host, root } = await render([item], [{ sourceType: 'commercial_event', sourceId: 'ce9', reference: 'CE-HG009', availableAmount: 8000 }]);
+    mocks.allocate.mockRejectedValue(new Error('Allocation rejected'));
+    const selects = host.querySelectorAll('select'), inputs = Array.from(host.querySelectorAll('input'));
+    await act(async () => { selects[0].value = 'commercial_event|ce9'; selects[0].dispatchEvent(new Event('change', { bubbles: true })); inputValue(inputs[0], '7000'); inputValue(inputs.at(-1), 'Allocate approved authority'); });
+    await act(async () => Array.from(host.querySelectorAll('button')).find(button => button.textContent === 'Link authority').click());
+    expect(mocks.allocate).toHaveBeenCalledTimes(1); expect(mocks.refresh).not.toHaveBeenCalled();
+    expect(host.querySelector('[role="alert"]').textContent).toContain('Allocation rejected');
+    await act(async () => root.unmount());
+  });
+
+  it('refreshes dependent certificates once after an authority reversal', async () => {
+    mocks.permissions.add('variation_account.authority_allocate');
+    vi.spyOn(window, 'prompt').mockReturnValue('Authority withdrawn');
+    const item = { id: 'va1', reference: 'VA-0001', description: 'Roof variation', qsForecast: 7000, status: 'active', authority: { allocations: [{ id: 'a1', sourceType: 'commercial_event', sourceReference: 'CE-HG009', allocatedAmount: 7000, effectiveAmount: 7000, allocationKind: 'authority' }] } };
+    const { host, root } = await render([item]); mocks.reverse.mockResolvedValue({ ok: true });
+    await act(async () => Array.from(host.querySelectorAll('button')).find(button => button.textContent === 'Reverse').click());
+    expect(mocks.reverse).toHaveBeenCalledWith('va1', 'a1', 'Authority withdrawn');
+    expect(mocks.reverse).toHaveBeenCalledTimes(1); expect(mocks.refresh).toHaveBeenCalledTimes(1);
+    window.prompt.mockRestore();
     await act(async () => root.unmount());
   });
 

@@ -16,6 +16,7 @@ function buildPaymentCertificateSourceAuthority({
   commercialLines = [],
   paymentDiscoveredItems = [],
   variationAssessments = [],
+  variationAuthorityClassifications = new Map(),
   validatedCommercialLines = null,
   capturedAt = null,
   capturedBy = null,
@@ -74,10 +75,14 @@ function buildPaymentCertificateSourceAuthority({
       displayName: item.created_by_display_name,
     },
   }));
-  const variationAssessmentFacts=(variationAssessments||[]).map(item=>({id:item.id,variationAccountItemId:item.variationAccountItemId,variationReference:item.variationReference||null,description:item.description||null,applicationVariationLineId:item.applicationVariationLineId||null,signedAmount:money(item.currentAssessment),previousCertified:money(item.previousCertified),cumulativeCertified:money(item.cumulativeCertified),basis:item.basis,createdBy:item.createdBy,priorAuthority:0,unapprovedAmount:positive(item.currentAssessment)}));
+  const authorityFor = item => variationAuthorityClassifications instanceof Map
+    ? variationAuthorityClassifications.get(item.id)
+    : variationAuthorityClassifications?.[item.id];
+  const variationAssessmentFacts=(variationAssessments||[]).map(item=>{const classification=authorityFor(item)||{};return {id:item.id,variationAccountItemId:item.variationAccountItemId,variationReference:item.variationReference||null,description:item.description||null,applicationVariationLineId:item.applicationVariationLineId||null,signedAmount:money(item.currentAssessment),previousCertified:money(item.previousCertified),cumulativeCertified:money(item.cumulativeCertified),basis:item.basis,createdBy:item.createdBy,priorAuthority:money(classification.priorAuthority||0),unapprovedAmount:money(classification.unapprovedAmount??item.currentAssessment),authorityClassification:classification.calculationVersion?classification:null};});
   const recoverySigned = signedSum(commercialLines.filter((line) => line.lineType === 'recoveryDeduction'), (line) => line.amountThisCertificate);
   const discoveredPositive = money(discoveredFacts.reduce((sum, item) => sum + positive(item.signedAmount), 0));
-  const variationPositive=money(variationAssessmentFacts.reduce((sum,item)=>sum+positive(item.signedAmount),0));
+  const variationPositive=money(variationAssessmentFacts.reduce((sum,item)=>sum+positive(item.unapprovedAmount),0));
+  const variationCredits=money(variationAssessmentFacts.reduce((sum,item)=>sum+Math.min(0,item.unapprovedAmount),0));
   const discoveredCredits = money(discoveredFacts.reduce((sum, item) => sum + Math.min(0, item.signedAmount), 0));
   const invalidPositive = money(invalidLines.reduce((sum, line) => sum + positive(line.amount), 0));
   const invalidCredits = money(invalidLines.reduce((sum, line) => sum + Math.min(0, line.amount), 0));
@@ -109,7 +114,7 @@ function buildPaymentCertificateSourceAuthority({
     paymentDiscoveredGross,
     variationAssessmentGross,
     paymentDiscoveredPositiveGross: discoveredPositive,
-    signedUnapprovedCredits: money(discoveredCredits + invalidCredits + Math.min(0, money(matrixGross))),
+    signedUnapprovedCredits: money(discoveredCredits + variationCredits + invalidCredits + Math.min(0, money(matrixGross))),
     invalidCommercialInclusionGross: signedSum(invalidLines, (line) => line.amount),
     unapprovedCertifiedGross,
     recoverySigned,

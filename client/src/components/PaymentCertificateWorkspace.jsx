@@ -87,6 +87,7 @@ function CertificateDeleteDialog({ certificate, errorMessage, busy, onCancel, on
 export default function PaymentCertificateWorkspace({
   order,
   pkg,
+  developmentName = null,
   refreshToken = 0,
   certificateTarget = null,
   onCertificatesChanged,
@@ -183,6 +184,7 @@ export default function PaymentCertificateWorkspace({
           certificateId={selectedCertificateId}
           order={order}
           pkg={pkg}
+          developmentName={developmentName}
           onBack={() => setSelectedCertificateId(null)}
           onProgressChanged={onCertificatesChanged}
           onDeleteRequest={setDeleteTarget}

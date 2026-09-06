@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useBuildLitePermission } from '../auth/BuildLiteAuthProvider';
 import { notifyCommercialChanged } from '../commercial/commercialEvents';
+import { refreshCertificatesForPackage } from '../payments/paymentCertificateServerCache';
 import {
   allocateVariationAuthority,
   listEligibleVariationAuthority,
@@ -31,10 +32,28 @@ export default function PackageVariationAccount({ packageId }) {
   useEffect(() => { load().catch(e => setError(e.message)); }, [packageId]);
   const form = id => forms[id] || blank;
   const set = (id, key, value) => setForms(current => ({ ...current, [id]: { ...(current[id] || blank), [key]: value } }));
-  const run = async action => { setBusy(true); setError(''); try { await action(); await load(); return true; } catch (e) { setError(e.message); return false; } finally { setBusy(false); } };
+  const run = async (action, change) => {
+    setBusy(true);
+    setError('');
+    try {
+      await action();
+      await refreshCertificatesForPackage(packageId);
+      await load();
+      notifyCommercialChanged({ packageId, ...change });
+      return true;
+    } catch (e) {
+      setError(e.message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
   const allocate = item => {
     const f = form(item.id), [sourceType, sourceId] = f.source.split('|');
-    return run(() => allocateVariationAuthority(item.id, { sourceType, sourceId, allocatedAmount: Number(f.amount), overlapMode: f.overlapMode, predecessorAllocationId: f.predecessorAllocationId || null, substitutedAmount: f.overlapMode === 'replaces' ? Number(f.substitutedAmount) : null, reason: f.reason }));
+    return run(
+      () => allocateVariationAuthority(item.id, { sourceType, sourceId, allocatedAmount: Number(f.amount), overlapMode: f.overlapMode, predecessorAllocationId: f.predecessorAllocationId || null, substitutedAmount: f.overlapMode === 'replaces' ? Number(f.substitutedAmount) : null, reason: f.reason }),
+      { source: 'variation_account_authority', variationAccountItemId: item.id },
+    );
   };
   const beginForecastRevision = item => setForecastEditor({ itemId: item.id, amount: String(item.qsForecast), reason: '' });
   const saveForecastRevision = async item => {
@@ -42,13 +61,12 @@ export default function PackageVariationAccount({ packageId }) {
       version: item.version,
       qsForecast: Number(forecastEditor.amount),
       reason: forecastEditor.reason.trim(),
-    }));
+    }), { source: 'variation_account_forecast', variationAccountItemId: item.id });
     if (saved) {
-      notifyCommercialChanged({ source: 'variation_account_forecast', packageId, variationAccountItemId: item.id });
       setForecastEditor(null);
     }
   };
-  return <section className="po-module-card"><h3 className="po-matrix-section__title">Variation Account authority</h3><p className="po-cert-detail__matrix-lead">Explicitly reconcile approved Commercial Events and Issued Variation Order lines. BuildLite never infers overlap.</p>{error ? <div role="alert" className="po-list-feedback po-list-feedback--error">{error}</div> : null}{items.length ? items.map(item => <AuthorityItem key={item.id} item={item} sources={sources[item.id] || []} form={form(item.id)} set={(key, value) => set(item.id, key, value)} allocate={() => allocate(item)} reverse={allocation => { const reason = window.prompt('Reason for authority reversal'); if (reason) run(() => reverseVariationAuthority(item.id, allocation.id, reason)); }} canAllocate={canAllocate} canReviseForecast={canReviseForecast} forecastEditor={forecastEditor?.itemId === item.id ? forecastEditor : null} setForecastEditor={setForecastEditor} beginForecastRevision={() => beginForecastRevision(item)} saveForecastRevision={() => saveForecastRevision(item)} busy={busy} />) : <p>No Variation Account items on this package.</p>}</section>;
+  return <section className="po-module-card"><h3 className="po-matrix-section__title">Variation Account authority</h3><p className="po-cert-detail__matrix-lead">Explicitly reconcile approved Commercial Events and Issued Variation Order lines. BuildLite never infers overlap.</p>{error ? <div role="alert" className="po-list-feedback po-list-feedback--error">{error}</div> : null}{items.length ? items.map(item => <AuthorityItem key={item.id} item={item} sources={sources[item.id] || []} form={form(item.id)} set={(key, value) => set(item.id, key, value)} allocate={() => allocate(item)} reverse={allocation => { const reason = window.prompt('Reason for authority reversal'); if (reason) run(() => reverseVariationAuthority(item.id, allocation.id, reason), { source: 'variation_account_authority_reversal', variationAccountItemId: item.id, allocationId: allocation.id }); }} canAllocate={canAllocate} canReviseForecast={canReviseForecast} forecastEditor={forecastEditor?.itemId === item.id ? forecastEditor : null} setForecastEditor={setForecastEditor} beginForecastRevision={() => beginForecastRevision(item)} saveForecastRevision={() => saveForecastRevision(item)} busy={busy} />) : <p>No Variation Account items on this package.</p>}</section>;
 }
 
 function AuthorityItem({ item, sources, form, set, allocate, reverse, canAllocate, canReviseForecast, forecastEditor, setForecastEditor, beginForecastRevision, saveForecastRevision, busy }) {

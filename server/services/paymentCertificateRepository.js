@@ -27,6 +27,7 @@ const { normalizeApplication } = require("./paymentApplicationNormalization");
 const { buildPaymentCertificateSourceAuthority } = require('./paymentCertificateSourceAuthority');
 const { listPaymentDiscoveredItems, lockPaymentDiscoveredItems } = require('./paymentDiscoveredRepository');
 const {listAssessments:listVariationAssessments,lockAssessments:lockVariationAssessments}=require('./variationAccountCertificateAssessmentRepository');
+const {loadVariationAssessmentAuthority}=require('./variationAccountCertificateAuthority');
 const { snapshotForPackage } = require("./subcontractTermsRepository");
 const {
   timetableForRead,
@@ -288,6 +289,7 @@ async function computeLiveTotals(clientId, packageId, row, allRows, dbClient = n
   );
   const paymentDiscoveredItems = await listPaymentDiscoveredItems(clientId,packageId,row.id,dbClient);
   const variationAssessments=await listVariationAssessments(clientId,packageId,row.id,dbClient);
+  const variationAuthorityClassifications=await loadVariationAssessmentAuthority(clientId,packageId,row.id,variationAssessments,dbClient);
   const discoveredLines = paymentDiscoveredItems.map(item=>({id:`payment-discovered:${item.id}`,lineType:'valueInclusion',sourceType:'paymentDiscovered',amountThisCertificate:item.signedAmount}));
   const variationLines=variationAssessments.map(item=>({id:`variation-assessment:${item.id}`,lineType:'valueInclusion',sourceType:'variationAccountAssessment',amountThisCertificate:item.currentAssessment}));
   const live = buildLiveValuation({
@@ -298,7 +300,7 @@ async function computeLiveTotals(clientId, packageId, row, allRows, dbClient = n
     pos,
   });
   if (!live.ok) return { totals: null, errors: live.errors };
-  const sourceAuthority=buildPaymentCertificateSourceAuthority({certificateId:row.id,matrixGross:live.totals.matrixGrossThisCertificate,approvedPos:pos,priorLockedCertificates:locked,commercialLines:payload.commercialLines,paymentDiscoveredItems,variationAssessments});
+  const sourceAuthority=buildPaymentCertificateSourceAuthority({certificateId:row.id,matrixGross:live.totals.matrixGrossThisCertificate,approvedPos:pos,priorLockedCertificates:locked,commercialLines:payload.commercialLines,paymentDiscoveredItems,variationAssessments,variationAuthorityClassifications});
   return { totals: live.totals, sourceAuthority };
 }
 
@@ -711,6 +713,7 @@ async function prepareApprovalInputs(dbClient, {
   }
   const paymentDiscoveredItems=await listPaymentDiscoveredItems(clientId,packageId,row.id,dbClient);
   const variationAssessments=await listVariationAssessments(clientId,packageId,row.id,dbClient);
+  const variationAuthorityClassifications=await loadVariationAssessmentAuthority(clientId,packageId,row.id,variationAssessments,dbClient);
 
   if (!matrix) {
     return { ok: true, payload, matrix: null, pos, locked };
@@ -728,7 +731,7 @@ async function prepareApprovalInputs(dbClient, {
   }
 
   const authorityLines=payload.commercialLines.map(line=>{const authority=line.sourceType==='variationOrder'?variationOrdersById.get(line.variationOrderId):eventsById.get(line.commercialEventId);return {...line,authorityStatus:authority?.status||null,authorityVersion:authority?.version??null};});
-  const sourceAuthority=buildPaymentCertificateSourceAuthority({certificateId:row.id,matrixGross:snapshot.totals.matrixGrossThisCertificate,approvedPos:pos,priorLockedCertificates:locked,commercialLines:authorityLines,paymentDiscoveredItems,variationAssessments});
+  const sourceAuthority=buildPaymentCertificateSourceAuthority({certificateId:row.id,matrixGross:snapshot.totals.matrixGrossThisCertificate,approvedPos:pos,priorLockedCertificates:locked,commercialLines:authorityLines,paymentDiscoveredItems,variationAssessments,variationAuthorityClassifications});
   return { ok: true, payload, matrix, pos, locked, snapshot,sourceAuthority,paymentDiscoveredItems,variationAssessments };
 }
 

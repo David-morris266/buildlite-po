@@ -11,6 +11,7 @@ import PaymentCertificateNotices from './PaymentCertificateNotices';
 import PaymentCertificateDocuments from './PaymentCertificateDocuments';
 import PaymentCertificateSourceAuthority from './PaymentCertificateSourceAuthority';
 import PaymentCertificateVariationAssessments from './PaymentCertificateVariationAssessments';
+import PaymentCertificateVariationsWorkspace from './PaymentCertificateVariationsWorkspace';
 import { buildCertificateDetailNavigation } from '../navigation/navigationBuilders';
 import {
   approveCertificate,
@@ -161,6 +162,7 @@ export default function PaymentCertificateDetail({
   certificateId,
   order,
   pkg,
+  developmentName = null,
   onBack,
   onProgressChanged,
   onDeleteRequest,
@@ -333,7 +335,7 @@ export default function PaymentCertificateDetail({
           onBackToPackage: onBack,
         }).breadcrumbs}
         title={`Certificate No. ${certificate.certificateNumber}`}
-        lead={`${getPackageDevelopmentName(order)} · ${getPackageDisplayName(order)} · ${order.supplierLabel || 'Supplier not recorded'}`}
+        lead={`${developmentName || getPackageDevelopmentName(order)} · ${getPackageDisplayName(order)} · ${order.supplierLabel || 'Supplier not recorded'}`}
         onBack={onBack}
         backLabel="Back to Certificates"
         actions={<StatusBadge status={status} />}
@@ -369,8 +371,7 @@ export default function PaymentCertificateDetail({
 
       {Number(certificate?.sourceAuthority?.unapprovedCertifiedGross || 0) !== 0 ? (
         <div className="po-list-feedback po-list-feedback--warning po-cert-detail__authority-alert" role="status">
-          Unapproved certified gross is {formatMoneyLabel(certificate.sourceAuthority.unapprovedCertifiedGross)}.
-          Review Source authority before progressing this certificate.
+          {formatMoneyLabel(certificate.sourceAuthority.unapprovedCertifiedGross)} of this assessment has no prior commercial authority. Review before submitting.
         </div>
       ) : null}
 
@@ -505,7 +506,18 @@ export default function PaymentCertificateDetail({
         </section>
       )}
 
-      {editable && ['variations', 'reconcile', 'release'].includes(activeStage) ? (
+      {editable ? (
+        <div hidden={activeStage !== 'variations'}>
+          <PaymentCertificateVariationsWorkspace
+            packageId={authoritativePackageId}
+            certificate={certificate}
+            editable={editable}
+            onChanged={refresh}
+          />
+        </div>
+      ) : null}
+
+      {editable && ['reconcile', 'release'].includes(activeStage) ? (
         <section className="po-module-card po-cert-stage-placeholder" role="status">
           <p className="po-cert-detail__eyebrow">Stage {DRAFT_STAGES.findIndex((stage) => stage.id === activeStage) + 1}</p>
           <h3>{DRAFT_STAGES.find((stage) => stage.id === activeStage)?.label}</h3>
