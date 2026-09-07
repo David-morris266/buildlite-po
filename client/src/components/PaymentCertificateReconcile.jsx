@@ -1,9 +1,10 @@
+/* eslint-disable react-refresh/only-export-components -- GP-2D shares this pure review model with the Submitted decision workspace. */
 import { formatMoneyLabel } from '../payments/paymentCertificateProgress';
 
 const toPence = (value) => Math.round((Number(value) || 0) * 100);
 const fromPence = (value) => value / 100;
 
-function signedMoney(value) {
+export function signedMoney(value) {
   if (value == null || value === '') return '—';
   const amount = Number(value) || 0;
   if (amount < 0) return `−${formatMoneyLabel(Math.abs(amount))}`;
@@ -11,7 +12,7 @@ function signedMoney(value) {
   return formatMoneyLabel(0);
 }
 
-function deductionMoney(value) {
+export function deductionMoney(value) {
   if (value == null || value === '') return '—';
   const amount = Number(value) || 0;
   return amount > 0
@@ -21,7 +22,7 @@ function deductionMoney(value) {
       : formatMoneyLabel(0);
 }
 
-function dateLabel(value) {
+export function dateLabel(value) {
   if (!value) return null;
   const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!match) return String(value);
@@ -30,7 +31,7 @@ function dateLabel(value) {
   }).format(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))));
 }
 
-function buildReconcileFacts({ totals, sourceAuthority, applicationComparison }) {
+export function buildReconcileFacts({ totals, sourceAuthority, applicationComparison }) {
   const variationPence = toPence(sourceAuthority?.variationAssessmentGross);
   const commercialPence = toPence(totals?.commercialEventGrossThisCertificate);
   const supportedPence = (sourceAuthority?.evidence?.variationAssessments || []).reduce(
@@ -52,7 +53,7 @@ function buildReconcileFacts({ totals, sourceAuthority, applicationComparison })
   };
 }
 
-function MoneyRows({ rows }) {
+export function MoneyRows({ rows }) {
   return (
     <dl className="po-cert-reconcile__rows">
       {rows.map(({ label, value, emphasis, modifier }) => (

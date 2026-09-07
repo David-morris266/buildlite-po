@@ -9,6 +9,8 @@ const fs = require("fs");
 const path = require("path");
 const request = require("supertest");
 const createApp = require("../app");
+const { createTestAuthAdapter } = require('../auth/authAdapters');
+const { PERMISSIONS } = require('../auth/permissions');
 const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { buildSubcontractOrderKey } = require("../services/packageKey");
@@ -660,6 +662,39 @@ if (!isDbConfigured()) {
     assert.equal(stale.status, 409);
   });
 
+  test("13A. authenticated submit permission controls authority, actor and authorization audit", async () => {
+    const active = await getActiveClient();
+    const seeded = await seedDraftWithProgress(active);
+    const userId = crypto.randomUUID();
+    const membershipId = crypto.randomUUID();
+    const providerUserId = `submit-rbac-${crypto.randomUUID()}`;
+    const role = (await pool.query("SELECT id FROM roles WHERE key='qs'")).rows[0];
+    await pool.query(`INSERT INTO buildlite_users(id,auth_provider,provider_user_id,email_snapshot,display_name,status) VALUES($1,'clerk',$2,$3,$4,'active')`, [userId,providerUserId,'authenticated.qs@example.test','Authenticated QS']);
+    await pool.query(`INSERT INTO client_user_memberships(id,client_id,user_id,role_id,is_active) VALUES($1,$2,$3,$4,true)`, [membershipId,active.id,userId,role.id]);
+    try {
+      const principal = {userId,providerUserId,displayName:'Authenticated QS',email:'authenticated.qs@example.test',clientId:active.id,membershipId,roleKey:'qs',roleName:'QS',permissions:[PERMISSIONS.CERTIFICATE_SUBMIT],memberships:[]};
+      const authApp = createApp({authAdapter:createTestAuthAdapter(principal)});
+      const submitted = await request(authApp).post(`${certBase(seeded.pkg.id, seeded.certificate.id)}/submit`).send({version:seeded.certificate.version,actor:'Forged Browser Actor',updatedBy:'Also Forged'});
+      assert.equal(submitted.status, 200, submitted.body?.message);
+      assert.equal(submitted.body.status, 'submitted');
+      assert.equal(submitted.body.submittedBy, 'Authenticated QS');
+      const audit = await pool.query(`SELECT * FROM authorization_action_audit WHERE membership_id=$1 AND permission_key='certificate.submit'`, [membershipId]);
+      assert.equal(audit.rows.length, 1);
+      assert.equal(audit.rows[0].user_id, userId);
+      assert.equal(audit.rows[0].provider_user_id, providerUserId);
+      assert.equal(audit.rows[0].display_name, 'Authenticated QS');
+      assert.equal(audit.rows[0].role_key, 'qs');
+      assert.equal(audit.rows[0].request_method, 'POST');
+      assert.equal(audit.rows[0].resource_params.certificateId, seeded.certificate.id);
+    } finally {
+      await pool.query('ALTER TABLE authorization_action_audit DISABLE TRIGGER trg_authorization_action_audit_immutable');
+      await pool.query('DELETE FROM authorization_action_audit WHERE membership_id=$1', [membershipId]);
+      await pool.query('ALTER TABLE authorization_action_audit ENABLE TRIGGER trg_authorization_action_audit_immutable');
+      await pool.query('DELETE FROM client_user_memberships WHERE id=$1', [membershipId]);
+      await pool.query('DELETE FROM buildlite_users WHERE id=$1', [userId]);
+    }
+  });
+
   test("14. reject requires comment and stale reject is 409", async () => {
     const active = await getActiveClient();
     const seeded = await seedDraftWithProgress(active);
@@ -686,6 +721,45 @@ if (!isDbConfigured()) {
     const audit = rejected.body.auditHistory.find((entry) => entry.action === "rejected");
     assert.ok(audit);
     assert.equal(audit.comment, "Please revise the valuation");
+  });
+
+  test("14A. Return to Draft requires certificate.lock and ignores forged actor provenance", async () => {
+    const active = await getActiveClient();
+    const seeded = await seedDraftWithProgress(active);
+    const submitted = await submitCert(seeded.pkg.id, seeded.certificate.id, { version: seeded.certificate.version });
+    const userId = crypto.randomUUID();
+    const membershipId = crypto.randomUUID();
+    const providerUserId = `return-rbac-${crypto.randomUUID()}`;
+    const role = (await pool.query("SELECT id FROM roles WHERE key='commercial_director'")).rows[0];
+    await pool.query(`INSERT INTO buildlite_users(id,auth_provider,provider_user_id,email_snapshot,display_name,status) VALUES($1,'clerk',$2,$3,$4,'active')`, [userId, providerUserId, 'approver@example.test', 'Authenticated Approver']);
+    await pool.query(`INSERT INTO client_user_memberships(id,client_id,user_id,role_id,is_active) VALUES($1,$2,$3,$4,true)`, [membershipId, active.id, userId, role.id]);
+    try {
+      const basePrincipal = { userId, providerUserId, displayName: 'Authenticated Approver', clientId: active.id, membershipId, roleKey: 'commercial_director', roleName: 'Commercial Director', memberships: [] };
+      const deniedApp = createApp({ authAdapter: createTestAuthAdapter({ ...basePrincipal, permissions: [] }) });
+      const denied = await request(deniedApp).post(`${certBase(seeded.pkg.id, seeded.certificate.id)}/reject`).send({ version: submitted.body.version, comment: 'Return for correction' });
+      assert.equal(denied.status, 403);
+      assert.equal((await getCert(seeded.pkg.id, seeded.certificate.id)).body.status, 'submitted');
+
+      const authApp = createApp({ authAdapter: createTestAuthAdapter({ ...basePrincipal, permissions: [PERMISSIONS.CERTIFICATE_LOCK] }) });
+      const returned = await request(authApp).post(`${certBase(seeded.pkg.id, seeded.certificate.id)}/reject`).send({ version: submitted.body.version, comment: 'Return for correction', actor: 'Forged Browser Actor', updatedBy: 'Also Forged' });
+      assert.equal(returned.status, 200, returned.body?.message);
+      assert.equal(returned.body.status, 'draft');
+      assert.equal(returned.body.updatedBy, 'Authenticated Approver');
+      const lifecycle = returned.body.auditHistory.find((entry) => entry.action === 'rejected');
+      assert.equal(lifecycle.actor, 'Authenticated Approver');
+      assert.equal(lifecycle.comment, 'Return for correction');
+      const audit = await pool.query(`SELECT * FROM authorization_action_audit WHERE membership_id=$1 AND permission_key='certificate.lock' AND resource_params->>'certificateId'=$2`, [membershipId, seeded.certificate.id]);
+      assert.equal(audit.rows.length, 1);
+      assert.equal(audit.rows[0].user_id, userId);
+      assert.equal(audit.rows[0].provider_user_id, providerUserId);
+      assert.equal(audit.rows[0].display_name, 'Authenticated Approver');
+    } finally {
+      await pool.query('ALTER TABLE authorization_action_audit DISABLE TRIGGER trg_authorization_action_audit_immutable');
+      await pool.query('DELETE FROM authorization_action_audit WHERE membership_id=$1', [membershipId]);
+      await pool.query('ALTER TABLE authorization_action_audit ENABLE TRIGGER trg_authorization_action_audit_immutable');
+      await pool.query('DELETE FROM client_user_memberships WHERE id=$1', [membershipId]);
+      await pool.query('DELETE FROM buildlite_users WHERE id=$1', [userId]);
+    }
   });
 
   test("15. approve only submitted; draft approve is 409", async () => {

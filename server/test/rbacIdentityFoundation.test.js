@@ -75,7 +75,25 @@ test('critical financial route is denied before domain execution when permission
   assert.match(response.body.message, /po\.approve/);
 });
 
+test('certificate submit requires its permission rather than a role name', async () => {
+  const app = createApp({authAdapter:createTestAuthAdapter({...principal,roleKey:'commercial_director',roleName:'Commercial Director',permissions:[]})});
+  const response = await request(app).post('/api/packages/00000000-0000-0000-0000-000000000010/certificates/00000000-0000-0000-0000-000000000011/submit').send({version:1,actor:'Forged'});
+  assert.equal(response.status, 403);
+  assert.match(response.body.message, /certificate\.submit/);
+});
+
+test('certificate Return to Draft requires certificate.lock rather than a role name', async () => {
+  const app = createApp({authAdapter:createTestAuthAdapter({...principal,roleKey:'commercial_director',roleName:'Commercial Director',permissions:[]})});
+  const response = await request(app).post('/api/packages/00000000-0000-0000-0000-000000000010/certificates/00000000-0000-0000-0000-000000000011/reject').send({version:1,comment:'Return',actor:'Forged'});
+  assert.equal(response.status, 403);
+  assert.match(response.body.message, /certificate\.lock/);
+});
+
 test('critical-route manifest covers the pilot high-risk boundary', () => {
   const values = Object.values(CRITICAL_ROUTE_PERMISSIONS).join('|');
-  for (const permission of [PERMISSIONS.PO_APPROVE,PERMISSIONS.CE_APPROVE,PERMISSIONS.VO_ISSUE,PERMISSIONS.CVR_LOCK,PERMISSIONS.CERTIFICATE_LOCK,PERMISSIONS.INTENDED_PAYMENT_CONFIRM,PERMISSIONS.PAYMENT_NOTICE_ISSUE,PERMISSIONS.PAY_LESS_ISSUE,PERMISSIONS.DOCUMENT_GENERATE,PERMISSIONS.DOCUMENT_ISSUE,PERMISSIONS.DOCUMENT_VIEW,PERMISSIONS.TERMS_PUBLISH,PERMISSIONS.PAYMENT_RELEASE_EXECUTE]) assert.match(values, new RegExp(permission.replace('.','\\.')));
+  for (const permission of [PERMISSIONS.PO_APPROVE,PERMISSIONS.CE_APPROVE,PERMISSIONS.VO_ISSUE,PERMISSIONS.CVR_LOCK,PERMISSIONS.CERTIFICATE_SUBMIT,PERMISSIONS.CERTIFICATE_LOCK,PERMISSIONS.INTENDED_PAYMENT_CONFIRM,PERMISSIONS.PAYMENT_NOTICE_ISSUE,PERMISSIONS.PAY_LESS_ISSUE,PERMISSIONS.DOCUMENT_GENERATE,PERMISSIONS.DOCUMENT_ISSUE,PERMISSIONS.DOCUMENT_VIEW,PERMISSIONS.TERMS_PUBLISH,PERMISSIONS.PAYMENT_RELEASE_EXECUTE]) assert.match(values, new RegExp(permission.replace('.','\\.')));
+});
+
+test('critical-route manifest protects certificate Return to Draft with certificate.lock', () => {
+  assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/packages/:packageId/certificates/:certificateId/reject'], PERMISSIONS.CERTIFICATE_LOCK);
 });

@@ -4015,6 +4015,30 @@
 .po-cert-reconcile__notice dt { color:var(--muted); font-size:.72rem; font-weight:700; text-transform:uppercase; }
 .po-cert-reconcile__notice dd { margin:3px 0 0; font-weight:700; }
 .po-cert-reconcile__edit-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.po-cert-submit { display:grid; gap:18px; }
+.po-cert-submit > header h3, .po-cert-submit > header p { margin:0; }
+.po-cert-submit > header > p:last-child { margin-top:5px; color:var(--muted); }
+.po-cert-submit__position { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.po-cert-submit__position > div { padding:13px 14px; border:1px solid rgba(148,163,184,.18); border-radius:var(--radius-sm); background:rgba(148,163,184,.06); }
+.po-cert-submit__position span { display:block; color:var(--muted); font-size:.72rem; font-weight:700; letter-spacing:.035em; text-transform:uppercase; }
+.po-cert-submit__position strong { display:block; margin-top:5px; font-size:1.05rem; }
+.po-cert-submit__position .po-cert-submit__net { border-color:rgba(96,165,250,.35); background:rgba(59,130,246,.12); }
+.po-cert-submit__net strong { font-size:1.2rem; }
+.po-cert-submit__difference { margin:-8px 0 0; color:var(--muted); font-size:.86rem; }
+.po-cert-submit__review-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.po-cert-submit__review-grid > section { padding:14px; border:1px solid rgba(148,163,184,.18); border-radius:var(--radius-sm); background:rgba(15,23,42,.28); }
+.po-cert-submit__review-grid h4 { margin:0 0 9px; }
+.po-cert-submit__review-grid dl { margin:0; }
+.po-cert-submit__review-grid dl > div { display:flex; justify-content:space-between; gap:18px; padding:6px 0; }
+.po-cert-submit__review-grid dt { color:var(--muted); }
+.po-cert-submit__review-grid dd { margin:0; font-weight:700; text-align:right; }
+.po-cert-submit__warning { margin:9px 0 0; color:#fbbf24; font-size:.84rem; }
+.po-cert-submit__ok { margin:9px 0 0; color:#86efac; font-size:.84rem; }
+.po-cert-submit__note { margin:9px 0 0; color:var(--muted); font-size:.82rem; }
+.po-cert-submit__review-actions { display:flex; flex-wrap:wrap; gap:14px; }
+.po-cert-submit__handoff { display:flex; align-items:center; justify-content:space-between; gap:22px; padding:16px; border:1px solid rgba(96,165,250,.3); border-radius:var(--radius-sm); background:rgba(59,130,246,.1); }
+.po-cert-submit__handoff p { margin:5px 0 0; color:var(--muted); max-width:720px; }
+.po-cert-submit__handoff .po-btn-primary { flex:0 0 auto; }
 .po-cert-detail [hidden] { display:none !important; }
 .po-cert-application__basis { grid-column:1 / -1; max-width:420px; }
 .po-cert-application__saved { margin:12px 0 0; color:var(--muted); font-size:.82rem; font-weight:700; }
@@ -4028,6 +4052,9 @@
   .po-cert-reconcile__comparison, .po-cert-reconcile__sections { grid-template-columns:1fr; }
   .po-cert-reconcile__notice { display:block; }
   .po-cert-reconcile__notice dl { margin-top:12px; }
+  .po-cert-submit__position, .po-cert-submit__review-grid { grid-template-columns:1fr; }
+  .po-cert-submit__handoff { display:block; }
+  .po-cert-submit__handoff .po-btn-primary, .po-cert-submit__handoff .po-cert-detail__readonly-note { margin-top:12px; }
 }
 
 .po-cert-detail__hero {
@@ -11101,4 +11128,35 @@
   color: var(--muted, #aeb8c4);
   font-size: .86rem;
   line-height: 1.4;
+}
+
+.po-cert-approval { display:grid; gap:16px; }
+.po-cert-approval__header,.po-cert-approval__exceptions,.po-cert-approval__supporting,.po-cert-approval__decision { padding:16px; border:1px solid rgba(148,163,184,.18); border-radius:var(--radius-sm); background:rgba(15,23,42,.28); }
+.po-cert-approval__header h2,.po-cert-approval__sections h3,.po-cert-approval__exceptions h3,.po-cert-approval__supporting h3,.po-cert-approval__valuation h3 { margin:0; }
+.po-cert-approval__header p:last-child,.po-cert-approval__context-note,.po-cert-approval__decision p,.po-cert-approval__valuation > p { margin:5px 0 0; color:var(--muted); }
+.po-cert-approval__exceptions dl { display:flex; flex-wrap:wrap; gap:12px 28px; margin:12px 0 0; }
+.po-cert-approval__exceptions dt { color:var(--muted); font-size:.78rem; }
+.po-cert-approval__exceptions dd { margin:3px 0 0; font-weight:700; }
+.po-cert-approval__supporting > summary { cursor:pointer; font-weight:700; }
+.po-cert-approval__supporting-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-top:16px; }
+.po-cert-approval__evidence { padding-top:10px; border-top:1px solid rgba(148,163,184,.18); }
+.po-cert-approval__evidence p { margin:5px 0 0; }
+.po-cert-approval__authority-items { display:grid; gap:10px; margin:12px 0 14px; }
+.po-cert-approval__authority-item { padding:11px 12px; border:1px solid rgba(34,197,94,.3); border-radius:var(--radius-sm); background:rgba(34,197,94,.07); }
+.po-cert-approval__authority-item--warning { border-color:rgba(245,158,11,.45); background:rgba(245,158,11,.09); }
+.po-cert-approval__authority-item header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.po-cert-approval__authority-item header strong { line-height:1.35; }
+.po-cert-approval__authority-item dl { margin:8px 0 0; }
+.po-cert-approval__authority-item dl > div { display:flex; justify-content:space-between; gap:16px; padding:3px 0; }
+.po-cert-approval__authority-item dt { color:var(--muted); }
+.po-cert-approval__authority-item dd { margin:0; font-weight:700; text-align:right; }
+.po-cert-approval__authority-source { display:block; }
+.po-cert-approval__authority-unapproved dd { color:#fbbf24; }
+.po-cert-approval__valuation { padding-top:16px; margin-top:16px; border-top:1px solid rgba(148,163,184,.18); }
+.po-cert-approval__decision { display:flex; align-items:center; justify-content:space-between; gap:20px; border-color:rgba(96,165,250,.3); background:rgba(59,130,246,.1); }
+.po-cert-approval__decision-actions { display:flex; flex:0 0 auto; gap:10px; }
+@media (max-width:760px) {
+  .po-cert-approval__supporting-grid { grid-template-columns:1fr; }
+  .po-cert-approval__decision { display:block; }
+  .po-cert-approval__decision-actions { margin-top:12px; }
 }

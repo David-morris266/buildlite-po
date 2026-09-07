@@ -176,8 +176,8 @@ describe('PaymentCertificates authority-ON React hydration lifecycle (BL-028B.3c
     await flushPromises();
 
     const text = document.body.textContent;
-    expect(text).toMatch(/\+£12\.5k/i);
-    expect(text).toMatch(/£112\.5k/i);
+    expect(text).toMatch(/\+£12,500/i);
+    expect(text).toMatch(/£112,500/i);
     expect(text).not.toMatch(/Loading commercial data/i);
     expect(text).toMatch(/Recovery Position/i);
     expect(text).not.toMatch(/No recovery or contra charge events on this package/i);

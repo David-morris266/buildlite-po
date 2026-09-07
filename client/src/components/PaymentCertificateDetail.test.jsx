@@ -7,8 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PaymentCertificateDetail, { resolveCertificatePackageId } from './PaymentCertificateDetail';
 import { normalizeServerPaymentCertificate } from '../payments/paymentCertificateServerMapper';
 
+vi.mock('../auth/BuildLiteAuthProvider', () => ({ useBuildLitePermission: () => true }));
+
 const approveCertificate = vi.fn();
 const submitCertificate = vi.fn();
+const rejectCertificate = vi.fn();
 const getCertificate = vi.fn();
 const summarizeCertificateProgress = vi.fn();
 const buildCertificateAuditItems = vi.fn(() => []);
@@ -20,7 +23,7 @@ vi.mock('../payments/paymentCertificateStore', () => ({
   getCertificateStatusMeta: (status) => ({ label: status, modifier: status }),
   isCertificateEditable: (certificate) => certificate?.status === 'draft',
   isCertificateSubmitted: (certificate) => certificate?.status === 'submitted',
-  rejectCertificate: vi.fn(),
+  rejectCertificate: (...args) => rejectCertificate(...args),
   deleteCertificate: vi.fn(),
   updateCertificateProgress: vi.fn(),
 }));
@@ -171,7 +174,8 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     });
     renderDetail();
     expect(document.body.textContent).not.toContain('Delete Draft');
-    expect(document.body.textContent).toContain('Review & Submit');
+    expect(document.body.textContent).not.toContain('Review & Submit');
+    expect(document.body.textContent).toContain('Save Draft');
   });
 
   it('renders five freely selectable Draft stages while keeping Application and Matrix mounted', () => {
@@ -185,7 +189,7 @@ describe('PaymentCertificateDetail workflow feedback', () => {
       '2Ordered Works',
       '3Variations',
       '4Reconcile',
-      '5Release',
+      '5Submit',
     ]);
     expect(document.body.textContent).toContain('Subcontractor Application');
     expect(document.body.textContent).toContain('Valuation grid');
@@ -236,6 +240,15 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     act(() => {
       button.click();
     });
+  }
+
+  function expectViewportDialog() {
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).toBeTruthy();
+    const backdrop = dialog.parentElement;
+    expect(backdrop.classList.contains('po-cert-delete-backdrop')).toBe(true);
+    expect(backdrop.parentElement).toBe(document.body);
+    return dialog;
   }
 
   async function clickDialogConfirm() {
@@ -294,24 +307,28 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     setDraftCertificate();
     renderDetail();
 
-    clickButton('Review & Submit');
+    clickButton('Submit');
+    clickButton('Submit for Approval');
 
-    const dialog = document.querySelector('[role="dialog"]');
-    expect(dialog).toBeTruthy();
+    const dialog = expectViewportDialog();
     expect(dialog.textContent).toContain('Submit Payment Certificate for Approval?');
-    expect(dialog.textContent).toContain('freeze the current valuation and commercial assessment');
+    expect(dialog.textContent).toContain('Final financial and source-authority evidence is frozen when the certificate is approved and locked.');
     expect(submitCertificate).not.toHaveBeenCalled();
 
     clickButton('Cancel');
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(submitCertificate).not.toHaveBeenCalled();
+    clickButton('Submit for Approval');
+    expectViewportDialog();
+    clickButton('Cancel');
   });
 
   it('submits a valid £0 Draft once on final confirmation and closes on success', async () => {
     setDraftCertificate();
     submitCertificate.mockResolvedValue({ ok: true, certificate: { status: 'submitted' } });
     const onProgressChanged = renderDetail();
-    clickButton('Review & Submit');
+    clickButton('Submit');
+    clickButton('Submit for Approval');
 
     const dialog = document.querySelector('[role="dialog"]');
     const confirm = [...dialog.querySelectorAll('button')].find((node) =>
@@ -328,7 +345,8 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     setDraftCertificate();
     submitCertificate.mockResolvedValue({ ok: false, errors: ['Submission rejected clearly.'] });
     renderDetail();
-    clickButton('Review & Submit');
+    clickButton('Submit');
+    clickButton('Submit for Approval');
 
     const dialog = document.querySelector('[role="dialog"]');
     const confirm = [...dialog.querySelectorAll('button')].find((node) =>
@@ -367,7 +385,9 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     expect(text).not.toContain('Variation Account assessment');
     expect(text).not.toContain('Source authority');
     expect(text).not.toContain('Contractual Timetable');
-    expect(text).toContain('Review & Submit');
+    expect(text).not.toContain('Review & Submit');
+    expect(text).toContain('Save Draft');
+    expect(text).toContain('Delete Draft');
     expect(text).toContain('£200.00 of this assessment has no prior commercial authority. Review before submitting.');
     expect(text).toContain('£1000.00');
     expect(text).toContain('£1140.00');
@@ -387,7 +407,62 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     expect(document.body.textContent).toContain('Test Site 1 · Sparktastic Ltd Package · Sparktastic Ltd');
   });
 
-  it('prioritises payment controls when Locked and collapses audit by default', async () => {
+  it('routes Submitted certificates to the dedicated approver workspace instead of the legacy dossier', () => {
+    const certificate = {
+      id: 'cert-3', certificateNumber: 3, status: 'submitted', submittedBy: 'David Morris', submittedAt: '2026-09-06T20:08:26.288Z',
+      submissionApplicationSnapshot: { application: { applicationReference: 'ABC', receivedAt: '2026-09-05' }, comparison: { comparable: true, applicationCurrentGross: 10000, difference: 4834 } },
+      paymentTimetable: { readiness: 'review_required', reasons: ['Governing payment-rule authority requires review.'] },
+      sourceAuthority: { variationAssessmentGross: 5000, unapprovedCertifiedGross: 0, evidence: { variationAssessments: [{ id: 'a1', signedAmount: 5000, unapprovedAmount: 0 }] } },
+    };
+    getCertificate.mockReturnValue(certificate);
+    summarizeCertificateProgress.mockReturnValue({ certificate, totals: { matrixGrossThisCertificate: 9834, commercialEventGrossThisCertificate: 5000, grossWorksThisCertificate: 14834, retention: 741.7, recoveryDeductionSigned: 0, vat: 2818.46, netPayment: 16910.76, previousCertified: 30000, certifiedToDate: 44834, currentContractValue: 118000, remainingContract: 73166 }, matrix: {}, grid: { cells: [] }, matrixReady: true });
+    renderDetail();
+    const text = document.body.textContent;
+    expect(text).toContain('Certificate decision');
+    expect(text).toContain('Submitted by David Morris');
+    expect(text).toContain('Contractor Application£10000.00');
+    expect(text).toContain('BuildLite Assessment£14834.00');
+    expect(text).toContain('Approve & Lock');
+    expect(text).toContain('Return to Draft');
+    expect(text).not.toContain('Subcontractor Application');
+    expect(text).not.toContain('Commercial events');
+    expect(text).not.toContain('Recovery deductions');
+    expect(text).not.toContain('Payment Notices');
+    expect(text).not.toContain('Commercial Documents');
+    expect(document.querySelector('.po-cert-detail__matrix')).toBeNull();
+    expect(document.querySelector('.po-cert-approval__valuation')?.textContent).toContain('Valuation grid');
+  });
+
+  it('mounts Submitted lifecycle dialogs at viewport level and Cancel restores interaction without mutation', () => {
+    renderDetail();
+
+    clickButton('Approve & Lock');
+    expectViewportDialog();
+    clickButton('Cancel');
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(approveCertificate).not.toHaveBeenCalled();
+
+    clickButton('Return to Draft');
+    expectViewportDialog();
+    clickButton('Cancel');
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(rejectCertificate).not.toHaveBeenCalled();
+
+    clickButton('Approve & Lock');
+    expectViewportDialog();
+  });
+
+  it('requires a Return-to-Draft reason before confirming the lifecycle action', () => {
+    renderDetail();
+    clickButton('Return to Draft');
+    const dialog = document.querySelector('[role="dialog"]');
+    const confirm = [...dialog.querySelectorAll('button')].find((button) => button.textContent === 'Return to Draft');
+    expect(dialog.textContent).toContain('Return-to-Draft reason');
+    expect(confirm.disabled).toBe(true);
+    expect(rejectCertificate).not.toHaveBeenCalled();
+  });
+
+  it('routes Locked certificates to the immutable record and keeps forensic evidence collapsed', async () => {
     const certificate = {
       id: 'cert-3',
       certificateNumber: 3,
@@ -414,14 +489,14 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     await act(async () => {});
 
     const text = document.body.textContent;
-    expect(text).toContain('Frozen commercial position');
+    expect(text).toContain('Immutable commercial record');
     expect(text).toContain('Difference−£500.00');
-    expect(text.indexOf('Subcontractor Application')).toBeLessThan(text.indexOf('Contractual Timetable'));
-    expect(text.indexOf('Contractual Timetable')).toBeLessThan(text.indexOf('Payment Notices'));
-    expect(text.indexOf('Payment Notices')).toBeLessThan(text.indexOf('Commercial Documents'));
-    expect(text.indexOf('Commercial Documents')).toBeLessThan(text.indexOf('Frozen Valuation Detail'));
+    expect(text.indexOf('View supporting detail')).toBeLessThan(text.indexOf('Notice & documents'));
+    expect(text.indexOf('Frozen Valuation Detail')).toBeLessThan(text.indexOf('Notice & documents'));
+    expect(document.querySelector('.po-cert-locked__supporting').open).toBe(false);
     expect(document.querySelector('.po-cert-detail__audit').open).toBe(false);
-    expect(text).toContain('approved and permanently locked');
+    expect(text).toContain('Certificate values are permanently locked');
+    expect(text).not.toContain('Current Contract');
   });
 });
 

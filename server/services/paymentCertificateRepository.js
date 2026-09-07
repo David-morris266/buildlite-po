@@ -575,7 +575,8 @@ async function patchCertificateForPackage(clientId, packageId, certificateId, bo
   }
 }
 
-async function submitCertificateForPackage(clientId, packageId, certificateId, body = {}, { actor } = {}) {
+async function submitCertificateForPackage(clientId, packageId, certificateId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CERTIFICATE_SUBMIT);
   if (!isValidPackageUuid(packageId)) return invalidPackageUuidResult();
   if (!isValidCertificateUuid(certificateId)) return invalidCertificateUuidResult();
 
@@ -875,7 +876,8 @@ async function approveCertificateForPackage(clientId, packageId, certificateId, 
   }
 }
 
-async function rejectCertificateForPackage(clientId, packageId, certificateId, body = {}, { actor } = {}) {
+async function rejectCertificateForPackage(clientId, packageId, certificateId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CERTIFICATE_LOCK);
   if (!isValidPackageUuid(packageId)) return invalidPackageUuidResult();
   if (!isValidCertificateUuid(certificateId)) return invalidCertificateUuidResult();
 

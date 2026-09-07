@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import PaymentCertificateValuationGrid from './PaymentCertificateValuationGrid';
 import PaymentCertificateCommercialEvents from './PaymentCertificateCommercialEvents';
@@ -13,6 +14,9 @@ import PaymentCertificateSourceAuthority from './PaymentCertificateSourceAuthori
 import PaymentCertificateVariationAssessments from './PaymentCertificateVariationAssessments';
 import PaymentCertificateVariationsWorkspace from './PaymentCertificateVariationsWorkspace';
 import PaymentCertificateReconcile from './PaymentCertificateReconcile';
+import PaymentCertificateSubmissionReview from './PaymentCertificateSubmissionReview';
+import PaymentCertificateApprovalReview from './PaymentCertificateApprovalReview';
+import PaymentCertificateLockedRecord from './PaymentCertificateLockedRecord';
 import { buildCertificateDetailNavigation } from '../navigation/navigationBuilders';
 import {
   approveCertificate,
@@ -52,7 +56,7 @@ function CertificateDialog({
   confirmDisabled = false,
 }) {
   const titleId = 'payment-certificate-dialog-title';
-  return (
+  return createPortal(
     <div className="po-cert-delete-backdrop" role="presentation">
       <div
         className="po-cert-delete modal"
@@ -77,7 +81,8 @@ function CertificateDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -144,7 +149,7 @@ const DRAFT_STAGES = [
   { id: 'ordered-works', label: 'Ordered Works' },
   { id: 'variations', label: 'Variations' },
   { id: 'reconcile', label: 'Reconcile' },
-  { id: 'release', label: 'Release' },
+  { id: 'release', label: 'Submit' },
 ];
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -314,7 +319,7 @@ export default function PaymentCertificateDetail({
       if (!result.ok) {
         setWorkflowFeedback({
           type: 'error',
-          message: result.errors?.[0] || 'Could not reject certificate.',
+          message: result.errors?.[0] || 'Could not return certificate to Draft.',
         });
         return;
       }
@@ -348,11 +353,11 @@ export default function PaymentCertificateDetail({
         </p>
       ) : null}
 
-      <CertificateCommercialPosition
+      {editable ? <CertificateCommercialPosition
         totals={summary?.totals}
         applicationComparison={applicationComparison}
         locked={locked}
-      />
+      /> : null}
 
       {editable ? (
         <nav className="po-cert-stages" aria-label="Certificate assessment stages">
@@ -370,7 +375,7 @@ export default function PaymentCertificateDetail({
         </nav>
       ) : null}
 
-      {activeStage !== 'reconcile' && Number(certificate?.sourceAuthority?.unapprovedCertifiedGross || 0) !== 0 ? (
+      {!['reconcile', 'release'].includes(activeStage) && Number(certificate?.sourceAuthority?.unapprovedCertifiedGross || 0) !== 0 ? (
         <div className="po-list-feedback po-list-feedback--warning po-cert-detail__authority-alert" role="status">
           {formatMoneyLabel(certificate.sourceAuthority.unapprovedCertifiedGross)} of this assessment has no prior commercial authority. Review before submitting.
         </div>
@@ -392,16 +397,6 @@ export default function PaymentCertificateDetail({
             >
               Save Draft
             </button>
-            <button
-              type="button"
-              className="po-btn-primary"
-              onClick={() => {
-                setWorkflowFeedback(null);
-                setDialog('submit');
-              }}
-            >
-              Review &amp; Submit
-            </button>
             {!certificate.hasSubmissionHistory ? (
               <button
                 type="button"
@@ -417,40 +412,9 @@ export default function PaymentCertificateDetail({
           </>
         ) : null}
 
-        {submitted ? (
-          <>
-            <button
-              type="button"
-              className="po-btn-primary"
-              onClick={() => {
-                setWorkflowFeedback(null);
-                setDialog('approve');
-              }}
-              disabled={summary?.matrixReady === false || lifecycleBusy}
-            >
-              Approve &amp; Lock
-            </button>
-            <button
-              type="button"
-              className="po-list-btn-secondary"
-              onClick={() => setDialog('reject')}
-            >
-              Reject
-            </button>
-            <p className="po-cert-detail__readonly-note">
-              This certificate is submitted and read-only until approved or returned to draft.
-            </p>
-          </>
-        ) : null}
-
-        {!editable && !submitted ? (
-          <p className="po-cert-detail__readonly-note">
-            This certificate is approved and permanently locked. Values are read-only.
-          </p>
-        ) : null}
       </div>
 
-      <div hidden={editable && activeStage !== 'application'}>
+      {editable ? <div hidden={activeStage !== 'application'}>
         <PaymentCertificateApplication
           packageId={authoritativePackageId}
           certificate={certificate}
@@ -459,33 +423,9 @@ export default function PaymentCertificateDetail({
           onChanged={refresh}
           onComparisonChanged={handleApplicationComparisonChanged}
         />
-      </div>
+      </div> : null}
 
-      {locked ? (
-        <>
-          <PaymentCertificateTimetable certificate={certificate} orderKey={order.orderKey} order={order} onChanged={refresh} />
-          <PaymentCertificateTerms certificate={certificate} governingTerms={pkg?.governingTerms} />
-          <PaymentCertificateNotices certificate={certificate} packageId={authoritativePackageId} />
-          <PaymentCertificateDocuments certificate={certificate} packageId={authoritativePackageId} />
-          <section className="po-module-card po-cert-detail__matrix">
-            <h3 className="po-matrix-section__title">Frozen Valuation Detail</h3>
-            <p className="po-cert-detail__matrix-lead">Read-only valuation view. Approved commercial history is preserved.</p>
-            <PaymentCertificateValuationGrid
-              orderKey={order.orderKey}
-              certificate={certificate}
-              matrix={summary?.matrix}
-              valuationGrid={summary?.fromValuationSnapshot ? summary.grid : null}
-              developmentId={order.developmentId}
-              editable={false}
-              auditItems={auditItems}
-              matrixReady={summary?.matrixReady !== false}
-              matrixLoadState={summary?.matrixLoadState || 'loaded'}
-              matrixError={summary?.matrixError || null}
-              onProgressChange={handleProgressChange}
-            />
-          </section>
-        </>
-      ) : (
+      {editable ? (
         <section className="po-module-card po-cert-detail__matrix" hidden={editable && activeStage !== 'ordered-works'}>
           <h3 className="po-matrix-section__title">Valuation Matrix</h3>
           <p className="po-cert-detail__matrix-lead">
@@ -505,7 +445,7 @@ export default function PaymentCertificateDetail({
             onProgressChange={handleProgressChange}
           />
         </section>
-      )}
+      ) : null}
 
       {editable ? (
         <div hidden={activeStage !== 'variations'}>
@@ -528,60 +468,99 @@ export default function PaymentCertificateDetail({
       ) : null}
 
       {editable && activeStage === 'release' ? (
-        <section className="po-module-card po-cert-stage-placeholder" role="status">
-          <p className="po-cert-detail__eyebrow">Stage {DRAFT_STAGES.findIndex((stage) => stage.id === activeStage) + 1}</p>
-          <h3>{DRAFT_STAGES.find((stage) => stage.id === activeStage)?.label}</h3>
-          <p>Existing certificate functionality will be brought into this stage in the next controlled slice.</p>
-        </section>
-      ) : null}
-
-      {!editable ? <><PaymentCertificateVariationAssessments
-        packageId={authoritativePackageId}
-        certificate={certificate}
-        editable={editable}
-        onChanged={refresh}
-      />
-
-      <PaymentCertificateCommercialEvents
-        orderKey={order.orderKey}
-        order={order}
-        certificate={certificate}
-        editable={editable}
-        onLinesChanged={refresh}
-      >
-        <PaymentCertificateVariationOrders
-          packageId={authoritativePackageId}
-          orderKey={order.orderKey}
-          order={order}
+        <PaymentCertificateSubmissionReview
           certificate={certificate}
-          editable={editable}
-          onLinesChanged={refresh}
+          totals={summary?.totals}
+          applicationComparison={applicationComparison}
+          onEditStage={setActiveStage}
+          onSubmit={() => {
+            setWorkflowFeedback(null);
+            setDialog('submit');
+          }}
+          busy={lifecycleBusy}
         />
-      </PaymentCertificateCommercialEvents>
-
-      <PaymentCertificateRecoveryDeductions
-        orderKey={order.orderKey}
-        order={order}
-        certificate={certificate}
-        editable={editable}
-        onLinesChanged={refresh}
-      />
-
-      <PaymentCertificateSourceAuthority certificate={certificate} />
-
-      {!locked ? (
-        <>
-          <PaymentCertificateTerms certificate={certificate} governingTerms={pkg?.governingTerms} />
-          <PaymentCertificateTimetable certificate={certificate} orderKey={order.orderKey} order={order} onChanged={refresh} />
-          <PaymentCertificateNotices certificate={certificate} packageId={authoritativePackageId} />
-          <PaymentCertificateDocuments certificate={certificate} packageId={authoritativePackageId} />
-        </>
       ) : null}
 
-      <section className="po-module-card po-cert-detail__supporting-evidence">
-        <h3 className="po-matrix-section__title">Audit &amp; supporting evidence</h3>
-        <CertificateAuditHistory items={auditItems} />
-      </section></> : null}
+      {submitted ? (
+        <PaymentCertificateApprovalReview
+          certificate={certificate}
+          totals={summary?.totals}
+          applicationComparison={applicationComparison}
+          auditItems={auditItems}
+          onApprove={() => {
+            setWorkflowFeedback(null);
+            setDialog('approve');
+          }}
+          onReturnToDraft={() => {
+            setWorkflowFeedback(null);
+            setDialog('reject');
+          }}
+          busy={lifecycleBusy}
+          approveDisabled={summary?.matrixReady === false}
+          valuationDetail={(
+            <section className="po-cert-approval__valuation">
+              <h3>Ordered Works valuation detail</h3>
+              <p>Read-only submitted valuation evidence. Approval will recalculate and revalidate these values before Lock.</p>
+              <PaymentCertificateValuationGrid
+                orderKey={order.orderKey}
+                certificate={certificate}
+                matrix={summary?.matrix}
+                valuationGrid={summary?.fromValuationSnapshot ? summary.grid : null}
+                developmentId={order.developmentId}
+                editable={false}
+                auditItems={auditItems}
+                matrixReady={summary?.matrixReady !== false}
+                matrixLoadState={summary?.matrixLoadState || 'loaded'}
+                matrixError={summary?.matrixError || null}
+                onProgressChange={handleProgressChange}
+              />
+            </section>
+          )}
+        />
+      ) : null}
+
+      {locked ? (
+        <PaymentCertificateLockedRecord
+          certificate={certificate}
+          totals={summary?.totals}
+          applicationComparison={applicationComparison}
+          supportingDetail={(
+            <div className="po-cert-locked__supporting-grid">
+              <PaymentCertificateApplication
+                packageId={authoritativePackageId}
+                certificate={certificate}
+                assessmentGross={summary?.totals?.grossWorksThisCertificate ?? certificate.grossValue}
+                editable={false}
+                onChanged={refresh}
+                onComparisonChanged={handleApplicationComparisonChanged}
+              />
+              <PaymentCertificateVariationAssessments packageId={authoritativePackageId} certificate={certificate} editable={false} onChanged={refresh} />
+              <PaymentCertificateCommercialEvents orderKey={order.orderKey} order={order} certificate={certificate} editable={false} onLinesChanged={refresh}>
+                <PaymentCertificateVariationOrders packageId={authoritativePackageId} orderKey={order.orderKey} order={order} certificate={certificate} editable={false} onLinesChanged={refresh} />
+              </PaymentCertificateCommercialEvents>
+              <PaymentCertificateRecoveryDeductions orderKey={order.orderKey} order={order} certificate={certificate} editable={false} onLinesChanged={refresh} />
+              <PaymentCertificateSourceAuthority certificate={certificate} />
+              <PaymentCertificateTerms certificate={certificate} governingTerms={pkg?.governingTerms} />
+              <PaymentCertificateTimetable certificate={certificate} orderKey={order.orderKey} order={order} onChanged={refresh} />
+              <section className="po-module-card po-cert-detail__matrix">
+                <h3 className="po-matrix-section__title">Frozen Valuation Detail</h3>
+                <p className="po-cert-detail__matrix-lead">Read-only valuation evidence preserved at Lock.</p>
+                <PaymentCertificateValuationGrid orderKey={order.orderKey} certificate={certificate} matrix={summary?.matrix} valuationGrid={summary?.fromValuationSnapshot ? summary.grid : null} developmentId={order.developmentId} editable={false} auditItems={auditItems} matrixReady={summary?.matrixReady !== false} matrixLoadState={summary?.matrixLoadState || 'loaded'} matrixError={summary?.matrixError || null} onProgressChange={handleProgressChange} />
+              </section>
+              <section className="po-module-card po-cert-detail__supporting-evidence">
+                <h3 className="po-matrix-section__title">Audit &amp; supporting evidence</h3>
+                <CertificateAuditHistory items={auditItems} />
+              </section>
+            </div>
+          )}
+          noticeAndDocuments={(
+            <>
+              <PaymentCertificateNotices certificate={certificate} packageId={authoritativePackageId} />
+              <PaymentCertificateDocuments certificate={certificate} packageId={authoritativePackageId} />
+            </>
+          )}
+        />
+      ) : null}
 
       {dialog === 'submit' ? (
         <CertificateDialog
@@ -600,9 +579,9 @@ export default function PaymentCertificateDetail({
             </div>
           ) : null}
           <p>
-            This will freeze the current valuation and commercial assessment for review.
-            Certificate No. {certificate.certificateNumber} will become read-only until it
-            is approved or returned to Draft.
+            Submit the current certificate for approval. It will become read-only until
+            approved or returned to Draft. Final financial and source-authority evidence
+            is frozen when the certificate is approved and locked.
           </p>
         </CertificateDialog>
       ) : null}
@@ -632,7 +611,7 @@ export default function PaymentCertificateDetail({
 
       {dialog === 'reject' ? (
         <CertificateDialog
-          title={`Reject Certificate No. ${certificate.certificateNumber}?`}
+          title={`Return Certificate No. ${certificate.certificateNumber} to Draft?`}
           confirmLabel="Return to Draft"
           confirmClassName="po-cert-delete__confirm"
           onCancel={() => {
@@ -641,7 +620,7 @@ export default function PaymentCertificateDetail({
             setDialog(null);
           }}
           onConfirm={handleRejectConfirm}
-          confirmDisabled={lifecycleBusy}
+          confirmDisabled={lifecycleBusy || !rejectComment.trim()}
         >
           {workflowFeedback?.type === 'error' ? (
             <div className="po-list-feedback po-list-feedback--error" role="alert">
@@ -650,7 +629,7 @@ export default function PaymentCertificateDetail({
           ) : null}
           <p>The certificate will return to draft status and editing will be re-enabled.</p>
           <label className="po-cert-detail__reject-label" htmlFor="po-cert-reject-comment">
-            Rejection comment
+            Return-to-Draft reason
           </label>
           <textarea
             id="po-cert-reject-comment"
