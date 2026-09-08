@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPaymentApplication, listPaymentApplications, revisePaymentApplication } from '../api/paymentApplications';
-import { APPLICATION_BASES, comparePaymentApplication } from '../payments/paymentApplicationComparison';
+import { APPLICATION_BASES, comparePaymentApplication, validatePaymentApplicationBasis } from '../payments/paymentApplicationComparison';
 import PaymentApplicationVariations from './PaymentApplicationVariations';
 
 const labels = {
   [APPLICATION_BASES.currentPeriodGross]: 'Current-period gross',
   [APPLICATION_BASES.cumulativeLessPreviousApplication]: 'Cumulative less previous application',
   [APPLICATION_BASES.cumulativeLessPreviousCertified]: 'Cumulative less previous certified',
-  [APPLICATION_BASES.netOnly]: 'Net only / insufficiently structured',
+  [APPLICATION_BASES.netOnly]: 'Net only',
 };
 const pounds = (value) => value == null ? 'Not supplied' : new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP'}).format(value);
 const today = () => new Date().toISOString().slice(0,10);
@@ -24,6 +24,7 @@ export default function PaymentCertificateApplication({ packageId, certificate, 
   const [form,setForm]=useState(initial);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
+  const [fieldErrors,setFieldErrors]=useState({});
   const [advanced,setAdvanced]=useState(false);
 
   useEffect(()=>{
@@ -35,20 +36,22 @@ export default function PaymentCertificateApplication({ packageId, certificate, 
   useEffect(()=>{ if(application && editable) setForm({...initial,...application,receivedAt:String(application.receivedAt||'').slice(0,10)}); },[application?.id,editable]);
   const comparison=useMemo(()=>frozen?.comparison || comparePaymentApplication(application,assessmentGross),[frozen,application,assessmentGross]);
   useEffect(()=>{ onComparisonChanged?.(comparison); },[comparison,onComparisonChanged]);
-  const field=(key)=>(event)=>setForm((value)=>({...value,[key]:event.target.value}));
-  const moneyField=(key,label)=><label><span>{label}</span><input className="input" type="number" step="0.01" value={form[key]??''} onChange={field(key)} /></label>;
-  const save=async()=>{ setBusy(true);setError('');try{const body={...form,certificateId:certificate.id,actor:localStorage.getItem('userName')||localStorage.getItem('userEmail')||null};const saved=application?await revisePaymentApplication(packageId,application.id,body):await createPaymentApplication(packageId,body);setApplication(saved);onChanged?.();}catch(err){setError(err.message);}finally{setBusy(false);}};
+  const field=(key)=>(event)=>{const value=event.target.value;setForm((current)=>({...current,[key]:value}));setFieldErrors((current)=>{if(!current[key])return current;const next={...current};delete next[key];return next;});};
+  const changeBasis=(event)=>{setForm((current)=>({...current,applicationBasis:event.target.value}));setFieldErrors({});setError('');};
+  const moneyField=(key,label)=><label><span>{label} <span aria-hidden="true">*</span></span><input className="input" type="number" step="0.01" required aria-invalid={Boolean(fieldErrors[key])} aria-describedby={fieldErrors[key]?`${key}-error`:undefined} value={form[key]??''} onChange={field(key)} />{fieldErrors[key]?<small id={`${key}-error`} className="po-cert-application__field-error">{fieldErrors[key]}</small>:null}</label>;
+  const save=async()=>{const completeness=validatePaymentApplicationBasis(form);setFieldErrors(completeness.errors);if(!completeness.valid){setError('Complete the required application amounts before saving.');return;}setBusy(true);setError('');try{const body={...form,certificateId:certificate.id,actor:localStorage.getItem('userName')||localStorage.getItem('userEmail')||null};const saved=application?await revisePaymentApplication(packageId,application.id,body):await createPaymentApplication(packageId,body);setApplication(saved);onChanged?.();}catch(err){setError(err.message);}finally{setBusy(false);}};
 
   return <section className="po-module-card po-cert-application">
     <div className="po-cert-application__heading"><div><h3>Subcontractor Application</h3><p>Record what the subcontractor applied for.</p></div></div>
     {editable ? <div className="po-cert-application__form">
       <label><span>Application Ref</span><input className="input" value={form.applicationReference} onChange={field('applicationReference')} /></label>
       <label><span>Application Date</span><input className="input" type="date" value={form.receivedAt} onChange={field('receivedAt')} /></label>
-      {form.applicationBasis===APPLICATION_BASES.currentPeriodGross?moneyField('currentPeriodGrossClaimed','Application this period'):null}
-      {form.applicationBasis===APPLICATION_BASES.cumulativeLessPreviousApplication?<>{moneyField('cumulativeGrossClaimed','Cumulative gross')}{moneyField('previousApplicationStated','Previous application')}</>:null}
-      {form.applicationBasis===APPLICATION_BASES.cumulativeLessPreviousCertified?<>{moneyField('cumulativeGrossClaimed','Cumulative gross')}{moneyField('previousCertifiedStated','Previous certified')}</>:null}
+      {form.applicationBasis===APPLICATION_BASES.currentPeriodGross?moneyField('currentPeriodGrossClaimed','Current-period gross claimed'):null}
+      {form.applicationBasis===APPLICATION_BASES.cumulativeLessPreviousApplication?<>{moneyField('cumulativeGrossClaimed','Cumulative gross application')}{moneyField('previousApplicationStated','Previous application amount')}</>:null}
+      {form.applicationBasis===APPLICATION_BASES.cumulativeLessPreviousCertified?<>{moneyField('cumulativeGrossClaimed','Cumulative gross application')}{moneyField('previousCertifiedStated','Previous certified stated by contractor/application')}</>:null}
       {form.applicationBasis===APPLICATION_BASES.netOnly?moneyField('netRequestedStated','Net requested'):null}
-      <label className="po-cert-application__basis"><span>Basis</span><select className="input" value={form.applicationBasis} onChange={field('applicationBasis')}>{Object.entries(labels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
+      {form.applicationBasis===APPLICATION_BASES.netOnly?<p className="po-cert-application__basis-note">A net-only application cannot provide the normal gross Application vs Assessment comparison. BuildLite will not derive a gross value.</p>:null}
+      <label className="po-cert-application__basis"><span>Basis</span><select className="input" value={form.applicationBasis} onChange={changeBasis}>{Object.entries(labels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
       <button type="button" className="po-list-btn-secondary" disabled={busy} onClick={save}>{application?'Record revised application':'Record application'}</button>
     </div>:null}
     {error?<div className="po-list-feedback po-list-feedback--error" role="alert">{error}</div>:null}

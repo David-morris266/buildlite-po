@@ -31,6 +31,7 @@ import {
   buildCertificateAuditItems,
 } from '../payments/paymentCertificateApproval';
 import { formatMoneyLabel, summarizeCertificateProgress } from '../payments/paymentCertificateProgress';
+import { APPLICATION_BASES } from '../payments/paymentApplicationComparison';
 import {
   getPackageDevelopmentName,
   getPackageDisplayName,
@@ -110,9 +111,12 @@ function CertificateAuditHistory({ items }) {
 
 function CertificateCommercialPosition({ totals, applicationComparison, locked }) {
   const assessedGross = totals?.grossWorksThisCertificate ?? totals?.grossThisCertificate;
-  const applicationValue = applicationComparison?.comparable
-    ? applicationComparison.applicationCurrentGross
-    : null;
+  const netOnly = applicationComparison?.applicationBasis === APPLICATION_BASES.netOnly;
+  const applicationValue = netOnly
+    ? applicationComparison.applicationNetRequested
+    : applicationComparison?.comparable
+      ? applicationComparison.applicationCurrentGross
+      : null;
   const difference = applicationComparison?.comparable
     ? applicationComparison.difference
     : null;
@@ -122,9 +126,9 @@ function CertificateCommercialPosition({ totals, applicationComparison, locked }
       ? `−${formatMoneyLabel(Math.abs(difference))}`
       : formatMoneyLabel(difference);
   const primary = [
-    { label: 'Application', value: formatMoneyLabel(applicationValue) },
+    { label: 'Application', value: formatMoneyLabel(applicationValue), qualifier: netOnly ? 'Net only' : null },
     { label: 'Assessment', value: formatMoneyLabel(assessedGross) },
-    { label: 'Difference', value: differenceLabel || formatMoneyLabel(null) },
+    { label: 'Difference', value: differenceLabel || formatMoneyLabel(null), qualifier: netOnly ? 'Gross comparison unavailable' : null },
     { label: 'Net', value: formatMoneyLabel(totals?.netPayment) },
   ];
 
@@ -137,7 +141,7 @@ function CertificateCommercialPosition({ totals, applicationComparison, locked }
         </div>
       </div>
       <dl className="po-cert-position__primary">
-        {primary.map((item) => <div key={item.label}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}
+        {primary.map((item) => <div key={item.label}><dt>{item.label}</dt><dd>{item.value}{item.qualifier?<small className="po-cert-position__qualifier">{item.qualifier}</small>:null}</dd></div>)}
       </dl>
     </section>
   );

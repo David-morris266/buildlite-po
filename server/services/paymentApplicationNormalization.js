@@ -11,6 +11,26 @@ function moneyOrNull(value) {
   return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null;
 }
 
+function validateApplicationBasis(application) {
+  const basis = application?.applicationBasis || application?.application_basis;
+  const errors = [];
+  const requireMoney = (camel, snake, message) => {
+    if (moneyOrNull(application?.[camel] ?? application?.[snake]) === null) errors.push({ field: camel, message });
+  };
+  if (basis === APPLICATION_BASES.currentPeriodGross) {
+    requireMoney("currentPeriodGrossClaimed", "current_period_gross_claimed", "Current-period gross claimed is required.");
+  } else if (basis === APPLICATION_BASES.cumulativeLessPreviousApplication) {
+    requireMoney("cumulativeGrossClaimed", "cumulative_gross_claimed", "Cumulative gross application is required.");
+    requireMoney("previousApplicationStated", "previous_application_stated", "Previous application amount is required.");
+  } else if (basis === APPLICATION_BASES.cumulativeLessPreviousCertified) {
+    requireMoney("cumulativeGrossClaimed", "cumulative_gross_claimed", "Cumulative gross application is required.");
+    requireMoney("previousCertifiedStated", "previous_certified_stated", "Previous certified stated by the contractor/application is required.");
+  } else if (basis === APPLICATION_BASES.netOnly) {
+    requireMoney("netRequestedStated", "net_requested_stated", "Net amount requested is required.");
+  }
+  return { valid: errors.length === 0, errors };
+}
+
 function normalizeApplication(application, assessmentTotals = null) {
   const basis = application?.applicationBasis || application?.application_basis;
   const cumulative = moneyOrNull(application?.cumulativeGrossClaimed ?? application?.cumulative_gross_claimed);
@@ -34,8 +54,10 @@ function normalizeApplication(application, assessmentTotals = null) {
     if (cumulative !== null && previousCertified !== null) {
       normalizedCurrentGross = Math.round((cumulative - previousCertified) * 100) / 100;
     } else reason = "Cumulative gross and previous certified are both required.";
+  } else if (basis === APPLICATION_BASES.netOnly) {
+    reason = "Net-only applications do not provide the gross value needed for the normal Application vs Assessment comparison.";
   } else {
-    reason = "Net-only applications are not comparable with gross assessment without a structured bridge.";
+    reason = "The application basis is not supported.";
   }
 
   const comparable = normalizedCurrentGross !== null && assessmentGross !== null;
@@ -52,4 +74,4 @@ function normalizeApplication(application, assessmentTotals = null) {
   };
 }
 
-module.exports = { APPLICATION_BASES, moneyOrNull, normalizeApplication };
+module.exports = { APPLICATION_BASES, moneyOrNull, normalizeApplication, validateApplicationBasis };

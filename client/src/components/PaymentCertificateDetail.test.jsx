@@ -56,7 +56,11 @@ vi.mock('./PaymentCertificateRecoveryDeductions', () => ({
   default: () => <div>Recovery deductions</div>,
 }));
 
-vi.mock('./PaymentCertificateApplication', () => ({ default: () => <div>Subcontractor Application</div> }));
+let applicationComparisonCallback = null;
+vi.mock('./PaymentCertificateApplication', () => ({ default: ({ onComparisonChanged }) => {
+  applicationComparisonCallback = onComparisonChanged;
+  return <div>Subcontractor Application</div>;
+} }));
 vi.mock('./PaymentCertificateVariationAssessments', () => ({ default: () => <div>Variation Account assessment</div> }));
 vi.mock('./PaymentCertificateVariationsWorkspace', () => ({ default: () => <div>Stage 3 variation workspace</div> }));
 vi.mock('./PaymentCertificateSourceAuthority', () => ({ default: () => <div>Source authority</div> }));
@@ -87,6 +91,7 @@ describe('PaymentCertificateDetail workflow feedback', () => {
   let root;
 
   beforeEach(() => {
+    applicationComparisonCallback = null;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -230,6 +235,29 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     expect(strip.textContent).toContain('Assessment£800.00');
     expect(strip.textContent).toContain('Net£912.00');
     expect(strip.textContent).toContain('Difference—');
+  });
+
+  it('shows a net-only contractor request without treating it as gross or replacing assessed net', () => {
+    setDraftCertificate();
+    const netOnlyComparison = {
+      comparable: false,
+      applicationBasis: 'net_only',
+      applicationCurrentGross: null,
+      applicationNetRequested: 10000,
+      difference: null,
+    };
+    summarizeCertificateProgress.mockReturnValue({
+      ...summarizeCertificateProgress(),
+      totals: { grossWorksThisCertificate: 0, netPayment: 0 },
+    });
+    renderDetail();
+    act(() => applicationComparisonCallback(netOnlyComparison));
+    const strip = document.querySelector('[aria-label="Commercial position"]');
+    const items = [...strip.querySelectorAll('div')];
+    expect(items.find((item) => item.querySelector('dt')?.textContent === 'Application').textContent).toContain('10000.00Net only');
+    expect(items.find((item) => item.querySelector('dt')?.textContent === 'Assessment').textContent).toContain('0.00');
+    expect(items.find((item) => item.querySelector('dt')?.textContent === 'Difference').textContent).toContain('Gross comparison unavailable');
+    expect(items.find((item) => item.querySelector('dt')?.textContent === 'Net').textContent).toContain('0.00');
   });
 
   function clickButton(label) {

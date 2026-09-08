@@ -3976,6 +3976,7 @@
 .po-cert-position dt { color:var(--muted); font-size:.7rem; font-weight:700; letter-spacing:.035em; text-transform:uppercase; }
 .po-cert-position dd { margin:4px 0 0; color:var(--text); font-weight:700; }
 .po-cert-position__primary dd { font-size:1.15rem; }
+.po-cert-position__qualifier { display:block; margin-top:2px; color:var(--muted); font-size:.7rem; font-weight:600; }
 .po-cert-detail__authority-alert { margin-bottom:16px; }
 .po-cert-recoveries-empty { display:flex; align-items:baseline; justify-content:space-between; gap:16px; margin-bottom:16px; padding-top:12px; padding-bottom:12px; }
 .po-cert-recoveries-empty h3, .po-cert-recoveries-empty p { margin:0; }

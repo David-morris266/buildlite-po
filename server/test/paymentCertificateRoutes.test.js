@@ -1366,6 +1366,24 @@ if (!isDbConfigured()) {
     assert.equal(JSON.stringify((await getCert(seeded.pkg.id, certificate.id)).body.lockedApplicationSnapshot), frozen);
   });
 
+  test("26A. an existing incomplete structured Draft application cannot be submitted", async () => {
+    const active = await getActiveClient();
+    const seeded = await seedDraftWithProgress(active, progressEntry("plot-1", "First Fix", 10));
+    await pool.query(`INSERT INTO subcontract_payment_applications(
+      client_id,development_id,package_id,certificate_id,application_reference,received_at,application_basis,recorded_by
+    ) VALUES($1,$2,$3,$4,'APP-INCOMPLETE','2026-08-29','cumulative_less_previous_certified','QS')`, [
+      active.id, seeded.certificate.developmentId, seeded.pkg.id, seeded.certificate.id,
+    ]);
+    const response = await submitCert(seeded.pkg.id, seeded.certificate.id, { version: seeded.certificate.version });
+    assert.equal(response.status, 409);
+    assert.match(response.body.message, /application is incomplete/i);
+    assert.match(response.body.message, /cumulative gross application/i);
+    assert.match(response.body.message, /contractor\/application/i);
+    const certificate = (await getCert(seeded.pkg.id, seeded.certificate.id)).body;
+    assert.equal(certificate.status, 'draft');
+    assert.equal(certificate.submissionApplicationSnapshot, null);
+  });
+
   test("27. timetable attempts append, rejection returns live, lock copies latest, and submitted history blocks delete", async () => {
     const active = await getActiveClient();
     const seeded = await seedDraftWithProgress(active, progressEntry("plot-1", "First Fix", 10));

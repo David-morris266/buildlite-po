@@ -1,6 +1,6 @@
 const { pool, query } = require("../db");
 const { isValidPackageUuid, isValidCertificateUuid } = require("./paymentCertificateConstants");
-const { APPLICATION_BASES, moneyOrNull } = require("./paymentApplicationNormalization");
+const { APPLICATION_BASES, moneyOrNull, validateApplicationBasis } = require("./paymentApplicationNormalization");
 const { rowToApplication } = require("./paymentApplicationMapper");
 
 const VALID_BASES = new Set(Object.values(APPLICATION_BASES));
@@ -68,6 +68,8 @@ function validate(body) {
     if (supplied && parsed === null) return fail(400, `${api} must be a valid monetary amount.`);
     money[column] = parsed;
   }
+  const completeness = validateApplicationBasis(body);
+  if (!completeness.valid) return fail(400, completeness.errors[0].message);
   return { ok: true, reference, receivedAt, basis, money };
 }
 

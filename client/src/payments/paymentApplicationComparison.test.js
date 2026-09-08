@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { APPLICATION_BASES, comparePaymentApplication } from './paymentApplicationComparison';
+import { APPLICATION_BASES, comparePaymentApplication, validatePaymentApplicationBasis } from './paymentApplicationComparison';
 
 describe('payment application comparison', () => {
   it('shows negative, zero and positive assessment-minus-application variance', () => {
@@ -14,6 +14,19 @@ describe('payment application comparison', () => {
   });
   it('does not manufacture zero for missing or net-only facts',()=>{
     expect(comparePaymentApplication({applicationBasis:APPLICATION_BASES.currentPeriodGross},0).comparable).toBe(false);
-    expect(comparePaymentApplication({applicationBasis:APPLICATION_BASES.netOnly,netRequestedStated:1000},1000).comparable).toBe(false);
+    const netOnly=comparePaymentApplication({applicationBasis:APPLICATION_BASES.netOnly,netRequestedStated:1000},900);
+    expect(netOnly.comparable).toBe(false);
+    expect(netOnly.applicationCurrentGross).toBeNull();
+    expect(netOnly.applicationNetRequested).toBe(1000);
+    expect(netOnly.difference).toBeNull();
+  });
+  it('matches server basis completeness and keeps contractor-stated previous certified distinct',()=>{
+    expect(validatePaymentApplicationBasis({applicationBasis:APPLICATION_BASES.currentPeriodGross,currentPeriodGrossClaimed:0}).valid).toBe(true);
+    expect(validatePaymentApplicationBasis({applicationBasis:APPLICATION_BASES.currentPeriodGross}).errors).toHaveProperty('currentPeriodGrossClaimed');
+    expect(validatePaymentApplicationBasis({applicationBasis:APPLICATION_BASES.cumulativeLessPreviousApplication,cumulativeGrossClaimed:100}).errors).toHaveProperty('previousApplicationStated');
+    expect(validatePaymentApplicationBasis({applicationBasis:APPLICATION_BASES.cumulativeLessPreviousCertified,cumulativeGrossClaimed:100}).errors.previousCertifiedStated).toMatch(/contractor\/application/);
+    expect(validatePaymentApplicationBasis({applicationBasis:APPLICATION_BASES.netOnly,netRequestedStated:90}).valid).toBe(true);
+    expect(validatePaymentApplicationBasis({applicationBasis:APPLICATION_BASES.netOnly}).errors).toHaveProperty('netRequestedStated');
+    expect(comparePaymentApplication({applicationBasis:APPLICATION_BASES.cumulativeLessPreviousCertified,cumulativeGrossClaimed:100.01,previousCertifiedStated:40.02},59.99).applicationCurrentGross).toBe(59.99);
   });
 });

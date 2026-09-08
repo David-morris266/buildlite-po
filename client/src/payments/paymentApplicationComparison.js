@@ -8,6 +8,23 @@ export const APPLICATION_BASES = {
 const number = (value) => value === null || value === undefined || value === '' ? null : Number.isFinite(Number(value)) ? Number(value) : null;
 const money = (value) => Math.round(value * 100) / 100;
 
+export function validatePaymentApplicationBasis(application) {
+  const errors = {};
+  const requireMoney = (field, message) => { if (number(application?.[field]) === null) errors[field] = message; };
+  if (application?.applicationBasis === APPLICATION_BASES.currentPeriodGross) {
+    requireMoney('currentPeriodGrossClaimed', 'Enter the current-period gross claimed.');
+  } else if (application?.applicationBasis === APPLICATION_BASES.cumulativeLessPreviousApplication) {
+    requireMoney('cumulativeGrossClaimed', 'Enter the cumulative gross application.');
+    requireMoney('previousApplicationStated', 'Enter the previous application amount.');
+  } else if (application?.applicationBasis === APPLICATION_BASES.cumulativeLessPreviousCertified) {
+    requireMoney('cumulativeGrossClaimed', 'Enter the cumulative gross application.');
+    requireMoney('previousCertifiedStated', 'Enter the previous certified amount stated by the contractor/application.');
+  } else if (application?.applicationBasis === APPLICATION_BASES.netOnly) {
+    requireMoney('netRequestedStated', 'Enter the net amount requested.');
+  }
+  return { valid: Object.keys(errors).length === 0, errors };
+}
+
 export function comparePaymentApplication(application, assessmentGross) {
   if (!application) return { comparable: false, reason: 'No subcontractor application recorded.' };
   let applied = null;
@@ -24,8 +41,21 @@ export function comparePaymentApplication(application, assessmentGross) {
     const previous = number(application.previousCertifiedStated);
     if (cumulative !== null && previous !== null) applied = money(cumulative - previous);
     else reason = 'Cumulative gross and previous certified are both required.';
-  } else reason = 'Net-only applications are not comparable with gross assessment without a structured bridge.';
+  } else if (application.applicationBasis === APPLICATION_BASES.netOnly) reason = 'Net-only applications do not provide the gross value needed for the normal Application vs Assessment comparison.';
+  else reason = 'The application basis is not supported.';
   const assessed = number(assessmentGross);
   const comparable = applied !== null && assessed !== null;
-  return { comparable, comparisonBasis: comparable ? 'Current-period gross' : null, applicationCurrentGross: applied, applicationCumulativeGross: cumulative, assessmentCurrentGross: assessed, difference: comparable ? money(assessed - applied) : null, reason: comparable ? null : (reason || 'BuildLite assessment is not available.') };
+  return {
+    comparable,
+    comparisonBasis: comparable ? 'Current-period gross' : null,
+    applicationBasis: application.applicationBasis,
+    applicationCurrentGross: applied,
+    applicationCumulativeGross: cumulative,
+    applicationNetRequested: application.applicationBasis === APPLICATION_BASES.netOnly
+      ? number(application.netRequestedStated)
+      : null,
+    assessmentCurrentGross: assessed,
+    difference: comparable ? money(assessed - applied) : null,
+    reason: comparable ? null : (reason || 'BuildLite assessment is not available.'),
+  };
 }

@@ -23,7 +23,7 @@ const {
   validateLinesAgainstEvents,
 } = require("./paymentCertificateValidation");
 const { loadActiveApplicationForCertificate, mapRow: mapApplicationRow } = require("./paymentApplicationRepository");
-const { normalizeApplication } = require("./paymentApplicationNormalization");
+const { normalizeApplication, validateApplicationBasis } = require("./paymentApplicationNormalization");
 const { buildPaymentCertificateSourceAuthority } = require('./paymentCertificateSourceAuthority');
 const { listPaymentDiscoveredItems, lockPaymentDiscoveredItems } = require('./paymentDiscoveredRepository');
 const {listAssessments:listVariationAssessments,lockAssessments:lockVariationAssessments}=require('./variationAccountCertificateAssessmentRepository');
@@ -624,6 +624,17 @@ async function submitCertificateForPackage(clientId, packageId, certificateId, b
 
     const termsSnapshot = await snapshotForPackage(clientId, packageId, dbClient);
     const applicationState = await loadTimetableApplication(dbClient, clientId, packageId, row.id, { forUpdate: true });
+    const applicationCompleteness = applicationState.document
+      ? validateApplicationBasis(applicationState.document)
+      : { valid: true, errors: [] };
+    if (!applicationCompleteness.valid) {
+      await dbClient.query("ROLLBACK");
+      return {
+        ok: false,
+        status: 409,
+        message: `Subcontractor application is incomplete: ${applicationCompleteness.errors.map((item) => item.message).join(" ")}`,
+      };
+    }
     const applicationSnapshot = applicationState.document ? {
       application: { ...applicationState.document, comparison: undefined, auditHistory: undefined },
       comparison: normalizeApplication(applicationState.document, prepared.snapshot.totals),
