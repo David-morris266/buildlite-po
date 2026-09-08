@@ -5,7 +5,7 @@ import { useBuildLitePermission } from '../auth/BuildLiteAuthProvider';
 const gbp = value => Number(value || 0).toLocaleString('en-GB', { style: 'currency', currency: 'GBP' });
 const dateOnly = value => value ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${String(value).slice(0, 10)}T12:00:00Z`)) : 'Unavailable';
 const key = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
-const FILTERS = [['ready', 'Ready to Release'], ['needs_review', 'Needs Review'], ['released', 'Released'], ['all', 'All']];
+const FILTERS = [['ready', 'Ready for Accounts'], ['needs_review', 'Needs Review'], ['released', 'In Accounts'], ['all', 'All']];
 
 export default function PaymentReleaseWorklist() {
   const canExecute = useBuildLitePermission('payment_release.execute');
@@ -26,12 +26,12 @@ export default function PaymentReleaseWorklist() {
 
   const release = async () => {
     setBusy(true);
-    setFeedback('Releasing authorised payments to Accounts…');
+    setFeedback('Accepting authorised payments into Accounts…');
     try {
       const result = await releasePayments({
-        idempotencyKey: key(), reason: 'Finance release to Accounts', paymentAuthorityDecisionIds: selected,
+        idempotencyKey: key(), reason: 'Accounts handoff accepted', paymentAuthorityDecisionIds: selected,
       });
-      setFeedback(`${result.itemCount} payment${result.itemCount === 1 ? '' : 's'} released to Accounts: ${gbp(result.totalReleased)}. Not paid or exported.`);
+      setFeedback(`${result.itemCount} authorised payment${result.itemCount === 1 ? '' : 's'} accepted into Accounts: ${gbp(result.totalReleased)}. Not exported, posted or paid.`);
       setSelected([]);
       setConfirming(false);
       await load();
@@ -40,38 +40,36 @@ export default function PaymentReleaseWorklist() {
     } finally { setBusy(false); }
   };
 
-  if (!canExecute) return <section className="po-module-card"><h1>Payment Release</h1><p>You do not have permission to release payments to Accounts.</p></section>;
+  if (!canExecute) return <section className="po-module-card"><h1>Accounts payments</h1><p>You do not have permission to accept authorised payments into Accounts.</p></section>;
 
   return <section className="po-module-card payment-release-worklist">
-    <header><p className="batch-approval-shell__eyebrow">Finance execution</p><h1>Payment Release</h1><p>Release previously authorised cash to Accounts. This does not mean paid, exported or reconciled.</p></header>
+    <header><p className="batch-approval-shell__eyebrow">Accounts handoff</p><h1>Accounts payments</h1><p>These payment instructions have already received commercial approval. Accepting them records entry into the Accounts process only; it does not mean exported, posted or paid.</p></header>
     {feedback ? <div role="status" className="po-list-feedback">{feedback}</div> : null}
-    <nav aria-label="Payment Release worklist filters" className="po-ce-drawer__actions">
+    <nav aria-label="Accounts payments worklist filters" className="po-ce-drawer__actions">
       {FILTERS.map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => { setFilter(value); setSelected([]); }}>{label} ({value === 'all' ? items.length : counts[value]})</button>)}
     </nav>
     <div className="po-table-scroll"><table className="po-data-table">
-      <thead><tr><th>Select</th><th>Development / supplier</th><th>Certificate</th><th>Payment Authority</th><th>Final payment date</th><th>Authorised cash</th><th>Prior released</th><th>Releasable</th><th>Status</th></tr></thead>
+      <thead><tr><th>Select</th><th>Development</th><th>Supplier</th><th>Certificate</th><th>Authorised amount</th><th>Final payment date</th><th>Accounts status</th></tr></thead>
       <tbody>{visible.map(item => <tr key={item.id}>
         <td><input type="checkbox" aria-label={`Select Payment Authority for Certificate ${item.certificateNumber}`} disabled={!item.eligible} checked={selected.includes(item.id)} onChange={() => setSelected(current => current.includes(item.id) ? current.filter(id => id !== item.id) : [...current, item.id])}/></td>
-        <td><strong>{item.development}</strong><br/>{item.supplier}<br/><small>{item.packageTrade} · {item.costCode}</small></td>
-        <td>Certificate {item.certificateNumber}<br/><small>{item.noticeMode}</small></td>
-        <td>{dateOnly(item.paymentAuthorityDate)}<br/><small>{item.paymentAuthorityActor}</small></td>
-        <td>{dateOnly(item.finalPaymentDate)}</td>
+        <td><strong>{item.development}</strong></td>
+        <td>{item.supplier}</td>
+        <td>Certificate {item.certificateNumber}</td>
         <td><strong>{gbp(item.authorisedCash)}</strong></td>
-        <td>{gbp(item.previouslyReleased)}</td>
-        <td><strong>{gbp(item.releasableCash)}</strong></td>
-        <td><span className={`po-status-badge po-status-badge--${item.workflowState === 'ready' ? 'approved' : 'pending'}`}>{item.workflowState === 'ready' ? 'Ready to Release' : item.workflowState === 'released' ? 'Released to Accounts' : 'Needs Review'}</span>
+        <td>{dateOnly(item.finalPaymentDate)}</td>
+        <td><span className={`po-status-badge po-status-badge--${item.workflowState === 'ready' ? 'approved' : 'pending'}`}>{item.workflowState === 'ready' ? 'Ready for Accounts' : item.workflowState === 'released' ? 'In Accounts' : 'Needs Review'}</span>
           {item.reasons?.map(reason => <small key={reason}>{reason}</small>)}
           {item.warnings?.map(warning => <small key={warning}>{warning}</small>)}
-          <small>External status: Not exported</small></td>
+          {item.workflowState === 'released' ? <small>Not exported</small> : null}</td>
       </tr>)}</tbody>
     </table></div>
     {!visible.length ? <p>No payments in this view.</p> : null}
-    <div className="po-ce-drawer__actions"><button type="button" disabled={!selected.length || busy} onClick={() => setConfirming(true)}>Review Release ({selected.length})</button><small>{counts.ready} ready · {counts.needs_review} needs review · {counts.released} released</small></div>
+    <div className="po-ce-drawer__actions"><button type="button" disabled={!selected.length || busy} onClick={() => setConfirming(true)}>Accept into Accounts ({selected.length})</button><small>{counts.ready} ready for Accounts · {counts.needs_review} needs review · {counts.released} in Accounts</small></div>
     {confirming ? <div className="po-cert-delete-backdrop" role="presentation"><div className="po-cert-delete modal" role="dialog" aria-modal="true" aria-labelledby="payment-release-title" tabIndex="-1" ref={confirmRef}>
-      <h3 id="payment-release-title">Release selected authorised payments to Accounts?</h3>
+      <h3 id="payment-release-title">Accept selected authorised payments into Accounts?</h3>
       <p>{chosen.length} payment{chosen.length === 1 ? '' : 's'} · {gbp(total)}</p>
-      <p>This records release to the Accounts process only. It does not mean the payment has been paid by a bank, exported, posted, cleared or reconciled.</p>
-      <div className="po-cert-delete__actions modal-actions"><button type="button" disabled={busy} onClick={() => setConfirming(false)}>Cancel</button><button type="button" disabled={busy} onClick={release}>{busy ? 'Releasing…' : 'Release to Accounts'}</button></div>
+      <p>This records that the selected authorised payment instruction{chosen.length === 1 ? ' has' : 's have'} been accepted into the Accounts process. It does not mean {chosen.length === 1 ? 'it has' : 'they have'} been exported, posted or paid.</p>
+      <div className="po-cert-delete__actions modal-actions"><button type="button" disabled={busy} onClick={() => setConfirming(false)}>Cancel</button><button type="button" disabled={busy} onClick={release}>{busy ? 'Accepting…' : 'Accept into Accounts'}</button></div>
     </div></div> : null}
   </section>;
 }

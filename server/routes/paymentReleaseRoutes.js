@@ -8,13 +8,13 @@ const clientId = request => request.buildliteAuth.clientId;
 
 router.get('/queue', requirePermission(PERMISSIONS.PAYMENT_RELEASE_EXECUTE), async (request, response) => {
   try { response.json({ items: await repository.listQueue(clientId(request), request.buildliteAuth) }); }
-  catch (error) { response.status(error.status || 500).json({ message: error.message || 'Failed to load Payment Release worklist.' }); }
+  catch (error) { response.status(error.status || 500).json({ message: error.message || 'Failed to load the Accounts payments worklist.' }); }
 });
 router.post('/batches', requirePermission(PERMISSIONS.PAYMENT_RELEASE_EXECUTE), async (request, response) => {
   try {
     const result = await repository.executeBatch(clientId(request), request.body || {}, request.buildliteAuth);
     response.status(result.status).json(result.ok ? result : { message: result.message });
-  } catch (error) { response.status(error.status || 500).json({ message: error.message || 'Failed to release authorised payments.' }); }
+  } catch (error) { response.status(error.status || 500).json({ message: error.message || 'Failed to accept authorised payments into Accounts.' }); }
 });
 
 module.exports = router;

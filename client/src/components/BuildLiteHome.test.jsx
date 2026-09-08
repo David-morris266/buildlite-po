@@ -29,15 +29,16 @@ describe('GP-1 BuildLite Home', () => {
     expect(view.text()).toContain('David Morris');
     expect(view.text()).toContain('Company: Hawthorn');
     expect(view.text()).not.toContain('Payment Approval');
-    expect(view.text()).not.toContain('Payment Release');
+    expect(view.text()).not.toContain('Accounts');
     expect(view.text()).not.toContain('New Purchase Order');
   });
 
   it('uses permissions rather than role names for workflow links', () => {
     permissions = ['po.create', 'payment_approval_run.view', 'payment_release.execute', 'tenant.configure'];
     const view = renderHome();
-    for (const label of ['New Purchase Order', 'Payment Approval', 'Payment Release', 'Administration']) expect(view.text()).toContain(label);
-    const release = view.buttons().find(button => button.textContent.includes('Payment Release'));
+    for (const label of ['New Purchase Order', 'Payment Approval', 'Accounts', 'Administration']) expect(view.text()).toContain(label);
+    expect(view.text()).not.toContain('Payment Release');
+    const release = view.buttons().find(button => button.textContent.includes('Accounts'));
     act(() => release.click());
     expect(view.onNavigate).toHaveBeenCalledWith({ view: 'payment-release' });
   });

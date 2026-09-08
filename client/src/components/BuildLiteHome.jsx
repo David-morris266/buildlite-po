@@ -31,7 +31,7 @@ export default function BuildLiteHome({ onNavigate }) {
       </section>
       {canViewApproval || canRelease ? <section className="po-module-card"><h2>Payment control</h2>
         {canViewApproval ? <HomeLink title="Payment Approval" description="Review and authorise eligible payments." onClick={() => onNavigate({ view: 'payment-approval' })} /> : null}
-        {canRelease ? <HomeLink title="Payment Release" description="Release authorised payments to Accounts." onClick={() => onNavigate({ view: 'payment-release' })} /> : null}
+        {canRelease ? <HomeLink title="Accounts" description="Accept commercially authorised payments into the Accounts process." onClick={() => onNavigate({ view: 'payment-release' })} /> : null}
       </section> : null}
       {canAdmin ? <section className="po-module-card"><h2>Administration</h2>
         <HomeLink title="Administration" description="Open available tenant and commercial configuration." onClick={() => onNavigate({ view: 'administration' })} />

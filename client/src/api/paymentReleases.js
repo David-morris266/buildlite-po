@@ -1,7 +1,7 @@
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
 async function json(response) {
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message || 'Payment Release request failed.');
+  if (!response.ok) throw new Error(body.message || 'Accounts handoff request failed.');
   return body;
 }
 export async function getPaymentReleaseQueue() {

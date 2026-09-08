@@ -55,7 +55,6 @@ function releaseReadiness(row) {
   if (integrity.verifiable && !integrity.valid) reasons.push('Payment Authority source integrity verification failed.');
   if (integrity.reason === 'unsupported_scheme') reasons.push('Payment Authority source hash scheme is unsupported.');
   if (integrity.reason === 'legacy_unversioned') warnings.push('Legacy Payment Authority hash is not canonically verifiable.');
-  if (!row.supplier_payload?.bankDetailsVerified) warnings.push('Verified bank details are not held; Release stops at Accounts.');
   let workflowState = 'ready';
   if (released !== 0) workflowState = released === authorised && !reversed ? 'released' : 'needs_review';
   else if (reasons.length) workflowState = 'needs_review';

@@ -16,7 +16,9 @@ const sql039 = fs.readFileSync(path.join(__dirname, '..', 'migrations', '039_pay
 
 test('release readiness separates ready, changed authority and released states', () => {
   const row = { signed_cash_amount: '9120.00', reversal_cash: '0', released_cash: '0', certificate_status: 'locked', source_snapshot: {}, source_snapshot_sha256: hashCanonicalJson({}), source_snapshot_hash_scheme: CANONICAL_JSON_SHA256_V1, supplier_payload: {} };
-  assert.equal(release.releaseReadiness(row).workflowState, 'ready');
+  const ready = release.releaseReadiness(row);
+  assert.equal(ready.workflowState, 'ready');
+  assert.deepEqual(ready.warnings, []);
   const changed = release.releaseReadiness({ ...row, reversal_cash: '-500.00' });
   assert.equal(changed.workflowState, 'needs_review'); assert.match(changed.reasons.join(' '), /reapproved/);
   const unsupported = release.releaseReadiness({ ...row, source_snapshot_hash_scheme: 'unknown' });

@@ -36,8 +36,9 @@ describe('GP-1 top navigation', () => {
     document.body.appendChild(container);
     root = createRoot(container);
     act(() => root.render(<BrandHeader activeTab="home" onTab={vi.fn()} />));
-    for (const label of ['Payment Approval', 'Payment Release', 'New Purchase Order', 'Administration']) {
+    for (const label of ['Payment Approval', 'Accounts', 'New Purchase Order', 'Administration']) {
       expect(container.textContent).toContain(label);
     }
+    expect(container.textContent).not.toContain('Payment Release');
   });
 });

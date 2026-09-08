@@ -31,7 +31,7 @@ export default function BrandHeader({ activeTab, onTab }) {
           className={`tab ${activeTab === "payment-release" ? "active" : ""}`}
           onClick={() => onTab("payment-release")}
         >
-          Payment Release
+          Accounts
         </button> : null}
         {canAdmin ? <button
           className={`tab ${activeTab === "administration" ? "active" : ""}`}
