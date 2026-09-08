@@ -22,7 +22,9 @@ function mapItem(row) {
     packageId:row.package_id, costCode:row.cost_code, reference:row.variation_reference,
     contractorReference:row.contractor_reference, description:row.description,
     contractorValue:row.current_contractor_value == null ? null : Number(row.current_contractor_value),
-    qsForecast:Number(row.current_qs_forecast), status:row.status, version:Number(row.version),
+    qsForecast:row.current_qs_forecast == null ? null : Number(row.current_qs_forecast),
+    forecastStatus:row.forecast_status || (row.current_qs_forecast == null ? 'pending' : 'assessed'),
+    status:row.status, version:Number(row.version),
     createdAt:row.created_at, updatedAt:row.updated_at,
     createdBy:{ userId:row.created_by_user_id, membershipId:row.created_by_membership_id,
       providerUserId:row.created_by_provider_user_id, displayName:row.created_by_display_name },
@@ -118,7 +120,7 @@ async function updateForecast(clientId,id,body,auth) {
   const value=Number(body.qsForecast),reason=text(body.reason);
   if(!Number.isFinite(value)||!reason)return fail(400,'A valid signed QS Forecast and reason are required.');
   const db=await pool.connect();try{await db.query('BEGIN');const lock=await lockedItem(db,clientId,id,body.version);if(lock.error){await db.query('ROLLBACK');return lock.error;}if(lock.row.status==='withdrawn'){await db.query('ROLLBACK');return fail(409,'Withdrawn Variation Account items cannot be edited.');}
-    const nextValue=money(value);await db.query('UPDATE package_variation_account_items SET current_qs_forecast=$3,version=$4,updated_at=NOW() WHERE client_id=$1 AND id=$2',[clientId,id,nextValue,lock.next]);
+    const nextValue=money(value);await db.query("UPDATE package_variation_account_items SET current_qs_forecast=$3,forecast_status='assessed',version=$4,updated_at=NOW() WHERE client_id=$1 AND id=$2",[clientId,id,nextValue,lock.next]);
     await db.query(`INSERT INTO package_variation_account_forecast_history(client_id,variation_account_item_id,prior_qs_forecast,new_qs_forecast,reason,item_version,actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,[clientId,id,lock.row.current_qs_forecast,nextValue,reason,lock.next,auth.userId,auth.membershipId,auth.providerUserId,auth.displayName]);await db.query('COMMIT');return {ok:true,status:200,item:await getItem(clientId,id,readerAuth(auth))};
   }catch(error){await db.query('ROLLBACK');throw error;}finally{db.release();}
 }

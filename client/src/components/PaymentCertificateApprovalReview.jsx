@@ -64,10 +64,8 @@ export default function PaymentCertificateApprovalReview({
   applicationComparison,
   auditItems = [],
   valuationDetail = null,
-  onApprove,
   onReturnToDraft,
   busy = false,
-  approveDisabled = false,
 }) {
   const canLock = useBuildLitePermission('certificate.lock');
   const sourceAuthority = certificate?.sourceAuthority || {};
@@ -208,10 +206,10 @@ export default function PaymentCertificateApprovalReview({
       <div className="po-cert-approval__decision">
         <div>
           <strong>Approval decision</strong>
-          <p>Approve &amp; Lock recalculates and revalidates the certificate, then freezes its final financial and Source Authority evidence.</p>
+          <p>Complete approval in Payment Approval. That single decision recalculates and Locks the certificate and creates Payment Authority.</p>
           <p>Return to Draft restores editing and requires a reason.</p>
         </div>
-        {canLock ? <div className="po-cert-approval__decision-actions"><button type="button" className="po-btn-primary" onClick={onApprove} disabled={busy || approveDisabled}>Approve &amp; Lock</button><button type="button" className="po-list-btn-secondary" onClick={onReturnToDraft} disabled={busy}>Return to Draft</button></div> : <p className="po-cert-detail__readonly-note">You do not have permission to approve or return this certificate to Draft.</p>}
+        {canLock ? <div className="po-cert-approval__decision-actions"><span className="po-cert-detail__readonly-note">Use the Payment Approval worklist to approve and authorise this certificate.</span><button type="button" className="po-list-btn-secondary" onClick={onReturnToDraft} disabled={busy}>Return to Draft</button></div> : <p className="po-cert-detail__readonly-note">You do not have permission to return this certificate to Draft.</p>}
       </div>
     </section>
   );

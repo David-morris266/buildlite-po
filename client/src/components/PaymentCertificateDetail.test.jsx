@@ -251,58 +251,6 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     return dialog;
   }
 
-  async function clickDialogConfirm() {
-    const dialog = document.querySelector('[role="dialog"]');
-    expect(dialog).toBeTruthy();
-    const button = [...dialog.querySelectorAll('button')].find((node) =>
-      node.textContent?.includes('Approve & Lock')
-    );
-    expect(button).toBeTruthy();
-    await act(async () => {
-      button.click();
-    });
-  }
-
-  it('E. keeps approval dialog open and surfaces validation errors when approve fails', async () => {
-    renderDetail();
-    clickButton('Approve & Lock');
-    expect(document.body.textContent).toContain('Approve & lock Certificate No. 3?');
-
-    await clickDialogConfirm();
-
-    expect(approveCertificate).toHaveBeenCalledTimes(1);
-    expect(document.body.textContent).toContain('Approve & lock Certificate No. 3?');
-    expect(document.body.textContent).toContain(
-      'CE-0019 is now Closed and can no longer be deducted'
-    );
-  });
-
-  it('disables duplicate approve clicks while the request is in flight', async () => {
-    let resolveApprove;
-    approveCertificate.mockReturnValue(
-      new Promise((resolve) => {
-        resolveApprove = resolve;
-      })
-    );
-    renderDetail();
-    clickButton('Approve & Lock');
-    const dialog = document.querySelector('[role="dialog"]');
-    const confirm = [...dialog.querySelectorAll('button')].find((node) =>
-      node.textContent?.includes('Approve & Lock')
-    );
-    await act(async () => {
-      confirm.click();
-    });
-    expect(confirm.disabled).toBe(true);
-    await act(async () => {
-      confirm.click();
-    });
-    expect(approveCertificate).toHaveBeenCalledTimes(1);
-    await act(async () => {
-      resolveApprove({ ok: true, certificate: { status: 'locked' } });
-    });
-  });
-
   it('opens a visible confirmation without submitting, then Cancel leaves the Draft untouched', () => {
     setDraftCertificate();
     renderDetail();
@@ -422,7 +370,8 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     expect(text).toContain('Submitted by David Morris');
     expect(text).toContain('Contractor Application£10000.00');
     expect(text).toContain('BuildLite Assessment£14834.00');
-    expect(text).toContain('Approve & Lock');
+    expect(text).toContain('Use the Payment Approval worklist');
+    expect(text).not.toContain('Approve & Lock');
     expect(text).toContain('Return to Draft');
     expect(text).not.toContain('Subcontractor Application');
     expect(text).not.toContain('Commercial events');
@@ -436,20 +385,13 @@ describe('PaymentCertificateDetail workflow feedback', () => {
   it('mounts Submitted lifecycle dialogs at viewport level and Cancel restores interaction without mutation', () => {
     renderDetail();
 
-    clickButton('Approve & Lock');
-    expectViewportDialog();
-    clickButton('Cancel');
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(approveCertificate).not.toHaveBeenCalled();
-
     clickButton('Return to Draft');
     expectViewportDialog();
     clickButton('Cancel');
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(rejectCertificate).not.toHaveBeenCalled();
 
-    clickButton('Approve & Lock');
-    expectViewportDialog();
+    expect(approveCertificate).not.toHaveBeenCalled();
   });
 
   it('requires a Return-to-Draft reason before confirming the lifecycle action', () => {

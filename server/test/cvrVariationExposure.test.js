@@ -32,6 +32,19 @@ test('VA forecast with no authority or certification produces its forecast expos
   assert.equal(result.remainingForecastExposure, 17000);
 });
 
+test('unassessed forecast is review-required and is never treated as zero', () => {
+  const result = calculate({
+    item: { qsForecast: null, forecastStatus: 'pending' },
+    allocations: [allocation('variation_order_line', 4500)],
+  });
+  assert.equal(result.ready, false);
+  assert.equal(result.qsForecast, null);
+  assert.equal(result.forecastStatus, 'pending');
+  assert.equal(result.effectiveVaExposure, null);
+  assert.equal(result.vaExposureUplift, null);
+  assert.ok(result.exceptions.includes(EXCEPTIONS.FORECAST_UNASSESSED));
+});
+
 test('new Payment Authority and certification are evidence within forecast, not additions', () => {
   const result = calculate({
     allocations: [allocation('payment_authority', 8000)],

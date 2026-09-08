@@ -1,147 +1,46 @@
-import { useEffect, useMemo, useState } from 'react';
-import { getPaymentApprovalQueue, approvePaymentAuthorityRun } from '../api/paymentAuthority';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { approveSubmittedCertificate, getPaymentApprovalQueue } from '../api/paymentAuthority';
+import { rejectCertificateForPackage } from '../api/paymentCertificates';
 import { useBuildLitePermission } from '../auth/BuildLiteAuthProvider';
 
-const gbp = value => Number(value || 0).toLocaleString('en-GB', { style: 'currency', currency: 'GBP' });
-const key = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
-const FILTERS = [
-  ['ready', 'Ready'],
-  ['needs_review', 'Needs Review'],
-  ['authorised', 'Authorised'],
-  ['all', 'All'],
-];
-const stateOf = item => item.workflowState || (item.eligible ? 'ready' : 'needs_review');
+const gbp=value=>Number(value||0).toLocaleString('en-GB',{style:'currency',currency:'GBP'});
+const dateOnly=value=>value?new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'}).format(new Date(`${String(value).slice(0,10)}T12:00:00Z`)):'Unavailable';
+const dateTime=value=>value?new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Europe/London'}).format(new Date(value)):'Unavailable';
+const makeKey=()=>globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random()}`;
+const FILTERS=[['awaiting_approval','Awaiting Approval'],['authorised','Payment Authorised'],['all','History / All']];
+const stateOf=item=>item.workflowState||'awaiting_approval';
+const commercialExceptions=(item,draft)=>Number(draft?.cashAmount)!==Number(item.intendedPayment)?[{code:'cash_differs_from_payment_position',meaning:'The proposed cash authority differs from the current notified or intended payment position.'}]:[];
 
-export default function PaymentApprovalRun() {
-  const canView = useBuildLitePermission('payment_approval_run.view');
-  const canApprove = useBuildLitePermission('payment_authority.approve');
-  const [items, setItems] = useState([]);
-  const [selected, setSelected] = useState([]);
-  const [drafts, setDrafts] = useState({});
-  const [filter, setFilter] = useState('ready');
-  const [busy, setBusy] = useState(false);
-  const [feedback, setFeedback] = useState('');
+function DecisionDetail({item,draft,setDraft}){
+ const difference=item.applicationDifference??Number(item.gross||0)-Number(item.contractorApplication||0);
+ return <div className="payment-approval-detail">
+  <section><h3>Commercial position</h3><dl><div><dt>Contractor application</dt><dd>{gbp(item.contractorApplication)}</dd></div><div><dt>BuildLite assessment</dt><dd>{gbp(item.gross)}</dd></div><div><dt>Difference</dt><dd>{gbp(difference)}</dd></div><div><dt>Net payment</dt><dd>{gbp(item.intendedPayment)}</dd></div></dl></section>
+  <section><h3>Assessment composition</h3><dl><div><dt>Ordered works</dt><dd>{gbp(item.orderedWorks)}</dd></div><div><dt>Variations</dt><dd>{gbp(item.variations)}</dd></div>{Number(item.otherAssessed)?<div><dt>Other assessed items</dt><dd>{gbp(item.otherAssessed)}</dd></div>:null}<div><dt>Recoveries</dt><dd>{gbp(item.recoveries)}</dd></div></dl></section>
+  {item.lines?.length?<section className="payment-approval-detail__authority"><h3>Commercial authority</h3>{item.lines.map(line=>{const value=draft.lines?.[line.assessmentId]||{};return <article key={line.assessmentId} className="payment-authority-line"><strong>{line.reference} — {line.description}</strong><dl><div><dt>Assessment</dt><dd>{gbp(line.assessment)}</dd></div><div><dt>Prior authority applied</dt><dd>{gbp(line.appliedPriorAuthority)}</dd></div><div><dt>Unsupported</dt><dd>{gbp(line.unapprovedAtLock)}</dd></div></dl>{line.supportingSources?.map(source=><p key={`${source.sourceType}-${source.allocationId||source.sourceReference}`}>Supported by {source.sourceReference}: {gbp(source.appliedAmount)} <small>({gbp(line.authorityEnvelope)} authority envelope)</small></p>)}{Number(line.unresolvedAmount)?<details><summary>Exceptional authority decision</summary>{line.existingSupportOptions?.length?<><label>Existing CE/VO support<select aria-label={`${line.reference} existing authority`} value={value.allocationId||''} onChange={event=>setDraft(item.id,['lines',line.assessmentId,'allocationId'],event.target.value)}><option value="">No existing support applied</option>{line.existingSupportOptions.map(source=><option key={source.id} value={source.id}>{source.reference} — {gbp(source.availableAmount)} available</option>)}</select></label><label>Support applied<input aria-label={`${line.reference} support amount`} type="number" step="0.01" value={value.supportAmount||''} onChange={event=>setDraft(item.id,['lines',line.assessmentId,'supportAmount'],event.target.value)}/></label></>:null}<label>New commercial authority<input aria-label={`${line.reference} new commercial authority`} type="number" step="0.01" value={value.newCommercialAuthority??''} onChange={event=>setDraft(item.id,['lines',line.assessmentId,'newCommercialAuthority'],event.target.value)}/></label><label>Basis<input aria-label={`${line.reference} basis`} value={value.basis||''} onChange={event=>setDraft(item.id,['lines',line.assessmentId,'basis'],event.target.value)}/></label></details>:null}</article>})}</section>:null}
+  <section><h3>Payment and notice</h3><dl><div><dt>Notified sum</dt><dd>{gbp(item.notifiedSum)}</dd></div><div><dt>Intended payment</dt><dd>{gbp(item.intendedPayment)}</dd></div><div><dt>Pay Less reduction</dt><dd>{gbp(item.payLessReduction)}</dd></div><div><dt>Due date</dt><dd>{dateOnly(item.dueDate)}</dd></div><div><dt>Pay Less deadline</dt><dd>{dateOnly(item.payLessDeadline)}</dd></div><div><dt>Final payment date</dt><dd>{dateOnly(item.finalPaymentDate)}</dd></div></dl>{item.hardBlockers?.map(reason=><p className="po-list-feedback po-list-feedback--error" key={reason}>{reason}</p>)}{item.warnings?.map(warning=><div className="po-list-feedback po-list-feedback--warning" key={warning.code}><strong>Warning: {warning.meaning}</strong><p>BuildLite is not confirming contractual compliance.</p></div>)}</section>
+  <section><h3>Provenance</h3><p>Submitted by {item.submittedBy||'Unavailable'} · {dateTime(item.submittedAt)}</p><p>Submitted version {item.certificateVersion}</p></section>
+  {stateOf(item)==='awaiting_approval'?<section><h3>Approval decision</h3><label>Authorised cash<input aria-label={`Certificate ${item.certificateNumber} cash authority`} type="number" step="0.01" value={draft.cashAmount??''} onChange={event=>setDraft(item.id,['cashAmount'],event.target.value)}/></label><label>Decision reason<input aria-label={`Certificate ${item.certificateNumber} decision reason`} value={draft.reason||''} onChange={event=>setDraft(item.id,['reason'],event.target.value)}/></label>{commercialExceptions(item,draft).length?<><div className="po-list-feedback po-list-feedback--warning"><strong>Commercial authority exception</strong><p>{commercialExceptions(item,draft)[0].meaning}</p></div><label><input aria-label={`Acknowledge commercial exception for certificate ${item.certificateNumber}`} type="checkbox" checked={Boolean(draft.warningsAcknowledged)} onChange={event=>setDraft(item.id,['warningsAcknowledged'],event.target.checked)}/> I authorise this exceptional commercial position.</label><label>Exception reason<textarea aria-label={`Certificate ${item.certificateNumber} exception reason`} value={draft.warningComment||''} onChange={event=>setDraft(item.id,['warningComment'],event.target.value)}/></label></>:null}</section>:null}
+ </div>;
+}
 
-  const load = () => getPaymentApprovalQueue().then(rows => {
-    setItems(rows);
-    setDrafts(Object.fromEntries(rows.map(row => [row.id, {
-      cashAmount: row.cashAmountProposed,
-      reason: 'Commercial Director payment approval',
-      lines: Object.fromEntries(row.lines.map(line => [line.assessmentId, {
-        newCommercialAuthority: line.unresolvedAmount ?? line.unapprovedAtLock,
-        basis: 'Payment Authority for locked QS assessment',
-        allocationId: '',
-        supportAmount: '',
-      }])),
-    }])));
-  });
-
-  useEffect(() => { if (canView) load().catch(error => setFeedback(error.message)); }, [canView]);
-  const counts = useMemo(() => items.reduce((result, item) => {
-    result[stateOf(item)] += 1;
-    return result;
-  }, { ready: 0, needs_review: 0, authorised: 0 }), [items]);
-  const visibleItems = useMemo(() => filter === 'all' ? items : items.filter(item => stateOf(item) === filter), [items, filter]);
-
-  const set = (certificateId, path, value) => setDrafts(current => {
-    const copy = structuredClone(current);
-    let target = copy[certificateId];
-    for (let index = 0; index < path.length - 1; index += 1) target = target[path[index]];
-    target[path.at(-1)] = value;
-    return copy;
-  });
-
-  const approve = async () => {
-    setBusy(true);
-    setFeedback('Approving selected certificates…');
-    try {
-      const decisions = selected.map(id => {
-        const item = items.find(row => row.id === id);
-        const draft = drafts[id];
-        return {
-          certificateId: id,
-          certificateVersion: item.certificateVersion,
-          cashAmount: Number(draft.cashAmount),
-          reason: draft.reason,
-          idempotencyKey: key(),
-          lines: item.lines.map(line => {
-            const lineDraft = draft.lines[line.assessmentId];
-            return {
-              assessmentId: line.assessmentId,
-              newCommercialAuthority: Number(lineDraft.newCommercialAuthority),
-              basis: lineDraft.basis,
-              supportUsages: lineDraft.allocationId && Number(lineDraft.supportAmount)
-                ? [{ allocationId: lineDraft.allocationId, amount: Number(lineDraft.supportAmount) }]
-                : [],
-            };
-          }),
-        };
-      });
-      const result = await approvePaymentAuthorityRun({ idempotencyKey: key(), decisions });
-      const failed = result.results?.filter(row => !row.ok) || [];
-      setFeedback(failed.length
-        ? `${result.results.length - failed.length} approved; ${failed.length} failed. ${failed.map(row => row.message).join(' ')}`
-        : 'Payment Authority approved.');
-      setSelected([]);
-      await load();
-    } catch (error) {
-      setFeedback(error.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (!canView) return <section className="po-module-card"><h1>Payment Approval Run</h1><p>You do not have permission to view this work queue.</p></section>;
-
-  return <section className="po-module-card payment-approval-run">
-    <header>
-      <p className="batch-approval-shell__eyebrow">Commercial Director authority</p>
-      <h1>Payment Approval Run</h1>
-      <p>Approve the cash payment envelope and any newly recognised gross commercial authority as separate immutable facts.</p>
-    </header>
-    {feedback ? <div role="status" className="po-list-feedback">{feedback}</div> : null}
-    <nav aria-label="Payment Approval worklist filters" className="po-ce-drawer__actions">
-      {FILTERS.map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => { setFilter(value); setSelected([]); }}>
-        {label} ({value === 'all' ? items.length : counts[value]})
-      </button>)}
-    </nav>
-    <div className="po-table-scroll"><table className="po-data-table">
-      <thead><tr><th>Select</th><th>Certificate</th><th>Final date</th><th>Gross / Net</th><th>Notice / intended</th><th>Unapproved</th><th>New commercial authority</th><th>Cash authority</th><th>Status</th></tr></thead>
-      <tbody>{visibleItems.map(item => {
-        const draft = drafts[item.id] || {};
-        const workflowState = stateOf(item);
-        const authorised = workflowState === 'authorised';
-        const fullReason = item.reasons?.join(' ') || '';
-        return <tr key={item.id}>
-          <td><input aria-label={`Select certificate ${item.certificateNumber}`} type="checkbox" disabled={workflowState !== 'ready' || !item.eligible || !canApprove} checked={selected.includes(item.id)} onChange={() => setSelected(current => current.includes(item.id) ? current.filter(id => id !== item.id) : [...current, item.id])}/></td>
-          <td><strong>{item.development}</strong><br/>{item.subcontractor}<br/>{item.packageTrade} · Certificate {item.certificateNumber}</td>
-          <td>{item.finalPaymentDate || 'Unavailable'}</td>
-          <td>{gbp(item.gross)} / {gbp(item.net)}<br/><small>Retention {gbp(item.retention)} · VAT {gbp(item.vat)}</small></td>
-          <td>{gbp(item.notifiedSum)} / {gbp(item.intendedPayment)}<br/><small>{item.noticeMode || 'Unavailable'} · Pay Less {gbp(item.payLessReduction)}</small></td>
-          <td><strong>{gbp(item.unapprovedAtLock)}</strong><br/><small>Prior cash {gbp(item.priorCashAuthority)}</small></td>
-          {authorised ? <>
-            <td><strong>{gbp(item.authorisedNewCommercialAuthority)}</strong><br/><small>Granted</small></td>
-            <td><strong>{gbp(item.authorisedCashAmount)}</strong><br/><small>Granted · Payment Release not created</small></td>
-          </> : <>
-            <td>{item.lines.map(line => {
-              const lineDraft = draft.lines?.[line.assessmentId] || {};
-              return <div className="payment-authority-line" key={line.assessmentId}>
-                <strong>{line.reference}</strong><small>Locked unapproved {gbp(line.unapprovedAtLock)}</small>
-                {line.existingSupportOptions.length ? <>
-                  <select aria-label={`${line.reference} existing authority`} value={lineDraft.allocationId || ''} onChange={event => set(item.id, ['lines', line.assessmentId, 'allocationId'], event.target.value)}><option value="">No existing support applied</option>{line.existingSupportOptions.map(source => <option key={source.id} value={source.id}>{source.reference} · {gbp(source.availableAmount)} available</option>)}</select>
-                  <input aria-label={`${line.reference} support amount`} type="number" step="0.01" value={lineDraft.supportAmount || ''} onChange={event => set(item.id, ['lines', line.assessmentId, 'supportAmount'], event.target.value)}/>
-                </> : null}
-                <input aria-label={`${line.reference} new commercial authority`} type="number" step="0.01" value={lineDraft.newCommercialAuthority ?? ''} onChange={event => set(item.id, ['lines', line.assessmentId, 'newCommercialAuthority'], event.target.value)}/>
-                <input aria-label={`${line.reference} basis`} value={lineDraft.basis || ''} onChange={event => set(item.id, ['lines', line.assessmentId, 'basis'], event.target.value)}/>
-              </div>;
-            })}</td>
-            <td><label>Cash authority<input aria-label={`Certificate ${item.certificateNumber} cash authority`} type="number" step="0.01" value={draft.cashAmount ?? ''} onChange={event => set(item.id, ['cashAmount'], event.target.value)}/></label></td>
-          </>}
-          <td title={fullReason}><span className={`po-status-badge po-status-badge--${workflowState === 'ready' ? 'approved' : 'pending'}`}>{workflowState === 'ready' ? 'Ready' : workflowState === 'authorised' ? 'Authorised' : 'Needs Review'}</span><small>{item.statusSummary || (workflowState === 'ready' ? 'Ready' : 'Needs review')}</small></td>
-        </tr>;
-      })}</tbody>
-    </table></div>
-    {!visibleItems.length ? <p>No certificates in this view.</p> : null}
-    <div className="po-ce-drawer__actions"><button type="button" disabled={busy || !selected.length || !canApprove} onClick={approve}>{busy ? 'Approving…' : `Approve selected (${selected.length})`}</button><small>{counts.ready} ready · {counts.needs_review} needs review · {counts.authorised} authorised · Payment Release not created by this action.</small></div>
-  </section>;
+export default function PaymentApprovalRun(){
+ const canView=useBuildLitePermission('payment_approval_run.view'),canLock=useBuildLitePermission('certificate.lock'),canApprove=useBuildLitePermission('payment_authority.approve');
+ const [items,setItems]=useState([]),[selected,setSelected]=useState([]),[expanded,setExpanded]=useState([]),[drafts,setDrafts]=useState({}),[filter,setFilter]=useState('awaiting_approval'),[busy,setBusy]=useState(false),[feedback,setFeedback]=useState(''),[confirming,setConfirming]=useState(false),[result,setResult]=useState(null),[returning,setReturning]=useState(null),[returnComment,setReturnComment]=useState('');
+ const load=()=>getPaymentApprovalQueue().then(rows=>{setItems(rows);setDrafts(Object.fromEntries(rows.map(row=>[row.id,{cashAmount:row.cashAmountProposed,reason:'Payment authorisation',warningComment:'',warningsAcknowledged:false,lines:Object.fromEntries((row.lines||[]).map(line=>[line.assessmentId,{newCommercialAuthority:line.unresolvedAmount??line.unapprovedAtLock,basis:'Payment Authority for locked QS assessment',allocationId:'',supportAmount:''}]))}])));});
+ useEffect(()=>{if(canView)load().catch(error=>setFeedback(error.message));},[canView]);
+ const counts=useMemo(()=>items.reduce((out,item)=>({...out,[stateOf(item)]:(out[stateOf(item)]||0)+1}),{awaiting_approval:0,authorised:0}),[items]);
+ const visible=useMemo(()=>filter==='all'?items:items.filter(item=>stateOf(item)===filter),[items,filter]);
+ const chosen=items.filter(item=>selected.includes(item.id)),selectedCash=chosen.reduce((sum,item)=>sum+Number(drafts[item.id]?.cashAmount||0),0),selectedUnsupported=chosen.reduce((sum,item)=>sum+Number(item.unapprovedAtLock||0),0);
+ const setDraft=(id,path,value)=>setDrafts(current=>{const copy=structuredClone(current);let target=copy[id];for(let index=0;index<path.length-1;index+=1)target=target[path[index]];target[path.at(-1)]=value;return copy;});
+ const exceptionsSatisfied=item=>!commercialExceptions(item,drafts[item.id]).length||(drafts[item.id]?.warningsAcknowledged&&String(drafts[item.id]?.warningComment||'').trim());
+ const selectionReady=chosen.length>0&&chosen.every(exceptionsSatisfied);
+ const approve=async()=>{setBusy(true);setFeedback('Approving and authorising selected certificates…');const results=[];for(const id of selected){const item=items.find(row=>row.id===id),draft=drafts[id],exceptions=commercialExceptions(item,draft);const payload={packageId:item.packageId,certificateId:id,certificateVersion:item.certificateVersion,cashAmount:Number(draft.cashAmount),reason:draft.reason,idempotencyKey:makeKey(),lines:(item.lines||[]).map(line=>{const value=draft.lines[line.assessmentId];return{assessmentId:line.assessmentId,newCommercialAuthority:Number(value.newCommercialAuthority),basis:value.basis,supportUsages:value.allocationId&&Number(value.supportAmount)?[{allocationId:value.allocationId,amount:Number(value.supportAmount)}]:[]};}),warningAcknowledgements:exceptions.map(warning=>({code:warning.code,acknowledged:Boolean(draft.warningsAcknowledged)})),warningComment:exceptions.length?draft.warningComment:''};try{const response=await approveSubmittedCertificate(payload);results.push({certificateId:id,...response});}catch(error){results.push({certificateId:id,ok:false,message:error.message});}}const failed=results.filter(row=>!row.ok);setResult({status:failed.length?'completed_with_exceptions':'completed',authorised:results.length-failed.length,failed:failed.length,totalCash:selected.filter(id=>!failed.some(row=>row.certificateId===id)).reduce((sum,id)=>sum+Number(drafts[id].cashAmount||0),0),failures:failed});setFeedback('Commercial approval run completed.');setSelected([]);setConfirming(false);await load();setBusy(false);};
+ const returnToQs=async()=>{if(!returnComment.trim())return;setBusy(true);try{await rejectCertificateForPackage(returning.packageId,returning.id,{version:returning.certificateVersion,comment:returnComment});setReturning(null);setReturnComment('');setFeedback('Certificate returned to QS Draft.');await load();}catch(error){setFeedback(error.message);}finally{setBusy(false);}};
+ if(!canView)return <section className="po-module-card"><h1>Payment Approval</h1><p>You do not have permission to view this work queue.</p></section>;
+ return <section className="po-module-card payment-approval-run"><header><p className="batch-approval-shell__eyebrow">Commercial approval</p><h1>Payment Approval</h1><p>Approve and Lock submitted certificates while creating immutable Payment Authority in one decision. Release to Accounts remains separate.</p></header>{feedback?<div role="status" className="po-list-feedback">{feedback}</div>:null}{result?<section className="payment-approval-result"><strong>Commercial approval run {result.status==='completed'?'completed':'completed with exceptions'}</strong><span>Approved and authorised: {result.authorised}</span><span>Failed: {result.failed}</span><span>Total authorised cash: {gbp(result.totalCash)}</span>{result.failures.map(failure=><small key={failure.certificateId}>{failure.message}</small>)}</section>:null}
+ <nav aria-label="Payment Approval worklist filters" className="po-ce-drawer__actions">{FILTERS.map(([value,label])=><button key={value} type="button" aria-pressed={filter===value} onClick={()=>{setFilter(value);setSelected([]);}}>{label} ({value==='all'?items.length:counts[value]})</button>)}</nav>
+ <div className="po-table-scroll"><table className="po-data-table payment-approval-table"><thead><tr><th>Select</th><th>Development</th><th>Supplier</th><th>Certificate / package</th><th>Ordered works</th><th>Variations</th><th>Prior authority</th><th>Unsupported</th><th>Recoveries</th><th>Net payment</th><th>Status</th><th>Review</th></tr></thead><tbody>{visible.map(item=>{const state=stateOf(item),open=expanded.includes(item.id),blocked=!item.eligible,warning=Boolean(item.warnings?.length);return <Fragment key={item.id}><tr className={blocked||warning?'payment-approval-row--exception':''}><td><input aria-label={`Select certificate ${item.certificateNumber}`} type="checkbox" disabled={state!=='awaiting_approval'||blocked||!canLock||!canApprove} checked={selected.includes(item.id)} onChange={()=>setSelected(current=>current.includes(item.id)?current.filter(id=>id!==item.id):[...current,item.id])}/></td><td className="payment-approval-table__identity"><strong>{item.development}</strong></td><td className="payment-approval-table__identity"><strong>{item.subcontractor}</strong></td><td className="payment-approval-table__certificate"><strong>Certificate {item.certificateNumber}</strong><small>{item.packageTrade}</small>{item.finalPaymentDate?<small>Final payment {dateOnly(item.finalPaymentDate)}</small>:null}</td><td>{gbp(item.orderedWorks)}</td><td>{gbp(item.variations)}</td><td>{gbp(item.appliedPriorAuthority)}</td><td><strong>{gbp(item.unapprovedAtLock)}</strong></td><td>{gbp(item.recoveries)}</td><td><strong>{gbp(state==='authorised'?item.authorisedCashAmount:item.intendedPayment)}</strong></td><td title={[...(item.hardBlockers||[]),...(item.warnings||[]).map(value=>value.meaning)].join(' ')}><span className={`po-status-badge po-status-badge--${blocked||warning?'pending':'approved'}`}>{state==='authorised'?'Payment Authorised':blocked?'Approval blocked':'Awaiting Approval'}</span><small>{item.statusSummary}</small></td><td><button type="button" aria-expanded={open} onClick={()=>setExpanded(current=>open?current.filter(id=>id!==item.id):[...current,item.id])}>{open?'Close':'Review'}</button>{state==='awaiting_approval'&&canLock?<button type="button" onClick={()=>setReturning(item)}>Return to QS</button>:null}</td></tr>{open?<tr className="payment-approval-detail-row"><td colSpan="12"><DecisionDetail item={item} draft={drafts[item.id]||{lines:{}}} setDraft={setDraft}/></td></tr>:null}</Fragment>})}</tbody></table></div>
+ {!visible.length?<p>No certificates in this view.</p>:null}<div className="payment-approval-selection"><span>Selected certificates: <strong>{selected.length}</strong></span><span>Total authorised cash: <strong>{gbp(selectedCash)}</strong></span><span>Total unsupported certified gross: <strong>{gbp(selectedUnsupported)}</strong></span><button type="button" disabled={busy||!selectionReady||!canLock||!canApprove} onClick={()=>setConfirming(true)}>Approve &amp; Authorise Selected</button>{chosen.some(item=>!exceptionsSatisfied(item))?<small>Acknowledge each selected commercial exception and add a reason before approval.</small>:null}</div>
+ {confirming?<div className="po-cert-delete-backdrop" role="presentation"><div className="po-cert-delete modal" role="dialog" aria-modal="true" aria-labelledby="combined-confirm"><h3 id="combined-confirm">Approve and authorise selected certificates?</h3><p>{selected.length} selected certificate{selected.length===1?'':'s'} · {gbp(selectedCash)} authorised cash</p><p>BuildLite will approve and Lock each certificate and create its Payment Authority. Current process warnings and any acknowledged commercial exceptions will be frozen in the decision evidence. This does not Release to Accounts and does not record bank payment.</p><div className="modal-actions"><button type="button" disabled={busy} onClick={()=>setConfirming(false)}>Cancel</button><button type="button" disabled={busy} onClick={approve}>{busy?'Approving…':'Approve & Authorise'}</button></div></div></div>:null}
+ {returning?<div className="po-cert-delete-backdrop" role="presentation"><div className="po-cert-delete modal" role="dialog" aria-modal="true" aria-labelledby="return-qs"><h3 id="return-qs">Return Certificate {returning.certificateNumber} to QS?</h3><label>Reason<textarea aria-label="Return to QS reason" value={returnComment} onChange={event=>setReturnComment(event.target.value)}/></label><div className="modal-actions"><button type="button" onClick={()=>setReturning(null)}>Cancel</button><button type="button" disabled={busy||!returnComment.trim()} onClick={returnToQs}>Return to QS</button></div></div></div>:null}</section>;
 }

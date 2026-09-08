@@ -4,6 +4,8 @@ const { PERMISSIONS } = require('../auth/permissions');
 const { noticeReadiness } = require('./paymentRulesV2');
 const { toPence, fromPence } = require('./variationAccountAuthorityRepository');
 const { CANONICAL_JSON_SHA256_V1, hashCanonicalJson, verifyJsonIntegrity } = require('./canonicalJsonIntegrity');
+const { lockCertificateInTransaction } = require('./paymentCertificateRepository');
+const { getCertificateForPackage } = require('./paymentCertificateRepository');
 
 const fail = (status, message) => ({ ok: false, status, message });
 const money = value => fromPence(toPence(value));
@@ -53,6 +55,14 @@ function conciseQueueReason(reasons = []) {
   return 'Needs review';
 }
 
+function frozenUnsupportedGross(certificate, lines = []) {
+  const source = certificate?.payload?.sourceAuthoritySnapshot || {};
+  const frozen = source.unapprovedCertifiedGross ?? source.unapproved_certified_gross;
+  return frozen == null
+    ? fromPence(lines.reduce((sum, line) => sum + toPence(line.unresolvedAmount), 0))
+    : money(frozen);
+}
+
 function eligibility(facts) {
   const reasons = [];
   if (facts.certificate.status !== 'locked') reasons.push('Certificate is not Locked.');
@@ -61,9 +71,42 @@ function eligibility(facts) {
   const notifiedSum = facts.paymentNotice ? money(facts.paymentNotice.notified_sum) : money(facts.certificate.net_value);
   const intendedPayment = facts.intended ? money(facts.intended.intended_amount) : notifiedSum;
   if (toPence(intendedPayment) < toPence(notifiedSum) && !facts.payLess) reasons.push('A valid Issued Pay Less Notice is required for the reduced intended payment.');
-  if (!facts.assessments.length) reasons.push('No Locked Variation Account assessment is available.');
   if (toPence(intendedPayment) === toPence(facts.priorCash)) reasons.push('Payment Authority cash is already fully granted.');
   return { eligible: reasons.length === 0, reasons, noticeMode: facts.readiness.mode, notifiedSum, intendedPayment, payLessReduction: fromPence(toPence(notifiedSum) - toPence(intendedPayment)) };
+}
+
+const APPROVAL_WARNING_DEFINITIONS = Object.freeze({
+  payment_rules_unavailable: 'Governing payment-rule authority is unavailable or requires review.',
+  payment_notice_incomplete: 'The required Payment Notice has not been issued.',
+  pay_less_incomplete: 'The intended payment is below the notified sum and the Pay Less process is incomplete.',
+  final_payment_date_missing: 'The final payment date is unavailable.',
+  cash_differs_from_payment_position: 'The proposed cash authority differs from the current notified or intended payment position.',
+});
+
+function combinedApprovalReadiness(facts) {
+  const position = eligibility(facts);
+  const warnings = [];
+  if (facts.readiness.state !== 'ready') warnings.push({ code: 'payment_rules_unavailable', classification: 'process_warning', meaning: APPROVAL_WARNING_DEFINITIONS.payment_rules_unavailable, underlyingState: facts.readiness.state || 'unavailable' });
+  if (facts.readiness.mode !== 'certificate_as_payment_notice' && !facts.paymentNotice) warnings.push({ code: 'payment_notice_incomplete', classification: 'process_warning', meaning: APPROVAL_WARNING_DEFINITIONS.payment_notice_incomplete, underlyingState: 'not_issued' });
+  if (toPence(position.intendedPayment) < toPence(position.notifiedSum) && !facts.payLess) warnings.push({ code: 'pay_less_incomplete', classification: 'process_warning', meaning: APPROVAL_WARNING_DEFINITIONS.pay_less_incomplete, underlyingState: 'not_issued' });
+  if (!facts.deadline?.final_date_for_payment) warnings.push({ code: 'final_payment_date_missing', classification: 'process_warning', meaning: APPROVAL_WARNING_DEFINITIONS.final_payment_date_missing, underlyingState: 'missing' });
+  return { ...position, eligible: true, reasons: [], noticeMode: position.noticeMode || 'unavailable', warnings };
+}
+
+function approvalIssueEvidence(warnings, commercialExceptions, body, submittedVersion, lockedVersion, auth) {
+  const supplied = new Map((body.warningAcknowledgements || []).map(item => [clean(item.code), item]));
+  const expected = new Set(commercialExceptions.map(item => item.code));
+  if (supplied.size !== (body.warningAcknowledgements || []).length) return fail(400, 'Warning acknowledgements must exactly match the current approval warnings.');
+  if ([...supplied.keys()].some(code => !expected.has(code))) return fail(400, 'Warning acknowledgements must exactly match the current approval warnings.');
+  if (commercialExceptions.some(warning => supplied.get(warning.code)?.acknowledged !== true)) return fail(409, 'Every commercial authority exception must be explicitly acknowledged.');
+  const comment = clean(body.warningComment);
+  if (commercialExceptions.length && !comment) return fail(400, 'A commercial authority exception comment is required.');
+  const acknowledgedAt = new Date().toISOString();
+  const processEvidence = warnings.map(warning => ({ ...warning, acknowledgementRequired: false }));
+  const exceptionEvidence = commercialExceptions.map(warning => ({ ...warning, classification: 'commercial_exception', acknowledgementRequired: true, acknowledged: true, acknowledgementComment: comment,
+    submittedCertificateVersion: Number(submittedVersion), lockedCertificateVersion: Number(lockedVersion), acknowledgedAt,
+    approver: { userId: auth.userId, membershipId: auth.membershipId, providerUserId: auth.providerUserId, displayName: auth.displayName, roleKey: auth.roleKey } }));
+  return { ok: true, evidence: [...processEvidence, ...exceptionEvidence] };
 }
 
 async function supportOptions(db, clientId, assessment) {
@@ -84,9 +127,31 @@ async function priorResolved(db,clientId,assessmentId){const row=(await db.query
 
 async function listQueue(clientId, auth) {
   requireActor(auth, PERMISSIONS.PAYMENT_APPROVAL_RUN_VIEW);
-  const certificates = (await query(`SELECT id FROM package_payment_certificates WHERE client_id=$1 AND status='locked' ORDER BY approved_at,id`, [clientId])).rows;
+  const certificates = (await query(`SELECT c.id,c.package_id,c.status FROM package_payment_certificates c
+    WHERE c.client_id=$1 AND (c.status='submitted' OR EXISTS(SELECT 1 FROM payment_authority_decisions d WHERE d.client_id=c.client_id AND d.certificate_id=c.id))
+    ORDER BY COALESCE(c.submitted_at,c.approved_at),c.id`, [clientId])).rows;
   const items = [];
-  for (const { id } of certificates) {
+  for (const { id,package_id:packageId,status } of certificates) {
+    if(status==='submitted'){
+      const preview=await getCertificateForPackage(clientId,packageId,id);
+      if(!preview.ok)continue;
+      const document=preview.certificate,totals=document.totals,sourceAuthority=document.sourceAuthority||{},application=document.submissionApplicationSnapshot||{};
+      const raw=(await query(`SELECT c.*,p.development_name,p.supplier_label,p.cost_code,p.payload package_payload FROM package_payment_certificates c JOIN packages p ON p.id=c.package_id AND p.client_id=c.client_id WHERE c.client_id=$1 AND c.id=$2`,[clientId,id])).rows[0];
+      const deadline=(await query(`SELECT * FROM package_payment_certificate_deadline_snapshots WHERE client_id=$1 AND certificate_id=$2 AND stage='submission' ORDER BY captured_at DESC LIMIT 1`,[clientId,id])).rows[0]||null;
+      const issued=async type=>(await query(`SELECT s.* FROM package_payment_notice_snapshots s JOIN package_payment_notices n ON n.id=s.notice_id AND n.client_id=s.client_id WHERE s.client_id=$1 AND s.certificate_id=$2 AND s.notice_type=$3 AND s.stage='issued' AND n.status='issued' ORDER BY s.captured_at DESC LIMIT 1`,[clientId,id,type])).rows[0]||null;
+      const paymentNotice=await issued('payment_notice'),payLess=await issued('pay_less_notice');
+      const intended=(await query(`SELECT * FROM package_intended_payment_decisions WHERE client_id=$1 AND certificate_id=$2 AND state='confirmed' ORDER BY decision_version DESC LIMIT 1`,[clientId,id])).rows[0]||null;
+      const assessments=(await query(`SELECT a.*,v.variation_reference,v.description FROM package_variation_account_certificate_assessments a JOIN package_variation_account_items v ON v.id=a.variation_account_item_id AND v.client_id=a.client_id WHERE a.client_id=$1 AND a.certificate_id=$2 AND a.status='draft' ORDER BY v.variation_reference,a.id`,[clientId,id])).rows;
+      const facts={certificate:{...raw,status:'locked',net_value:totals?.netPayment||0},deadline,paymentNotice,payLess,intended,assessments,priorCash:0,priorCommercialAuthority:0,readiness:noticeReadiness(deadline?.governing_terms_snapshot||{})};
+      const ready=combinedApprovalReadiness(facts),hardBlockers=[];
+      if(!totals)hardBlockers.push('Authoritative certificate calculation is unavailable.');
+      const evidence=sourceAuthority.evidence?.variationAssessments||[];
+      const lines=[];
+      for(const assessment of assessments){const snapshot=evidence.find(item=>item.id===assessment.id)||{};lines.push({assessmentId:assessment.id,variationAccountItemId:assessment.variation_account_item_id,reference:assessment.variation_reference,description:assessment.description,assessment:money(assessment.signed_current_assessment),appliedPriorAuthority:money(snapshot.priorAuthority||0),supportingSources:snapshot.authorityClassification?.supportingSources||[],authorityEnvelope:money(snapshot.authorityClassification?.effectiveRecognisedAuthority||snapshot.priorAuthority||0),unapprovedAtLock:money(snapshot.unapprovedAmount||0),previouslyResolved:0,unresolvedAmount:money(snapshot.unapprovedAmount||0),existingSupportOptions:await supportOptions({query},clientId,assessment)});}
+      const unsupported=money(sourceAuthority.unapprovedCertifiedGross||0),notified=paymentNotice?money(paymentNotice.notified_sum):money(totals?.netPayment||0),intendedPayment=intended?money(intended.intended_amount):notified;
+      items.push({id,certificateId:id,packageId,certificateVersion:Number(document.version),certificateNumber:Number(document.certificateNumber),development:raw.development_name,subcontractor:raw.supplier_label,packageTrade:raw.package_payload?.description||raw.cost_code,costCode:raw.cost_code,dueDate:deadline?.due_date||null,paymentNoticeDeadline:deadline?.payment_notice_deadline||null,payLessDeadline:deadline?.pay_less_notice_deadline||null,finalPaymentDate:deadline?.final_date_for_payment||null,submittedBy:document.submittedBy,submittedAt:document.submittedAt,contractorApplication:money(application.comparison?.applicationCurrentGross??application.application?.currentPeriodGrossClaimed??0),applicationDifference:money(application.comparison?.difference??0),orderedWorks:money(sourceAuthority.orderedWorkGross??totals?.matrixGrossThisCertificate??0),variations:money(sourceAuthority.variationAssessmentGross??assessments.reduce((sum,item)=>sum+Number(item.signed_current_assessment||0),0)),otherAssessed:money(sourceAuthority.paymentDiscoveredGross||0),appliedPriorAuthority:fromPence(lines.reduce((sum,line)=>sum+toPence(line.appliedPriorAuthority),0)),gross:money(totals?.grossWorksThisCertificate||0),retention:money(totals?.retention||0),recoveries:money(totals?.recoveryDeductionSigned||0),vat:money(totals?.vat||0),net:money(totals?.netPayment||0),notifiedSum:notified,intendedPayment,payLessReduction:fromPence(toPence(notified)-toPence(intendedPayment)),unapprovedAtLock:unsupported,newCommercialAuthorityProposed:unsupported,cashAmountProposed:intendedPayment,priorCashAuthority:0,releaseStatus:'not_released',workflowState:'awaiting_approval',statusSummary:hardBlockers.length?'Approval blocked':ready.warnings.length?`${ready.warnings.length} warning${ready.warnings.length===1?'':'s'}`:'Awaiting Approval',eligible:hardBlockers.length===0,warnings:ready.warnings,hardBlockers,reasons:hardBlockers,lines});
+      continue;
+    }
     const facts = await loadLockedFacts({ query }, clientId, id);
     const ready = eligibility(facts);
     const lines = [];
@@ -94,25 +159,39 @@ async function listQueue(clientId, auth) {
       const snapshot = assessment.source_authority_snapshot || {};
       const resolved=await priorResolved({query},clientId,assessment.id);lines.push({ assessmentId: assessment.id, variationAccountItemId: assessment.variation_account_item_id,
         reference: assessment.variation_reference, description: assessment.description,
-        assessment: money(assessment.signed_current_assessment), unapprovedAtLock: money(snapshot.unapprovedAmount || 0),previouslyResolved:fromPence(resolved),unresolvedAmount:fromPence(toPence(snapshot.unapprovedAmount||0)-resolved),
+        assessment: money(assessment.signed_current_assessment), appliedPriorAuthority: money(snapshot.priorAuthority || 0),
+        supportingSources: snapshot.authorityClassification?.supportingSources || [],
+        authorityEnvelope: money(snapshot.authorityClassification?.effectiveRecognisedAuthority || snapshot.priorAuthority || 0),
+        unapprovedAtLock: money(snapshot.unapprovedAmount || 0),previouslyResolved:fromPence(resolved),unresolvedAmount:fromPence(toPence(snapshot.unapprovedAmount||0)-resolved),
         existingSupportOptions: await supportOptions({ query }, clientId, assessment) });
     }
-    const unapprovedAtLock = fromPence(lines.reduce((sum, line) => sum + toPence(line.unresolvedAmount), 0));
-    const fullyAuthorised = toPence(facts.priorCash) !== 0 && toPence(facts.priorCash) === toPence(ready.intendedPayment);
-    const workflowState = fullyAuthorised ? 'authorised' : ready.eligible ? 'ready' : 'needs_review';
+    const sourceAuthority = facts.certificate.payload?.sourceAuthoritySnapshot || {};
+    const application = facts.certificate.payload?.lockedApplicationSnapshot || {};
+    const unapprovedAtLock = frozenUnsupportedGross(facts.certificate, lines);
+    const appliedPriorAuthority = fromPence(lines.reduce((sum, line) => sum + toPence(line.appliedPriorAuthority), 0));
+    const workflowState = 'authorised';
     items.push({ id, certificateId: id, certificateVersion: Number(facts.certificate.version), certificateNumber: Number(facts.certificate.certificate_number),
       development: facts.certificate.development_name, subcontractor: facts.certificate.supplier_label,
       packageTrade: facts.certificate.package_payload?.description || facts.certificate.cost_code, costCode: facts.certificate.cost_code,
-      finalPaymentDate: facts.deadline?.final_date_for_payment || null, gross: money(facts.certificate.gross_value),
+      dueDate: facts.deadline?.due_date || null, paymentNoticeDeadline: facts.deadline?.payment_notice_deadline || null,
+      payLessDeadline: facts.deadline?.pay_less_notice_deadline || null, finalPaymentDate: facts.deadline?.final_date_for_payment || null,
+      submittedBy: facts.certificate.submitted_by || null, submittedAt: facts.certificate.submitted_at || null,
+      approvedBy: facts.certificate.approved_by || null, approvedAt: facts.certificate.approved_at || null,
+      contractorApplication: money(application.comparison?.applicationCurrentGross ?? application.application?.currentPeriodGrossClaimed ?? 0),
+      applicationDifference: money(application.comparison?.difference ?? 0),
+      orderedWorks: money(sourceAuthority.orderedWorkGross ?? sourceAuthority.ordered_work_gross ?? facts.certificate.matrix_gross),
+      variations: money(sourceAuthority.variationAssessmentGross ?? facts.assessments.reduce((sum, assessment) => sum + Number(assessment.signed_current_assessment || 0), 0)),
+      otherAssessed: money(sourceAuthority.paymentDiscoveredGross ?? sourceAuthority.payment_discovered_gross ?? 0),
+      appliedPriorAuthority, gross: money(facts.certificate.gross_value),
       retention: money(facts.certificate.retention), recoveries: money(facts.certificate.recovery_signed), vat: money(facts.certificate.vat), net: money(facts.certificate.net_value),
       priorCashAuthority: facts.priorCash, authorisedCashAmount: facts.priorCash,
       authorisedNewCommercialAuthority: facts.priorCommercialAuthority, unapprovedAtLock,
       newCommercialAuthorityProposed: unapprovedAtLock,
       cashAmountProposed: fromPence(toPence(ready.intendedPayment) - toPence(facts.priorCash)), releaseStatus: 'not_released',
-      workflowState, statusSummary: fullyAuthorised ? 'Authority already granted' : ready.eligible ? 'Ready' : conciseQueueReason(ready.reasons),
+      workflowState, statusSummary: 'Payment Authorised',
       severity: workflowState, ...ready, lines });
   }
-  const rank = { ready: 0, needs_review: 1, authorised: 2 };
+  const rank = { awaiting_approval: 0, authorised: 1 };
   return items.sort((a, b) => (rank[a.workflowState] - rank[b.workflowState])
     || String(a.finalPaymentDate || '9999').localeCompare(String(b.finalPaymentDate || '9999'))
     || Math.abs(b.unapprovedAtLock) - Math.abs(a.unapprovedAtLock));
@@ -163,10 +242,10 @@ async function reverseDecision(clientId,decisionId,body,auth){
   }catch(error){await db.query('ROLLBACK');if(error.code==='23505')return fail(409,'Duplicate reversal request.');throw error;}finally{db.release();}
 }
 
-async function approveDecision(db, clientId, runId, input, auth) {
+async function approveDecision(db, clientId, runId, input, auth, options = {}) {
   const facts = await loadLockedFacts(db, clientId, input.certificateId, true);
   if (!facts) return fail(404, 'Certificate not found.');
-  const ready = eligibility(facts);
+  const ready = options.readiness || eligibility(facts);
   if (!ready.eligible) return fail(409, ready.reasons.join(' '));
   if (Number(input.certificateVersion) !== Number(facts.certificate.version)) return fail(409, 'Certificate version changed; refresh the Approval Run.');
   const reason = clean(input.reason), key = clean(input.idempotencyKey);
@@ -196,6 +275,7 @@ async function approveDecision(db, clientId, runId, input, auth) {
   const sourceSnapshot = { certificateId: facts.certificate.id, certificateVersion: Number(facts.certificate.version), noticeMode: ready.noticeMode,
     deadlineSnapshotId: facts.deadline?.id || null, paymentNoticeSnapshotId: facts.paymentNotice?.id || null, payLessSnapshotId: facts.payLess?.id || null,
     intendedPaymentDecisionId: facts.intended?.id || null, intendedPaymentDecisionVersion: facts.intended?.decision_version || null,
+    approvalWarnings: options.approvalWarnings || [],
     lines: frozen.map(item => ({ assessmentId: item.assessment.id, sourceAuthoritySnapshot: item.snapshot, supports: item.supports })) };
   const c = facts.certificate;
   const decision = (await db.query(`INSERT INTO payment_authority_decisions(
@@ -226,9 +306,62 @@ async function approveDecision(db, clientId, runId, input, auth) {
   }
   await db.query(`INSERT INTO payment_authority_audit(client_id,run_id,decision_id,action,detail,actor_user_id,actor_membership_id,
     actor_provider_user_id,actor_display_name) VALUES($1,$2,$3,'approved',$4,$5,$6,$7,$8)`,
-    [clientId,runId,decision.id,JSON.stringify({cashAmount:fromPence(cash)}),...actor(auth)]);
+    [clientId,runId,decision.id,JSON.stringify({cashAmount:fromPence(cash),warningCodes:(options.approvalWarnings||[]).map(item=>item.code),warningAcknowledgementComment:options.warningComment||null}),...actor(auth)]);
   return {ok:true,status:201,decisionId:decision.id};
 }
 
-module.exports = { listQueue, approveRun, reverseDecision, loadLockedFacts, eligibility, supportOptions, conciseQueueReason,
+async function approveSubmittedCertificate(clientId, body, auth, options = {}) {
+  requireActor(auth, PERMISSIONS.CERTIFICATE_LOCK);
+  assertServicePermission(auth, PERMISSIONS.PAYMENT_AUTHORITY_APPROVE);
+  const certificateId = clean(body.certificateId), packageId = clean(body.packageId), idempotencyKey = clean(body.idempotencyKey);
+  if (!certificateId || !packageId || !idempotencyKey) return fail(400, 'Package, certificate and idempotency key are required.');
+  const existing = (await query(`SELECT d.id decision_id,d.certificate_id,d.certificate_version,d.run_id,c.status certificate_status,c.version current_certificate_version
+    FROM payment_authority_decisions d JOIN package_payment_certificates c ON c.id=d.certificate_id AND c.client_id=d.client_id
+    WHERE d.client_id=$1 AND d.idempotency_key=$2`, [clientId, idempotencyKey])).rows[0];
+  if (existing) {
+    if (existing.certificate_id !== certificateId) return fail(409, 'Idempotency key belongs to another certificate.');
+    return { ok: true, status: 200, idempotent: true, decisionId: existing.decision_id, runId: existing.run_id,
+      certificateId, certificateStatus: existing.certificate_status, certificateVersion: Number(existing.current_certificate_version) };
+  }
+  const db = await pool.connect();
+  try {
+    await db.query('BEGIN');
+    const locked = await lockCertificateInTransaction(db, clientId, packageId, certificateId, { version: body.certificateVersion }, { actor: auth.displayName, auth });
+    if (!locked.ok) {
+      const concurrent = (await db.query('SELECT id,run_id,certificate_id FROM payment_authority_decisions WHERE client_id=$1 AND idempotency_key=$2',[clientId,idempotencyKey])).rows[0];
+      await db.query('ROLLBACK');
+      if (concurrent?.certificate_id === certificateId) return {ok:true,status:200,idempotent:true,decisionId:concurrent.id,runId:concurrent.run_id,certificateId,certificateStatus:'locked'};
+      return locked;
+    }
+    if (options.afterLock) await options.afterLock({ db, locked });
+    const facts = await loadLockedFacts(db, clientId, certificateId, true);
+    const readiness = combinedApprovalReadiness(facts);
+    const commercialExceptions = [];
+    if (toPence(body.cashAmount) !== toPence(readiness.intendedPayment)) commercialExceptions.push({ code:'cash_differs_from_payment_position', meaning:APPROVAL_WARNING_DEFINITIONS.cash_differs_from_payment_position, underlyingState:{proposedCash:money(body.cashAmount),intendedPayment:readiness.intendedPayment} });
+    const acknowledgement = approvalIssueEvidence(readiness.warnings, commercialExceptions, body, body.certificateVersion, locked.row.version, auth);
+    if (!acknowledgement.ok) { await db.query('ROLLBACK'); return acknowledgement; }
+    const run = (await db.query(`INSERT INTO payment_authority_runs(client_id,run_reference,idempotency_key,status,summary,
+      created_by_user_id,created_by_membership_id,created_by_provider_user_id,created_by_display_name,completed_at)
+      VALUES($1,$2,$3,'completed','{}',$4,$5,$6,$7,NOW()) RETURNING *`, [clientId, clean(body.runReference)||`PAR-COMB-${idempotencyKey}`, `combined:${idempotencyKey}`,...actor(auth)])).rows[0];
+    await db.query(`INSERT INTO payment_authority_audit(client_id,run_id,action,detail,actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name)
+      VALUES($1,$2,'run_created',$3,$4,$5,$6,$7)`, [clientId,run.id,JSON.stringify({combinedApproval:true,certificateId}),...actor(auth)]);
+    const decisionInput = { ...body, certificateVersion: Number(locked.row.version) };
+    const decision = await approveDecision(db, clientId, run.id, decisionInput, auth, { readiness, approvalWarnings: acknowledgement.evidence, warningComment: clean(body.warningComment) || null });
+    if (!decision.ok) { await db.query('ROLLBACK'); return decision; }
+    await db.query(`UPDATE payment_authority_runs SET summary=$3 WHERE client_id=$1 AND id=$2`, [clientId,run.id,JSON.stringify({combinedApproval:true,certificateId,decisionId:decision.decisionId})]);
+    await db.query(`INSERT INTO payment_authority_audit(client_id,run_id,decision_id,action,detail,actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name)
+      VALUES($1,$2,$3,'run_completed',$4,$5,$6,$7,$8)`, [clientId,run.id,decision.decisionId,JSON.stringify({combinedApproval:true,certificateId}),...actor(auth)]);
+    await db.query('COMMIT');
+    return { ok:true,status:201,runId:run.id,decisionId:decision.decisionId,certificateId,certificateStatus:'locked',certificateVersion:Number(locked.row.version),warnings:acknowledgement.evidence };
+  } catch (error) {
+    await db.query('ROLLBACK');
+    if (error.code === '23505') {
+      const retry = (await query('SELECT id,run_id,certificate_id FROM payment_authority_decisions WHERE client_id=$1 AND idempotency_key=$2',[clientId,idempotencyKey])).rows[0];
+      if (retry?.certificate_id === certificateId) return {ok:true,status:200,idempotent:true,decisionId:retry.id,runId:retry.run_id,certificateId,certificateStatus:'locked'};
+    }
+    throw error;
+  } finally { db.release(); }
+}
+
+module.exports = { listQueue, approveRun, approveSubmittedCertificate, reverseDecision, loadLockedFacts, eligibility, combinedApprovalReadiness, approvalIssueEvidence, supportOptions, conciseQueueReason, frozenUnsupportedGross,
   verifyDecisionSnapshot: decision => verifyJsonIntegrity(decision.source_snapshot, decision.source_snapshot_sha256, decision.source_snapshot_hash_scheme) };

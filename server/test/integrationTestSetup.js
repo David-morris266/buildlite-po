@@ -1,4 +1,5 @@
 const { init } = require("../db");
+const { assertActiveTestDatabase } = require("../utils/testDatabaseGuard");
 
 async function ensureActiveTestClient(pool) {
   const { rows } = await pool.query(
@@ -20,6 +21,7 @@ async function ensureActiveTestClient(pool) {
 }
 
 async function prepareIntegrationTestDatabase(pool) {
+  await assertActiveTestDatabase(pool);
   await init();
   await ensureActiveTestClient(pool);
 }

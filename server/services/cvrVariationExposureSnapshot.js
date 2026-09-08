@@ -5,6 +5,7 @@ const BLOCKING_EXCEPTIONS = new Set([
   'opposing_sign_exposure',
   'cost_code_mapping_ambiguous',
   'incomplete_source_provenance',
+  'forecast_unassessed',
 ]);
 const ACKNOWLEDGEABLE_EXCEPTIONS = new Set([
   'forecast_below_recognised_authority',

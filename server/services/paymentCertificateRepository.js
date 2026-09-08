@@ -752,17 +752,13 @@ async function buildApplicationSnapshot(dbClient, clientId, packageId, row, tota
   };
 }
 
-async function approveCertificateForPackage(clientId, packageId, certificateId, body = {}, { actor, auth } = {}) {
+async function lockCertificateInTransaction(dbClient, clientId, packageId, certificateId, body = {}, { actor, auth } = {}) {
   require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CERTIFICATE_LOCK);
   if (!isValidPackageUuid(packageId)) return invalidPackageUuidResult();
   if (!isValidCertificateUuid(certificateId)) return invalidCertificateUuidResult();
 
-  const dbClient = await pool.connect();
-  try {
-    await dbClient.query("BEGIN");
     const pkg = await findPackageRow(clientId, packageId, dbClient, { forUpdate: true });
     if (!pkg) {
-      await dbClient.query("ROLLBACK");
       return { ok: false, status: 404, message: "Package not found." };
     }
 
@@ -770,18 +766,15 @@ async function approveCertificateForPackage(clientId, packageId, certificateId, 
       forUpdate: true,
     });
     if (!row) {
-      await dbClient.query("ROLLBACK");
       return { ok: false, status: 404, message: "Certificate not found." };
     }
 
     const current = await hydrateDocument(clientId, row, dbClient);
     const versionCheck = requireVersion(body, row, current);
     if (!versionCheck.ok) {
-      await dbClient.query("ROLLBACK");
       return versionCheck;
     }
     if (row.status !== CERTIFICATE_STATUSES.submitted) {
-      await dbClient.query("ROLLBACK");
       return { ok: false, status: 409, message: "Only submitted certificates can be approved." };
     }
 
@@ -795,7 +788,6 @@ async function approveCertificateForPackage(clientId, packageId, certificateId, 
       requireMatrix: true,
     });
     if (!prepared.ok) {
-      await dbClient.query("ROLLBACK");
       return prepared;
     }
 
@@ -863,11 +855,24 @@ async function approveCertificateForPackage(clientId, packageId, certificateId, 
       newStatus: CERTIFICATE_STATUSES.locked,
     });
 
-    await dbClient.query("COMMIT");
     return {
       ok: true,
-      certificate: await hydrateDocument(clientId, updated.rows[0]),
+      certificate: await hydrateDocument(clientId, updated.rows[0], dbClient),
+      row: updated.rows[0],
     };
+}
+
+async function approveCertificateForPackage(clientId, packageId, certificateId, body = {}, { actor, auth } = {}) {
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query("BEGIN");
+    const result = await lockCertificateInTransaction(dbClient, clientId, packageId, certificateId, body, { actor, auth });
+    if (!result.ok) {
+      await dbClient.query("ROLLBACK");
+      return result;
+    }
+    await dbClient.query("COMMIT");
+    return { ok: true, certificate: result.certificate };
   } catch (err) {
     await dbClient.query("ROLLBACK");
     throw err;
@@ -984,6 +989,73 @@ async function deleteCertificateForPackage(clientId, packageId, certificateId, b
       return { ok: false, status: 409, message: "This certificate has submission history and must be retained as immutable audit evidence." };
     }
 
+    const immutableBlockers = await dbClient.query(`
+      SELECT source FROM (
+        SELECT 'locked variation assessment' source FROM package_variation_account_certificate_assessments WHERE client_id=$1 AND certificate_id=$2 AND status='locked'
+        UNION ALL SELECT 'locked payment-discovered item' FROM package_payment_discovered_items WHERE client_id=$1 AND certificate_id=$2 AND status='locked'
+        UNION ALL SELECT 'payment timetable snapshot' FROM package_payment_certificate_deadline_snapshots WHERE client_id=$1 AND certificate_id=$2
+        UNION ALL SELECT 'payment notice' FROM package_payment_notices WHERE client_id=$1 AND certificate_id=$2
+        UNION ALL SELECT 'intended-payment decision' FROM package_intended_payment_decisions WHERE client_id=$1 AND certificate_id=$2
+        UNION ALL SELECT 'commercial document' FROM commercial_documents WHERE client_id=$1 AND certificate_id=$2
+        UNION ALL SELECT 'Payment Authority' FROM payment_authority_decisions WHERE client_id=$1 AND certificate_id=$2
+        UNION ALL SELECT 'Payment Release' FROM payment_release_items WHERE client_id=$1 AND certificate_id=$2
+      ) blockers LIMIT 1`, [clientId, certificateId]);
+    if (immutableBlockers.rows[0]) {
+      await dbClient.query("ROLLBACK");
+      return { ok: false, status: 409, message: `This Draft contains ${immutableBlockers.rows[0].source} history and cannot be physically deleted.` };
+    }
+
+    const itemIds = (await dbClient.query(
+      "SELECT id FROM package_payment_discovered_items WHERE client_id=$1 AND certificate_id=$2",
+      [clientId, certificateId]
+    )).rows.map((item) => item.id);
+    if (itemIds.length) {
+      await dbClient.query("DELETE FROM package_variation_account_payment_discovered_links WHERE client_id=$1 AND payment_discovered_item_id=ANY($2::uuid[])", [clientId, itemIds]);
+      await dbClient.query("DELETE FROM package_payment_discovered_regularisation_links WHERE client_id=$1 AND payment_discovered_item_id=ANY($2::uuid[])", [clientId, itemIds]);
+      await dbClient.query("DELETE FROM package_payment_discovered_item_audit WHERE client_id=$1 AND certificate_id=$2", [clientId, certificateId]);
+      await dbClient.query("DELETE FROM package_payment_discovered_items WHERE client_id=$1 AND certificate_id=$2", [clientId, certificateId]);
+    }
+
+    await dbClient.query("DELETE FROM package_variation_account_certificate_assessment_audit WHERE client_id=$1 AND certificate_id=$2", [clientId, certificateId]);
+    await dbClient.query("DELETE FROM package_variation_account_certificate_assessments WHERE client_id=$1 AND certificate_id=$2 AND status<>'locked'", [clientId, certificateId]);
+
+    const applicationIds = (await dbClient.query(
+      "SELECT id FROM subcontract_payment_applications WHERE client_id=$1 AND certificate_id=$2",
+      [clientId, certificateId]
+    )).rows.map((application) => application.id);
+    if (applicationIds.length) {
+      const lineIds = (await dbClient.query(
+        "SELECT id FROM subcontract_payment_application_variation_lines WHERE client_id=$1 AND application_id=ANY($2::uuid[])",
+        [clientId, applicationIds]
+      )).rows.map((line) => line.id);
+      if (lineIds.length) {
+        await dbClient.query("DELETE FROM subcontract_payment_application_variation_audit WHERE client_id=$1 AND line_id=ANY($2::uuid[])", [clientId, lineIds]);
+        await dbClient.query("DELETE FROM subcontract_payment_application_variation_lines WHERE client_id=$1 AND id=ANY($2::uuid[])", [clientId, lineIds]);
+      }
+      await dbClient.query("DELETE FROM subcontract_payment_application_audit WHERE client_id=$1 AND application_id=ANY($2::uuid[])", [clientId, applicationIds]);
+      const revisions = (await dbClient.query(
+        "SELECT id FROM subcontract_payment_applications WHERE client_id=$1 AND id=ANY($2::uuid[]) ORDER BY revision_number DESC",
+        [clientId, applicationIds]
+      )).rows;
+      for (const revision of revisions) await dbClient.query("DELETE FROM subcontract_payment_applications WHERE client_id=$1 AND id=$2", [clientId, revision.id]);
+    }
+
+    const disposableVariationIds = (await dbClient.query(`SELECT v.id
+      FROM package_variation_account_items v
+      WHERE v.client_id=$1 AND v.originating_certificate_id=$2 AND v.forecast_status='pending'
+        AND NOT EXISTS (SELECT 1 FROM package_variation_account_certificate_assessments a WHERE a.client_id=v.client_id AND a.variation_account_item_id=v.id)
+        AND NOT EXISTS (SELECT 1 FROM subcontract_payment_application_variation_lines l WHERE l.client_id=v.client_id AND l.variation_account_item_id=v.id)`,
+    [clientId, certificateId])).rows.map(row => row.id);
+    if (disposableVariationIds.length) {
+      await dbClient.query("DELETE FROM package_variation_account_authority_substitutions WHERE client_id=$1 AND variation_account_item_id=ANY($2::uuid[])", [clientId, disposableVariationIds]);
+      await dbClient.query("DELETE FROM package_variation_account_authority_audit WHERE client_id=$1 AND variation_account_item_id=ANY($2::uuid[])", [clientId, disposableVariationIds]);
+      await dbClient.query("DELETE FROM package_variation_account_authority_allocations WHERE client_id=$1 AND variation_account_item_id=ANY($2::uuid[])", [clientId, disposableVariationIds]);
+      await dbClient.query("DELETE FROM package_variation_account_forecast_history WHERE client_id=$1 AND variation_account_item_id=ANY($2::uuid[])", [clientId, disposableVariationIds]);
+      await dbClient.query("DELETE FROM package_variation_account_contractor_positions WHERE client_id=$1 AND variation_account_item_id=ANY($2::uuid[])", [clientId, disposableVariationIds]);
+      await dbClient.query("DELETE FROM package_variation_account_lifecycle_audit WHERE client_id=$1 AND variation_account_item_id=ANY($2::uuid[])", [clientId, disposableVariationIds]);
+      await dbClient.query("DELETE FROM package_variation_account_items WHERE client_id=$1 AND id=ANY($2::uuid[])", [clientId, disposableVariationIds]);
+    }
+
     await runQuery(
       dbClient,
       `
@@ -1011,6 +1083,7 @@ module.exports = {
   patchCertificateForPackage,
   submitCertificateForPackage,
   buildApplicationSnapshot,
+  lockCertificateInTransaction,
   approveCertificateForPackage,
   rejectCertificateForPackage,
   deleteCertificateForPackage,

@@ -10941,6 +10941,53 @@
   border-top: 2px solid var(--brand-navy, #17324d);
 }
 
+.payment-approval-table { min-width: 1180px; }
+.payment-approval-table th,
+.payment-approval-table td { padding-left: 10px; padding-right: 10px; }
+.payment-approval-table td { vertical-align: middle; color: #e5edf1; background: #151c20; }
+.payment-approval-table tbody tr:nth-child(even):not(.payment-approval-detail-row) td { background: #12191d; }
+.payment-approval-table tbody tr:hover td { color: #e5edf1; background: #0f1417; }
+.payment-approval-row--exception td,
+.payment-approval-table tbody tr.payment-approval-row--exception:hover td { color: #fff7e6; background: #342717; }
+.payment-approval-table td small { display: block; margin-top: .2rem; color: #aebdc6; }
+.payment-approval-table__identity { min-width: 130px; max-width: 185px; }
+.payment-approval-table__certificate { min-width: 145px; }
+.payment-approval-detail-row > td,
+.payment-approval-table tbody tr.payment-approval-detail-row:hover > td { padding: 0; color: #e5edf1; background: #10171b; }
+.payment-approval-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+  color: #e5edf1;
+  background: #10171b;
+}
+.payment-approval-detail section { min-width: 0; }
+.payment-approval-detail h3 { margin: 0 0 .5rem; font-size: .9rem; }
+.payment-approval-detail dl { margin: 0; }
+.payment-approval-detail dl div { display: flex; justify-content: space-between; gap: 1rem; padding: .15rem 0; }
+.payment-approval-detail dd { margin: 0; font-weight: 700; text-align: right; }
+.payment-approval-detail__authority { grid-column: 1 / -1; }
+.payment-approval-detail__exceptions { color: #fdba74; padding-left: 1.25rem; }
+.payment-authority-line { border-top: 1px solid rgba(148, 163, 184, .3); padding: .65rem 0; }
+.payment-authority-line details { margin-top: .5rem; }
+.payment-authority-line label { display: grid; gap: .25rem; margin-top: .5rem; max-width: 32rem; }
+.payment-approval-selection, .payment-approval-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .75rem 1.25rem;
+  margin-top: 1rem;
+  padding: .8rem 1rem;
+  border: 1px solid rgba(148, 163, 184, .32);
+  border-radius: .5rem;
+  color: #e5edf1;
+  background: #10171b;
+}
+.payment-approval-selection strong { color: #fff; font-size: 1rem; }
+.payment-approval-selection button:disabled { color: #94a3b8; }
+.payment-approval-selection button { margin-left: auto; }
+
 .dev-cvr__exception-row {
   display: flex;
   align-items: center;

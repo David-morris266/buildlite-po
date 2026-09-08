@@ -116,3 +116,6 @@ VA-5B adds immutable, canonical-hashed CVR submission-time Variation Account exp
 ### 042_cvr_variation_exposure_acknowledgements.sql
 
 VA-5C adds immutable, authenticated acknowledgements for calculable same-direction VA floor exceptions, bound to one exact submitted CVR exposure attempt. Hard blockers remain unacknowledgeable and no historic acknowledgement is fabricated.
+### 043_certificate_variation_simplification.sql
+
+Adds the explicit assessed/pending QS Forecast state used by internally reconciled certificate variations, and narrowly permits append-only Draft evidence to be removed only while its owning certificate is Draft and has never been submitted.

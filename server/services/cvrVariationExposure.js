@@ -15,6 +15,7 @@ const EXCEPTIONS = Object.freeze({
   OPPOSING_SIGN_EXPOSURE: 'opposing_sign_exposure',
   COST_CODE_MAPPING_AMBIGUOUS: 'cost_code_mapping_ambiguous',
   INCOMPLETE_SOURCE_PROVENANCE: 'incomplete_source_provenance',
+  FORECAST_UNASSESSED: 'forecast_unassessed',
 });
 
 function sameMaterialDirection(values) {
@@ -68,7 +69,9 @@ function calculateVariationExposure({
     !allocationIds.has(substitution.predecessorAllocationId) ||
     !allocationIds.has(substitution.successorAllocationId)
   );
-  if (!item?.id || item?.qsForecast == null || incompleteAllocation || incompleteAssessment || incompleteSubstitution) {
+  const forecastPending = item?.forecastStatus === 'pending' || item?.qsForecast == null;
+  if (forecastPending) exceptions.push(EXCEPTIONS.FORECAST_UNASSESSED);
+  if (!item?.id || incompleteAllocation || incompleteAssessment || incompleteSubstitution) {
     exceptions.push(EXCEPTIONS.INCOMPLETE_SOURCE_PROVENANCE);
   }
 
@@ -77,26 +80,26 @@ function calculateVariationExposure({
     allocations,
     substitutions,
   });
-  const forecastPence = toPence(item?.qsForecast);
+  const forecastPence = forecastPending ? null : toPence(item?.qsForecast);
   const recognisedPence = toPence(projection.effectiveRecognisedAuthority);
   const certifiedPence = lockedAssessments.reduce(
     (sum, assessment) => sum + toPence(assessment.currentAssessment),
     0
   );
-  const facts = [forecastPence, recognisedPence, certifiedPence].map(fromPence);
-  const opposingSigns = !sameMaterialDirection(facts);
+  const facts = forecastPending ? [recognisedPence, certifiedPence].map(fromPence) : [forecastPence, recognisedPence, certifiedPence].map(fromPence);
+  const opposingSigns = !forecastPending && !sameMaterialDirection(facts);
   if (opposingSigns) exceptions.push(EXCEPTIONS.OPPOSING_SIGN_EXPOSURE);
 
-  if (!opposingSigns && belowInDirection(fromPence(forecastPence), fromPence(recognisedPence))) {
+  if (!forecastPending && !opposingSigns && belowInDirection(fromPence(forecastPence), fromPence(recognisedPence))) {
     exceptions.push(EXCEPTIONS.FORECAST_BELOW_RECOGNISED_AUTHORITY);
   }
-  if (!opposingSigns && belowInDirection(fromPence(forecastPence), fromPence(certifiedPence))) {
+  if (!forecastPending && !opposingSigns && belowInDirection(fromPence(forecastPence), fromPence(certifiedPence))) {
     exceptions.push(EXCEPTIONS.FORECAST_BELOW_LOCKED_CERTIFICATION);
     exceptions.push(EXCEPTIONS.CERTIFIED_ABOVE_FORECAST);
   }
 
   const cannotCalculate = opposingSigns || exceptions.includes(EXCEPTIONS.COST_CODE_MAPPING_AMBIGUOUS) ||
-    exceptions.includes(EXCEPTIONS.INCOMPLETE_SOURCE_PROVENANCE);
+    exceptions.includes(EXCEPTIONS.INCOMPLETE_SOURCE_PROVENANCE) || exceptions.includes(EXCEPTIONS.FORECAST_UNASSESSED);
   const effectiveExposure = cannotCalculate ? null : directionalEnvelope(facts);
   const effectiveById = new Map(projection.allocations.map((entry) => [entry.id, entry]));
   const authorityInCurrentContractPence = allocations.reduce((sum, allocation) => {
@@ -117,7 +120,8 @@ function calculateVariationExposure({
     costCode: itemCostCode || null,
     contractorValue: item?.contractorValue == null ? null : fromPence(toPence(item.contractorValue)),
     contractorClaim: item?.contractorClaim == null ? null : fromPence(toPence(item.contractorClaim)),
-    qsForecast: fromPence(forecastPence),
+    qsForecast: forecastPending ? null : fromPence(forecastPence),
+    forecastStatus: forecastPending ? 'pending' : 'assessed',
     effectiveRecognisedAuthority: fromPence(recognisedPence),
     cumulativeLockedCertification: fromPence(certifiedPence),
     effectiveVaExposure: effectiveExposure,
@@ -193,6 +197,7 @@ async function loadVariationExposureFacts(db, clientId, developmentId) {
       contractorValue: row.current_contractor_value,
       contractorClaim: claims.get(row.id) ?? null,
       qsForecast: row.current_qs_forecast,
+      forecastStatus: row.forecast_status,
     },
     packageCostCode: row.package_cost_code,
     allocations: (allocationsByItem.get(row.id) || []).map((allocationRow) => ({

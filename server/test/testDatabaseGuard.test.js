@@ -12,6 +12,7 @@ const {
   areEquivalentDatabaseTargets,
 } = require("../utils/databaseUrl");
 const {
+  assertActiveTestDatabase,
   assertTestDatabaseIsolation,
   GUARD_PREFIX,
 } = require("../utils/testDatabaseGuard");
@@ -77,6 +78,31 @@ test("assertTestDatabaseIsolation permits a separate TEST_DATABASE_URL", () => {
       TEST_DATABASE_URL: "postgresql://user:secret@localhost:5432/buildlite_test",
     })
   );
+});
+
+test("integration setup guard fails closed when the active database is not exactly buildlite_test", async () => {
+  const fakePool = { query: async () => ({ rows: [{ database_name: "buildlite_clone" }] }) };
+  await assert.rejects(
+    () => assertActiveTestDatabase(fakePool),
+    error => {
+      assert.match(error.message, /Active database is buildlite_clone; expected buildlite_test/);
+      assert.match(error.message, /No integration-test setup or fixture writes were performed/);
+      return true;
+    }
+  );
+});
+
+test("integration setup guard accepts exactly buildlite_test", async () => {
+  const fakePool = { query: async () => ({ rows: [{ database_name: "buildlite_test" }] }) };
+  await assert.doesNotReject(() => assertActiveTestDatabase(fakePool));
+});
+
+test("shared integration-test setup refuses a clone before any setup write", async () => {
+  const calls = [];
+  const fakePool = { query: async sql => { calls.push(sql); return { rows: [{ database_name: "buildlite_clone" }] }; } };
+  const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
+  await assert.rejects(() => prepareIntegrationTestDatabase(fakePool), /expected buildlite_test/);
+  assert.deepEqual(calls, ["SELECT current_database() AS database_name"]);
 });
 
 test("runtime/dev mode uses DATABASE_URL when BUILDLITE_SERVER_TEST is unset", () => {

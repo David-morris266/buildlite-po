@@ -40,6 +40,7 @@ const {
 const { createPaymentDiscoveredItem, deletePaymentDiscoveredItem } = require('../services/paymentDiscoveredRepository');
 const applicationVariations = require('../services/applicationVariationRepository');
 const vaAssessments = require('../services/variationAccountCertificateAssessmentRepository');
+const certificateVariations = require('../services/certificateVariationWorkflow');
 
 const router = express.Router();
 
@@ -49,6 +50,8 @@ const assessmentResult=(res,result)=>result.ok?(result.status===204?res.status(2
 router.get('/:packageId/certificates/:certificateId/variation-assessments',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_VIEW),async(req,res)=>{try{const active=await getActiveClient();assessmentResult(res,await vaAssessments.listReadiness(active.id,req.params.packageId,req.params.certificateId,req.buildliteAuth));}catch(error){res.status(error.status||500).json({message:error.message||'Failed to load VA assessment readiness.'});}});
 router.post('/:packageId/certificates/:certificateId/variation-assessments',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_ASSESS),async(req,res)=>{try{const active=await getActiveClient();assessmentResult(res,await vaAssessments.saveAssessment(active.id,req.params.packageId,req.params.certificateId,req.body||{},req.buildliteAuth));}catch(error){res.status(error.status||500).json({message:error.message||'Failed to save VA assessment.'});}});
 router.delete('/:packageId/certificates/:certificateId/variation-assessments/:assessmentId',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_ASSESS),async(req,res)=>{try{const active=await getActiveClient();assessmentResult(res,await vaAssessments.withdrawAssessment(active.id,req.params.packageId,req.params.certificateId,req.params.assessmentId,req.buildliteAuth));}catch(error){res.status(error.status||500).json({message:error.message||'Failed to withdraw VA assessment.'});}});
+router.get('/:packageId/certificates/:certificateId/variation-candidates',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_VIEW),async(req,res)=>{try{const active=await getActiveClient();assessmentResult(res,await certificateVariations.listCandidates(active.id,req.params.packageId,req.params.certificateId,req.buildliteAuth));}catch(error){res.status(error.status||500).json({message:error.message||'Failed to load certificate variations.'});}});
+router.post('/:packageId/certificates/:certificateId/payment-applications/:applicationId/variation-lines/:lineId/assess',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_ASSESS),async(req,res)=>{try{const active=await getActiveClient();assessmentResult(res,await certificateVariations.reconcileAndAssess(active.id,req.params.packageId,req.params.certificateId,req.params.applicationId,req.params.lineId,req.body||{},req.buildliteAuth));}catch(error){res.status(error.status||500).json({message:error.message||'Failed to assess certificate variation.'});}});
 
 function provisionalActor(body = {}) {
   return body.updatedBy || body.createdBy || body.actor || null;

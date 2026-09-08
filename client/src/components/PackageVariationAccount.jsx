@@ -55,7 +55,7 @@ export default function PackageVariationAccount({ packageId }) {
       { source: 'variation_account_authority', variationAccountItemId: item.id },
     );
   };
-  const beginForecastRevision = item => setForecastEditor({ itemId: item.id, amount: String(item.qsForecast), reason: '' });
+  const beginForecastRevision = item => setForecastEditor({ itemId: item.id, amount: item.qsForecast == null ? '' : String(item.qsForecast), reason: '' });
   const saveForecastRevision = async item => {
     const saved = await run(() => reviseVariationForecast(item.id, {
       version: item.version,
@@ -79,7 +79,7 @@ function AuthorityItem({ item, sources, form, set, allocate, reverse, canAllocat
   };
   return <article className="po-cert-detail__readonly-note">
     <h4>{item.reference} — {item.description}</h4>
-    <dl className="po-cert-detail__commercial-grid"><div><dt>QS Forecast</dt><dd>{gbp(item.qsForecast)}</dd></div><div><dt>Allocated CE authority</dt><dd>{gbp(p.allocatedCeAuthority)}</dd></div><div><dt>Allocated Issued VO authority</dt><dd>{gbp(p.allocatedVoAuthority)}</dd></div><div><dt>Effective recognised authority</dt><dd>{gbp(p.effectiveRecognisedAuthority)}</dd></div><div><dt>Remaining forecast exposure</dt><dd>{gbp(p.remainingForecastExposure ?? item.qsForecast)}</dd></div></dl>
+    <dl className="po-cert-detail__commercial-grid"><div><dt>QS Forecast</dt><dd>{item.forecastStatus === 'pending' || item.qsForecast == null ? 'Pending assessment' : gbp(item.qsForecast)}</dd></div><div><dt>Allocated CE authority</dt><dd>{gbp(p.allocatedCeAuthority)}</dd></div><div><dt>Allocated Issued VO authority</dt><dd>{gbp(p.allocatedVoAuthority)}</dd></div><div><dt>Effective recognised authority</dt><dd>{gbp(p.effectiveRecognisedAuthority)}</dd></div><div><dt>Remaining forecast exposure</dt><dd>{p.remainingForecastExposure == null ? 'Forecast required' : gbp(p.remainingForecastExposure)}</dd></div></dl>
     {canReviseForecast && item.status === 'active' ? forecastEditor ? <div className="po-cert-application__form">
       <label><span>Revised QS Forecast</span><input aria-label={`${item.reference} revised QS Forecast`} className="input" type="number" step="0.01" value={forecastEditor.amount} onWheel={blurOnWheel} onChange={event => setForecastEditor(current => ({ ...current, amount: event.target.value }))} /></label>
       <label><span>Reason</span><input aria-label={`${item.reference} forecast revision reason`} className="input" value={forecastEditor.reason} onChange={event => setForecastEditor(current => ({ ...current, reason: event.target.value }))} /></label>

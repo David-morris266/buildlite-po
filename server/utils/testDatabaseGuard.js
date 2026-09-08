@@ -37,7 +37,21 @@ function assertTestDatabaseIsolation(env = process.env) {
   }
 }
 
+async function assertActiveTestDatabase(pool, expectedDatabase = "buildlite_test") {
+  const result = await pool.query("SELECT current_database() AS database_name");
+  const activeDatabase = String(result.rows[0]?.database_name || "").toLowerCase();
+  if (activeDatabase !== expectedDatabase) {
+    throw new Error(
+      `${GUARD_PREFIX}\n` +
+        `Active database is ${activeDatabase || "unknown"}; expected ${expectedDatabase}.\n` +
+        "No integration-test setup or fixture writes were performed."
+    );
+  }
+  return activeDatabase;
+}
+
 module.exports = {
   GUARD_PREFIX,
+  assertActiveTestDatabase,
   assertTestDatabaseIsolation,
 };

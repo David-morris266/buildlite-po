@@ -19,7 +19,6 @@ import PaymentCertificateApprovalReview from './PaymentCertificateApprovalReview
 import PaymentCertificateLockedRecord from './PaymentCertificateLockedRecord';
 import { buildCertificateDetailNavigation } from '../navigation/navigationBuilders';
 import {
-  approveCertificate,
   getCertificate,
   getCertificateStatusMeta,
   isCertificateEditable,
@@ -285,30 +284,6 @@ export default function PaymentCertificateDetail({
     }
   }
 
-  async function handleApproveConfirm() {
-    if (lifecycleBusy) return;
-    setLifecycleBusy(true);
-    try {
-      const result = await Promise.resolve(
-        approveCertificate(order.orderKey, certificateId, summary?.totals || {}, order)
-      );
-
-      if (!result.ok) {
-        setWorkflowFeedback({
-          type: 'error',
-          message: result.errors?.[0] || 'Could not approve certificate.',
-        });
-        return;
-      }
-
-      setWorkflowFeedback(null);
-      setDialog(null);
-      refresh();
-    } finally {
-      setLifecycleBusy(false);
-    }
-  }
-
   async function handleRejectConfirm() {
     if (lifecycleBusy) return;
     setLifecycleBusy(true);
@@ -487,16 +462,11 @@ export default function PaymentCertificateDetail({
           totals={summary?.totals}
           applicationComparison={applicationComparison}
           auditItems={auditItems}
-          onApprove={() => {
-            setWorkflowFeedback(null);
-            setDialog('approve');
-          }}
           onReturnToDraft={() => {
             setWorkflowFeedback(null);
             setDialog('reject');
           }}
           busy={lifecycleBusy}
-          approveDisabled={summary?.matrixReady === false}
           valuationDetail={(
             <section className="po-cert-approval__valuation">
               <h3>Ordered Works valuation detail</h3>
@@ -582,29 +552,6 @@ export default function PaymentCertificateDetail({
             Submit the current certificate for approval. It will become read-only until
             approved or returned to Draft. Final financial and source-authority evidence
             is frozen when the certificate is approved and locked.
-          </p>
-        </CertificateDialog>
-      ) : null}
-
-      {dialog === 'approve' ? (
-        <CertificateDialog
-          title={`Approve & lock Certificate No. ${certificate.certificateNumber}?`}
-          confirmLabel="Approve & Lock"
-          onCancel={() => {
-            setWorkflowFeedback(null);
-            setDialog(null);
-          }}
-          onConfirm={handleApproveConfirm}
-          confirmDisabled={lifecycleBusy}
-        >
-          {workflowFeedback?.type === 'error' ? (
-            <div className="po-list-feedback po-list-feedback--error" role="alert">
-              {workflowFeedback.message}
-            </div>
-          ) : null}
-          <p>
-            This is the point of no return. The valuation will become the permanent
-            commercial record for future certificates.
           </p>
         </CertificateDialog>
       ) : null}

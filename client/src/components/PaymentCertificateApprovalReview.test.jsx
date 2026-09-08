@@ -159,18 +159,17 @@ describe('PaymentCertificateApprovalReview', () => {
     expect(detail.textContent).toContain('authority envelope £7,000.00');
   });
 
-  it('shows both lifecycle decisions only through certificate.lock permission', () => {
-    const onApprove = vi.fn();
+  it('removes the duplicate standalone approval and retains permission-controlled Return to Draft', () => {
     const onReturnToDraft = vi.fn();
-    render({ onApprove, onReturnToDraft });
+    render({ onReturnToDraft });
     const buttons = [...host.querySelectorAll('button')];
-    act(() => buttons.find((button) => button.textContent === 'Approve & Lock').click());
+    expect(buttons.some((button) => button.textContent === 'Approve & Lock')).toBe(false);
+    expect(host.textContent).toContain('Use the Payment Approval worklist');
     act(() => buttons.find((button) => button.textContent === 'Return to Draft').click());
-    expect(onApprove).toHaveBeenCalledOnce();
     expect(onReturnToDraft).toHaveBeenCalledOnce();
 
     permissions = [];
-    render({ onApprove, onReturnToDraft });
+    render({ onReturnToDraft });
     expect([...host.querySelectorAll('button')].some((button) => button.textContent === 'Approve & Lock')).toBe(false);
     expect([...host.querySelectorAll('button')].some((button) => button.textContent === 'Return to Draft')).toBe(false);
     expect(host.textContent).toContain('You do not have permission');
