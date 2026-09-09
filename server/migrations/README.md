@@ -119,3 +119,7 @@ VA-5C adds immutable, authenticated acknowledgements for calculable same-directi
 ### 043_certificate_variation_simplification.sql
 
 Adds the explicit assessed/pending QS Forecast state used by internally reconciled certificate variations, and narrowly permits append-only Draft evidence to be removed only while its owning certificate is Draft and has never been submitted.
+
+### 044_development_budget_authority.sql
+
+Adds the immutable Development Budget Authority event journal, exact signed cost-code lines, authenticated posting permission, tenant/development boundaries, canonical source evidence and zero-backfill read-model foundation. Existing CVR budget data is not read, copied or changed.

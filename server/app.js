@@ -33,6 +33,7 @@ const authRoutes = require('./routes/authRoutes');
 const variationAccountRoutes = require('./routes/variationAccountRoutes');
 const paymentAuthorityRoutes = require('./routes/paymentAuthorityRoutes');
 const paymentReleaseRoutes = require('./routes/paymentReleaseRoutes');
+const developmentBudgetRoutes = require('./routes/developmentBudgetRoutes');
 
 function allowedOrigins() {
   const configured = String(process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean);
@@ -71,6 +72,7 @@ function createApp(options = {}) {
   app.use("/api/developments/:developmentId", revenueSettingsRoutes);
   app.use("/api/developments/:developmentId", sellingCostsRoutes);
   app.use("/api/developments/:developmentId", developmentProgrammeRoutes);
+  app.use("/api/developments/:developmentId", developmentBudgetRoutes);
   app.use("/api/developments/:developmentId", prelimsItemRoutes);
   app.use("/api/prelims-templates", prelimsTemplateRoutes);
   app.use("/api/cost-code-classifications", costCodeClassificationRoutes);

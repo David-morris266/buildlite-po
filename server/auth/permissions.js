@@ -14,6 +14,7 @@ const PERMISSIONS = Object.freeze({
   PAYMENT_AUTHORITY_APPROVE: 'payment_authority.approve',
   PAYMENT_AUTHORITY_REVERSE: 'payment_authority.reverse',
   PAYMENT_RELEASE_EXECUTE: 'payment_release.execute',
+  DEVELOPMENT_BUDGET_POST: 'development_budget.post',
 });
 
 module.exports = { PERMISSIONS };
