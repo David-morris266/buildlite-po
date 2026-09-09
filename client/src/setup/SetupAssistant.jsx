@@ -28,6 +28,8 @@ import {
   commitSupplierSection,
 } from './setupCommit';
 import { listCostCodeMasterRecords } from '../admin/costCodeMasterStore';
+import { isCostCodeServerAuthorityEnabled } from '../admin/costCodeAuthority';
+import { ensureAdminCostCodesReady, listAdminCostCodeRecords } from '../admin/costCodeAdminService';
 import { generateNextDevelopmentNumber } from '../admin/numberingService';
 import {
   getFirstIncompleteStep,
@@ -152,15 +154,27 @@ export default function SetupAssistant({
     goToStep(4);
   }
 
-  function handleCostCodesContinue() {
+  async function handleCostCodesContinue() {
+    let masterCount;
+    try {
+      if (isCostCodeServerAuthorityEnabled()) {
+        await ensureAdminCostCodesReady();
+        masterCount = listAdminCostCodeRecords()?.length || 0;
+      } else {
+        masterCount = listCostCodeMasterRecords().length;
+      }
+    } catch (error) {
+      setErrors({ costCodes: error?.message || 'Cost Code Master is unavailable.' });
+      return;
+    }
     const validation = validateCostCodesStep(
       draft.costCodes,
-      listCostCodeMasterRecords().length
+      masterCount
     );
     setErrors(validation);
     if (Object.keys(validation).length) return;
 
-    const result = commitCostCodesSection(draft.costCodes);
+    const result = commitCostCodesSection(draft.costCodes, { masterCount });
     if (!result?.ok) {
       setErrors({ costCodes: result.error || 'Could not complete cost code setup.' });
       return;

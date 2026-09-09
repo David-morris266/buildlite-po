@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { listCostCodeMasterRecords } from '../../admin/costCodeMasterStore';
 
@@ -6,7 +6,9 @@ import { getDemoCostCodeCount } from '../demoCostCodes';
 
 import SetupCostCodeImportWizard from '../components/SetupCostCodeImportWizard';
 
-import { installDemoCostCodes } from '../setupCommit';
+import { installAuthoritativeDemoCostCodes, installDemoCostCodes } from '../setupCommit';
+import { isCostCodeServerAuthorityEnabled } from '../../admin/costCodeAuthority';
+import { ensureAdminCostCodesReady, listAdminCostCodeRecords } from '../../admin/costCodeAdminService';
 
 
 
@@ -24,11 +26,22 @@ export default function OnboardingCostCodes({
 
   const [showWizard, setShowWizard] = useState(false);
 
-  const masterCount = listCostCodeMasterRecords().length;
+  const serverAuthority = isCostCodeServerAuthorityEnabled();
+  const [masterCount, setMasterCount] = useState(() => serverAuthority ? 0 : listCostCodeMasterRecords().length);
+  const [masterError, setMasterError] = useState('');
 
   const showSummary = Boolean(value.importSummary);
 
 
+
+  useEffect(() => {
+    if (!serverAuthority) return undefined;
+    let cancelled = false;
+    ensureAdminCostCodesReady()
+      .then(() => { if (!cancelled) setMasterCount(listAdminCostCodeRecords()?.length || 0); })
+      .catch((error) => { if (!cancelled) setMasterError(error?.message || 'Cost Code Master is unavailable.'); });
+    return () => { cancelled = true; };
+  }, [serverAuthority]);
 
   function setWizardOpen(next) {
 
@@ -40,9 +53,16 @@ export default function OnboardingCostCodes({
 
 
 
-  function handleDemoInstall() {
+  async function handleDemoInstall() {
 
-    const result = installDemoCostCodes();
+    setMasterError('');
+    let result;
+    try {
+      result = serverAuthority ? await installAuthoritativeDemoCostCodes() : installDemoCostCodes();
+    } catch (error) {
+      setMasterError(error?.message || 'Cost Code Master is unavailable.');
+      return;
+    }
 
     if (!result.ok || result.imported === 0) {
 
@@ -54,6 +74,7 @@ export default function OnboardingCostCodes({
 
       });
 
+      setMasterError(result.error || 'Could not install demo cost codes.');
       return;
 
     }
@@ -107,6 +128,7 @@ export default function OnboardingCostCodes({
     });
 
     setWizardOpen(false);
+    setMasterCount((count) => count + Number(summary.imported || 0));
 
   }
 
@@ -159,6 +181,7 @@ export default function OnboardingCostCodes({
       ) : null}
 
       {errors.costCodes ? <p className="setup-step__error">{errors.costCodes}</p> : null}
+      {masterError ? <p className="setup-step__error" role="alert">{masterError}</p> : null}
 
 
 

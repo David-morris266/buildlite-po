@@ -28,6 +28,7 @@ export default defineConfig({
       VITE_LEDGER_SERVER_AUTHORITY: 'false',
       VITE_REVENUE_SERVER_AUTHORITY: 'false',
       VITE_COST_CODE_SERVER_AUTHORITY: 'false',
+      VITE_COST_CODE_AUTHORITY_MODE: 'legacy-local',
     },
   },
   server: {

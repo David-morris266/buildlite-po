@@ -1,12 +1,22 @@
-/**
- * BL-033D.x.2A.1 — Cost Code Master server authority feature flag.
- *
- * Default OFF: browser localStorage (buildlite_cost_codes_master_v1) remains
- * the live Admin Cost Code Master.
- * When true: reads/writes use the server cache/API only.
- * No localStorage fallback and no dual-write.
- */
+/** GP-5A.1 Cost Code Master authority contract. */
+export const COST_CODE_AUTHORITY_MODES = Object.freeze({
+  server: 'server',
+  legacyLocal: 'legacy-local',
+});
+
+export function resolveCostCodeAuthority(env = import.meta.env) {
+  const mode = String(env?.MODE || '').trim().toLowerCase();
+  const requested = String(env?.VITE_COST_CODE_AUTHORITY_MODE || '').trim().toLowerCase();
+  const production = Boolean(env?.PROD) || mode === 'production';
+  return !production && requested === COST_CODE_AUTHORITY_MODES.legacyLocal
+    ? COST_CODE_AUTHORITY_MODES.legacyLocal
+    : COST_CODE_AUTHORITY_MODES.server;
+}
 
 export function isCostCodeServerAuthorityEnabled() {
-  return String(import.meta.env.VITE_COST_CODE_SERVER_AUTHORITY || '').toLowerCase() === 'true';
+  return resolveCostCodeAuthority() === COST_CODE_AUTHORITY_MODES.server;
+}
+
+export function isLegacyLocalCostCodeAuthorityEnabled() {
+  return resolveCostCodeAuthority() === COST_CODE_AUTHORITY_MODES.legacyLocal;
 }

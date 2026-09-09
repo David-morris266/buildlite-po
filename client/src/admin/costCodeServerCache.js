@@ -7,6 +7,7 @@
 
 import { CostCodeApiError, listServerCostCodes } from '../api/costCodes';
 import { isCostCodeServerAuthorityEnabled } from './costCodeAuthority';
+import { COST_CODE_MASTER_UNAVAILABLE_MESSAGE } from './costCodeMessages';
 import { normalizeServerCostCode, normalizeServerCostCodeList } from './costCodeServerMapper';
 
 export class CostCodeCacheError extends Error {
@@ -23,15 +24,15 @@ let loadState = 'idle';
 let loadError = null;
 let loadPromise = null;
 
-function wrapApiError(error, fallbackMessage) {
+function wrapApiError(error) {
   if (error instanceof CostCodeCacheError) return error;
   if (error instanceof CostCodeApiError) {
-    return new CostCodeCacheError(error.message, {
+    return new CostCodeCacheError(COST_CODE_MASTER_UNAVAILABLE_MESSAGE, {
       code: 'API_ERROR',
       status: error.status,
     });
   }
-  return new CostCodeCacheError(error?.message || fallbackMessage, {
+  return new CostCodeCacheError(COST_CODE_MASTER_UNAVAILABLE_MESSAGE, {
     code: 'NETWORK_ERROR',
   });
 }
@@ -96,7 +97,7 @@ async function loadCostCodes() {
     return replaceCachedCostCodes(mapped);
   } catch (error) {
     documents = null;
-    const wrapped = wrapApiError(error, 'Failed to load cost codes.');
+    const wrapped = wrapApiError(error);
     loadState = 'error';
     loadError = wrapped;
     throw wrapped;

@@ -44,6 +44,7 @@ import {
   resetCostCodesApiStore,
   seedMockCostCodes,
   setCostCodesGetReject,
+  setCostCodesPutDelay,
 } from '../../test/mockCostCodesApi';
 
 describe('AdminCostCodesPage (BL-033D.x.2A.2)', () => {
@@ -150,5 +151,55 @@ describe('AdminCostCodesPage (BL-033D.x.2A.2)', () => {
     expect(putClassification).toHaveBeenCalled();
     expect(putClassification.mock.calls[0][0]).toBe('5231');
     expect(localStorage.getItem(COST_CODE_MASTER_KEY)).toBeNull();
+  });
+
+  it('shows truthful empty and persisted legacy metadata values', async () => {
+    authorityEnabled.value = true;
+    seedMockCostCodes([{
+      id: 'cc-4120', code: '4120', description: 'Brickwork', version: 1,
+      commercialHead: null, commercialFamily: null, reportingGroup: null,
+      trade: 'Sub-Con', hierarchyMode: null,
+    }]);
+    await renderPage();
+    const item = [...container.querySelectorAll('button')].find((el) => el.textContent.includes('4120'));
+    await act(async () => { item.click(); await Promise.resolve(); });
+
+    const labelledSelects = [...container.querySelectorAll('label')].reduce((map, label) => {
+      const text = label.querySelector('.dev-form__label')?.textContent;
+      if (text) map.set(text, label.querySelector('select'));
+      return map;
+    }, new Map());
+    const head = labelledSelects.get('Commercial Head');
+    const reporting = labelledSelects.get('Reporting Group');
+    expect(head.value).toBe('');
+    expect(head.selectedOptions[0].textContent).toMatch(/Not set/);
+    expect(reporting.value).toBe('Sub-Con');
+    expect(reporting.selectedOptions[0].textContent).toBe('Sub-Con (persisted)');
+    expect(container.textContent).toContain('UNCLASSIFIED');
+  });
+
+  it('disables duplicate submission while saving and confirms success', async () => {
+    authorityEnabled.value = true;
+    setCostCodesPutDelay(30);
+    seedMockCostCodes([{ id: 'cc-5231', code: '5231', description: 'Cleaning', version: 1 }]);
+    await renderPage();
+    const item = [...container.querySelectorAll('button')].find((el) => el.textContent.includes('5231'));
+    await act(async () => { item.click(); await Promise.resolve(); });
+    const notes = container.querySelector('textarea');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(notes, 'Saved note');
+      notes.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const form = container.querySelector('form');
+    act(() => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+    const savingButton = [...container.querySelectorAll('button')].find((el) => el.textContent.includes('Saving'));
+    expect(savingButton.disabled).toBe(true);
+    act(() => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 40)); });
+    expect(container.textContent).toContain('Cost code saved.');
+    expect(getCostCodesCallCounts().put).toBe(1);
+    expect([...container.querySelectorAll('button')].find((el) => el.textContent.includes('Save Cost Code')).disabled).toBe(false);
   });
 });

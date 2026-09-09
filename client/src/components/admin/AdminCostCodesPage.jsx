@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   getActiveFamilyNames,
   getActiveHeadNames,
@@ -28,6 +28,7 @@ import {
   putCostCodeClassification,
 } from '../../api/costCodeClassifications';
 import AdminPageShell from './AdminPageShell';
+import { COST_CODE_MASTER_UNAVAILABLE_MESSAGE } from '../../admin/costCodeMessages';
 import {
   AdminButton,
   AdminEmptyState,
@@ -82,6 +83,9 @@ export default function AdminCostCodesPage({ onBack }) {
   const [classificationSaving, setClassificationSaving] = useState(false);
   const [masterError, setMasterError] = useState('');
   const [partialSaveMessage, setPartialSaveMessage] = useState('');
+  const [saveMessage, setSaveMessage] = useState('');
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [conflict, setConflict] = useState(false);
 
   async function loadClassifications() {
@@ -108,7 +112,7 @@ export default function AdminCostCodesPage({ onBack }) {
       setRefresh((value) => value + 1);
     } catch (err) {
       if (serverAuthority) {
-        setMasterError(err?.message || 'Could not load cost codes.');
+        setMasterError(err?.message || COST_CODE_MASTER_UNAVAILABLE_MESSAGE);
       }
     } finally {
       setLoading(false);
@@ -147,6 +151,10 @@ export default function AdminCostCodesPage({ onBack }) {
   const tradeOptions = [...new Set((allRecords || []).map((item) => item.reportingGroup || item.trade).filter(Boolean))].sort();
   const families = getActiveFamilyNames(form.commercialHead);
   const trades = getActiveTradeNames(form.commercialHead, form.commercialFamily);
+  const persistedReportingGroup = form.reportingGroup || form.trade || '';
+  const reportingGroupOptions = persistedReportingGroup && !trades.includes(persistedReportingGroup)
+    ? [persistedReportingGroup, ...trades]
+    : trades;
   const showLoading = loading || (serverAuthority && readiness.loadState === 'loading');
   const showError = serverAuthority && (readiness.loadState === 'error' || Boolean(masterError)) && masterUnresolved;
   const listRecords = records || [];
@@ -161,6 +169,7 @@ export default function AdminCostCodesPage({ onBack }) {
     });
     setClassification(lookupClassification(classificationsByKey, record.code));
     setPartialSaveMessage('');
+    setSaveMessage('');
     setConflict(false);
     setMasterError('');
   }
@@ -177,6 +186,7 @@ export default function AdminCostCodesPage({ onBack }) {
     });
     setClassification(unmappedClassification(''));
     setPartialSaveMessage('');
+    setSaveMessage('');
     setConflict(false);
     setMasterError('');
   }
@@ -212,6 +222,10 @@ export default function AdminCostCodesPage({ onBack }) {
   }
 
   async function saveRecord() {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveMessage('');
     setPartialSaveMessage('');
     setMasterError('');
     setConflict(false);
@@ -229,6 +243,8 @@ export default function AdminCostCodesPage({ onBack }) {
       setConflict(Boolean(result.conflict));
       if (result.record) setForm({ ...EMPTY_FORM, ...result.record, trade: result.record.reportingGroup || result.record.trade || '' });
       if (!serverAuthority) window.alert(message);
+      savingRef.current = false;
+      setSaving(false);
       return;
     }
 
@@ -247,6 +263,9 @@ export default function AdminCostCodesPage({ onBack }) {
       setPartialSaveMessage(message);
       if (!serverAuthority) window.alert(classified.message);
     }
+    setSaveMessage('Cost code saved.');
+    savingRef.current = false;
+    setSaving(false);
   }
 
   const unclassifiedCount = (allRecords || []).filter(
@@ -267,6 +286,7 @@ export default function AdminCostCodesPage({ onBack }) {
       {partialSaveMessage ? (
         <p className="admin-inline-warning" role="status">{partialSaveMessage}</p>
       ) : null}
+      {saveMessage ? <p className="admin-inline-success" role="status">{saveMessage}</p> : null}
       {masterError ? (
         <p className="admin-inline-warning" role="alert">{masterError}</p>
       ) : null}
@@ -280,7 +300,7 @@ export default function AdminCostCodesPage({ onBack }) {
         <AdminEmptyState
           icon="⚠"
           title="Could not load cost codes"
-          message={masterError || readiness.error?.message || 'The Cost Code Master is unavailable. This is not an empty tenant.'}
+          message={masterError || readiness.error?.message || COST_CODE_MASTER_UNAVAILABLE_MESSAGE}
           tone="warning"
         />
       ) : null}
@@ -441,6 +461,7 @@ export default function AdminCostCodesPage({ onBack }) {
                       trade: getActiveTradeNames(commercialHead, '')[0] || p.trade,
                     }));
                   }}>
+                    <option value="">— Not set</option>
                     {heads.map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </label>
@@ -461,8 +482,12 @@ export default function AdminCostCodesPage({ onBack }) {
                 <label className="dev-form__field">
                   <span className="dev-form__label">Reporting Group</span>
                   <select className="input" value={form.trade} onChange={(e) => setForm((p) => ({ ...p, trade: e.target.value, reportingGroup: e.target.value }))}>
-                    <option value="">Select reporting group</option>
-                    {trades.map((item) => <option key={item} value={item}>{item}</option>)}
+                    <option value="">— Not set</option>
+                    {reportingGroupOptions.map((item) => (
+                      <option key={item} value={item}>
+                        {item}{item === persistedReportingGroup && !trades.includes(item) ? ' (persisted)' : ''}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="dev-form__field">
@@ -555,8 +580,8 @@ export default function AdminCostCodesPage({ onBack }) {
               </div>
 
               <div className="admin-form__actions">
-                <AdminButton type="submit" variant="primary" disabled={classificationSaving}>
-                  {classificationSaving ? 'Saving…' : 'Save Cost Code'}
+                <AdminButton type="submit" variant="primary" disabled={saving || classificationSaving}>
+                  {saving || classificationSaving ? 'Saving…' : 'Save Cost Code'}
                 </AdminButton>
                 {conflict ? (
                   <AdminButton

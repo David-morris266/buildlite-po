@@ -19,6 +19,7 @@ const store = {
   getCallCount: 0,
   postCallCount: 0,
   putCallCount: 0,
+  putDelayMs: 0,
   activeCallCount: 0,
   lastWritePayload: null,
 };
@@ -33,6 +34,7 @@ function delay() {
 }
 
 export function buildServerCostCodeFixture(overrides = {}) {
+  const has = (key) => Object.prototype.hasOwnProperty.call(overrides, key);
   const code = overrides.code || '5231';
   const description = overrides.description || 'Cleaning';
   return {
@@ -40,11 +42,11 @@ export function buildServerCostCodeFixture(overrides = {}) {
     code,
     description,
     label: overrides.label || `${code} — ${description}`,
-    commercialHead: overrides.commercialHead || 'Preliminaries',
-    commercialFamily: overrides.commercialFamily || '',
-    reportingGroup: overrides.reportingGroup || 'Cleaning',
-    trade: overrides.trade || overrides.reportingGroup || 'Cleaning',
-    hierarchyMode: overrides.hierarchyMode || 'two-level',
+    commercialHead: has('commercialHead') ? overrides.commercialHead : 'Preliminaries',
+    commercialFamily: has('commercialFamily') ? overrides.commercialFamily : '',
+    reportingGroup: has('reportingGroup') ? overrides.reportingGroup : 'Cleaning',
+    trade: has('trade') ? overrides.trade : (has('reportingGroup') ? overrides.reportingGroup : 'Cleaning'),
+    hierarchyMode: has('hierarchyMode') ? overrides.hierarchyMode : 'two-level',
     reportingOrder: overrides.reportingOrder ?? 0,
     defaultVatTreatment: overrides.defaultVatTreatment || 'Standard',
     defaultOrderType: overrides.defaultOrderType || 'S',
@@ -71,6 +73,7 @@ export function resetCostCodesApiStore() {
   store.getCallCount = 0;
   store.postCallCount = 0;
   store.putCallCount = 0;
+  store.putDelayMs = 0;
   store.activeCallCount = 0;
   store.lastWritePayload = null;
 }
@@ -81,6 +84,10 @@ export function seedMockCostCodes(rows = []) {
 
 export function setCostCodesGetDelay(ms) {
   store.getDelayMs = Number(ms) || 0;
+}
+
+export function setCostCodesPutDelay(ms) {
+  store.putDelayMs = Number(ms) || 0;
 }
 
 export function setCostCodesGetReject(error) {
@@ -146,6 +153,7 @@ export async function createServerCostCode(payload = {}) {
 export async function updateServerCostCode(id, payload = {}) {
   store.putCallCount += 1;
   store.lastWritePayload = payload;
+  if (store.putDelayMs) await new Promise((resolve) => setTimeout(resolve, store.putDelayMs));
   const index = store.costCodes.findIndex((row) => row.id === id);
   if (index < 0) throw new CostCodeApiError('Cost code not found.', { status: 404 });
   const current = store.costCodes[index];

@@ -113,75 +113,84 @@ function parseImportMetadata(value, errors) {
   return null;
 }
 
-function sharedFields(body = {}, errors) {
+function sharedFields(body = {}, errors, { requireCommercialMetadata = true, existing = null } = {}) {
   const description = parseRequiredText(
     body.description,
     "description",
     errors,
     MAX_DESCRIPTION_LENGTH
   );
-  const commercialHead = parseRequiredText(
-    body.commercialHead,
-    "commercialHead",
-    errors,
-    MAX_HIERARCHY_NAME_LENGTH
-  );
-  const commercialFamily = parseOptionalText(
-    body.commercialFamily,
-    "commercialFamily",
-    errors,
-    MAX_HIERARCHY_NAME_LENGTH
-  );
-  const reportingGroup = parseRequiredText(
-    body.reportingGroup || body.trade,
-    "reportingGroup",
-    errors,
-    MAX_HIERARCHY_NAME_LENGTH
-  );
-  const hierarchyMode = resolveHierarchyMode(commercialFamily, body.hierarchyMode, errors);
-  const reportingOrder = parseInteger(body.reportingOrder, "reportingOrder", errors, 0);
+  const hasCommercialHead = Object.prototype.hasOwnProperty.call(body, "commercialHead");
+  const hasCommercialFamily = Object.prototype.hasOwnProperty.call(body, "commercialFamily");
+  const hasReportingGroup = Object.prototype.hasOwnProperty.call(body, "reportingGroup")
+    || Object.prototype.hasOwnProperty.call(body, "trade");
+  const commercialMetadataChanged = hasCommercialHead || hasCommercialFamily || hasReportingGroup;
+  const validateCommercialMetadata = requireCommercialMetadata || commercialMetadataChanged;
+  const commercialHeadValue = hasCommercialHead ? body.commercialHead : existing?.commercial_head;
+  const commercialHead = validateCommercialMetadata
+    ? parseRequiredText(commercialHeadValue, "commercialHead", errors, MAX_HIERARCHY_NAME_LENGTH)
+    : existing?.commercial_head ?? null;
+  const commercialFamily = hasCommercialFamily
+    ? parseOptionalText(body.commercialFamily, "commercialFamily", errors, MAX_HIERARCHY_NAME_LENGTH)
+    : existing?.commercial_family ?? "";
+  const reportingGroupValue = hasReportingGroup
+    ? body.reportingGroup || body.trade
+    : existing?.reporting_group;
+  const reportingGroup = validateCommercialMetadata
+    ? parseRequiredText(reportingGroupValue, "reportingGroup", errors, MAX_HIERARCHY_NAME_LENGTH)
+    : existing?.reporting_group ?? null;
+  const trade = hasReportingGroup ? reportingGroup : existing?.trade ?? reportingGroup;
+  const hierarchyMode = Object.prototype.hasOwnProperty.call(body, "hierarchyMode") || commercialMetadataChanged
+    ? resolveHierarchyMode(commercialFamily, body.hierarchyMode, errors)
+    : existing?.hierarchy_mode ?? null;
+  const reportingOrder = parseInteger(body.reportingOrder, "reportingOrder", errors, existing?.reporting_order ?? 0);
   const defaultVatTreatment = parseEnum(
     body.defaultVatTreatment,
     "defaultVatTreatment",
     errors,
     VAT_TREATMENT_KEYS,
-    DEFAULT_VAT_TREATMENT
+    existing?.default_vat_treatment ?? DEFAULT_VAT_TREATMENT
   );
   const defaultOrderType = parseEnum(
     body.defaultOrderType,
     "defaultOrderType",
     errors,
     ORDER_TYPE_KEYS,
-    DEFAULT_ORDER_TYPE
+    existing?.default_order_type ?? DEFAULT_ORDER_TYPE
   );
-  const allowBudget = parseBoolean(body.allowBudget, "allowBudget", errors, true);
+  const allowBudget = parseBoolean(body.allowBudget, "allowBudget", errors, existing?.allow_budget ?? true);
   const allowPurchaseOrders = parseBoolean(
     body.allowPurchaseOrders,
     "allowPurchaseOrders",
     errors,
-    true
+    existing?.allow_purchase_orders ?? true
   );
   const allowLedgerImport = parseBoolean(
     body.allowLedgerImport,
     "allowLedgerImport",
     errors,
-    true
+    existing?.allow_ledger_import ?? true
   );
   const allowForecastAdjustment = parseBoolean(
     body.allowForecastAdjustment,
     "allowForecastAdjustment",
     errors,
-    true
+    existing?.allow_forecast_adjustment ?? true
   );
-  const notes = parseOptionalText(body.notes, "notes", errors, MAX_NOTES_LENGTH);
-  const importMetadata = parseImportMetadata(body.importMetadata, errors);
-  const active = parseBoolean(body.active ?? body.isActive, "active", errors, true);
+  const notes = Object.prototype.hasOwnProperty.call(body, "notes")
+    ? parseOptionalText(body.notes, "notes", errors, MAX_NOTES_LENGTH)
+    : existing?.notes ?? "";
+  const importMetadata = Object.prototype.hasOwnProperty.call(body, "importMetadata")
+    ? parseImportMetadata(body.importMetadata, errors)
+    : existing?.import_metadata ?? null;
+  const active = parseBoolean(body.active ?? body.isActive, "active", errors, existing?.is_active ?? true);
 
   return {
     description,
     commercialHead,
     commercialFamily,
     reportingGroup,
+    trade,
     hierarchyMode,
     reportingOrder,
     defaultVatTreatment,
@@ -204,7 +213,7 @@ function validateCreateCostCodeBody(body = {}) {
   return { ok: true, value: { code, ...fields } };
 }
 
-function validateUpdateCostCodeBody(body = {}, existingCode) {
+function validateUpdateCostCodeBody(body = {}, existing) {
   const errors = [];
   const expectedVersion = parseExpectedVersion(body.version);
   if (expectedVersion == null || expectedVersion < 1) {
@@ -212,16 +221,22 @@ function validateUpdateCostCodeBody(body = {}, existingCode) {
   }
   if (body.code != null && body.code !== "") {
     const incoming = parseCode(body.code, errors, { required: false });
-    if (incoming && incoming !== existingCode) {
+    if (incoming && incoming !== existing.code) {
       errors.push("code cannot be changed after creation.");
     }
   }
-  const fields = sharedFields(body, errors);
+  const descriptionBody = Object.prototype.hasOwnProperty.call(body, "description")
+    ? body
+    : { ...body, description: existing.description };
+  const fields = sharedFields(descriptionBody, errors, {
+    requireCommercialMetadata: false,
+    existing,
+  });
   if (errors.length) return { ok: false, errors };
   return {
     ok: true,
     expectedVersion,
-    value: { code: existingCode, ...fields },
+    value: { code: existing.code, ...fields },
   };
 }
 

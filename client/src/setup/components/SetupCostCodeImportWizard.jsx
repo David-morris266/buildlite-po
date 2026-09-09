@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   COST_CODE_IMPORT_FIELDS,
   COST_CODE_IMPORT_FIELD_ORDER,
@@ -7,12 +7,15 @@ import {
 import {
   detectImportHierarchyMapping,
   executeCostCodeImport,
+  executeAuthoritativeCostCodeImport,
   HIERARCHY_MODE_THREE_LEVEL_DEFAULT_FAMILY,
   HIERARCHY_MODE_TWO_LEVEL,
   inferDefaultHierarchyMode,
   parseCostCodeImportFile,
   validateCostCodeImport,
 } from '../costCodeImportService';
+import { isCostCodeServerAuthorityEnabled } from '../../admin/costCodeAuthority';
+import { ensureAdminCostCodesReady, listAdminCostCodeRecords } from '../../admin/costCodeAdminService';
 import { formatFamilyDisplay } from '../../admin/costCodeHierarchy';
 import { isAcceptedCsvFile } from '../../ledger/csvImport';
 import { isAcceptedExcelFile } from '../../payments/excelImport';
@@ -33,6 +36,17 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState(false);
   const [summary, setSummary] = useState(null);
+  const serverAuthority = isCostCodeServerAuthorityEnabled();
+  const [authoritativeRecords, setAuthoritativeRecords] = useState(null);
+
+  useEffect(() => {
+    if (!serverAuthority) return undefined;
+    let cancelled = false;
+    ensureAdminCostCodesReady()
+      .then(() => { if (!cancelled) setAuthoritativeRecords(listAdminCostCodeRecords() || []); })
+      .catch((loadError) => { if (!cancelled) setError(loadError?.message || 'Cost Code Master is unavailable.'); });
+    return () => { cancelled = true; };
+  }, [serverAuthority]);
 
   const hierarchyDetection = useMemo(() => {
     if (!fieldByColumn.length) return parsed?.hierarchyDetection || null;
@@ -43,9 +57,14 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
     if (!parsed) return null;
     return validateCostCodeImport(
       { ...parsed, fieldByColumn },
-      { hierarchyMode, defaultFamilyName, hierarchyDetection }
+      {
+        hierarchyMode,
+        defaultFamilyName,
+        hierarchyDetection,
+        ...(serverAuthority ? { existingRecords: authoritativeRecords || [] } : {}),
+      }
     );
-  }, [parsed, fieldByColumn, hierarchyMode, defaultFamilyName, hierarchyDetection]);
+  }, [parsed, fieldByColumn, hierarchyMode, defaultFamilyName, hierarchyDetection, serverAuthority, authoritativeRecords]);
 
   const sourcePreview = useMemo(() => {
     if (!parsed) return { headers: [], rows: [] };
@@ -72,18 +91,27 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
     }
   }
 
-  function handleImport() {
+  async function handleImport() {
     if (!validation?.canImport) {
       setError('Resolve validation issues before importing.');
       return;
     }
-    const result = executeCostCodeImport(validation, { hierarchyMode, defaultFamilyName });
-    if (!result.ok) {
-      setError(result.errors?.[0] || 'Import failed.');
-      return;
+    setProcessing(true);
+    try {
+      const result = serverAuthority
+        ? await executeAuthoritativeCostCodeImport(validation, { hierarchyMode, defaultFamilyName })
+        : executeCostCodeImport(validation, { hierarchyMode, defaultFamilyName });
+      if (!result.ok) {
+        setError(result.errors?.[0] || 'Import failed.');
+        return;
+      }
+      setSummary(result);
+      setStepIndex(5);
+    } catch (importError) {
+      setError(importError?.message || 'Import failed.');
+    } finally {
+      setProcessing(false);
     }
-    setSummary(result);
-    setStepIndex(5);
   }
 
   const showHierarchyChoice = Boolean(
@@ -298,7 +326,7 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
           <p>Ready to import <strong>{validation.summary.validCount}</strong> cost codes using <strong>{validation.hierarchyModeLabel}</strong> hierarchy.</p>
           <div className="setup-import-actions">
             <button type="button" className="po-list-btn-secondary" onClick={() => setStepIndex(3)}>Back</button>
-            <button type="button" className="po-btn-primary" onClick={handleImport}>Import cost codes</button>
+            <button type="button" className="po-btn-primary" disabled={processing} onClick={handleImport}>{processing ? 'Importing…' : 'Import cost codes'}</button>
           </div>
         </div>
       ) : null}

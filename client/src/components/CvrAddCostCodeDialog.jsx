@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { listActiveCostCodesForSelect } from '../admin/costCodeMasterStore';
 import { normaliseCostCodeKey } from '../cvr/cvrCalculations';
 import PrelimsCostCodePicker from './PrelimsCostCodePicker';
+import { COST_CODE_MASTER_UNAVAILABLE_MESSAGE } from '../admin/costCodeMessages';
 
 export default function CvrAddCostCodeDialog({
   open,
@@ -43,7 +44,7 @@ export default function CvrAddCostCodeDialog({
       .catch(() => {
         if (!cancelled) {
           setOptions([]);
-          setLoadError('Could not load Cost Code Master.');
+          setLoadError(COST_CODE_MASTER_UNAVAILABLE_MESSAGE);
         }
       });
     return () => {

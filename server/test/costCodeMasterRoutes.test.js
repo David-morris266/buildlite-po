@@ -170,6 +170,66 @@ if (!isDbConfigured()) {
     assert.match(String(renamed.body.message || ""), /cannot be changed/i);
   });
 
+  test("notes-only update preserves legacy-null commercial metadata", async () => {
+    const active = await getActiveClient();
+    const inserted = await pool.query(
+      `INSERT INTO cost_codes (
+        client_id, code, description, trade, commercial_head, commercial_family,
+        reporting_group, hierarchy_mode, notes, version
+      ) VALUES ($1, $2, 'Brickwork', 'Sub-Con', NULL, NULL, NULL, NULL, '', 1)
+      RETURNING id`,
+      [active.id, `LEGACY-4120-${Date.now()}`]
+    );
+    const id = inserted.rows[0].id;
+    trackId(id);
+
+    const updated = await request(app)
+      .put(`/api/cost-codes/${id}`)
+      .send({ version: 1, notes: "GP-5A.1 server authority UAT" });
+    assert.equal(updated.status, 200);
+    assert.equal(updated.body.notes, "GP-5A.1 server authority UAT");
+    assert.equal(updated.body.commercialHead, null);
+    assert.equal(updated.body.commercialFamily, null);
+    assert.equal(updated.body.hierarchyMode, null);
+    assert.equal(updated.body.legacy.trade, "Sub-Con");
+
+    const persisted = await pool.query(
+      `SELECT commercial_head, commercial_family, reporting_group, hierarchy_mode, trade, notes
+       FROM cost_codes WHERE id = $1`,
+      [id]
+    );
+    assert.deepEqual(persisted.rows[0], {
+      commercial_head: null,
+      commercial_family: null,
+      reporting_group: null,
+      hierarchy_mode: null,
+      trade: "Sub-Con",
+      notes: "GP-5A.1 server authority UAT",
+    });
+    const classifications = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM cost_code_classifications
+       WHERE client_id = $1 AND lower(cost_code_key) = lower((SELECT code FROM cost_codes WHERE id = $2))`,
+      [active.id, id]
+    );
+    assert.equal(classifications.rows[0].n, 0);
+
+    const invalidMetadata = await request(app)
+      .put(`/api/cost-codes/${id}`)
+      .send({ version: 2, commercialFamily: "Super-Structure" });
+    assert.equal(invalidMetadata.status, 400);
+    assert.match(invalidMetadata.body.message, /commercialHead is required/);
+    assert.match(invalidMetadata.body.message, /reportingGroup is required/);
+  });
+
+  test("new records still require complete commercial metadata", async () => {
+    const incomplete = await request(app)
+      .post("/api/cost-codes")
+      .send({ code: `INCOMPLETE-${Date.now()}`, description: "Incomplete" });
+    assert.equal(incomplete.status, 400);
+    assert.match(incomplete.body.message, /commercialHead is required/);
+    assert.match(incomplete.body.message, /reportingGroup is required/);
+  });
+
   test("deactivate retains the row and hides it from the compatibility select", async () => {
     const created = await request(app)
       .post("/api/cost-codes")

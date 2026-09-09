@@ -158,7 +158,7 @@ async function updateCostCode(clientId, id, body = {}, { actor } = {}) {
   const existing = await findCostCodeRow(clientId, id);
   if (!existing) return notFound();
 
-  const validated = validateUpdateCostCodeBody(body, existing.code);
+  const validated = validateUpdateCostCodeBody(body, existing);
   if (!validated.ok) {
     return { ok: false, status: 400, errors: validated.errors, message: validated.errors.join(" ") };
   }
@@ -188,7 +188,7 @@ async function updateCostCode(clientId, id, body = {}, { actor } = {}) {
           allow_forecast_adjustment = $12,
           notes = $13,
           import_metadata = $14::jsonb,
-          trade = $4,
+          trade = $19,
           version = version + 1,
           updated_at = NOW(),
           updated_by = $15
@@ -214,6 +214,7 @@ async function updateCostCode(clientId, id, body = {}, { actor } = {}) {
         clientId,
         id,
         validated.expectedVersion,
+        value.trade,
       ]
     );
     if (!updated.rowCount) {

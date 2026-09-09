@@ -4,6 +4,7 @@
 
 import { saveCompanySettings } from '../admin/companyStore';
 import { addCostCodeMasterRecord, getCostCodeMasterStore, listCostCodeMasterRecords } from '../admin/costCodeMasterStore';
+import { ensureAdminCostCodesReady, listAdminCostCodeRecords, saveAdminCostCode } from '../admin/costCodeAdminService';
 import { saveApprovalSettings } from '../admin/approvalSettingsStore';
 import { listClients, addClient } from '../admin/clientStore';
 import { generateNextDevelopmentNumber } from '../admin/numberingService';
@@ -79,8 +80,24 @@ export function installDemoCostCodes() {
   return { ok: true, imported, mode: 'demo' };
 }
 
-export function commitCostCodesSection(costCodes = {}) {
-  const masterCount = listCostCodeMasterRecords().length;
+export async function installAuthoritativeDemoCostCodes() {
+  await ensureAdminCostCodesReady();
+  const records = listAdminCostCodeRecords();
+  if (records == null) return { ok: false, imported: 0, error: 'Cost Code Master is unavailable.' };
+  const existing = new Set(records.map((item) => String(item.code).trim().toLowerCase()));
+  let imported = 0;
+  for (const record of DEMO_COST_CODES) {
+    if (existing.has(record.code.toLowerCase())) continue;
+    const result = await saveAdminCostCode({ isNew: true, form: record });
+    if (!result.ok) return { ok: false, imported, error: result.errors?.[0] || 'Could not install demo cost codes.' };
+    imported += 1;
+    existing.add(record.code.toLowerCase());
+  }
+  return { ok: true, imported, mode: 'demo' };
+}
+
+export function commitCostCodesSection(costCodes = {}, options = {}) {
+  const masterCount = options.masterCount ?? listCostCodeMasterRecords().length;
   if (masterCount === 0) {
     return {
       ok: false,

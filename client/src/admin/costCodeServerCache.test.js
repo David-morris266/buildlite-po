@@ -64,7 +64,7 @@ describe('costCodeServerCache (BL-033D.x.2A.1)', () => {
 
   it('failed GET is error/unresolved and is not an empty master', async () => {
     setCostCodesGetReject();
-    await expect(ensureCostCodesReady()).rejects.toThrow(/Unable to load cost codes/);
+    await expect(ensureCostCodesReady()).rejects.toThrow(/could not load the company Cost Code Master/);
     expect(getCostCodeLoadState()).toBe('error');
     expect(getCachedCostCodes()).toBeNull();
     expect(getCostCodeReadiness().ready).toBe(false);

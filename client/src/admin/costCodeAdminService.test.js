@@ -197,6 +197,42 @@ describe('BL-033D.x.2A.2 Admin cost-code authority', () => {
     expect(listAdminCostCodeRecords()[0].description).toBe('Night cleaning');
   });
 
+  it('ON notes-only edit preserves a real-shaped legacy master row without inventing metadata', async () => {
+    authorityEnabled.value = true;
+    seedMockCostCodes([{
+      id: 'cc-4120',
+      code: '4120',
+      description: 'Brickwork',
+      commercialHead: null,
+      commercialFamily: null,
+      reportingGroup: null,
+      trade: 'Sub-Con',
+      hierarchyMode: null,
+      version: 1,
+    }]);
+    await ensureAdminCostCodesReady();
+    const previous = listAdminCostCodeRecords()[0];
+    expect(previous.commercialHead).toBe('');
+    expect(previous.reportingGroup).toBe('Sub-Con');
+
+    const updated = await saveAdminCostCode({
+      isNew: false,
+      id: previous.id,
+      previous,
+      form: { ...previous, notes: 'GP-5A.1 server authority UAT' },
+    });
+
+    expect(updated.ok).toBe(true);
+    expect(getCostCodesCallCounts().lastWritePayload).toEqual({
+      notes: 'GP-5A.1 server authority UAT',
+      version: 1,
+    });
+    expect(updated.record.commercialHead).toBeNull();
+    expect(updated.record.reportingGroup).toBeNull();
+    expect(updated.record.trade).toBe('Sub-Con');
+    expect(updated.record.hierarchyMode).toBeNull();
+  });
+
   it('ON deactivate retains the row, hides it from the active selector, and allows reactivate', async () => {
     authorityEnabled.value = true;
     seedMockCostCodes([{ id: 'cc-5231', code: '5231', description: 'Cleaning', version: 1, active: true }]);

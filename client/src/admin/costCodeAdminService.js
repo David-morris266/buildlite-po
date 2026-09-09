@@ -118,24 +118,20 @@ function serverPayloadFromForm(form = {}) {
   };
 }
 
-function metadataChanged(previous, next) {
-  if (!previous) return true;
-  const keys = [
-    'description',
-    'commercialHead',
-    'commercialFamily',
-    'reportingGroup',
-    'trade',
-    'reportingOrder',
-    'defaultVatTreatment',
-    'defaultOrderType',
-    'allowBudget',
-    'allowPurchaseOrders',
-    'allowLedgerImport',
-    'allowForecastAdjustment',
-    'notes',
-  ];
-  return keys.some((key) => String(previous[key] ?? '') !== String(next[key] ?? ''));
+function samePayloadValue(left, right) {
+  if (left && typeof left === 'object') return JSON.stringify(left) === JSON.stringify(right);
+  return String(left ?? '') === String(right ?? '');
+}
+
+function serverUpdatePayloadFromForm(form = {}, previous = {}) {
+  const candidate = serverPayloadFromForm(form);
+  const changed = Object.fromEntries(
+    Object.entries(candidate).filter(([key, value]) => !samePayloadValue(value, previous?.[key]))
+  );
+  const commercialMetadataChanged = ['commercialHead', 'commercialFamily', 'reportingGroup', 'trade']
+    .some((key) => Object.prototype.hasOwnProperty.call(changed, key));
+  if (!commercialMetadataChanged) delete changed.hierarchyMode;
+  return changed;
 }
 
 function fail(status, errors, extras = {}) {
@@ -175,10 +171,10 @@ export async function saveAdminCostCode({ isNew, id, form = {}, previous = null 
 
   let record = previous;
   const payload = {
-    ...serverPayloadFromForm(form),
+    ...serverUpdatePayloadFromForm(form, previous),
     version: form.version ?? previous?.version,
   };
-  if (!previous || metadataChanged(previous, { ...previous, ...form, ...payload })) {
+  if (!previous || Object.keys(payload).some((key) => key !== 'version')) {
     const updated = await updateCostCodeOnServer(id, payload);
     if (!updated.ok) {
       return fail(updated.status || 0, updated.errors, {

@@ -33,6 +33,11 @@ import {
   updateCostCodeMasterRecord,
 
 } from '../admin/costCodeMasterStore';
+import {
+  ensureAdminCostCodesReady,
+  listAdminCostCodeRecords,
+  saveAdminCostCode,
+} from '../admin/costCodeAdminService';
 
 import {
 
@@ -488,7 +493,7 @@ export function executeCostCodeImport(
 
   validationResult,
 
-  { skipExisting = false, hierarchyMode = null, defaultFamilyName = 'General' } = {}
+  { skipExisting = false, hierarchyMode = null } = {}
 
 ) {
 
@@ -686,6 +691,58 @@ export function executeCostCodeImport(
 
   };
 
+}
+
+/** GP-5A.1 server-authoritative Setup import. Never reads or writes the browser master. */
+export async function executeAuthoritativeCostCodeImport(
+  validationResult,
+  { skipExisting = false, hierarchyMode = null } = {}
+) {
+  if (!validationResult?.canImport) {
+    return { ok: false, errors: ['No valid rows to import.'] };
+  }
+  await ensureAdminCostCodesReady();
+  const records = listAdminCostCodeRecords();
+  if (records == null) return { ok: false, errors: ['Cost Code Master is unavailable.'] };
+  const existing = new Map(records.map((item) => [String(item.code || '').trim().toLowerCase(), item]));
+  const resolvedMode = hierarchyMode || validationResult.hierarchyMode || HIERARCHY_MODE_TWO_LEVEL;
+  const hadFamilyMapping = Boolean(validationResult.hierarchyDetection?.hasCommercialFamily);
+  let imported = 0;
+  let updated = 0;
+  let skipped = 0;
+  let rejected = 0;
+  const importErrors = [];
+  const importWarnings = [];
+  const stats = { rowsRead: validationResult.summary?.totalRows || 0, headsCreated: 0, headsMatched: 0, familiesCreated: 0, familiesMatched: 0, reportingGroupsCreated: 0, reportingGroupsMatched: 0 };
+
+  for (const row of validationResult.validRows) {
+    const codeKey = row.code.toLowerCase();
+    const previous = existing.get(codeKey) || null;
+    if (skipExisting && previous) { skipped += 1; continue; }
+    ensureStructureForRow(row, stats);
+    const payload = {
+      code: row.code, description: row.description, commercialHead: row.commercialHead,
+      commercialFamily: row.commercialFamily || '', trade: row.reportingGroup || row.trade,
+      reportingGroup: row.reportingGroup || row.trade, hierarchyMode: row.hierarchyMode || resolvedMode,
+      defaultOrderType: row.defaultOrderType, defaultVatTreatment: row.defaultVatTreatment,
+      reportingOrder: row.reportingOrder, active: row.active,
+      importMetadata: buildImportMetadata({ hierarchyMode: row.hierarchyMode || resolvedMode, hadFamilyMapping, systemGeneratedFamily: Boolean(row.systemGeneratedFamily) }),
+      version: previous?.version,
+    };
+    const result = await saveAdminCostCode({ isNew: !previous, id: previous?.id, form: payload, previous });
+    if (!result.ok) { rejected += 1; importErrors.push(`${row.code}: ${result.errors?.[0] || 'Import failed'}`); continue; }
+    if (previous) updated += 1; else imported += 1;
+    existing.set(codeKey, result.record);
+    importWarnings.push(...(row.warnings || []).map((message) => ({ code: row.code, message })));
+  }
+
+  return {
+    ok: importErrors.length === 0 || imported > 0 || updated > 0,
+    imported, updated, skipped, rejected, rowsRead: stats.rowsRead, ...stats,
+    hierarchyMode: resolvedMode,
+    hierarchyModeLabel: HIERARCHY_MODE_LABELS[resolvedMode] || resolvedMode,
+    warnings: importWarnings, errors: importErrors, totalInStore: existing.size,
+  };
 }
 
 
