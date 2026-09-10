@@ -41,6 +41,7 @@ describe('developmentWorkspaceTabNavigation', () => {
       'packages',
       'commercial',
       'ledger',
+      'budget',
       'revenue',
       'selling-costs',
       'prelims',

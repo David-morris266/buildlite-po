@@ -11208,3 +11208,52 @@
   .po-cert-approval__decision { display:block; }
   .po-cert-approval__decision-actions { margin-top:12px; }
 }
+.development-budget-form {
+  background: linear-gradient(145deg, rgba(19, 33, 49, 0.98), rgba(12, 24, 37, 0.98));
+}
+
+.development-budget-form__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 1.25rem;
+  margin: 1rem 0;
+}
+
+.development-budget-form__grid label {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.development-budget-form__grid label > span {
+  color: var(--po-text-muted, #b8c6d5);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.development-budget-form__grid select,
+.development-budget-form__grid .input {
+  width: 100%;
+  min-height: 2.75rem;
+}
+
+.development-budget-form__wide {
+  grid-column: 1 / -1;
+}
+
+.development-budget-history th:last-child,
+.development-budget-history td:last-child {
+  text-align: right;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .development-budget-form__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .development-budget-form__wide {
+    grid-column: auto;
+  }
+}

@@ -4,6 +4,7 @@ export const DEVELOPMENT_WORKSPACE_TABS = [
   { id: 'packages', label: 'Packages' },
   { id: 'commercial', label: 'Commercial Events' },
   { id: 'ledger', label: 'Ledger' },
+  { id: 'budget', label: 'Budget' },
   { id: 'revenue', label: 'Revenue' },
   { id: 'selling-costs', label: 'Selling Costs' },
   { id: 'prelims', label: 'Prelims' },

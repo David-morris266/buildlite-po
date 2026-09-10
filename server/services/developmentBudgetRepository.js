@@ -10,7 +10,21 @@ function fail(status,message){return {ok:false,status,message};}
 function moneyToPence(value){const s=String(value??'').trim();const m=s.match(/^(-?)(\d+)(?:\.(\d{1,2}))?$/);if(!m)return null;const p=Number(m[2])*100+Number((m[3]||'').padEnd(2,'0'));if(!Number.isSafeInteger(p))return null;return (m[1]? -1:1)*p;}
 function pounds(pence){return pence/100;}
 function actor(auth){return [auth.userId,auth.membershipId,auth.providerUserId,auth.displayName,auth.roleKey,PERMISSIONS.DEVELOPMENT_BUDGET_POST];}
-function mapEvent(row,lines=[]){return {id:row.id,sequenceNumber:row.sequence_number,eventType:row.event_type,effectiveDate:String(row.effective_date).slice(0,10),reference:row.reference,reason:row.reason,reversesEventId:row.reverses_event_id||null,idempotencyKey:row.idempotency_key,sourceSnapshot:row.source_snapshot,sourceSnapshotSha256:row.source_snapshot_sha256,sourceSnapshotHashScheme:row.source_snapshot_hash_scheme,createdBy:{userId:row.created_by_user_id,membershipId:row.created_by_membership_id,providerUserId:row.created_by_provider_user_id,displayName:row.created_by_display_name,roleKey:row.created_role_key,permission:row.created_permission_key},createdAt:new Date(row.created_at).toISOString(),lines};}
+function canonicalDatabaseDate(value){
+  if(value==null)return null;
+  if(value instanceof Date){
+    if(Number.isNaN(value.getTime()))return null;
+    const year=value.getFullYear(),month=String(value.getMonth()+1).padStart(2,'0'),day=String(value.getDate()).padStart(2,'0');
+    return `${year}-${month}-${day}`;
+  }
+  const match=String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:$|[T\s])/);
+  if(!match)return null;
+  const year=Number(match[1]),month=Number(match[2]),day=Number(match[3]);
+  const candidate=new Date(Date.UTC(year,month-1,day));
+  if(candidate.getUTCFullYear()!==year||candidate.getUTCMonth()!==month-1||candidate.getUTCDate()!==day)return null;
+  return `${match[1]}-${match[2]}-${match[3]}`;
+}
+function mapEvent(row,lines=[]){return {id:row.id,sequenceNumber:row.sequence_number,eventType:row.event_type,effectiveDate:canonicalDatabaseDate(row.effective_date),reference:row.reference,reason:row.reason,reversesEventId:row.reverses_event_id||null,idempotencyKey:row.idempotency_key,sourceSnapshot:row.source_snapshot,sourceSnapshotSha256:row.source_snapshot_sha256,sourceSnapshotHashScheme:row.source_snapshot_hash_scheme,createdBy:{userId:row.created_by_user_id,membershipId:row.created_by_membership_id,providerUserId:row.created_by_provider_user_id,displayName:row.created_by_display_name,roleKey:row.created_role_key,permission:row.created_permission_key},createdAt:new Date(row.created_at).toISOString(),lines};}
 
 async function getAuthority(clientId,developmentId,auth,dbClient=null){
   assertServicePermission(auth,PERMISSIONS.COMMERCIAL_READ);
@@ -49,4 +63,4 @@ async function postEvent(clientId,developmentId,body={},auth={}){
     await db.query('COMMIT');const loaded=await getAuthority(clientId,developmentId,{...auth,permissions:[...(auth.permissions||[]),PERMISSIONS.COMMERCIAL_READ]});return {ok:true,status:201,replayed:false,event:loaded.authority.events.find(e=>e.id===inserted.id),authority:loaded.authority};
   }catch(error){await db.query('ROLLBACK');if(error.code==='23505')return fail(409,'Conflicting Development Budget event.');throw error;}finally{db.release();}
 }
-module.exports={CALCULATION_VERSION,moneyToPence,getAuthority,postEvent};
+module.exports={CALCULATION_VERSION,moneyToPence,canonicalDatabaseDate,getAuthority,postEvent};

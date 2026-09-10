@@ -47,6 +47,7 @@ import CVRWorkspace from './CVRWorkspace';
 import RevenueWorkspace from './RevenueWorkspace';
 import DevelopmentSellingCostsWorkspace from './DevelopmentSellingCostsWorkspace';
 import DevelopmentPrelimsWorkspace from './DevelopmentPrelimsWorkspace';
+import DevelopmentBudgetWorkspace from './DevelopmentBudgetWorkspace';
 import SubcontractPackageWorkspace from './SubcontractPackageWorkspace';
 import PackageWorkspaceNotFound from './PackageWorkspaceNotFound';
 import POLoading from './POLoading';
@@ -864,6 +865,7 @@ export default function DevelopmentWorkspace({
       activeTab !== 'revenue' &&
       activeTab !== 'selling-costs' &&
       activeTab !== 'prelims' &&
+      activeTab !== 'budget' &&
       !isCvrPeriodOpen ? (
         <SummaryDashboard cards={model.summaryCards} />
       ) : null}
@@ -943,6 +945,10 @@ export default function DevelopmentWorkspace({
             refreshToken={ledgerRefresh}
             onLedgerChanged={handleLedgerChanged}
           />
+        ) : null}
+
+        {activeTab === 'budget' ? (
+          <DevelopmentBudgetWorkspace developmentId={model.id} />
         ) : null}
 
         {activeTab === 'revenue' ? (

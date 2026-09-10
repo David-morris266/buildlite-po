@@ -14,6 +14,8 @@ const ensureMatricesReadyForDevelopment = vi.hoisted(() => vi.fn());
 const getOrderMatricesLoadState = vi.hoisted(() => vi.fn());
 const getOrderMatricesLoadError = vi.hoisted(() => vi.fn());
 const buildDevelopmentWorkspaceModel = vi.hoisted(() => vi.fn());
+const getDevelopmentBudget = vi.hoisted(() => vi.fn());
+const listServerCostCodes = vi.hoisted(() => vi.fn());
 
 vi.mock('../api', () => ({
   listPOs,
@@ -37,6 +39,19 @@ vi.mock('../payments/orderMatrixServerCache', () => ({
 
 vi.mock('../developments/developmentHelpers', () => ({
   buildDevelopmentWorkspaceModel,
+}));
+
+vi.mock('../api/developmentBudget', () => ({
+  getDevelopmentBudget,
+  postDevelopmentBudgetEvent: vi.fn(),
+}));
+
+vi.mock('../api/costCodes', () => ({
+  listServerCostCodes,
+}));
+
+vi.mock('../auth/BuildLiteAuthProvider', () => ({
+  useBuildLitePermission: () => true,
 }));
 
 vi.mock('../commercialAssistant/CommercialAssistantContext', () => ({
@@ -135,6 +150,18 @@ describe('DevelopmentWorkspace stability guards', () => {
     getOrderMatricesLoadState.mockReturnValue('loaded');
     getOrderMatricesLoadError.mockReturnValue(null);
     buildDevelopmentWorkspaceModel.mockReturnValue(sampleModel);
+    getDevelopmentBudget.mockResolvedValue({
+      exists: true,
+      totalOriginalBudget: 100,
+      totalCurrentBudget: 110,
+      perCostCode: [],
+      events: [
+        { id: 'open', eventType: 'opening_budget', effectiveDate: '2026-09-09', reference: 'OPEN', reason: 'Approved baseline', lines: [{ costCode: '4120', description: 'Brickwork', signedAmount: 100 }] },
+        { id: 'add', eventType: 'addition', effectiveDate: '2026-09-09', reference: 'ADD-1', reason: 'Allowance', lines: [{ costCode: '4120', description: 'Brickwork', signedAmount: 10 }] },
+        { id: 'omit', eventType: 'omission', effectiveDate: '2026-09-09', reference: 'OMIT-1', reason: 'Saving', lines: [{ costCode: '4130', description: 'Carpentry', signedAmount: -5 }] },
+      ],
+    });
+    listServerCostCodes.mockResolvedValue({ costCodes: [] });
   });
 
   afterEach(() => {
@@ -199,5 +226,16 @@ describe('DevelopmentWorkspace stability guards', () => {
     clickTab('Selling Costs');
 
     expect(document.querySelector('[data-testid="selling-costs-panel"]')).not.toBeNull();
+  });
+
+  it('opens the Development Budget from the development workspace tabs', async () => {
+    renderWorkspace();
+    await act(async () => { await Promise.resolve(); });
+    clickTab('Budget');
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(document.body.textContent).toContain('Development Budget');
+    expect(document.body.textContent).toContain('ADD-1');
+    expect(document.body.textContent).toContain('OMIT-1');
+    expect(getDevelopmentBudget).toHaveBeenCalledWith('dev-1');
   });
 });
