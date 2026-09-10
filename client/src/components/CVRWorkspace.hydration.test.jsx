@@ -29,6 +29,7 @@ import {
   setCvrPeriodListDelay,
 } from '../test/mockCvrPeriodApi';
 import { __resetCvrPeriodServerCacheForTests } from '../cvr/cvrPeriodServerCache';
+import { formatCvrSubmissionBlockers } from '../cvr/cvrSubmissionBlockerPresentation';
 import CVRWorkspace from './CVRWorkspace';
 
 const DEV = {
@@ -106,5 +107,30 @@ describe('CVRWorkspace input hydration (BL-031B)', () => {
     expect(container.textContent).toContain('Import Budget');
     expect(getCvrMutationCallCounts().addMember).toBe(0);
     expect(getCvrMutationCallCounts().createInput).toBe(0);
+  });
+});
+
+describe('CVR submission blocker presentation', () => {
+  it('identifies a single forecast-pending VA clearly', () => {
+    expect(formatCvrSubmissionBlockers([
+      { reference: 'VA-0002', reason: 'forecast_unassessed' },
+    ])).toBe('VA-0002 requires a QS Forecast before this CVR can be submitted.');
+  });
+
+  it('presents multiple structured blockers compactly', () => {
+    expect(formatCvrSubmissionBlockers([
+      { reference: 'VA-0002', reason: 'forecast_unassessed' },
+      { reference: 'VA-0003', reason: 'incomplete_source_provenance' },
+    ])).toBe(
+      'Resolve these variation exposure items before submitting:\n' +
+      '• VA-0002 requires a QS Forecast before this CVR can be submitted.\n' +
+      '• VA-0003 has incomplete variation authority evidence.'
+    );
+  });
+
+  it('retains a readable fallback for an unfamiliar server reason', () => {
+    expect(formatCvrSubmissionBlockers([
+      { reference: 'VA-0004', reason: 'future_integrity_check' },
+    ])).toBe('VA-0004 is not ready for CVR submission (future integrity check).');
   });
 });

@@ -175,4 +175,80 @@ describe('CVRWorkspace historic snapshot (BL-031E.4)', () => {
     expect(container.textContent).not.toContain('Add Cost Code');
     expect(container.textContent).not.toContain('Import Budget');
   });
+
+  it('disables Approve & Lock before opening the modal when Development Budget is stale', async () => {
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({
+      id: PERIOD_ID,
+      developmentId: DEV.id,
+      status: 'submitted',
+      variationExposure: {
+        state: 'submitted',
+        stale: false,
+        acknowledgementRequirements: [{ variationAccountItemId: 'va-1', exceptionCode: 'certified_above_forecast', reference: 'VA-0001' }],
+        acknowledgements: [],
+      },
+      budgetSource: { state: 'submitted', adopted: true, captured: true, stale: true },
+    }));
+
+    await act(async () => {
+      root.render(<CVRWorkspace development={DEV} periodKey="P01" certificatesReady />);
+    });
+    await flush();
+    await flush();
+
+    const approve = [...container.querySelectorAll('button')].find((button) => button.textContent.trim() === 'Approve & Lock');
+    expect(approve).toBeTruthy();
+    expect(approve.disabled).toBe(true);
+    expect(approve.title).toContain('Reject to Draft');
+    expect(container.textContent).toContain('Development Budget changed after this CVR was submitted');
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('keeps VA acknowledgement available when submitted Development Budget evidence is current', async () => {
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({
+      id: PERIOD_ID,
+      developmentId: DEV.id,
+      status: 'submitted',
+      variationExposure: {
+        state: 'submitted',
+        stale: false,
+        acknowledgementRequirements: [{ variationAccountItemId: 'va-1', exceptionCode: 'certified_above_forecast', reference: 'VA-0001' }],
+        acknowledgements: [],
+      },
+      budgetSource: { state: 'submitted', adopted: true, captured: true, stale: false },
+    }));
+
+    await act(async () => {
+      root.render(<CVRWorkspace development={DEV} periodKey="P01" certificatesReady />);
+    });
+    await flush();
+    await flush();
+
+    const approve = [...container.querySelectorAll('button')].find((button) => button.textContent.trim() === 'Approve & Lock');
+    expect(approve.disabled).toBe(false);
+    await act(async () => approve.click());
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog).toBeTruthy();
+    expect(dialog.textContent).toContain('Acknowledge 1 submitted Variation exposure exception before Lock.');
+    expect([...dialog.querySelectorAll('button')].find((button) => button.textContent === 'Approve & Lock').disabled).toBe(true);
+
+    await act(async () => {
+      [...dialog.querySelectorAll('button')].find((button) => button.textContent === 'Cancel').click();
+    });
+    const acknowledge = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Acknowledge');
+    expect(acknowledge).toBeTruthy();
+    await act(async () => {
+      acknowledge.click();
+      await Promise.resolve();
+    });
+    await flush();
+
+    expect([...container.querySelectorAll('button')].some((button) => button.textContent === 'Acknowledge')).toBe(false);
+    expect(container.textContent).toContain('Acknowledged');
+    const approveAfterAcknowledgement = [...container.querySelectorAll('button')].find((button) => button.textContent.trim() === 'Approve & Lock');
+    await act(async () => approveAfterAcknowledgement.click());
+    const refreshedDialog = container.querySelector('[role="dialog"]');
+    expect(refreshedDialog.textContent).not.toContain('Acknowledge 1 submitted Variation exposure exception before Lock.');
+    expect([...refreshedDialog.querySelectorAll('button')].find((button) => button.textContent === 'Approve & Lock').disabled).toBe(false);
+  });
 });

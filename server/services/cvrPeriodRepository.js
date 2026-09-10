@@ -117,6 +117,23 @@ async function hydratePeriod(clientId, row, dbClient = null) {
   const audit = await loadAuditRows(clientId, row.id, dbClient);
   const snapshot = await getSnapshotForPeriod(clientId, row.id, dbClient);
   const document = periodRowToDocument(row, audit, snapshot);
+  const budgetSnapshots = require('./cvrDevelopmentBudgetSnapshot');
+  const db = dbClient || { query };
+  if ((row.budget_source || 'legacy_cvr') === 'development_budget') {
+    if (row.status === CVR_PERIOD_STATUSES.draft) {
+      const live = await budgetSnapshots.liveDocument(db, clientId, row.development_id);
+      document.budgetSource = { state: 'live', adopted: true, document: live };
+    } else if (row.status === CVR_PERIOD_STATUSES.submitted) {
+      const compared = await budgetSnapshots.compare(db, { clientId, developmentId: row.development_id, periodId: row.id });
+      document.budgetSource = { state: 'submitted', adopted: true, captured: compared.captured, stale: compared.stale,
+        staleReasons: compared.reasons, document: compared.submitted?.source_snapshot || null, hash: compared.submitted?.source_snapshot_sha256 || null, integrity: compared.integrity || null };
+    } else if (row.status === CVR_PERIOD_STATUSES.locked) {
+      document.budgetSource = document.snapshot?.budgetSource || { state: 'legacy_not_captured', adopted: true };
+    }
+  } else {
+    const live = row.status === CVR_PERIOD_STATUSES.draft ? await budgetSnapshots.liveDocument(db, clientId, row.development_id) : null;
+    document.budgetSource = { state: 'legacy_cvr', adopted: false, adoptionAvailable: Boolean(live) };
+  }
   const { buildLiveVariationExposure, compareSubmittedVariationExposure, acknowledgementRequirements, listAcknowledgements } = require('./cvrVariationExposureSnapshot');
   if (row.status === CVR_PERIOD_STATUSES.draft) {
     const live = await buildLiveVariationExposure(dbClient || { query }, clientId, row.development_id);
@@ -183,15 +200,16 @@ async function createCvrPeriod(clientId, developmentId, body = {}, { actor } = {
     }
 
     const periodKey = validated.value.periodKey || nextPeriodKey(existing.map((row) => row.period_key));
+    const hasBudgetAuthority = Boolean(await require('./cvrDevelopmentBudgetSnapshot').liveDocument(dbClient, clientId, developmentId));
     const periodLabel = validated.value.periodLabel || periodKey;
     const inserted = await runQuery(
       dbClient,
       `
         INSERT INTO cvr_periods (
           client_id, development_id, period_key, period_label, reporting_month,
-          status, commentary, version, created_by, updated_by
+          status, commentary, version, created_by, updated_by, budget_source
         )
-        VALUES ($1, $2, $3, $4, $5, 'draft', $6::jsonb, 1, $7, $7)
+        VALUES ($1, $2, $3, $4, $5, 'draft', $6::jsonb, 1, $7, $7, $8)
         RETURNING *
       `,
       [
@@ -202,6 +220,7 @@ async function createCvrPeriod(clientId, developmentId, body = {}, { actor } = {
         validated.value.reportingMonth,
         JSON.stringify(validated.value.commentary),
         actor || null,
+        hasBudgetAuthority ? 'development_budget' : 'legacy_cvr',
       ]
     );
 
@@ -354,11 +373,30 @@ async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, { a
       await dbClient.query('ROLLBACK');
       return { ok: false, status: 409, code: CVR_CLOSE_NOT_READY_CODE, message: 'Variation exposure is not ready to submit.', blockers: exposure.blockers };
     }
+    if (row.budget_source === 'development_budget') {
+      const budget = await require('./cvrDevelopmentBudgetSnapshot').appendSubmission(dbClient, { clientId, developmentId, periodId, actor });
+      if (!budget.ok) { await dbClient.query('ROLLBACK'); return { ok:false,status:409,message:budget.message }; }
+    }
     const updated = (await dbClient.query(`UPDATE cvr_periods SET status='submitted',submitted_at=NOW(),submitted_by=$1,version=version+1,updated_at=NOW(),updated_by=$1 WHERE client_id=$2 AND development_id=$3 AND id=$4 AND status='draft' RETURNING *`, [actor || null, clientId, developmentId, periodId])).rows[0];
     await insertAudit(dbClient, { clientId, periodId, action: CVR_PERIOD_AUDIT_ACTIONS.submitted, actor, comment: body.comment || '', priorStatus: row.status, newStatus: CVR_PERIOD_STATUSES.submitted });
     await dbClient.query('COMMIT');
     return { ok: true, period: await hydratePeriod(clientId, updated) };
   } catch (err) { await dbClient.query('ROLLBACK'); throw err; } finally { dbClient.release(); }
+}
+
+async function adoptDevelopmentBudget(clientId, developmentId, periodId, body = {}, { actor } = {}) {
+  if (!isValidUuid(periodId)) return { ok:false,status:400,message:'periodId must be a valid UUID.' };
+  const dbClient=await pool.connect();
+  try { await dbClient.query('BEGIN');
+    const row=await findPeriodRow(clientId,developmentId,periodId,dbClient,{forUpdate:true});
+    if(!row){await dbClient.query('ROLLBACK');return {ok:false,status:404,message:'CVR period not found.'};}
+    if(row.status!==CVR_PERIOD_STATUSES.draft){await dbClient.query('ROLLBACK');return notDraftMutationResult(row.status);}
+    if(row.budget_source==='development_budget'){await dbClient.query('ROLLBACK');return {ok:true,period:await hydratePeriod(clientId,row)};}
+    if(!await require('./cvrDevelopmentBudgetSnapshot').liveDocument(dbClient,clientId,developmentId)){await dbClient.query('ROLLBACK');return {ok:false,status:409,message:'Development Budget Authority is unavailable.'};}
+    const updated=(await dbClient.query("UPDATE cvr_periods SET budget_source='development_budget',version=version+1,updated_at=NOW(),updated_by=$1 WHERE id=$2 AND client_id=$3 AND development_id=$4 RETURNING *",[actor||null,periodId,clientId,developmentId])).rows[0];
+    await insertAudit(dbClient,{clientId,periodId,action:CVR_PERIOD_AUDIT_ACTIONS.developmentBudgetAdopted,actor,comment:String(body.reason||'Development Budget adopted'),priorStatus:row.status,newStatus:row.status});
+    await dbClient.query('COMMIT'); return {ok:true,period:await hydratePeriod(clientId,updated)};
+  } catch(error){await dbClient.query('ROLLBACK');throw error;} finally{dbClient.release();}
 }
 
 async function rejectCvrPeriod(clientId, developmentId, periodId, body = {}, { actor } = {}) {
@@ -471,6 +509,12 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
       await dbClient.query("ROLLBACK");
       return { ok: false, status: 409, code: CVR_CLOSE_NOT_READY_CODE, message: "Variation exposure changed after this CVR was submitted. Reject, review and resubmit before Lock.", blockers: variationExposure.staleReasons.map((reason) => ({ source: 'variationAccount', reason })) };
     }
+    const budgetComparison = row.budget_source === 'development_budget'
+      ? await require('./cvrDevelopmentBudgetSnapshot').compare(dbClient, { clientId, developmentId, periodId }) : null;
+    if (budgetComparison?.stale || (row.budget_source === 'development_budget' && !budgetComparison?.captured)) {
+      await dbClient.query('ROLLBACK');
+      return { ok:false,status:409,code:CVR_CLOSE_NOT_READY_CODE,message:'Development Budget changed after this CVR was submitted. Reject, review and resubmit before Lock.', blockers:(budgetComparison?.reasons || ['development_budget_not_captured']).map(reason=>({source:'developmentBudget',reason})) };
+    }
     if (!variationExposure.legacy) {
       const required = acknowledgementRequirements(variationExposure.submitted.source_snapshot);
       const acknowledgements = await listAcknowledgements(dbClient, clientId, variationExposure.submitted.id);
@@ -494,6 +538,7 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
       ...(options.loadDevelopment ? { loadDevelopment: options.loadDevelopment } : {}),
       ...(options.loadSettingsRow ? { loadSettingsRow: options.loadSettingsRow } : {}),
       variationExposureDocument: variationExposure.submitted?.source_snapshot || null,
+      developmentBudgetDocument: budgetComparison?.submitted?.source_snapshot || null,
     });
 
     if (
@@ -520,6 +565,7 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
       actor,
       failAfter,
       variationExposureSubmissionId: variationExposure.submitted?.id || null,
+      budgetSubmissionId: budgetComparison?.submitted?.id || null,
     });
 
     if (failAfter === "period") {
@@ -906,6 +952,10 @@ async function createCostCodeInput(clientId, developmentId, periodId, body = {},
       await dbClient.query("ROLLBACK");
       return notDraftMutationResult(period.status);
     }
+    if (period.budget_source === 'development_budget' && (Object.prototype.hasOwnProperty.call(body, 'originalBudget') || Object.prototype.hasOwnProperty.call(body, 'currentBudget'))) {
+      await dbClient.query('ROLLBACK');
+      return { ok:false,status:409,message:'Budget is managed from Development Budget.' };
+    }
 
     const inserted = await insertInput(dbClient, clientId, periodId, validated.value, actor);
     await dbClient.query("COMMIT");
@@ -946,6 +996,10 @@ async function patchCostCodeInput(clientId, developmentId, periodId, inputId, bo
     if (!isCvrPeriodMutable(period.status)) {
       await dbClient.query("ROLLBACK");
       return notDraftMutationResult(period.status);
+    }
+    if (period.budget_source === 'development_budget' && (Object.prototype.hasOwnProperty.call(body, 'originalBudget') || Object.prototype.hasOwnProperty.call(body, 'currentBudget'))) {
+      await dbClient.query('ROLLBACK');
+      return { ok:false,status:409,message:'Budget is managed from Development Budget.' };
     }
 
     const row = await findInputRow(clientId, periodId, inputId, dbClient, { forUpdate: true });
@@ -1093,6 +1147,10 @@ async function upsertCostCodeInputs(clientId, developmentId, periodId, body = {}
       await dbClient.query("ROLLBACK");
       return notDraftMutationResult(period.status);
     }
+    if (period.budget_source === 'development_budget' && items.some((item) => Object.prototype.hasOwnProperty.call(item, 'originalBudget') || Object.prototype.hasOwnProperty.call(item, 'currentBudget'))) {
+      await dbClient.query('ROLLBACK');
+      return { ok:false,status:409,message:'Budget is managed from Development Budget.' };
+    }
 
     const results = [];
     for (const { item, validated } of validatedItems) {
@@ -1221,6 +1279,7 @@ module.exports = {
   submitCvrPeriod,
   rejectCvrPeriod,
   approveCvrPeriod,
+  adoptDevelopmentBudget,
   listCostCodeInputs,
   createCostCodeInput,
   patchCostCodeInput,

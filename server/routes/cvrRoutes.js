@@ -16,6 +16,7 @@ const { requirePermission, actorFromAuth } = require('../auth/authorization');
 const { PERMISSIONS } = require('../auth/permissions');
 const {
   acknowledgeVariationExposureException,
+  adoptDevelopmentBudget,
   approveCvrPeriod,
   createCostCodeInput,
   createCvrPeriod,
@@ -164,6 +165,12 @@ router.post("/cvr/periods/:periodId/submit", async (req, res) => {
     console.error("[CVR] submit period error:", err);
     res.status(500).json({ message: "Failed to submit CVR period." });
   }
+});
+
+router.post('/cvr/periods/:periodId/development-budget-adoption', async (req,res)=>{
+  try { if(!isDbConfigured())return res.status(500).json({message:'Database not configured'}); const active=await getActiveClient(); if(!active)return res.status(404).json({error:'No active client set'});
+    sendResult(res,await adoptDevelopmentBudget(active.id,req.params.developmentId,req.params.periodId,req.body||{},{actor:provisionalActor(req.body||{})}),200,'period');
+  } catch(err){console.error('[CVR] Development Budget adoption error:',err);res.status(500).json({message:'Failed to adopt Development Budget.'});}
 });
 
 router.post("/cvr/periods/:periodId/reject", async (req, res) => {

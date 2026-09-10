@@ -86,7 +86,7 @@ function sameKeySet(left, right) {
   return true;
 }
 
-function mapOpeningQsInputs(sourceInputs) {
+function mapOpeningQsInputs(sourceInputs, { includeBudgets = true } = {}) {
   const inputs = [];
   for (const centre of activeInputs(sourceInputs)) {
     const mapped = mapLocalCostCodeInput({
@@ -94,15 +94,13 @@ function mapOpeningQsInputs(sourceInputs) {
       adjustmentHistory: [],
     });
     if (!mapped.ok) return mapped;
-    inputs.push({
+    const next = {
       costCodeKey: mapped.value.costCodeKey,
       costCodeLabel: mapped.value.costCodeLabel,
       description: mapped.value.description,
       commercialHead: mapped.value.commercialHead,
       commercialFamily: mapped.value.commercialFamily,
       trade: mapped.value.trade,
-      originalBudget: mapped.value.originalBudget,
-      currentBudget: mapped.value.currentBudget,
       commercialAdjustment: mapped.value.commercialAdjustment,
       adjustmentReason: mapped.value.adjustmentReason,
       commercialReason: mapped.value.commercialReason,
@@ -116,7 +114,9 @@ function mapOpeningQsInputs(sourceInputs) {
         adjustmentHistory: [],
       },
       adjustmentHistory: [],
-    });
+    };
+    if (includeBudgets) { next.originalBudget = mapped.value.originalBudget; next.currentBudget = mapped.value.currentBudget; }
+    inputs.push(next);
   }
   return { ok: true, inputs };
 }
@@ -175,7 +175,7 @@ export async function copyOpeningInputsOntoDraft(developmentId, {
   }
 
   if (existingKeys.size === 0) {
-    const mapped = mapOpeningQsInputs(source.inputs);
+    const mapped = mapOpeningQsInputs(source.inputs, { includeBudgets: targetPeriod.budgetSourceMode !== 'development_budget' });
     if (!mapped.ok) return mapped;
     const upserted = await upsertServerCvrPeriodInputs(developmentId, targetPeriod.id, {
       inputs: mapped.inputs,

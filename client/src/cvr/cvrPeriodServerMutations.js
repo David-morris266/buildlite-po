@@ -8,6 +8,7 @@
 import {
   CvrPeriodApiError,
   addCvrCostCodeMember,
+  adoptCvrDevelopmentBudget,
   approveCvrPeriodForDevelopment,
   createCvrPeriodForDevelopment,
   createCvrPeriodInput,
@@ -72,6 +73,10 @@ export async function patchServerCvrPeriod(developmentId, periodId, payload = {}
   } catch (error) {
     return mapApiError(error);
   }
+}
+export async function adoptServerCvrDevelopmentBudget(developmentId,periodId){
+  try { const period=await adoptCvrDevelopmentBudget(developmentId,periodId,{reason:'Use Development Budget'}); return {ok:true,period:cachePeriod(developmentId,period)}; }
+  catch(error){return mapApiError(error);}
 }
 
 export async function submitServerCvrPeriod(developmentId, periodId, payload = {}) {

@@ -166,6 +166,11 @@ function snapshotHeaderToDocument(header, rows = [], plots = []) {
           document: variationDocument,
         }
       : { state: "legacy_not_captured", captured: false },
+    budgetSource: header.budget_submission_id ? {
+      state: 'locked', adopted: true, captured: true, submissionId: header.budget_submission_id,
+      hashScheme: header.budget_source_hash_scheme, hash: header.budget_source_sha256,
+      document: header.budget_source_snapshot || null,
+    } : { state: 'legacy_cvr', adopted: false, captured: false },
     createdAt: toIso(header.created_at),
     createdBy: header.created_by ?? null,
     vaExposureUplift: mappedRows.reduce((sum, row) => Math.round((sum + Number(row.vaExposureUplift || 0)) * 100) / 100, 0),

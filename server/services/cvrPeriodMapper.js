@@ -69,6 +69,7 @@ function periodRowToDocument(row, auditRows = [], snapshot = null) {
     periodLabel: row.period_label,
     reportingMonth: toDateOnly(row.reporting_month),
     status,
+    budgetSourceMode: row.budget_source || "legacy_cvr",
     commentary: commentaryOf(row),
     version: row.version,
     createdAt: toIso(row.created_at),

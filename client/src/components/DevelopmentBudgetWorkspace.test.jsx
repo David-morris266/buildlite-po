@@ -59,6 +59,13 @@ describe('DevelopmentBudgetWorkspace', () => {
     mocks.get.mockResolvedValue(established); await render();
     expect(host.textContent).toMatch(/£100\.00/); expect(host.textContent).toMatch(/£10\.00/); expect(host.textContent).toMatch(/£110\.00/);
     act(() => button('Add Budget Movement').click());
+    const movementForm = host.querySelector('.development-budget-form');
+    const budgetPosition = [...host.querySelectorAll('section')].find(section => section.querySelector('h2')?.textContent === 'Budget position');
+    const movementHistory = [...host.querySelectorAll('section')].find(section => section.querySelector('h2')?.textContent === 'Movement history');
+    expect(movementForm).toBeTruthy();
+    expect(movementForm.compareDocumentPosition(budgetPosition) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(movementForm.compareDocumentPosition(movementHistory) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(host.textContent).toContain('Development Budget is the authoritative budget source for CVRs that adopt it.');
     const selects = host.querySelectorAll('select');
     await act(async () => { setValue(selects[0], 'transfer'); });
     const nextSelects = host.querySelectorAll('select');

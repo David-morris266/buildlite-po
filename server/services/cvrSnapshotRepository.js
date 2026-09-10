@@ -95,10 +95,14 @@ async function getSnapshotForPeriod(clientId, periodId, dbClient = null) {
       SELECT snap.*, submitted.source_snapshot AS variation_exposure_snapshot,
              submitted.source_snapshot_sha256 AS variation_exposure_sha256,
              submitted.source_snapshot_hash_scheme AS variation_exposure_hash_scheme,
-             submitted.calculation_version AS variation_exposure_calculation_version
+             submitted.calculation_version AS variation_exposure_calculation_version,
+             budget.source_snapshot AS budget_source_snapshot,
+             budget.source_snapshot_sha256 AS budget_source_sha256,
+             budget.source_snapshot_hash_scheme AS budget_source_hash_scheme
       FROM cvr_period_snapshots snap
       LEFT JOIN cvr_period_variation_exposure_submissions submitted
         ON submitted.id=snap.variation_exposure_submission_id AND submitted.client_id=snap.client_id
+      LEFT JOIN cvr_period_budget_submissions budget ON budget.id=snap.budget_submission_id AND budget.client_id=snap.client_id
       WHERE snap.client_id = $1 AND snap.period_id = $2
       LIMIT 1
     `,
@@ -131,7 +135,7 @@ async function getSnapshotForPeriod(clientId, periodId, dbClient = null) {
   return snapshotHeaderToDocument(header.rows[0], rows.rows, plots.rows);
 }
 
-async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodRow, snapshot, actor, variationExposureSubmissionId = null }) {
+async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodRow, snapshot, actor, variationExposureSubmissionId = null, budgetSubmissionId = null }) {
   const { rows } = await runQuery(
     dbClient,
     `
@@ -144,7 +148,7 @@ async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodR
         forecast_revenue, secured_revenue, remaining_forecast_revenue,
         plots_sold, plots_remaining, gross_profit, gross_margin_percent,
         revenue_assumptions, revenue_settings_id, revenue_settings_version,
-        created_by, variation_exposure_submission_id
+        created_by, variation_exposure_submission_id, budget_submission_id
       )
       VALUES (
         $1, $2, $3, $4, $5,
@@ -155,7 +159,7 @@ async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodR
         $21, $22, $23,
         $24, $25, $26, $27,
         $28::jsonb, $29, $30,
-        $31, $32
+        $31, $32, $33
       )
       RETURNING *
     `,
@@ -192,6 +196,7 @@ async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodR
       snapshot.revenueSettingsVersion == null ? null : Number(snapshot.revenueSettingsVersion),
       actor || snapshot.createdBy || null,
       variationExposureSubmissionId,
+      budgetSubmissionId,
     ]
   );
   return rows[0];
@@ -402,7 +407,7 @@ function verifyPersistedSnapshot(header, insertedRows, insertedPlots, snapshot) 
 
 async function persistCvrPeriodSnapshot(
   dbClient,
-  { clientId, developmentId, periodRow, candidate, actor, failAfter = null, variationExposureSubmissionId = null } = {}
+  { clientId, developmentId, periodRow, candidate, actor, failAfter = null, variationExposureSubmissionId = null, budgetSubmissionId = null } = {}
 ) {
   requireTransactionClient(dbClient);
   const snapshot = candidate?.snapshot;
@@ -472,6 +477,7 @@ async function persistCvrPeriodSnapshot(
     snapshot,
     actor,
     variationExposureSubmissionId,
+    budgetSubmissionId,
   });
 
   if (failAfter === "duplicateHeader") {
@@ -482,6 +488,7 @@ async function persistCvrPeriodSnapshot(
       snapshot,
       actor,
       variationExposureSubmissionId,
+      budgetSubmissionId,
     });
   }
 

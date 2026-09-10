@@ -253,6 +253,7 @@ export function buildServerCvrPeriodFixture(overrides = {}) {
     approvedBy: overrides.approvedBy || null,
     auditHistory: overrides.auditHistory || [],
     variationExposure: overrides.variationExposure || null,
+    budgetSource: overrides.budgetSource || null,
     snapshot: overrides.snapshot === undefined ? null : overrides.snapshot,
     snapshotDeferred: overrides.snapshot
       ? false

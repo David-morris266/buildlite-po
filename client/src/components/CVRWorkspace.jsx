@@ -46,6 +46,7 @@ import {
   addCostCodeMemberOnServer,
   ensureDraftCvrOverlayMemberOnServer,
 } from '../cvr/cvrPeriodAuthorityWrites';
+import { adoptServerCvrDevelopmentBudget } from '../cvr/cvrPeriodServerMutations';
 import {
   CVR_HISTORIC_SNAPSHOT_BANNER,
   CVR_HISTORIC_UNAVAILABLE_MESSAGE,
@@ -53,12 +54,14 @@ import {
 import {
   ensureCvrPeriodAndInputsReady,
   getCvrPeriodReadiness,
+  upsertCachedCvrPeriod,
 } from '../cvr/cvrPeriodServerCache';
 import { isLedgerServerAuthorityEnabled } from '../ledger/ledgerAuthority';
 import {
   ensureLedgerReadyForDevelopment,
   getLedgerReadiness,
 } from '../ledger/ledgerServerCache';
+import { formatCvrSubmissionBlockers } from '../cvr/cvrSubmissionBlockerPresentation';
 
 function StatusBadge({ status }) {
   return (
@@ -214,6 +217,8 @@ export default function CVRWorkspace({
   const submitted = isCvrPeriodSubmitted(period);
   const locked = isCvrPeriodLocked(period);
   const variationExposure = locked ? period?.snapshot?.variationExposure : period?.variationExposure;
+  const budgetSource = locked ? period?.snapshot?.budgetSource : period?.budgetSource;
+  const developmentBudgetAdopted = Boolean(budgetSource?.adopted);
   const requirements = variationExposure?.acknowledgementRequirements || [];
   const acknowledgedKeys = new Set((variationExposure?.acknowledgements || []).map((entry) => `${entry.variationAccountItemId}:${entry.exceptionCode}`));
   const missingAcknowledgements = requirements.filter((entry) => !acknowledgedKeys.has(`${entry.variationAccountItemId}:${entry.exceptionCode}`));
@@ -387,7 +392,7 @@ export default function CVRWorkspace({
   }
 
   async function handleBudgetChange(row, field, rawValue) {
-    if (readOnly) return;
+    if (readOnly || developmentBudgetAdopted) return;
     const targetId = await resolveCentreId(row);
     if (!targetId) return;
 
@@ -464,7 +469,7 @@ export default function CVRWorkspace({
   async function handleSubmit() {
     const result = await Promise.resolve(submitCvrPeriod(development.id, periodKey));
     if (!result.ok) {
-      window.alert(result.errors?.[0] || 'Could not submit CVR.');
+      window.alert(formatCvrSubmissionBlockers(result.blockers) || result.errors?.[0] || 'Could not submit CVR.');
       return;
     }
     setDialog(null);
@@ -480,12 +485,18 @@ export default function CVRWorkspace({
     setDialog(null);
     refresh();
   }
+  async function handleAdoptDevelopmentBudget() {
+    const result = await adoptServerCvrDevelopmentBudget(development.id, period.id);
+    if (!result.ok) { window.alert(result.errors?.[0] || 'Could not use Development Budget.'); return; }
+    refresh();
+  }
 
   async function handleAcknowledge(requirement) {
     const key = `${requirement.variationAccountItemId}:${requirement.exceptionCode}`;
     setAcknowledging(key);
     try {
-      await acknowledgeCvrVariationExposure(development.id, period.id, requirement);
+      const updatedPeriod = await acknowledgeCvrVariationExposure(development.id, period.id, requirement);
+      upsertCachedCvrPeriod(development.id, updatedPeriod);
       refresh();
     } catch (error) {
       window.alert(error?.message || 'Could not acknowledge Variation exposure.');
@@ -619,13 +630,13 @@ export default function CVRWorkspace({
           <div className="dev-cvr-period__actions dev-cvr-period__actions--inline">
             {!readOnly ? (
               <>
-                <button
+                {!developmentBudgetAdopted ? <button
                   type="button"
                   className="po-list-btn-secondary dev-cvr__shell-btn"
                   onClick={() => setBudgetImportOpen(true)}
                 >
                   Import Budget
-                </button>
+                </button> : null}
                 <button
                   type="button"
                   className="po-list-btn-secondary dev-cvr__shell-btn"
@@ -648,6 +659,8 @@ export default function CVRWorkspace({
                   type="button"
                   className="po-btn-primary dev-cvr__shell-btn"
                   onClick={() => setDialog('approve')}
+                  disabled={Boolean(variationExposure?.stale || budgetSource?.stale)}
+                  title={budgetSource?.stale ? 'Reject to Draft and resubmit with the current Development Budget before Lock.' : undefined}
                 >
                   Approve &amp; Lock
                 </button>
@@ -722,6 +735,9 @@ export default function CVRWorkspace({
 
       <CvrAuditHistory items={auditItems} />
 
+      {developmentBudgetAdopted ? <div className="po-list-feedback po-list-feedback--info" role="status">Original and Current Budget are controlled by Development Budget. Manage budget movements from Development → Budget.</div> : budgetSource?.adoptionAvailable && !readOnly ? <div className="po-list-feedback po-list-feedback--warning" role="status">A Development Budget is available. This existing Draft still uses its established CVR budget until you choose to adopt it. <button type="button" className="po-list-btn-secondary" onClick={handleAdoptDevelopmentBudget}>Use Development Budget</button></div> : null}
+      {submitted && budgetSource?.stale ? <div className="po-list-feedback po-list-feedback--error" role="alert">Development Budget changed after this CVR was submitted. Reject to Draft, review the current budget and resubmit before Lock.</div> : null}
+
       {submitted && variationExposure?.stale ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">
           Variation exposure changed after this CVR was submitted. Reject to Draft, review the updated position and resubmit before Lock.
@@ -772,7 +788,7 @@ export default function CVRWorkspace({
           rows={displayedRows}
           totals={activeHeadFilter ? displayedTotals : workspace.totals}
           onRowSelect={setSelectedRow}
-          onBudgetChange={readOnly ? undefined : handleBudgetChange}
+          onBudgetChange={readOnly || developmentBudgetAdopted ? undefined : handleBudgetChange}
           readOnly={readOnly || historic}
         />
       ) : null}
@@ -838,7 +854,7 @@ export default function CVRWorkspace({
           confirmLabel="Approve & Lock"
           onCancel={() => setDialog(null)}
           onConfirm={handleApprove}
-          confirmDisabled={Boolean(variationExposure?.stale || missingAcknowledgements.length)}
+          confirmDisabled={Boolean(variationExposure?.stale || budgetSource?.stale || missingAcknowledgements.length)}
         >
           <p className="dev-cvr-add__lead">
             Locked periods become permanent historical records.

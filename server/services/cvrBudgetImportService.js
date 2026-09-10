@@ -232,6 +232,7 @@ async function importDraftCvrBudget(clientId, developmentId, periodId, body = {}
     const period = await findPeriodRow(clientId, developmentId, periodId, tx, {
       forUpdate: true,
     });
+    if (period?.budget_source === 'development_budget') { await tx.query('ROLLBACK'); return fail(409, 'DEVELOPMENT_BUDGET_AUTHORITY', 'Budget is managed from Development Budget.'); }
     if (!period) {
       await tx.query("ROLLBACK");
       return { ok: false, status: 404, message: "CVR period not found." };

@@ -1,5 +1,7 @@
 const { init } = require("../db");
 const { assertActiveTestDatabase } = require("../utils/testDatabaseGuard");
+const fs = require('node:fs');
+const path = require('node:path');
 
 async function ensureActiveTestClient(pool) {
   const { rows } = await pool.query(
@@ -23,6 +25,10 @@ async function ensureActiveTestClient(pool) {
 async function prepareIntegrationTestDatabase(pool) {
   await assertActiveTestDatabase(pool);
   await init();
+  const hasBudgetSource = await pool.query("SELECT 1 FROM information_schema.columns WHERE table_name='cvr_periods' AND column_name='budget_source'");
+  if (!hasBudgetSource.rowCount) {
+    await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '045_cvr_development_budget_source.sql'), 'utf8'));
+  }
   await ensureActiveTestClient(pool);
 }
 

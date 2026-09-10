@@ -62,6 +62,8 @@ export function normalizeServerCvrPeriod(document, inputs = []) {
     periodLabel: document.periodLabel || document.periodKey,
     reportingMonth: document.reportingMonth || null,
     status,
+    budgetSourceMode: document.budgetSourceMode || 'legacy_cvr',
+    budgetSource: document.budgetSource || null,
     version: Number(document.version) || 1,
     createdAt: document.createdAt || null,
     updatedAt: document.updatedAt || null,

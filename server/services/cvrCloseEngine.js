@@ -316,6 +316,7 @@ async function buildCvrCloseCandidate({
   dbClient = null,
   loadSources = loadCvrCloseSources,
   variationExposureDocument = null,
+  developmentBudgetDocument = null,
 } = {}) {
   const loaded = await loadSources({ clientId, developmentId, periodId, dbClient });
   const sources = loaded.sources || {};
@@ -356,6 +357,8 @@ async function buildCvrCloseCandidate({
   const actuals = buildActualsByCostCode(transactions);
   const expectedLiabilities = buildExpectedLiabilityByCostCode(events);
   const variationExposureByCostCode = new Map();
+  const authorityBudgetByCostCode = new Map((developmentBudgetDocument?.positions || []).map((p) => [normaliseCostCodeKey(p.costCode), p]));
+  const usesDevelopmentBudget = Boolean(developmentBudgetDocument);
   for (const item of variationExposureDocument?.items || []) {
     const key = normaliseCostCodeKey(item.costCode);
     if (!key || item.vaExposureUplift == null) continue;
@@ -378,8 +381,10 @@ async function buildCvrCloseCandidate({
     inputs
   );
   for (const key of variationExposureByCostCode.keys()) allKeys.add(key);
+  for (const key of authorityBudgetByCostCode.keys()) allKeys.add(key);
   const rows = [...allKeys].map((key) => {
     const manual = manualByKey.get(key);
+    const authorityBudget = authorityBudgetByCostCode.get(key);
     const hasManualBudget =
       manual && (manual.originalBudget != null || manual.currentBudget != null);
     const hasInput = Boolean(manual);
@@ -413,8 +418,8 @@ async function buildCvrCloseCandidate({
       commercialFamily: manual?.commercialFamily || "",
       trade: manual?.trade || "",
       active: manual?.active !== false,
-      originalBudget: manual?.originalBudget ?? null,
-      currentBudget: manual?.currentBudget ?? null,
+      originalBudget: usesDevelopmentBudget ? (authorityBudget?.originalPence || 0) / 100 : (manual?.originalBudget ?? null),
+      currentBudget: usesDevelopmentBudget ? (authorityBudget?.currentPence || 0) / 100 : (manual?.currentBudget ?? null),
       commercialAdjustment: manual?.commercialAdjustment ?? 0,
       adjustmentReason: manual?.adjustmentReason || "",
       notes: manual?.notes || "",

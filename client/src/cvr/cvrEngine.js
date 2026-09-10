@@ -223,6 +223,9 @@ export function buildCvrRows(developmentId, options = {}) {
   const expectedLiabilities = buildExpectedLiabilityByCostCode(developmentId);
   const exposureDocument = options.period?.variationExposure?.document || options.period?.snapshot?.variationExposure?.document;
   const variationExposureByCostCode = new Map();
+  const budgetDocument = options.period?.budgetSource?.document || options.period?.snapshot?.budgetSource?.document;
+  const usesDevelopmentBudget = Boolean(budgetDocument);
+  const authorityBudgetByCostCode = new Map((budgetDocument?.positions || []).map((p) => [normaliseCostCodeKey(p.costCode), p]));
   for (const item of exposureDocument?.items || []) {
     const key = normaliseCostCodeKey(item.costCode);
     if (!key || item.vaExposureUplift == null) continue;
@@ -240,6 +243,7 @@ export function buildCvrRows(developmentId, options = {}) {
     expectedLiabilities,
   ]);
   for (const key of variationExposureByCostCode.keys()) allKeys.add(key);
+  for (const key of authorityBudgetByCostCode.keys()) allKeys.add(key);
   const manualByKey = new Map();
 
   for (const centre of manualCentres) {
@@ -253,6 +257,7 @@ export function buildCvrRows(developmentId, options = {}) {
 
   const rows = [...allKeys].map((key) => {
     const manual = manualByKey.get(key);
+    const authorityBudget = authorityBudgetByCostCode.get(key);
     const label =
       manual?.costCodeLabel ||
       commitments.labels.get(key) ||
@@ -279,8 +284,8 @@ export function buildCvrRows(developmentId, options = {}) {
         costCodeKey: key,
         costCodeLabel: label,
         description: manual?.description || '',
-        originalBudget: manual?.originalBudget ?? null,
-        currentBudget: manual?.currentBudget ?? null,
+        originalBudget: usesDevelopmentBudget ? (authorityBudget?.originalPence || 0) / 100 : (manual?.originalBudget ?? null),
+        currentBudget: usesDevelopmentBudget ? (authorityBudget?.currentPence || 0) / 100 : (manual?.currentBudget ?? null),
         committed: commitments.unavailable?.has(key)
           ? null
           : commitments.totals.get(key) ?? (hasManualBudget ? 0 : null),

@@ -264,6 +264,7 @@ export function normalizeServerCvrSnapshot(document) {
   const rowsSource = Array.isArray(document.rows) ? document.rows : [];
   const plotsSource = Array.isArray(document.plots) ? document.plots : [];
   return {
+    budgetSource: document.budgetSource || null,
     id: firstDefined(document.id, null),
     clientId: firstDefined(document.clientId, document.client_id, null),
     developmentId: firstDefined(document.developmentId, document.development_id, null),
