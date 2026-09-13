@@ -30,6 +30,39 @@ export function SummaryDashboard({ cards }) {
   );
 }
 
+const readinessLabel = state => state === 'blocker' ? 'Blocker' : state === 'needs_attention' ? 'Needs attention' : 'Ready';
+
+export function CommercialReadinessCard({ readiness, loading = false, error = '', onResolve }) {
+  const workflow = (readiness?.items || []).filter(item => item.workflowState);
+  const blockers = (readiness?.items || []).filter(item => !item.workflowState && item.state === 'blocker');
+  const attention = (readiness?.items || []).filter(item => !item.workflowState && item.state === 'needs_attention');
+  const issues = [...blockers, ...attention];
+  const renderItem = item => <li key={item.key} className={`dev-workspace__setup-item dev-workspace__setup-item--${item.state}`}>
+    <span className="dev-workspace__readiness-copy"><strong className="dev-workspace__setup-label">{item.title}</strong><span className="dev-workspace__setup-detail">{item.reason}</span></span>
+    {item.resolutionTarget ? <button type="button" className="dev-workspace__readiness-action" onClick={() => onResolve?.(item.resolutionTarget)}>{item.workflowState ? 'Continue current CVR' : 'Review'}</button> : null}
+  </li>;
+  return <section className="po-module-card dev-workspace__section" aria-label="Commercial readiness">
+    <h2 className="po-matrix-section__title">Commercial readiness</h2>
+    {loading ? <p role="status">Checking commercial readiness…</p> : null}
+    {error ? <div className="po-list-feedback po-list-feedback--error" role="alert">{error}</div> : null}
+    {!loading && !error && readiness ? <>
+      <p className={`po-status-badge po-status-badge--${readiness.overallState === 'blocker' ? 'danger' : readiness.overallState === 'needs_attention' ? 'warning' : 'success'}`}>{readinessLabel(readiness.overallState)}</p>
+      <p>{workflow.length
+        ? `${workflow[0].openPeriod?.periodKey || 'A CVR'} is in progress.`
+        : readiness.canCreateFirstCvr
+          ? readiness.hasCvrHistory ? 'Ready to create the next working CVR.' : 'Ready to create the first working CVR.'
+          : readiness.hasCvrHistory ? 'Another CVR period cannot be created at present.' : 'Resolve the creation blockers before starting the first CVR.'}</p>
+      {workflow.length ? <ul className="dev-workspace__setup-list dev-workspace__readiness-workflow">{workflow.map(renderItem)}</ul> : null}
+      {issues.length ? <>
+        {blockers.length ? <h3 className="dev-workspace__readiness-heading">{blockers.length} {blockers.length === 1 ? 'blocker' : 'blockers'}</h3> : null}
+        {blockers.length ? <ul className="dev-workspace__setup-list">{blockers.map(renderItem)}</ul> : null}
+        {attention.length ? <h3 className="dev-workspace__readiness-heading">{attention.length} {attention.length === 1 ? 'item' : 'items'} to review</h3> : null}
+        {attention.length ? <ul className="dev-workspace__setup-list">{attention.map(renderItem)}</ul> : null}
+      </> : <p>No commercial readiness issues require attention.</p>}
+    </> : null}
+  </section>;
+}
+
 function buildOpenPackageLabel(pkg) {
   const supplier = pkg.supplierLabel || 'supplier';
   const costCode = pkg.costCode || 'package';
@@ -212,60 +245,17 @@ export default function DevelopmentOverview({
   commercialEventsError = '',
   matricesLoading = false,
   matricesError = '',
+  commercialReadiness = null,
+  commercialReadinessLoading = false,
+  commercialReadinessError = '',
+  onResolveReadiness,
 }) {
   if (!model) return null;
-
-  const setupItems = [
-    {
-      label: 'Plot Master',
-      complete: model.plotCount > 0,
-      detail: model.plotCount > 0 ? `${model.plotCount} plots` : 'Import plot schedule',
-    },
-    {
-      label: 'Purchase Orders',
-      complete: model.purchaseOrderCount > 0,
-      detail:
-        model.purchaseOrderCount > 0
-          ? `${model.purchaseOrderCount} raised`
-          : 'Raise subcontract POs',
-    },
-    {
-      label: 'Packages',
-      complete: model.packageCount > 0,
-      detail:
-        model.packageCount > 0
-          ? `${model.packageCount} active`
-          : 'Approve subcontract POs',
-    },
-    {
-      label: 'Ledger',
-      complete: model.ledgerTransactionCount > 0,
-      detail:
-        model.ledgerTransactionCount > 0
-          ? `${model.ledgerTransactionCount} transactions`
-          : 'Import purchase ledger',
-    },
-  ];
 
   return (
     <>
       <div className="dev-workspace__grid">
-        <section className="po-module-card dev-workspace__section">
-          <h2 className="po-matrix-section__title">Setup progress</h2>
-          <ul className="dev-workspace__setup-list">
-            {setupItems.map((item) => (
-              <li
-                key={item.label}
-                className={`dev-workspace__setup-item${
-                  item.complete ? ' dev-workspace__setup-item--complete' : ''
-                }`}
-              >
-                <span className="dev-workspace__setup-label">{item.label}</span>
-                <span className="dev-workspace__setup-detail">{item.detail}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <CommercialReadinessCard readiness={commercialReadiness} loading={commercialReadinessLoading} error={commercialReadinessError} onResolve={onResolveReadiness} />
 
         <section className="po-module-card dev-workspace__section">
           <h2 className="po-matrix-section__title">Packages</h2>

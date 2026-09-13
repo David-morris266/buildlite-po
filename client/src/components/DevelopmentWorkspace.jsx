@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import { listPOs } from '../api';
 import { updateDevelopment, VERSION_CONFLICT_MESSAGE } from '../developments/developmentStore';
+import { getDevelopmentCommercialReadiness } from '../api/developments';
 import { buildDevelopmentWorkspaceNavigation } from '../navigation/navigationBuilders';
 import {
   CommercialWorkspace,
@@ -84,6 +85,7 @@ export default function DevelopmentWorkspace({
   initialActiveTab = null,
   initialCvrPeriodKey = null,
   onOpenPackage,
+  onNavigate,
 }) {
   const [activeTab, setActiveTab] = useState(initialActiveTab || 'overview');
   const [cvrView, setCvrView] = useState(initialCvrPeriodKey ? 'summary' : 'register');
@@ -119,6 +121,9 @@ export default function DevelopmentWorkspace({
     development.targetCompletion || ''
   );
   const [dateError, setDateError] = useState('');
+  const [commercialReadiness, setCommercialReadiness] = useState(null);
+  const [commercialReadinessLoading, setCommercialReadinessLoading] = useState(true);
+  const [commercialReadinessError, setCommercialReadinessError] = useState('');
 
   useEffect(() => {
     setStartDate(development.startDate || '');
@@ -309,6 +314,26 @@ export default function DevelopmentWorkspace({
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    setCommercialReadinessLoading(true);
+    setCommercialReadinessError('');
+    getDevelopmentCommercialReadiness(development.id)
+      .then(result => {
+        if (!cancelled) setCommercialReadiness(result);
+      })
+      .catch(error => {
+        if (!cancelled) {
+          setCommercialReadiness(null);
+          setCommercialReadinessError(error.message || 'Commercial readiness could not be loaded.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCommercialReadinessLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [development.id, activeTab, ledgerRefresh, revenueRefresh, cvrRefresh, commercialRefresh]);
+
+  useEffect(() => {
     if (['overview', 'packages', 'commercial'].includes(activeTab)) {
       setCommercialRefresh((value) => value + 1);
     }
@@ -471,6 +496,15 @@ export default function DevelopmentWorkspace({
     setPackageLaunchError(next.packageLaunchError);
     setCommercialNavigationStack(next.commercialNavigationStack);
     setActiveTab(next.activeTab);
+  }
+
+  function handleResolveReadiness(target) {
+    if (target?.tab === 'cvr' && target.periodKey) {
+      setCvrPeriodKey(target.periodKey);
+      setCvrView('summary');
+      handleSelectWorkspaceTab('cvr');
+    } else if (target?.tab) handleSelectWorkspaceTab(target.tab);
+    else if (target?.view) onNavigate?.(target);
   }
 
   if (!model) {
@@ -897,6 +931,10 @@ export default function DevelopmentWorkspace({
             commercialEventsError={commercialEventsErrorMessage}
             matricesLoading={matricesLoading}
             matricesError={matricesErrorMessage}
+            commercialReadiness={commercialReadiness}
+            commercialReadinessLoading={commercialReadinessLoading}
+            commercialReadinessError={commercialReadinessError}
+            onResolveReadiness={handleResolveReadiness}
           />
         ) : null}
 
@@ -1034,6 +1072,9 @@ export default function DevelopmentWorkspace({
                 setCvrHeadFilter(null);
               }}
               onChanged={handleCvrChanged}
+              commercialReadiness={commercialReadiness}
+              commercialReadinessLoading={commercialReadinessLoading}
+              commercialReadinessError={commercialReadinessError}
             />
           )
         ) : null}

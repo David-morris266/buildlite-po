@@ -20,6 +20,7 @@ const { listPackagesForDevelopment } = require("../services/packageRepository");
 const {
   listMatricesForDevelopmentOr404,
 } = require("../services/orderMatrixRepository");
+const { loadDevelopmentCommercialReadiness } = require('../services/developmentCommercialReadiness');
 
 const router = express.Router();
 
@@ -86,6 +87,20 @@ router.get("/:id/packages", async (req, res) => {
   } catch (err) {
     console.error("[Developments] package list error:", err);
     res.status(500).json({ message: "Failed to list development packages." });
+  }
+});
+
+router.get('/:id/commercial-readiness', async (req, res) => {
+  try {
+    if (!isDbConfigured()) return res.status(500).json({ message: 'Database not configured' });
+    const active = await getActiveClient();
+    if (!active) return res.status(404).json({ error: 'No active client set' });
+    const result = await loadDevelopmentCommercialReadiness(active.id, String(req.params.id || '').trim());
+    if (!result.ok) return res.status(result.status).json({ message: result.message });
+    return res.json(result.readiness);
+  } catch (err) {
+    console.error('[Developments] commercial readiness error:', err);
+    return res.status(500).json({ message: 'Development commercial readiness could not be loaded.' });
   }
 });
 

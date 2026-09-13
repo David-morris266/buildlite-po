@@ -2168,6 +2168,41 @@
   font-size: 0.875rem;
 }
 
+.dev-workspace__readiness-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dev-workspace__readiness-heading {
+  margin: 14px 0 7px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dev-workspace__readiness-workflow {
+  margin-bottom: 12px;
+}
+
+.dev-workspace__readiness-action {
+  align-self: center;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.dev-workspace__readiness-action:hover,
+.dev-workspace__readiness-action:focus-visible {
+  text-decoration: underline;
+}
+
 .dev-workspace__meta-item {
   font-size: 0.875rem;
   color: var(--muted);

@@ -55,6 +55,20 @@ describe('DevelopmentBudgetWorkspace', () => {
     expect(host.textContent).toContain('Development Budget established');
   });
 
+  it('accepts a zero-budget schedule row without posting a meaningless journal line', async () => {
+    mocks.parse.mockResolvedValue({ fileName: 'budget.csv', rows: [['Cost Code', 'Budget'], ['A', '100.01'], ['B', '0.00']], headerRowIndex: 0, headers: ['Cost Code', 'Budget'], fieldByColumn: ['costCode', 'amount'] });
+    mocks.get.mockResolvedValueOnce(empty).mockResolvedValue(established); await render();
+    act(() => button('Set up Development Budget').click());
+    const fileInput = host.querySelector('input[type="file"]');
+    await act(async () => { Object.defineProperty(fileInput, 'files', { value: [{ name: 'budget.csv' }] }); fileInput.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve(); await Promise.resolve(); });
+    expect(host.textContent).toContain('£0.00');
+    expect(host.textContent).not.toContain('must be greater than zero');
+    const inputs = [...host.querySelectorAll('input:not([type="file"])')];
+    await act(async () => { for (const [input, value] of [[inputs[0], '2026-09-09'], [inputs[1], 'OPEN-ZERO'], [inputs[2], 'Full opening schedule']]) setValue(input, value); });
+    await act(async () => { button('Establish Opening Budget').click(); await Promise.resolve(); });
+    expect(mocks.post.mock.calls[0][1].lines).toEqual([{ costCodeId: 'cc-a', amount: '100.01', explanation: 'Code A' }]);
+  });
+
   it('shows Original, Movements and Current and automatically balances a transfer', async () => {
     mocks.get.mockResolvedValue(established); await render();
     expect(host.textContent).toMatch(/£100\.00/); expect(host.textContent).toMatch(/£10\.00/); expect(host.textContent).toMatch(/£110\.00/);

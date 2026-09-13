@@ -59,6 +59,11 @@ export async function getDevelopment(id) {
   return handleJson(res);
 }
 
+export async function getDevelopmentCommercialReadiness(id) {
+  const res = await fetch(buildUrl(`/api/developments/${encodeURIComponent(id)}/commercial-readiness`));
+  return handleJson(res);
+}
+
 export async function createDevelopment(payload = {}) {
   const actor = sessionActor();
   const res = await fetch(buildUrl('/api/developments'), {

@@ -313,6 +313,14 @@ async function materialise(developmentId) {
 }
 
 async function createPeriod(developmentId, body = {}) {
+  await pool.query(`INSERT INTO cvr_periods(client_id,development_id,period_key,period_label,status,commentary,version,budget_source,submitted_at,submitted_by,approved_at,approved_by)
+    SELECT client_id,$1,'P00','Legacy baseline','locked','{}',1,'legacy_cvr',NOW(),'legacy-test',NOW(),'legacy-test'
+    FROM developments d
+    WHERE d.id=$1
+      AND NOT EXISTS (
+        SELECT 1 FROM cvr_periods p
+        WHERE p.client_id=d.client_id AND p.development_id=$1 AND p.period_key='P00'
+      )`, [developmentId]);
   const res = await request(app)
     .post(`/api/developments/${encodeURIComponent(developmentId)}/cvr/periods`)
     .send(body);

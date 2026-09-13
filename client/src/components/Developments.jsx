@@ -16,6 +16,7 @@ export default function Developments({
   navigationOrigin = null,
   onInitialDevelopmentHandled = null,
   onOpenPackage = null,
+  onNavigate = null,
 }) {
   const [view, setView] = useState('list');
   const [activeDevelopmentId, setActiveDevelopmentId] = useState(null);
@@ -192,6 +193,7 @@ export default function Developments({
         onCvrChanged={() => setRefreshToken((value) => value + 1)}
         onDevelopmentChanged={handleDevelopmentChanged}
         onOpenPackage={onOpenPackage}
+        onNavigate={onNavigate}
       />
     );
   }

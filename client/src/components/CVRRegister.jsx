@@ -8,6 +8,7 @@ import {
 } from '../cvr/cvrPeriodHelpers';
 import { resolveCreateNextReportingMonthAction } from '../cvr/cvrCreateNextReportingMonth';
 import { isCvrServerAuthorityEnabled } from '../cvr/cvrPeriodAuthority';
+import { firstCvrCreationState } from '../cvr/cvrFirstPeriodReadiness';
 import {
   ensureCvrInputsReadyForPeriod,
   ensureCvrPeriodsReadyForDevelopment,
@@ -34,6 +35,9 @@ export default function CVRRegister({
   certificatesLoading = false,
   certificatesReady = true,
   certificatesError = '',
+  commercialReadiness = null,
+  commercialReadinessLoading = false,
+  commercialReadinessError = '',
 }) {
   const [localRefresh, setLocalRefresh] = useState(0);
   const [reportingMonthPrompt, setReportingMonthPrompt] = useState(null);
@@ -98,7 +102,8 @@ export default function CVRRegister({
   }
 
   async function handleCreatePeriod() {
-    if (!register.ready) return;
+    const firstPeriod = register.rows.length === 0;
+    if (!register.ready || (firstPeriod && (!commercialReadiness || !commercialReadiness.canCreateFirstCvr))) return;
 
     const action = resolveCreateNextReportingMonthAction(development.id);
     if (action.kind === 'recover') {
@@ -128,11 +133,17 @@ export default function CVRRegister({
   const primaryActionLabel = register.draftPeriodKey
     ? 'Open Draft CVR'
     : 'Create New CVR Period';
+  const { firstPeriod, blocked: firstPeriodCreationBlocked } = firstCvrCreationState({
+    rowCount: register.rows.length,
+    readiness: commercialReadiness,
+    loading: commercialReadinessLoading,
+    error: commercialReadinessError,
+  });
 
   useEffect(() => {
     if (!onPrimaryActionChange) return undefined;
 
-    if (!register.ready) {
+    if (!register.ready || firstPeriodCreationBlocked) {
       onPrimaryActionChange(null);
       return () => onPrimaryActionChange(null);
     }
@@ -144,7 +155,7 @@ export default function CVRRegister({
     );
 
     return () => onPrimaryActionChange(null);
-  }, [onPrimaryActionChange, primaryActionLabel, register.draftPeriodKey, register.ready]);
+  }, [onPrimaryActionChange, primaryActionLabel, register.draftPeriodKey, register.ready, firstPeriodCreationBlocked]);
 
   return (
     <>
@@ -154,6 +165,10 @@ export default function CVRRegister({
         support="Monthly Commercial Reporting"
         description="Manage monthly reporting periods for this development. Only one draft may exist at a time."
       />
+
+      {firstPeriod && commercialReadinessError ? <div className="po-list-feedback po-list-feedback--error" role="alert">Commercial readiness could not be loaded. First-period creation is unavailable until authoritative sources can be checked.</div> : null}
+      {firstPeriod && !commercialReadinessLoading && commercialReadiness && !commercialReadiness.canCreateFirstCvr ? <div className="po-list-feedback po-list-feedback--error" role="alert">Resolve the Cost Code Master, Development Budget or open-period blocker shown on Development Overview before creating P01.</div> : null}
+      {firstPeriod && commercialReadiness?.canCreateFirstCvr && commercialReadiness.overallState !== 'ready' ? <div className="po-list-feedback po-list-feedback--warning" role="status">You can start this Draft CVR. Commercial readiness items must still be resolved at the appropriate Submit or Lock stage.</div> : null}
 
       {certificatesError ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">

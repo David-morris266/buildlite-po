@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseMoneyToPence, validateDevelopmentBudgetImport } from './developmentBudgetImport';
+import { buildOpeningBudgetEventLines, parseMoneyToPence, validateDevelopmentBudgetImport } from './developmentBudgetImport';
 
 const parsed = (rows, fieldByColumn = ['costCode', 'description', 'amount']) => ({
   rows: [['Cost Code', 'Description', 'Budget'], ...rows],
@@ -24,6 +24,16 @@ describe('Development Budget import', () => {
     expect(result.canCommit).toBe(true);
     expect(result.totalPence).toBe(10000001);
     expect(result.rows[0]).toMatchObject({ costCodeId: 'cc-a', amountPence: 10000001 });
+  });
+
+  it('accepts zero opening rows, omits their zero-effect journal lines, and rejects negative or over-precision values', () => {
+    const result = validateDevelopmentBudgetImport(parsed([['A', 'Funded', '100.01'], ['B', 'Zero budget', '0.00']]), [{ ...master[0] }, { ...master[1], active: true }]);
+    expect(result.canCommit).toBe(true);
+    expect(result.rows[1].issues).toEqual([]);
+    expect(result.totalPence).toBe(10001);
+    expect(buildOpeningBudgetEventLines(result.rows)).toEqual([{ costCodeId: 'cc-a', amount: '100.01', explanation: 'Funded' }]);
+    expect(validateDevelopmentBudgetImport(parsed([['A', '', '-0.01']]), master).canCommit).toBe(false);
+    expect(validateDevelopmentBudgetImport(parsed([['A', '', '1.001']]), master).canCommit).toBe(false);
   });
 
   it('blocks duplicate, unknown, inactive and missing mappings', () => {

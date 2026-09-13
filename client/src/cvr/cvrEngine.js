@@ -522,7 +522,7 @@ export function buildCvrModel(developmentId, options = {}) {
     };
   }
 
-  const rows = buildCvrRows(developmentId, options);
+  const rows = buildCvrRows(developmentId, { ...options, period });
   const totals = buildCvrTotals(rows);
   const ledgerReady = readiness.ledgerReady !== false;
   if (!ledgerReady) {

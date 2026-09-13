@@ -70,7 +70,7 @@ export function validateDevelopmentBudgetImport(parsed, costCodes = []) {
     const record = master.get(normal(code));
     const issues = [];
     if (!code) issues.push('Cost Code is required');
-    if (amountPence == null || amountPence <= 0) issues.push('Budget amount must be greater than zero with no more than two decimal places');
+    if (amountPence == null || amountPence < 0) issues.push('Budget amount must be zero or greater with no more than two decimal places');
     if (code && seen.has(normal(code))) issues.push('Duplicate Cost Code');
     if (code) seen.add(normal(code));
     if (code && !record) issues.push('Cost Code is not in the company Cost Code Master');
@@ -80,4 +80,14 @@ export function validateDevelopmentBudgetImport(parsed, costCodes = []) {
     if (issues.length) errors.push(row);
   }
   return { rows, errors, missing, canCommit: !missing.length && rows.length > 0 && !errors.length, totalPence: rows.filter(row => !row.issues.length).reduce((sum, row) => sum + row.amountPence, 0) };
+}
+
+export function buildOpeningBudgetEventLines(rows = []) {
+  return rows
+    .filter(row => !row.issues?.length && row.amountPence > 0)
+    .map(row => ({
+      costCodeId: row.costCodeId,
+      amount: (row.amountPence / 100).toFixed(2),
+      explanation: row.description,
+    }));
 }

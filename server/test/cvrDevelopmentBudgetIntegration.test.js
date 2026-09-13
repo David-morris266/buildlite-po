@@ -11,6 +11,7 @@ test.before(async()=>{await prepareIntegrationTestDatabase(pool); const client=(
 test.after(async()=>{await pool.end();});
 test('new CVR adopts live authority, freezes exact submission, and becomes stale without dual-writing budgets',async()=>{
  await budget.postEvent(f.client.id,f.developmentId,{eventType:'opening_budget',effectiveDate:'2026-09-10',reference:'OPEN',reason:'Opening',idempotencyKey:randomUUID(),lines:[{costCodeId:f.code.id,amount:'100000.00'}]},f.auth);
+ const readiness=await require('../services/developmentCommercialReadiness').loadDevelopmentCommercialReadiness(f.client.id,f.developmentId); assert.equal(readiness.readiness.canCreateFirstCvr,true); assert.equal(readiness.readiness.overallState,'needs_attention'); assert.equal(readiness.readiness.items.find(x=>x.key==='revenue').state,'needs_attention'); assert.doesNotMatch(readiness.readiness.items.find(x=>x.key==='revenue').reason,/revenue-settings-missing/);
  const created=await cvr.createCvrPeriod(f.client.id,f.developmentId,{periodKey:'P01',periodLabel:'P01',reportingMonth:'2026-09-01'},{actor:'QS'}); assert.equal(created.period.budgetSourceMode,'development_budget'); assert.equal(created.period.budgetSource.document.currentBudgetPence,10000000);
  const inputs=await cvr.listCostCodeInputs(f.client.id,f.developmentId,created.period.id); assert.deepEqual(inputs.inputs,[]);
  const submitted=await cvr.submitCvrPeriod(f.client.id,f.developmentId,created.period.id,{}, {actor:'QS'}); assert.equal(submitted.ok,true); assert.equal(submitted.period.budgetSource.stale,false); assert.equal(submitted.period.budgetSource.document.positions[0].currentPence,10000000);
@@ -18,6 +19,17 @@ test('new CVR adopts live authority, freezes exact submission, and becomes stale
  const compared=await snapshots.compare(pool,{clientId:f.client.id,developmentId:f.developmentId,periodId:created.period.id}); assert.equal(compared.stale,true); assert.deepEqual(compared.reasons,['development_budget_changed']); assert.equal(compared.submitted.source_snapshot.positions[0].currentPence,10000000); assert.equal(compared.live.positions[0].currentPence,10000100);
  const locked=await cvr.approveCvrPeriod(f.client.id,f.developmentId,created.period.id,{version:submitted.period.version},{actor:'Commercial Director'}); assert.equal(locked.ok,false); assert.equal(locked.status,409); assert.match(locked.message,/Development Budget changed/);
  const snapshotsAfter=(await pool.query('SELECT COUNT(*)::int count FROM cvr_period_snapshots WHERE client_id=$1 AND period_id=$2',[f.client.id,created.period.id])).rows[0]; assert.equal(snapshotsAfter.count,0);
+});
+test('genuinely new Development without Budget Authority cannot create P01',async()=>{
+ const developmentId=`dev-${randomUUID()}`; await pool.query("INSERT INTO developments(id,client_id,job_number,development_name,status,payload) VALUES($1,$2,'NO-BUDGET','No Budget','live','{}')",[developmentId,f.client.id]);
+ const result=await cvr.createCvrPeriod(f.client.id,developmentId,{periodKey:'P01',periodLabel:'P01',reportingMonth:'2026-09-01'},{actor:'QS'});
+ assert.equal(result.status,409); assert.equal(result.blockers.some(x=>x.key==='development_budget'),true);
+});
+test('established legacy CVR development can continue without retrospective Budget enforcement',async()=>{
+ const developmentId=`dev-${randomUUID()}`; await pool.query("INSERT INTO developments(id,client_id,job_number,development_name,status,payload) VALUES($1,$2,'LEGACY-CONTINUE','Legacy Continue','live','{}')",[developmentId,f.client.id]);
+ await pool.query("INSERT INTO cvr_periods(client_id,development_id,period_key,period_label,status,commentary,version,budget_source,submitted_at,submitted_by,approved_at,approved_by) VALUES($1,$2,'P01','P01','locked','{}',1,'legacy_cvr',NOW(),'legacy-test',NOW(),'legacy-test')",[f.client.id,developmentId]);
+ const result=await cvr.createCvrPeriod(f.client.id,developmentId,{periodKey:'P02',periodLabel:'P02',reportingMonth:'2026-10-01'},{actor:'QS'});
+ assert.equal(result.ok,true,result.message); assert.equal(result.period.budgetSourceMode,'legacy_cvr');
 });
 test('existing Draft retains its baseline until explicit adoption, then rejects CVR budget edits',async()=>{
  const developmentId=`dev-${randomUUID()}`; await pool.query("INSERT INTO developments(id,client_id,job_number,development_name,status,payload) VALUES($1,$2,'LEGACY','Legacy adoption','live','{}')",[developmentId,f.client.id]);

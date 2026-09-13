@@ -135,7 +135,7 @@ export default function App() {
           setCvrNav({ developmentId: null, periodKey: null });
           setNavigationOrigin(null);
           setCvrRefresh((value) => value + 1);
-        }} /> : null}
+        }} onNavigate={handleHomeNavigate} /> : null}
       {tab === 'form' ? <CommercialWorkspace><POForm setupLaunchSeed={setupLaunchSeed}
         onClearSetupLaunchSeed={() => setSetupLaunchSeed(null)} onViewPurchaseOrders={handleViewPurchaseOrders}
         onReviewAndApprove={handleViewPurchaseOrders} onCreateAnotherPO={() => setSetupLaunchSeed(null)}

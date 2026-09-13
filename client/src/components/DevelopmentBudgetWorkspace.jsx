@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getDevelopmentBudget, postDevelopmentBudgetEvent } from '../api/developmentBudget';
 import { listServerCostCodes } from '../api/costCodes';
 import { useBuildLitePermission } from '../auth/BuildLiteAuthProvider';
-import { IMPORT_FIELDS, parseDevelopmentBudgetFile, parseMoneyToPence, validateDevelopmentBudgetImport } from '../developmentBudget/developmentBudgetImport';
+import { buildOpeningBudgetEventLines, IMPORT_FIELDS, parseDevelopmentBudgetFile, parseMoneyToPence, validateDevelopmentBudgetImport } from '../developmentBudget/developmentBudgetImport';
 import { buildBudgetMovementLines } from '../developmentBudget/developmentBudgetMovement';
 import { budgetHistoryRow, signedMoney } from '../developmentBudget/developmentBudgetPresentation';
 
@@ -48,7 +48,9 @@ export default function DevelopmentBudgetWorkspace({ developmentId }) {
     if (!validation?.canCommit || !opening.effectiveDate || !opening.reference.trim() || !opening.reason.trim()) { setError('Resolve the import errors and enter the effective date, reference and reason.'); return; }
     setSaving(true); setError(''); setSuccess('');
     try {
-      await postDevelopmentBudgetEvent(developmentId, { eventType: 'opening_budget', ...opening, idempotencyKey: openingKeyRef.current, lines: validation.rows.map(row => ({ costCodeId: row.costCodeId, amount: (row.amountPence / 100).toFixed(2), explanation: row.description })) });
+      const lines = buildOpeningBudgetEventLines(validation.rows);
+      if (!lines.length) { setError('Opening Budget must contain at least one amount greater than zero.'); return; }
+      await postDevelopmentBudgetEvent(developmentId, { eventType: 'opening_budget', ...opening, idempotencyKey: openingKeyRef.current, lines });
       openingKeyRef.current = key('opening-budget'); setSuccess('Development Budget established.'); setSetup(false); setParsed(null); await load();
     } catch (caught) { setError(caught.message); } finally { setSaving(false); }
   }
