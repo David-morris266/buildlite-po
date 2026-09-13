@@ -87,3 +87,12 @@ export async function setServerCostCodeActive(id, payload = {}) {
   });
   return handleJson(res);
 }
+
+export async function bulkUpdateServerCostCodeHierarchy(updates = []) {
+  const res = await fetch(buildUrl('/api/cost-codes/hierarchy/bulk'), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(withActor({ updates })),
+  });
+  return handleJson(res);
+}

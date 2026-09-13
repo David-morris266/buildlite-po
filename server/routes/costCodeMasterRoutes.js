@@ -13,6 +13,7 @@ const express = require("express");
 const { isDbConfigured } = require("../db");
 const { getActiveClient } = require("../services/activeClient");
 const {
+  bulkUpdateCostCodeHierarchy,
   createCostCode,
   getCostCode,
   listCostCodes,
@@ -76,6 +77,25 @@ router.post("/", async (req, res) => {
   } catch (err) {
     console.error("[Cost codes] CREATE error:", err);
     res.status(500).json({ message: "Failed to create cost code." });
+  }
+});
+
+router.put("/hierarchy/bulk", async (req, res) => {
+  try {
+    const active = await withActiveClient(req, res);
+    if (!active) return;
+    const body = req.body || {};
+    const result = await bulkUpdateCostCodeHierarchy(active.id, body, { actor: provisionalActor(body) });
+    if (!result.ok) {
+      const payload = { message: result.message };
+      if (result.errors) payload.errors = result.errors;
+      if (result.costCode) payload.costCode = result.costCode;
+      return res.status(result.status || 400).json(payload);
+    }
+    return res.json({ costCodes: result.costCodes });
+  } catch (err) {
+    console.error("[Cost codes] BULK HIERARCHY error:", err);
+    return res.status(500).json({ message: "Failed to apply cost code hierarchy." });
   }
 });
 

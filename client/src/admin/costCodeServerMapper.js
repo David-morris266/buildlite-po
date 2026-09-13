@@ -14,6 +14,7 @@ export function normalizeServerCostCode(document) {
     label: document.label || (description ? `${code} — ${description}` : code),
     commercialHead: document.commercialHead || '',
     commercialFamily: document.commercialFamily || '',
+    canonicalReportingGroup: document.canonicalReportingGroup || '',
     reportingGroup: document.reportingGroup || document.trade || '',
     trade: document.reportingGroup || document.trade || '',
     hierarchyMode: document.hierarchyMode || null,
@@ -32,6 +33,7 @@ export function normalizeServerCostCode(document) {
     updatedAt: document.updatedAt || null,
     createdBy: document.createdBy ?? null,
     updatedBy: document.updatedBy ?? null,
+    legacy: document.legacy || { subHeading: null, trade: null, element: null },
   };
 }
 

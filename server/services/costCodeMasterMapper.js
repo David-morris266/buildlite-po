@@ -29,6 +29,7 @@ function costCodeRowToDocument(row) {
     label: buildDisplayLabel(code, description),
     commercialHead: row.commercial_head || null,
     commercialFamily: row.commercial_family || null,
+    canonicalReportingGroup: row.reporting_group || null,
     reportingGroup,
     trade: reportingGroup,
     hierarchyMode: row.hierarchy_mode || null,

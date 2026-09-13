@@ -10,6 +10,7 @@ const {
   validateCreateCostCodeBody,
   validateUpdateCostCodeBody,
 } = require("./costCodeMasterValidation");
+const { validateHierarchyUpdates } = require("./costCodeCommercialHierarchy");
 
 function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -265,7 +266,52 @@ async function setCostCodeActive(clientId, id, body = {}, { actor } = {}) {
   return { ok: true, costCode: costCodeRowToDocument(updated.rows[0]) };
 }
 
+async function bulkUpdateCostCodeHierarchy(clientId, body = {}, { actor } = {}) {
+  const validated = validateHierarchyUpdates(body);
+  if (!validated.ok) {
+    return { ok: false, status: 400, errors: validated.errors, message: validated.errors.join(" ") };
+  }
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query("BEGIN");
+    const updated = [];
+    for (const entry of validated.updates) {
+      const current = await findCostCodeRow(clientId, entry.id, dbClient);
+      if (!current) {
+        await dbClient.query("ROLLBACK");
+        return notFound();
+      }
+      if (Number(current.version) !== entry.version) {
+        await dbClient.query("ROLLBACK");
+        return stale(current);
+      }
+      const result = await dbClient.query(
+        `UPDATE cost_codes
+         SET commercial_head = $1, commercial_family = $2, reporting_group = $3,
+             hierarchy_mode = $4, version = version + 1, updated_at = NOW(), updated_by = $5
+         WHERE client_id = $6 AND id = $7 AND version = $8 RETURNING *`,
+        [entry.commercialHead, entry.commercialFamily, entry.reportingGroup,
+          entry.commercialHead ? (entry.commercialFamily ? "three-level" : "two-level") : null,
+          actor || null, clientId, entry.id, entry.version]
+      );
+      if (!result.rowCount) {
+        await dbClient.query("ROLLBACK");
+        return stale(current);
+      }
+      updated.push(costCodeRowToDocument(result.rows[0]));
+    }
+    await dbClient.query("COMMIT");
+    return { ok: true, costCodes: updated };
+  } catch (error) {
+    await dbClient.query("ROLLBACK");
+    throw error;
+  } finally {
+    dbClient.release();
+  }
+}
+
 module.exports = {
+  bulkUpdateCostCodeHierarchy,
   createCostCode,
   findCostCodeRowByCode,
   getCostCode,

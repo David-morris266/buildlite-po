@@ -108,6 +108,35 @@ if (!isDbConfigured()) {
     assert.notEqual(created.body.code, created.body.label);
   });
 
+  test("bulk hierarchy mapping is atomic, tenant-scoped and preserves legacy and classifications", async () => {
+    const active = await getActiveClient();
+    const code = `HIER-${Date.now()}`;
+    const created = await createCostCode(active.id, payload({ code }), { actor: "setup" });
+    trackId(created.costCode.id);
+    await pool.query(`UPDATE cost_codes SET commercial_head = NULL, commercial_family = NULL, reporting_group = NULL, sub_heading = 'Land', trade = 'Legacy trade', element = 'Legacy element' WHERE id = $1`, [created.costCode.id]);
+    const classification = await putClassification(active.id, code, { version: 0, semanticGroup: "PRELIMS", forecastDriver: "STANDARD_CVR" }, { actor: "setup" });
+    if (classification?.classification?.costCodeKey) testKeys.push(classification.classification.costCodeKey);
+    const before = await pool.query(`SELECT code, description, sub_heading, trade, element FROM cost_codes WHERE id = $1`, [created.costCode.id]);
+    const applied = await request(app).put('/api/cost-codes/hierarchy/bulk').send({ updates: [{ id: created.costCode.id, version: created.costCode.version, commercialHead: 'Land', commercialFamily: null, reportingGroup: 'Land Cost' }] });
+    assert.equal(applied.status, 200);
+    assert.equal(applied.body.costCodes[0].commercialHead, 'Land');
+    assert.equal(applied.body.costCodes[0].canonicalReportingGroup, 'Land Cost');
+    assert.deepEqual((await pool.query(`SELECT code, description, sub_heading, trade, element FROM cost_codes WHERE id = $1`, [created.costCode.id])).rows[0], before.rows[0]);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM cost_code_classifications WHERE client_id = $1 AND lower(cost_code_key) = lower($2)`, [active.id, code])).rows[0].n, 1);
+    const cleared = await request(app).put('/api/cost-codes/hierarchy/bulk').send({ updates: [{ id: created.costCode.id, version: created.costCode.version + 1, commercialHead: null, commercialFamily: null, reportingGroup: null }] });
+    assert.equal(cleared.status, 200);
+    assert.equal(cleared.body.costCodes[0].commercialHead, null);
+    assert.equal(cleared.body.costCodes[0].canonicalReportingGroup, null);
+    const atomicFailure = await request(app).put('/api/cost-codes/hierarchy/bulk').send({ updates: [
+      { id: created.costCode.id, version: created.costCode.version + 2, commercialHead: 'Land', reportingGroup: 'Land' },
+      { id: '33333333-3333-4333-8333-333333333333', version: 1, commercialHead: 'Land', reportingGroup: 'Foreign' },
+    ] });
+    assert.equal(atomicFailure.status, 404);
+    assert.equal((await pool.query(`SELECT version, commercial_head FROM cost_codes WHERE id = $1`, [created.costCode.id])).rows[0].commercial_head, null);
+    const invalid = await request(app).put('/api/cost-codes/hierarchy/bulk').send({ updates: [{ id: created.costCode.id, version: created.costCode.version + 2, commercialHead: 'Made Up', reportingGroup: 'X' }] });
+    assert.equal(invalid.status, 400);
+  });
+
   test("5231 and P100-SM preserve entered identity; case/trim uniqueness", async () => {
     assert.equal(preserveCostCodeIdentity("  P100-SM  "), "P100-SM");
     assert.equal(looksLikeDisplayLabel("P100-SM"), false);

@@ -28,6 +28,7 @@ import {
   putCostCodeClassification,
 } from '../../api/costCodeClassifications';
 import AdminPageShell from './AdminPageShell';
+import AdminCostCodeHierarchySetup from './AdminCostCodeHierarchySetup';
 import { COST_CODE_MASTER_UNAVAILABLE_MESSAGE } from '../../admin/costCodeMessages';
 import {
   AdminButton,
@@ -87,6 +88,7 @@ export default function AdminCostCodesPage({ onBack }) {
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [conflict, setConflict] = useState(false);
+  const [hierarchySetup, setHierarchySetup] = useState(false);
 
   async function loadClassifications() {
     try {
@@ -273,12 +275,16 @@ export default function AdminCostCodesPage({ onBack }) {
   ).length;
   const codeLocked = serverAuthority && !isNew;
 
+  if (hierarchySetup) {
+    return <AdminCostCodeHierarchySetup records={allRecords || []} onCancel={() => setHierarchySetup(false)} onApplied={() => { setHierarchySetup(false); setRefresh((value) => value + 1); setSaveMessage('Commercial hierarchy applied.'); }} />;
+  }
+
   return (
     <AdminPageShell
       title="Cost Codes"
       lead="Master cost code records remain the commercial identity. BuildLite Group is engine taxonomy only and does not change CVR until a later forecast-driver slice."
       onBack={onBack}
-      actions={<AdminButton variant="primary" onClick={startNew} disabled={showError}>Add Cost Code</AdminButton>}
+      actions={<><AdminButton variant="secondary" onClick={() => setHierarchySetup(true)} disabled={showError || !serverAuthority || masterUnresolved}>Set up Commercial Hierarchy</AdminButton><AdminButton variant="primary" onClick={startNew} disabled={showError}>Add Cost Code</AdminButton></>}
     >
       {classificationError ? (
         <p className="admin-inline-warning" role="status">{classificationError}</p>

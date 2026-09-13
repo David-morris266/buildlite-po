@@ -6,6 +6,7 @@
 
 import {
   CostCodeApiError,
+  bulkUpdateServerCostCodeHierarchy,
   createServerCostCode,
   setServerCostCodeActive,
   updateServerCostCode,
@@ -25,6 +26,21 @@ function wrap(error, fallbackMessage) {
     return wrapped;
   }
   return new CostCodeCacheError(error?.message || fallbackMessage, { code: 'NETWORK_ERROR' });
+}
+
+export async function bulkUpdateCostCodeHierarchyOnServer(updates = []) {
+  assertAuthorityOn();
+  requireCachedCostCodes();
+  try {
+    const payload = await bulkUpdateServerCostCodeHierarchy(updates);
+    const rows = Array.isArray(payload?.costCodes) ? payload.costCodes : [];
+    rows.forEach(replaceCachedCostCode);
+    notifyMasterDataChanged('cost-codes');
+    return { ok: true, costCodes: rows };
+  } catch (error) {
+    const wrapped = wrap(error, 'Failed to apply cost code hierarchy.');
+    return { ok: false, status: wrapped.status || 0, errors: [wrapped.message] };
+  }
 }
 
 function assertAuthorityOn() {
