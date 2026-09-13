@@ -25,6 +25,9 @@ export default function AdministrationModule({
   onLaunchPO,
   onOpenDevelopments,
   dashboardResetToken = 0,
+  initialView = null,
+  returnDevelopment = null,
+  onReturnToDevelopment,
 }) {
   const [view, setView] = useState('landing');
   const [setupStep, setSetupStep] = useState(null);
@@ -38,6 +41,18 @@ export default function AdministrationModule({
       goToDashboard();
     }
   }, [dashboardResetToken, goToDashboard]);
+
+  useEffect(() => {
+    if (initialView && isAdminView(initialView)) setView(initialView);
+  }, [initialView]);
+
+  const returnAction = returnDevelopment ? (
+    <div className="po-module-card admin-context-return">
+      <button type="button" className="po-list-btn-secondary" onClick={() => onReturnToDevelopment?.(returnDevelopment)}>
+        Return to {returnDevelopment.name}
+      </button>
+    </div>
+  ) : null;
 
   function openView(nextView) {
     if (!isAdminView(nextView)) return;
@@ -99,6 +114,7 @@ export default function AdministrationModule({
   if (view === 'cost-codes') {
     return (
       <AdministrationWorkspace>
+        {returnAction}
         <AdminCostCodesPage onBack={goToDashboard} />
       </AdministrationWorkspace>
     );

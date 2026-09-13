@@ -32,7 +32,7 @@ export function SummaryDashboard({ cards }) {
 
 const readinessLabel = state => state === 'blocker' ? 'Blocker' : state === 'needs_attention' ? 'Needs attention' : 'Ready';
 
-export function CommercialReadinessCard({ readiness, loading = false, error = '', onResolve }) {
+export function CommercialReadinessCard({ readiness, loading = false, error = '', onResolve, onStartFirstCvr }) {
   const workflow = (readiness?.items || []).filter(item => item.workflowState);
   const blockers = (readiness?.items || []).filter(item => !item.workflowState && item.state === 'blocker');
   const attention = (readiness?.items || []).filter(item => !item.workflowState && item.state === 'needs_attention');
@@ -41,6 +41,36 @@ export function CommercialReadinessCard({ readiness, loading = false, error = ''
     <span className="dev-workspace__readiness-copy"><strong className="dev-workspace__setup-label">{item.title}</strong><span className="dev-workspace__setup-detail">{item.reason}</span></span>
     {item.resolutionTarget ? <button type="button" className="dev-workspace__readiness-action" onClick={() => onResolve?.(item.resolutionTarget)}>{item.workflowState ? 'Continue current CVR' : 'Review'}</button> : null}
   </li>;
+  if (readiness && !readiness.hasCvrHistory) {
+    const required = readiness.items.filter(item => item.draftCreationRequirement || (item.blocksDraftCreation && !item.workflowState));
+    const requiredKeys = new Set(required.map(item => item.key));
+    const later = readiness.items.filter(item => !requiredKeys.has(item.key) && !item.workflowState && item.state !== 'ready');
+    const renderFirstItem = (item, requiredItem = false) => <li key={item.key} className={`dev-workspace__setup-item dev-workspace__setup-item--${item.state}`}>
+      <span className="dev-workspace__readiness-copy">
+        <strong className="dev-workspace__setup-label">{item.title}</strong>
+        <span className="dev-workspace__setup-detail">{item.state === 'ready' && requiredItem ? 'Complete' : item.reason}</span>
+      </span>
+      {item.state !== 'ready' && item.resolutionTarget ? <button type="button" className="dev-workspace__readiness-action" onClick={() => onResolve?.(item.resolutionTarget)}>Review</button> : null}
+    </li>;
+    return <section className="po-module-card dev-workspace__section dev-workspace__first-cvr" aria-label="Get ready for first CVR">
+      <h2 className="po-matrix-section__title">Get ready for first CVR</h2>
+      {loading ? <p role="status">Checking commercial readiness…</p> : null}
+      {error ? <div className="po-list-feedback po-list-feedback--error" role="alert">{error}</div> : null}
+      {!loading && !error ? <>
+        <h3 className="dev-workspace__readiness-heading">Required to start</h3>
+        <ul className="dev-workspace__setup-list">{required.map(item => renderFirstItem(item, true))}</ul>
+        {readiness.canCreateFirstCvr ? <div className="dev-workspace__first-cvr-ready">
+          <strong>Ready to create the first working CVR</strong>
+          <button type="button" className="po-btn-primary" onClick={onStartFirstCvr}>Start first CVR</button>
+        </div> : <p>Complete the required items above before starting P01.</p>}
+        {later.length ? <>
+          <h3 className="dev-workspace__readiness-heading">Check before submission</h3>
+          <p className="dev-workspace__setup-detail">These items do not prevent you starting a working Draft. Check what applies before the appropriate Submit or Lock stage.</p>
+          <ul className="dev-workspace__setup-list">{later.map(item => renderFirstItem(item))}</ul>
+        </> : null}
+      </> : null}
+    </section>;
+  }
   return <section className="po-module-card dev-workspace__section" aria-label="Commercial readiness">
     <h2 className="po-matrix-section__title">Commercial readiness</h2>
     {loading ? <p role="status">Checking commercial readiness…</p> : null}
@@ -249,13 +279,14 @@ export default function DevelopmentOverview({
   commercialReadinessLoading = false,
   commercialReadinessError = '',
   onResolveReadiness,
+  onStartFirstCvr,
 }) {
   if (!model) return null;
 
   return (
     <>
       <div className="dev-workspace__grid">
-        <CommercialReadinessCard readiness={commercialReadiness} loading={commercialReadinessLoading} error={commercialReadinessError} onResolve={onResolveReadiness} />
+        <CommercialReadinessCard readiness={commercialReadiness} loading={commercialReadinessLoading} error={commercialReadinessError} onResolve={onResolveReadiness} onStartFirstCvr={onStartFirstCvr} />
 
         <section className="po-module-card dev-workspace__section">
           <h2 className="po-matrix-section__title">Packages</h2>

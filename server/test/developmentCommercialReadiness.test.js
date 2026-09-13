@@ -17,15 +17,30 @@ function facts(overrides = {}) {
 }
 
 test('creation requires authoritative active cost codes', () => {
-  assert.equal(evaluateDevelopmentCommercialReadiness(facts({ costCodes: { available: true, activeCount: 0 } })).canCreateFirstCvr, false);
+  const empty = evaluateDevelopmentCommercialReadiness(facts({ costCodes: { available: true, activeCount: 0 } }));
+  assert.equal(empty.canCreateFirstCvr, false);
+  assert.equal(empty.items.find(entry => entry.key === 'cost_code_master').blocksDraftCreation, true);
+  assert.equal(empty.items.find(entry => entry.key === 'cost_code_master').draftCreationRequirement, true);
   const unavailable = evaluateDevelopmentCommercialReadiness(facts({ costCodes: { available: false } }));
   assert.equal(unavailable.canCreateFirstCvr, false);
   assert.equal(unavailable.items.find(entry => entry.key === 'cost_code_master').sourceAvailable, false);
+  assert.equal(unavailable.items.find(entry => entry.key === 'cost_code_master').blocksDraftCreation, true);
 });
 
 test('new development requires verified Development Budget authority', () => {
-  assert.equal(evaluateDevelopmentCommercialReadiness(facts({ budget: { available: true, exists: false, integrityValid: false } })).canCreateFirstCvr, false);
+  const missing = evaluateDevelopmentCommercialReadiness(facts({ budget: { available: true, exists: false, integrityValid: false } }));
+  assert.equal(missing.canCreateFirstCvr, false);
+  assert.equal(missing.items.find(entry => entry.key === 'development_budget').blocksDraftCreation, true);
+  assert.equal(missing.items.find(entry => entry.key === 'development_budget').draftCreationRequirement, true);
   assert.equal(evaluateDevelopmentCommercialReadiness(facts({ budget: { available: false } })).canCreateFirstCvr, false);
+});
+
+test('period-source failure blocks creation without becoming a setup requirement', () => {
+  const result = evaluateDevelopmentCommercialReadiness(facts({ periods: { available: false } }));
+  const periods = result.items.find(entry => entry.key === 'cvr_periods');
+  assert.equal(result.canCreateFirstCvr, false);
+  assert.equal(periods.blocksDraftCreation, true);
+  assert.equal(periods.draftCreationRequirement, false);
 });
 
 test('Revenue needs attention without blocking a working Draft', () => {
@@ -33,6 +48,7 @@ test('Revenue needs attention without blocking a working Draft', () => {
   assert.equal(result.overallState, 'needs_attention');
   assert.equal(result.canCreateFirstCvr, true);
   assert.equal(result.items.find(entry => entry.key === 'revenue').state, 'needs_attention');
+  assert.equal(result.items.find(entry => entry.key === 'revenue').blocksDraftCreation, false);
 });
 
 test('Forecast Pending VA remains a completion blocker without blocking Draft creation', () => {
@@ -42,6 +58,7 @@ test('Forecast Pending VA remains a completion blocker without blocking Draft cr
   assert.equal(result.overallState, 'blocker');
   assert.equal(result.canCreateFirstCvr, true);
   assert.equal(result.items.find(entry => entry.key === 'variation_exposure').blocksCompletion, true);
+  assert.equal(result.items.find(entry => entry.key === 'variation_exposure').blocksDraftCreation, false);
 });
 
 test('zero operational facts are truthful zeros rather than blockers', () => {
@@ -57,6 +74,7 @@ test('optional Prelims and Selling Costs absence needs attention without blockin
   const result = evaluateDevelopmentCommercialReadiness(facts({ prelims: { available: true, count: 0 }, sellingCosts: { available: true, count: 0 } }));
   assert.equal(result.items.find(entry => entry.key === 'prelims').state, 'needs_attention');
   assert.equal(result.items.find(entry => entry.key === 'selling_costs').state, 'needs_attention');
+  for (const key of ['prelims', 'selling_costs']) assert.equal(result.items.find(entry => entry.key === key).blocksDraftCreation, false);
   assert.equal(result.canCreateFirstCvr, true);
 });
 
@@ -79,6 +97,7 @@ test('an existing open period is the creation blocker and resolution target', ()
   assert.equal(result.overallState, 'needs_attention');
   assert.equal(result.hasCvrHistory, true);
   assert.equal(result.items.find(entry => entry.key === 'cvr_periods').workflowState, true);
+  assert.equal(result.items.find(entry => entry.key === 'cvr_periods').blocksDraftCreation, true);
   assert.equal(result.items.find(entry => entry.key === 'cvr_periods').resolutionTarget.periodKey, 'P02');
   assert.equal(result.items.find(entry => entry.key === 'prelims').state, 'needs_attention');
   assert.equal(result.items.find(entry => entry.key === 'selling_costs').state, 'needs_attention');

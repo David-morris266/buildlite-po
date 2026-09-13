@@ -37,6 +37,7 @@ export default function App() {
   const [cvrNav, setCvrNav] = useState({ developmentId: null, periodKey: null });
   const [cvrRefresh, setCvrRefresh] = useState(0);
   const [adminDashboardReset, setAdminDashboardReset] = useState(0);
+  const [adminLaunch, setAdminLaunch] = useState(null);
   const [navigationOrigin, setNavigationOrigin] = useState(null);
 
   useEffect(() => {
@@ -81,15 +82,21 @@ export default function App() {
       setAdminDashboardReset((value) => value + 1);
     }
     if (tab === 'form' && nextTab !== 'form') setSetupLaunchSeed(null);
+    if (nextTab === 'administration') setAdminLaunch(null);
     setTab(nextTab);
   };
 
-  const handleHomeNavigate = ({ view }) => {
+  const handleHomeNavigate = ({ view, section = null, returnDevelopment = null }) => {
     const tabByView = {
       home: 'home', administration: 'administration', cvrs: 'cvrs', developments: 'developments',
       'new-purchase-order': 'form', 'purchase-orders': 'list', archive: 'archive',
       'payment-approval': 'payment-approval', 'payment-release': 'payment-release',
     };
+    if (view === 'administration') {
+      setAdminLaunch({ section: section || 'landing', returnDevelopment });
+      setTab('administration');
+      return;
+    }
     handleTab(tabByView[view] || HOME_VIEW);
   };
 
@@ -111,28 +118,33 @@ export default function App() {
     <main className="po-app-main">
       {tab === 'home' ? <CommercialWorkspace><BuildLiteHome onNavigate={handleHomeNavigate} /></CommercialWorkspace> : null}
       {tab === 'administration' ? <AdministrationModule dashboardResetToken={adminDashboardReset}
-        onLaunchPO={handleLaunchPO} onOpenDevelopments={handleOpenDevelopments} /> : null}
+        initialView={adminLaunch?.section} returnDevelopment={adminLaunch?.returnDevelopment}
+        onReturnToDevelopment={(target) => {
+          setAdminLaunch(null);
+          setCvrNav({ developmentId: target.id, periodKey: null, workspaceTab: 'overview' });
+          setTab('developments');
+        }} onLaunchPO={handleLaunchPO} onOpenDevelopments={handleOpenDevelopments} /> : null}
       {tab === 'cvrs' ? <CommercialWorkspace><CVRPortfolio refreshToken={cvrRefresh}
         onOpenDevelopmentCvr={(developmentId) => {
           setNavigationOrigin({ label: 'CVR Portfolio', returnTab: 'cvrs' });
-          setCvrNav({ developmentId, periodKey: null });
+          setCvrNav({ developmentId, periodKey: null, workspaceTab: 'cvr' });
           setTab('developments');
         }}
         onOpenDevelopmentPeriod={(developmentId, periodKey) => {
           setNavigationOrigin({ label: 'CVR Portfolio', returnTab: 'cvrs' });
-          setCvrNav({ developmentId, periodKey });
+          setCvrNav({ developmentId, periodKey, workspaceTab: 'cvr' });
           setTab('developments');
         }} /></CommercialWorkspace> : null}
       {tab === 'developments' ? <Developments
         initialDevelopmentId={cvrNav.developmentId}
-        initialWorkspaceTab={cvrNav.developmentId ? 'cvr' : null}
+        initialWorkspaceTab={cvrNav.workspaceTab || (cvrNav.developmentId ? 'cvr' : null)}
         initialCvrPeriodKey={cvrNav.periodKey}
         navigationOrigin={navigationOrigin ? {
           label: navigationOrigin.label,
           onReturn: () => { setTab(navigationOrigin.returnTab || 'cvrs'); setNavigationOrigin(null); },
         } : null}
         onInitialDevelopmentHandled={() => {
-          setCvrNav({ developmentId: null, periodKey: null });
+          setCvrNav({ developmentId: null, periodKey: null, workspaceTab: null });
           setNavigationOrigin(null);
           setCvrRefresh((value) => value + 1);
         }} onNavigate={handleHomeNavigate} /> : null}

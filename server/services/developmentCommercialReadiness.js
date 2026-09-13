@@ -4,6 +4,7 @@ const { buildCvrRevenueCloseCandidate } = require('./cvrRevenueClose');
 const { buildLiveVariationExposure } = require('./cvrVariationExposureSnapshot');
 
 const STATES = Object.freeze({ BLOCKER: 'blocker', ATTENTION: 'needs_attention', READY: 'ready' });
+const DRAFT_CREATION_REQUIREMENT_KEYS = new Set(['cost_code_master', 'development_budget']);
 
 function item(key, state, title, reason, resolutionTarget, detail = {}) {
   return { key, state, title, reason, resolutionTarget, ...detail };
@@ -75,15 +76,23 @@ function evaluateDevelopmentCommercialReadiness(facts = {}) {
     else items.push(item(key, STATES.READY, title, `${source.count} ${title.toLowerCase()} ${source.count === 1 ? 'record' : 'records'} available.`, { tab }, { count: source.count }));
   }
 
-  const creationBlockerKeys = new Set(['cost_code_master', 'development_budget', 'cvr_periods']);
-  const canCreateFirstCvr = !openPeriod && !items.some(entry => entry.state === STATES.BLOCKER && creationBlockerKeys.has(entry.key));
-  const commercialItems = items.filter(entry => !entry.workflowState);
+  const classifiedItems = items.map(entry => ({
+    ...entry,
+    draftCreationRequirement: DRAFT_CREATION_REQUIREMENT_KEYS.has(entry.key),
+    blocksDraftCreation: Boolean(
+      (DRAFT_CREATION_REQUIREMENT_KEYS.has(entry.key) && entry.state === STATES.BLOCKER) ||
+      (entry.key === 'cvr_periods' && entry.state === STATES.BLOCKER) ||
+      entry.preventsPeriodCreation
+    ),
+  }));
+  const canCreateFirstCvr = !classifiedItems.some(entry => entry.blocksDraftCreation);
+  const commercialItems = classifiedItems.filter(entry => !entry.workflowState);
   const overallState = commercialItems.some(entry => entry.state === STATES.BLOCKER)
     ? STATES.BLOCKER
     : commercialItems.some(entry => entry.state === STATES.ATTENTION)
       ? STATES.ATTENTION
       : STATES.READY;
-  return { policy: 'gp5b_development_commercial_readiness_v1', overallState, canCreateFirstCvr, hasCvrHistory: Boolean(periods?.rows?.length), establishedLegacy, items };
+  return { policy: 'gp5b_development_commercial_readiness_v1', overallState, canCreateFirstCvr, hasCvrHistory: Boolean(periods?.rows?.length), establishedLegacy, items: classifiedItems };
 }
 
 async function loadDevelopmentCommercialReadiness(clientId, developmentId, query = db.query) {

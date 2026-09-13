@@ -44,7 +44,11 @@ describe('DevelopmentBudgetWorkspace', () => {
 
   it('previews and commits one opening event with feedback', async () => {
     mocks.get.mockResolvedValueOnce(empty).mockResolvedValue(established); await render();
+    expect(button('Set up Development Budget')).toBeTruthy();
     act(() => button('Set up Development Budget').click());
+    expect(button('Set up Development Budget')).toBeUndefined();
+    expect(host.textContent).toContain('Set up Development Budget');
+    expect(button('Choose budget file')).toBeTruthy();
     const fileInput = host.querySelector('input[type="file"]');
     await act(async () => { Object.defineProperty(fileInput, 'files', { value: [{ name: 'budget.csv' }] }); fileInput.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve(); await Promise.resolve(); });
     const inputs = [...host.querySelectorAll('input:not([type="file"])')];

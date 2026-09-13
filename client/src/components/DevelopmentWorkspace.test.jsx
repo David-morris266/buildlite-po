@@ -59,9 +59,11 @@ vi.mock('../commercialAssistant/CommercialAssistantContext', () => ({
 }));
 
 vi.mock('./DevelopmentOverview', () => ({
-  default: ({ onOpenPackage }) => (
+  default: ({ onOpenPackage, onResolveReadiness, onStartFirstCvr }) => (
     <div>
       <span>Overview panel</span>
+      <button type="button" onClick={() => onResolveReadiness?.({ tab: 'budget' })}>Resolve Budget</button>
+      <button type="button" onClick={onStartFirstCvr}>Start first CVR</button>
       <button
         type="button"
         onClick={() =>
@@ -237,5 +239,15 @@ describe('DevelopmentWorkspace stability guards', () => {
     expect(document.body.textContent).toContain('ADD-1');
     expect(document.body.textContent).toContain('OMIT-1');
     expect(getDevelopmentBudget).toHaveBeenCalledWith('dev-1');
+  });
+
+  it('uses existing Development tabs for Budget resolution and first-CVR handoff', async () => {
+    renderWorkspace();
+    await act(async () => { await Promise.resolve(); });
+    act(() => [...document.querySelectorAll('button')].find(button => button.textContent === 'Resolve Budget').click());
+    expect(document.body.textContent).toContain('Development Budget');
+    clickTab('Overview');
+    act(() => [...document.querySelectorAll('button')].find(button => button.textContent === 'Start first CVR').click());
+    expect(document.querySelector('[data-testid="cvr-panel"]')).not.toBeNull();
   });
 });

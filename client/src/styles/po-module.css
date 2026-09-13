@@ -11292,3 +11292,24 @@
     grid-column: auto;
   }
 }
+.dev-workspace__first-cvr-ready,
+.admin-context-return {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.dev-workspace__first-cvr-ready {
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(76, 201, 140, 0.45);
+  border-radius: 0.75rem;
+  background: rgba(20, 94, 62, 0.22);
+}
+
+.admin-context-return {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+}

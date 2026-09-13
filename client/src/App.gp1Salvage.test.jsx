@@ -15,7 +15,11 @@ vi.mock('./components/BuildLiteHome', () => ({
   default: ({ onNavigate }) => <button onClick={() => onNavigate({ view: 'developments' })}>Developments & Packages</button>,
 }));
 vi.mock('./components/Developments', () => ({
-  default: (props) => <div data-testid="developments" data-has-package-target={String('initialPackageTarget' in props)}>Developments list</div>,
+  default: (props) => <div data-testid="developments" data-has-package-target={String('initialPackageTarget' in props)} data-development-id={props.initialDevelopmentId || ''} data-workspace-tab={props.initialWorkspaceTab || ''}>
+    Developments list
+    <button onClick={() => props.onNavigate?.({ view: 'administration', section: 'cost-codes', returnDevelopment: { id: 'dev-1', name: 'Pilot Site' } })}>Resolve Cost Codes</button>
+    {props.initialDevelopmentId ? <button onClick={props.onInitialDevelopmentHandled}>Development handled</button> : null}
+  </div>,
 }));
 vi.mock('./setup/SetupAssistant', () => ({
   default: () => <div>Setup Assistant</div>,
@@ -32,7 +36,10 @@ vi.mock('./components/POArchive', () => ({ default: () => <div>Archive</div> }))
 vi.mock('./components/PaymentApprovalRun', () => ({ default: () => <div>Approval</div> }));
 vi.mock('./components/PaymentReleaseWorklist', () => ({ default: () => <div>Release</div> }));
 vi.mock('./components/CVRPortfolio', () => ({ default: () => <div>CVR</div> }));
-vi.mock('./components/admin/AdministrationModule', () => ({ default: () => <div>Admin</div> }));
+vi.mock('./components/admin/AdministrationModule', () => ({ default: (props) => <div data-testid="admin" data-view={props.initialView || ''}>
+  Admin
+  {props.returnDevelopment ? <button onClick={() => props.onReturnToDevelopment(props.returnDevelopment)}>Return to {props.returnDevelopment.name}</button> : null}
+</div> }));
 vi.mock('./setup/setupDraft', () => ({ buildPoFormSeedFromSetup: vi.fn(), loadSetupDraft: vi.fn() }));
 
 import App from './App';
@@ -71,5 +78,17 @@ describe('GP-1 salvaged application entry', () => {
     window.history.replaceState({}, '', '/?setup=1');
     act(() => root.render(<App />));
     expect(container.textContent).toContain('Setup Assistant');
+  });
+
+  it('opens tenant Cost Codes with a bounded return to the originating Development', () => {
+    act(() => root.render(<App />));
+    act(() => container.querySelector('main button').click());
+    act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Resolve Cost Codes').click());
+    expect(container.querySelector('[data-testid="admin"]').dataset.view).toBe('cost-codes');
+    expect(container.textContent).toContain('Return to Pilot Site');
+    act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Return to Pilot Site').click());
+    const developments = container.querySelector('[data-testid="developments"]');
+    expect(developments.dataset.developmentId).toBe('dev-1');
+    expect(developments.dataset.workspaceTab).toBe('overview');
   });
 });

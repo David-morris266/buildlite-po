@@ -167,7 +167,7 @@ export default function CVRRegister({
       />
 
       {firstPeriod && commercialReadinessError ? <div className="po-list-feedback po-list-feedback--error" role="alert">Commercial readiness could not be loaded. First-period creation is unavailable until authoritative sources can be checked.</div> : null}
-      {firstPeriod && !commercialReadinessLoading && commercialReadiness && !commercialReadiness.canCreateFirstCvr ? <div className="po-list-feedback po-list-feedback--error" role="alert">Resolve the Cost Code Master, Development Budget or open-period blocker shown on Development Overview before creating P01.</div> : null}
+      {firstPeriod && !commercialReadinessLoading && commercialReadiness && !commercialReadiness.canCreateFirstCvr ? <div className="po-list-feedback po-list-feedback--error" role="alert">This first CVR cannot be started yet. Review the required items on Development Overview.</div> : null}
       {firstPeriod && commercialReadiness?.canCreateFirstCvr && commercialReadiness.overallState !== 'ready' ? <div className="po-list-feedback po-list-feedback--warning" role="status">You can start this Draft CVR. Commercial readiness items must still be resolved at the appropriate Submit or Lock stage.</div> : null}
 
       {certificatesError ? (

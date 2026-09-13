@@ -187,12 +187,11 @@ async function createCvrPeriod(clientId, developmentId, body = {}, { actor } = {
   const readinessResult = await require('./developmentCommercialReadiness').loadDevelopmentCommercialReadiness(clientId, developmentId);
   if (!readinessResult.ok) return readinessResult;
   if (!readinessResult.readiness.canCreateFirstCvr) {
-    const creationKeys = new Set(['cost_code_master', 'development_budget', 'cvr_periods']);
     return {
       ok: false,
       status: 409,
       message: 'This Development is not ready to create another CVR period.',
-      blockers: readinessResult.readiness.items.filter(entry => entry.state === 'blocker' && creationKeys.has(entry.key)),
+      blockers: readinessResult.readiness.items.filter(entry => entry.blocksDraftCreation),
     };
   }
 

@@ -504,7 +504,12 @@ export default function DevelopmentWorkspace({
       setCvrView('summary');
       handleSelectWorkspaceTab('cvr');
     } else if (target?.tab) handleSelectWorkspaceTab(target.tab);
-    else if (target?.view) onNavigate?.(target);
+    else if (target?.view) onNavigate?.({ ...target, returnDevelopment: { id: development.id, name: development.developmentName || development.jobNumber || 'Development' } });
+  }
+
+  function handleStartFirstCvr() {
+    resetCvrToRegister();
+    handleSelectWorkspaceTab('cvr');
   }
 
   if (!model) {
@@ -935,6 +940,7 @@ export default function DevelopmentWorkspace({
             commercialReadinessLoading={commercialReadinessLoading}
             commercialReadinessError={commercialReadinessError}
             onResolveReadiness={handleResolveReadiness}
+            onStartFirstCvr={handleStartFirstCvr}
           />
         ) : null}
 
