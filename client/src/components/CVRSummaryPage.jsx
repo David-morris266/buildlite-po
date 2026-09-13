@@ -52,16 +52,30 @@ function StatusBadge({ status }) {
   );
 }
 
-function SummaryKpiRibbon({ items }) {
-  const heroItems = items.filter((item) => item.emphasis === 'hero');
-  const supportingItems = items.filter(
-    (item) => item.emphasis === 'supporting' || item.emphasis === 'future'
-  );
+const CORE_KPI_ORDER = [
+  'forecastCost',
+  'forecastProfit',
+  'forecastMargin',
+  'costToComplete',
+  'forecastVariance',
+];
+const REVENUE_KPI_ORDER = ['forecastRevenue', 'securedRevenue', 'remainingForecast'];
+
+function orderedKpis(items, keys) {
+  const byKey = new Map(items.map((item) => [item.key, item]));
+  return keys.map((key) => byKey.get(key)).filter(Boolean);
+}
+
+export function SummaryKpiRibbon({ items }) {
+  const coreItems = orderedKpis(items, CORE_KPI_ORDER);
+  const revenueItems = orderedKpis(items, REVENUE_KPI_ORDER);
 
   return (
     <section className="cvr-summary__kpi-zone" aria-label="Executive KPIs">
-      <div className="cvr-summary__kpi-hero" aria-label="Primary commercial KPIs">
-        {heroItems.map((item) => (
+      <div className="cvr-summary__kpi-group cvr-summary__kpi-group--core" aria-label="Core commercial position">
+        <span className="cvr-summary__kpi-group-label">Core commercial position</span>
+        <div className="cvr-summary__kpi-grid cvr-summary__kpi-grid--core">
+        {coreItems.map((item) => (
           <div
             key={item.key}
             className={`cvr-summary__kpi cvr-summary__kpi--hero cvr-summary__kpi--${item.modifier}`}
@@ -76,10 +90,13 @@ function SummaryKpiRibbon({ items }) {
             ) : null}
           </div>
         ))}
+        </div>
       </div>
-      {supportingItems.length ? (
-        <div className="cvr-summary__kpi-future" aria-label="Supporting revenue KPIs">
-          {supportingItems.map((item) => (
+      {revenueItems.length ? (
+        <div className="cvr-summary__kpi-group cvr-summary__kpi-group--revenue" aria-label="Revenue context">
+          <span className="cvr-summary__kpi-group-label">Revenue context</span>
+          <div className="cvr-summary__kpi-grid cvr-summary__kpi-grid--revenue">
+          {revenueItems.map((item) => (
             <div
               key={item.key}
               className={`cvr-summary__kpi cvr-summary__kpi--future cvr-summary__kpi--${item.modifier}`}
@@ -94,6 +111,7 @@ function SummaryKpiRibbon({ items }) {
               ) : null}
             </div>
           ))}
+          </div>
         </div>
       ) : null}
     </section>
