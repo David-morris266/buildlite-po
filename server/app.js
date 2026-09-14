@@ -34,6 +34,7 @@ const variationAccountRoutes = require('./routes/variationAccountRoutes');
 const paymentAuthorityRoutes = require('./routes/paymentAuthorityRoutes');
 const paymentReleaseRoutes = require('./routes/paymentReleaseRoutes');
 const developmentBudgetRoutes = require('./routes/developmentBudgetRoutes');
+const commercialStructureRoutes = require('./routes/commercialStructureRoutes');
 
 function allowedOrigins() {
   const configured = String(process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean);
@@ -77,6 +78,7 @@ function createApp(options = {}) {
   app.use("/api/prelims-templates", prelimsTemplateRoutes);
   app.use("/api/cost-code-classifications", costCodeClassificationRoutes);
   app.use("/api/cost-codes", costCodeMasterRoutes);
+  app.use("/api/commercial-structure", commercialStructureRoutes);
   app.use("/api/packages", packageRoutes);
   app.use("/api/commercial-events", commercialEventRoutes);
   app.use("/api/variation-orders", variationOrderRoutes);
