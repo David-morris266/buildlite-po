@@ -3,7 +3,7 @@
  *
  * OFF: existing localStorage master (costCodeMasterStore).
  * ON: server cache/API only. No localStorage fallback or dual-write.
- * Commercial Structure catalog remains browser-local for dropdowns.
+ * Commercial Structure selectors use the separate server authority service.
  */
 
 import { isCostCodeServerAuthorityEnabled } from './costCodeAuthority';
@@ -102,8 +102,11 @@ function serverPayloadFromForm(form = {}) {
   return {
     description: String(form.description || '').trim(),
     commercialHead: String(form.commercialHead || '').trim(),
+    commercialHeadId: form.commercialHeadId || null,
     commercialFamily,
+    commercialFamilyId: form.commercialFamilyId || null,
     reportingGroup,
+    reportingGroupId: form.reportingGroupId || null,
     trade: reportingGroup,
     hierarchyMode: commercialFamily ? 'three-level' : 'two-level',
     reportingOrder: Number(form.reportingOrder) || 0,

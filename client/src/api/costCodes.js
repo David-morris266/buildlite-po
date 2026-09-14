@@ -39,17 +39,6 @@ async function handleJson(res) {
   return body;
 }
 
-function sessionActor() {
-  if (typeof localStorage === 'undefined') return null;
-  return localStorage.getItem('userName') || localStorage.getItem('userEmail') || null;
-}
-
-function withActor(payload = {}) {
-  const actor = sessionActor();
-  if (!actor) return payload;
-  return { ...payload, actor };
-}
-
 export async function listServerCostCodes({ activeOnly = false } = {}) {
   const query = activeOnly ? '?activeOnly=true' : '';
   const res = await fetch(buildUrl(`/api/cost-codes${query}`));
@@ -65,7 +54,7 @@ export async function createServerCostCode(payload = {}) {
   const res = await fetch(buildUrl('/api/cost-codes'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(withActor(payload)),
+    body: JSON.stringify(payload),
   });
   return handleJson(res);
 }
@@ -74,7 +63,7 @@ export async function updateServerCostCode(id, payload = {}) {
   const res = await fetch(buildUrl(`/api/cost-codes/${encodeURIComponent(id)}`), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(withActor(payload)),
+    body: JSON.stringify(payload),
   });
   return handleJson(res);
 }
@@ -83,7 +72,7 @@ export async function setServerCostCodeActive(id, payload = {}) {
   const res = await fetch(buildUrl(`/api/cost-codes/${encodeURIComponent(id)}/active`), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(withActor(payload)),
+    body: JSON.stringify(payload),
   });
   return handleJson(res);
 }
@@ -92,7 +81,7 @@ export async function bulkUpdateServerCostCodeHierarchy(updates = []) {
   const res = await fetch(buildUrl('/api/cost-codes/hierarchy/bulk'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(withActor({ updates })),
+    body: JSON.stringify({ updates }),
   });
   return handleJson(res);
 }

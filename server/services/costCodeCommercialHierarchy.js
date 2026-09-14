@@ -1,15 +1,3 @@
-const COMMERCIAL_HEADS = Object.freeze([
-  "Land",
-  "Professional Fees",
-  "Preliminaries",
-  "House Build",
-  "Plot Works",
-  "External Works / Infrastructure",
-  "Sales & Marketing",
-  "Finance & Legal",
-  "Customer Costs",
-]);
-
 const MAX_HIERARCHY_NAME_LENGTH = 120;
 
 function optionalText(value, field, errors) {
@@ -35,21 +23,18 @@ function validateHierarchyUpdates(body = {}) {
     if (!Number.isInteger(version) || version < 1) errors.push(`updates[${index}].version is invalid.`);
     if (seen.has(id)) errors.push(`updates[${index}].id is duplicated.`);
     seen.add(id);
-    const commercialHead = optionalText(entry?.commercialHead, `updates[${index}].commercialHead`, errors);
-    const commercialFamily = optionalText(entry?.commercialFamily, `updates[${index}].commercialFamily`, errors);
-    const reportingGroup = optionalText(entry?.reportingGroup, `updates[${index}].reportingGroup`, errors);
-    if (commercialHead && !COMMERCIAL_HEADS.includes(commercialHead)) {
-      errors.push(`updates[${index}].commercialHead is not valid.`);
-    }
-    if (!commercialHead && (commercialFamily || reportingGroup)) {
+    const commercialHeadId = entry?.commercialHeadId || null;
+    const commercialFamilyId = entry?.commercialFamilyId || null;
+    const reportingGroupId = entry?.reportingGroupId || null;
+    if (!commercialHeadId && (commercialFamilyId || reportingGroupId)) {
       errors.push(`updates[${index}] cannot set Family or Reporting Group while Commercial Head is Unallocated.`);
     }
-    if (commercialHead && !reportingGroup) {
+    if (commercialHeadId && !reportingGroupId) {
       errors.push(`updates[${index}].reportingGroup is required when Commercial Head is assigned.`);
     }
-    return { id, version, commercialHead, commercialFamily, reportingGroup };
+    return { id, version, commercialHeadId, commercialFamilyId, reportingGroupId };
   });
   return { ok: errors.length === 0, errors, updates };
 }
 
-module.exports = { COMMERCIAL_HEADS, validateHierarchyUpdates };
+module.exports = { validateHierarchyUpdates };

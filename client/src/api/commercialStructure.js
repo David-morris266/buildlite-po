@@ -1,0 +1,7 @@
+const API_BASE=(import.meta.env.VITE_API_URL||'http://localhost:3001').replace(/\/+$/,'');
+export class CommercialStructureApiError extends Error{constructor(message,{status=0,body=null}={}){super(message||'Commercial Structure request failed');this.name='CommercialStructureApiError';this.status=status;this.body=body;}}
+async function json(response){const text=await response.text().catch(()=>'');let body=null;try{body=text?JSON.parse(text):null;}catch{body={message:text};}if(!response.ok)throw new CommercialStructureApiError(body?.message||response.statusText,{status:response.status,body});return body;}
+export async function listCommercialStructure(){return json(await fetch(`${API_BASE}/api/commercial-structure`));}
+export async function createCommercialStructureNode(type,payload){return json(await fetch(`${API_BASE}/api/commercial-structure/${type}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}));}
+export async function updateCommercialStructureNode(type,id,payload){return json(await fetch(`${API_BASE}/api/commercial-structure/${type}/${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}));}
+export async function reorderCommercialStructureSiblings(type,items){return json(await fetch(`${API_BASE}/api/commercial-structure/${type}/reorder/siblings`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({items})}));}

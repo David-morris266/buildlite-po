@@ -125,7 +125,8 @@ function sharedFields(body = {}, errors, { requireCommercialMetadata = true, exi
   const hasReportingGroup = Object.prototype.hasOwnProperty.call(body, "reportingGroup")
     || Object.prototype.hasOwnProperty.call(body, "trade");
   const commercialMetadataChanged = hasCommercialHead || hasCommercialFamily || hasReportingGroup;
-  const validateCommercialMetadata = requireCommercialMetadata || commercialMetadataChanged;
+  const clearingHierarchy = body.commercialHeadId === null && body.commercialFamilyId == null && body.reportingGroupId === null;
+  const validateCommercialMetadata = (requireCommercialMetadata || commercialMetadataChanged) && !clearingHierarchy;
   const commercialHeadValue = hasCommercialHead ? body.commercialHead : existing?.commercial_head;
   const commercialHead = validateCommercialMetadata
     ? parseRequiredText(commercialHeadValue, "commercialHead", errors, MAX_HIERARCHY_NAME_LENGTH)

@@ -10,6 +10,7 @@ const storage = vi.hoisted(() => new Map());
 const authorityEnabled = vi.hoisted(() => ({ value: false }));
 const putClassification = vi.hoisted(() => vi.fn());
 const listClassifications = vi.hoisted(() => vi.fn());
+const structure = { heads:[{id:'head-land',name:'Land',active:true,displayOrder:0}],families:[],reportingGroups:[{id:'group-land',headId:'head-land',familyId:null,name:'Land Cost',active:true,displayOrder:0}],adoptionIssues:[] };
 
 vi.stubGlobal('localStorage', {
   getItem: (key) => storage.get(key) ?? null,
@@ -23,6 +24,10 @@ vi.mock('../../admin/costCodeAuthority', () => ({
 }));
 
 vi.mock('../../api/costCodes', () => import('../../test/mockCostCodesApi'));
+vi.mock('../../admin/commercialStructureService', async () => {
+  const actual = await vi.importActual('../../admin/commercialStructureService');
+  return { ...actual, loadCommercialStructure: vi.fn(async () => structure) };
+});
 
 vi.mock('../../api/costCodeClassifications', () => ({
   CostCodeClassificationApiError: class CostCodeClassificationApiError extends Error {
@@ -173,8 +178,9 @@ describe('AdminCostCodesPage (BL-033D.x.2A.2)', () => {
     const reporting = labelledSelects.get('Reporting Group');
     expect(head.value).toBe('');
     expect(head.selectedOptions[0].textContent).toMatch(/Not set/);
-    expect(reporting.value).toBe('Sub-Con');
-    expect(reporting.selectedOptions[0].textContent).toBe('Sub-Con (persisted)');
+    expect(reporting.value).toBe('');
+    expect(container.textContent).toContain('Unresolved legacy hierarchy');
+    expect(container.textContent).toContain('Sub-Con');
     expect(container.textContent).toContain('UNCLASSIFIED');
   });
 

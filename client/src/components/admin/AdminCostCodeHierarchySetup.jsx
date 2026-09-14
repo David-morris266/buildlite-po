@@ -1,81 +1,22 @@
-import { useMemo, useState } from 'react';
-import { bulkUpdateCostCodeHierarchyOnServer } from '../../admin/costCodeServerMutations';
-import { COMMERCIAL_HEADS, hierarchyOf, hierarchyProposal } from '../../admin/costCodeCommercialHierarchy';
-import AdminPageShell from './AdminPageShell';
-import { AdminButton } from './adminUi';
-
-const PAGE_SIZE = 25;
-const equal = (a, b) => ['commercialHead', 'commercialFamily', 'reportingGroup'].every((key) => (a[key] || '') === (b[key] || ''));
-
-export default function AdminCostCodeHierarchySetup({ records = [], onCancel, onApplied }) {
-  const [drafts, setDrafts] = useState(() => Object.fromEntries(records.map((r) => [r.id, hierarchyOf(r)])));
-  const [selected, setSelected] = useState(() => new Set());
-  const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState('unallocated');
-  const [page, setPage] = useState(1);
-  const [bulkAction, setBulkAction] = useState('');
-  const [reviewing, setReviewing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  const visible = useMemo(() => records.filter((record) => {
-    const persisted = hierarchyOf(record);
-    const needle = query.trim().toLowerCase();
-    const matches = !needle || [record.code, record.description, record.legacy?.subHeading, record.legacy?.trade, record.legacy?.element]
-      .some((value) => String(value || '').toLowerCase().includes(needle));
-    if (!matches) return false;
-    if (filter === 'unallocated') return !persisted.commercialHead;
-    if (filter === 'allocated') return Boolean(persisted.commercialHead);
-    return true;
-  }), [records, query, filter]);
-  const pageRows = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const changes = records.filter((record) => !equal(hierarchyOf(record), drafts[record.id] || hierarchyOf(record)));
-
-  function update(id, patch) {
-    setDrafts((current) => {
-      const next = { ...(current[id] || {}), ...patch };
-      if (!next.commercialHead) Object.assign(next, { commercialFamily: '', reportingGroup: '' });
-      return { ...current, [id]: next };
-    });
-  }
-  function toggle(id) {
-    setSelected((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; });
-  }
-  function applyBulk() {
-    if (!bulkAction) return;
-    const commercialHead = bulkAction === 'clear' ? '' : bulkAction;
-    selected.forEach((id) => update(id, { commercialHead, ...(commercialHead ? {} : { commercialFamily: '', reportingGroup: '' }) }));
-  }
-  async function save() {
-    const invalid = changes.find((record) => drafts[record.id].commercialHead && !drafts[record.id].reportingGroup.trim());
-    if (invalid) { setError(`${invalid.code} requires a Reporting Group.`); return; }
-    setSaving(true); setError('');
-    const result = await bulkUpdateCostCodeHierarchyOnServer(changes.map((record) => ({ id: record.id, version: record.version, ...drafts[record.id] })));
-    setSaving(false);
-    if (!result.ok) { setError(result.errors?.[0] || 'Could not apply hierarchy changes.'); return; }
-    onApplied?.(result.costCodes);
-  }
-
-  return (
-    <AdminPageShell title="Cost Code Commercial Hierarchy" lead="Review and apply the company reporting hierarchy. Legacy fields are evidence only and are never applied automatically." onBack={onCancel}
-      actions={<><AdminButton variant="secondary" onClick={onCancel}>Cancel</AdminButton><AdminButton onClick={() => setReviewing(true)} disabled={!changes.length}>Review {changes.length} changes</AdminButton></>}>
-      {error ? <p className="admin-inline-warning" role="alert">{error}</p> : null}
-      {!reviewing ? <>
-        <section className="po-module-card cost-code-hierarchy__tools">
-          <label><span>Search cost codes</span><input className="input" aria-label="Search cost codes" placeholder="Code, description or legacy evidence" value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} /></label>
-          <label><span>Show</span><select className="input" aria-label="Show cost codes" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }}><option value="unallocated">Unallocated</option><option value="allocated">Allocated</option><option value="all">All</option></select></label>
-          <label><span>Bulk Commercial Head</span><select className="input" aria-label="Bulk Commercial Head" value={bulkAction} onChange={(e) => setBulkAction(e.target.value)}><option value="">Choose bulk action</option>{COMMERCIAL_HEADS.map((h) => <option key={h} value={h}>Assign {h}</option>)}<option value="clear">Clear hierarchy to Unallocated</option></select></label>
-          <div className="cost-code-hierarchy__bulk-action"><span>{selected.size ? `${selected.size} selected` : 'Select cost codes first'}</span><AdminButton variant="secondary" disabled={!selected.size || !bulkAction} onClick={applyBulk}>Apply bulk action</AdminButton></div>
-        </section>
-        <div className="cost-code-hierarchy__rows" role="list" aria-label="Cost Code Commercial Hierarchy">
-          {pageRows.map((record) => { const draft = drafts[record.id]; const proposal = hierarchyProposal(record); const proposalPersisted = proposal && equal(hierarchyOf(record), proposal); const proposalPending = proposal && !proposalPersisted && equal(draft, proposal); return <article className="cost-code-hierarchy__row" role="listitem" key={record.id}>
-            <section className="cost-code-hierarchy__identity"><label className="cost-code-hierarchy__select"><input type="checkbox" aria-label={`Select ${record.code}`} checked={selected.has(record.id)} onChange={() => toggle(record.id)} /><span>Select</span></label><strong>{record.code}</strong><span>{record.description}</span></section>
-            <section className="cost-code-hierarchy__legacy"><h3>Legacy evidence</h3><span>{[record.legacy?.subHeading, record.legacy?.trade, record.legacy?.element].filter(Boolean).join(' · ') || '—'}</span>{proposal && !proposalPersisted ? <div className="cost-code-hierarchy__proposal"><strong>Suggested Commercial Head: Land</strong>{proposalPending ? <span>Added to review</span> : <button type="button" className="admin-link-button" onClick={() => update(record.id, proposal)}>Use suggestion</button>}</div> : null}</section>
-            <section className="cost-code-hierarchy__fields"><label><span>Commercial Head</span><select className="input" aria-label={`${record.code} Commercial Head`} value={draft.commercialHead} onChange={(e) => update(record.id, { commercialHead: e.target.value })}><option value="">Unallocated</option>{COMMERCIAL_HEADS.map((h) => <option key={h}>{h}</option>)}</select></label><label><span>Commercial Family</span><input className="input" aria-label={`${record.code} Family`} value={draft.commercialFamily} disabled={!draft.commercialHead} onChange={(e) => update(record.id, { commercialFamily: e.target.value })} /></label><label><span>Reporting Group</span><input className="input" aria-label={`${record.code} Reporting Group`} value={draft.reportingGroup} disabled={!draft.commercialHead} onChange={(e) => update(record.id, { reportingGroup: e.target.value })} /></label></section>
-          </article>; })}
-        </div>
-        <div className="cost-code-hierarchy__pager"><span>{visible.length} cost codes</span><AdminButton variant="secondary" disabled={page === 1} onClick={() => setPage((n) => n - 1)}>Previous</AdminButton><span>Page {page}</span><AdminButton variant="secondary" disabled={page * PAGE_SIZE >= visible.length} onClick={() => setPage((n) => n + 1)}>Next</AdminButton></div>
-      </> : <section className="po-module-card"><h2>Review hierarchy changes</h2><p>No Cost Code identity, legacy evidence, budget or CVR facts will be changed.</p><div className="cost-code-hierarchy__review">{changes.map((record) => <article key={record.id}><strong>{record.code} — {record.description}</strong><span>{hierarchyOf(record).commercialHead || 'Unallocated'} → {drafts[record.id].commercialHead || 'Unallocated'}</span><span>{drafts[record.id].commercialFamily || 'No family'} · {drafts[record.id].reportingGroup || 'No reporting group'}</span></article>)}</div><div className="admin-form__actions"><AdminButton variant="secondary" onClick={() => setReviewing(false)}>Back</AdminButton><AdminButton loading={saving} onClick={save}>Apply hierarchy changes</AdminButton></div></section>}
-    </AdminPageShell>
-  );
+import {useEffect,useMemo,useState} from 'react';
+import {bulkUpdateCostCodeHierarchyOnServer} from '../../admin/costCodeServerMutations';
+import {hierarchyLabels,hierarchyOf,hierarchyProposal} from '../../admin/costCodeCommercialHierarchy';
+import {activeHeads,familiesFor,groupsFor,loadCommercialStructure,pathLabels} from '../../admin/commercialStructureService';
+import AdminPageShell from './AdminPageShell';import {AdminButton} from './adminUi';
+const PAGE_SIZE=25,keys=['commercialHeadId','commercialFamilyId','reportingGroupId'];
+const equal=(a,b)=>keys.every(k=>(a?.[k]||null)===(b?.[k]||null));
+export default function AdminCostCodeHierarchySetup({records=[],onCancel,onApplied}){
+ const [catalogue,setCatalogue]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[drafts,setDrafts]=useState(()=>Object.fromEntries(records.map(r=>[r.id,hierarchyOf(r)]))),[selected,setSelected]=useState(new Set()),[query,setQuery]=useState(''),[filter,setFilter]=useState('unallocated'),[page,setPage]=useState(1),[bulk,setBulk]=useState(''),[reviewing,setReviewing]=useState(false),[saving,setSaving]=useState(false);
+ useEffect(()=>{let live=true;loadCommercialStructure().then(x=>{if(live)setCatalogue(x);}).catch(e=>{if(live)setError(e.message||'Could not load Commercial Structure.');}).finally(()=>{if(live)setLoading(false);});return()=>{live=false;};},[]);
+ const visible=useMemo(()=>records.filter(r=>{const p=hierarchyOf(r),n=query.trim().toLowerCase(),match=!n||[r.code,r.description,r.legacy?.subHeading,r.legacy?.trade,r.legacy?.element].some(v=>String(v||'').toLowerCase().includes(n));return match&&(filter==='all'||(filter==='allocated'?Boolean(p.commercialHeadId):!p.commercialHeadId));}),[records,query,filter]);
+ const changes=records.filter(r=>!equal(hierarchyOf(r),drafts[r.id]));
+ const update=(id,patch)=>setDrafts(cur=>{const n={...cur[id],...patch};if(!n.commercialHeadId){n.commercialFamilyId=null;n.reportingGroupId=null;}return {...cur,[id]:n};});
+ const toggle=id=>setSelected(cur=>{const n=new Set(cur);n.has(id)?n.delete(id):n.add(id);return n;});
+ function applyBulk(){for(const id of selected)update(id,bulk==='clear'?{commercialHeadId:null,commercialFamilyId:null,reportingGroupId:null}:{commercialHeadId:bulk,commercialFamilyId:null,reportingGroupId:null});}
+ async function save(){const invalid=changes.find(r=>drafts[r.id].commercialHeadId&&!drafts[r.id].reportingGroupId);if(invalid){setError(`${invalid.code} requires a Reporting Group.`);return;}setSaving(true);setError('');const result=await bulkUpdateCostCodeHierarchyOnServer(changes.map(r=>({id:r.id,version:r.version,...drafts[r.id]})));setSaving(false);if(!result.ok){setError(result.errors?.[0]||'Could not apply hierarchy changes.');return;}onApplied?.(result.costCodes);}
+ if(loading)return <AdminPageShell title="Cost Code Commercial Hierarchy" onBack={onCancel}><p>Loading company Commercial Structure…</p></AdminPageShell>;
+ if(!catalogue)return <AdminPageShell title="Cost Code Commercial Hierarchy" onBack={onCancel}><p role="alert">{error}</p><AdminButton onClick={onCancel}>Back</AdminButton></AdminPageShell>;
+ return <AdminPageShell title="Cost Code Commercial Hierarchy" lead="Review and apply the company reporting hierarchy. Legacy fields are evidence only and are never applied automatically." onBack={onCancel} actions={<><AdminButton variant="secondary" onClick={onCancel}>Cancel</AdminButton><AdminButton onClick={()=>setReviewing(true)} disabled={!changes.length}>Review {changes.length} changes</AdminButton></>}>
+ {error?<p className="admin-inline-warning" role="alert">{error}</p>:null}{!reviewing?<><section className="po-module-card cost-code-hierarchy__tools"><label><span>Search cost codes</span><input className="input" aria-label="Search cost codes" value={query} onChange={e=>{setQuery(e.target.value);setPage(1);}}/></label><label><span>Show</span><select className="input" aria-label="Show cost codes" value={filter} onChange={e=>setFilter(e.target.value)}><option value="unallocated">Unallocated</option><option value="allocated">Allocated</option><option value="all">All</option></select></label><label><span>Bulk Commercial Head</span><select className="input" aria-label="Bulk Commercial Head" value={bulk} onChange={e=>setBulk(e.target.value)}><option value="">Choose bulk action</option>{activeHeads(catalogue).map(h=><option key={h.id} value={h.id}>Assign {h.name}</option>)}<option value="clear">Clear hierarchy to Unallocated</option></select></label><AdminButton variant="secondary" disabled={!selected.size||!bulk} onClick={applyBulk}>Apply bulk action</AdminButton></section>
+ <div className="cost-code-hierarchy__rows" role="list">{visible.slice((page-1)*PAGE_SIZE,page*PAGE_SIZE).map(r=>{const d=drafts[r.id],head=catalogue.heads.find(x=>x.id===d.commercialHeadId),families=familiesFor(catalogue,d.commercialHeadId,{includeId:d.commercialFamilyId}),groups=groupsFor(catalogue,d.commercialHeadId,d.commercialFamilyId,{includeId:d.reportingGroupId}),proposal=hierarchyProposal(r,catalogue),pending=proposal&&equal(d,proposal)&&!equal(hierarchyOf(r),proposal),currentLabels=hierarchyLabels(r,catalogue);return <article className="cost-code-hierarchy__row" role="listitem" key={r.id}><section className="cost-code-hierarchy__identity"><label><input type="checkbox" aria-label={`Select ${r.code}`} checked={selected.has(r.id)} onChange={()=>toggle(r.id)}/> Select</label><strong>{r.code}</strong><span>{r.description}</span></section><section className="cost-code-hierarchy__legacy"><h3>Legacy evidence</h3><span>{[r.legacy?.subHeading,r.legacy?.trade,r.legacy?.element].filter(Boolean).join(' · ')||'—'}</span>{proposal&&!equal(hierarchyOf(r),proposal)?<div><strong>Suggested Commercial Head: Land</strong>{pending?<span>Added to review</span>:<button type="button" className="admin-link-button" onClick={()=>update(r.id,proposal)}>Use suggestion</button>}</div>:null}</section><section className="cost-code-hierarchy__fields"><label><span>Commercial Head</span><select className="input" aria-label={`${r.code} Commercial Head`} value={d.commercialHeadId||''} onChange={e=>update(r.id,{commercialHeadId:e.target.value||null,commercialFamilyId:null,reportingGroupId:null})}><option value="">Unallocated</option>{activeHeads(catalogue).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}{head&&!head.active?<option value={head.id}>{head.name} (Archived)</option>:null}</select></label><label><span>Commercial Family</span><select className="input" aria-label={`${r.code} Family`} value={d.commercialFamilyId||''} disabled={!d.commercialHeadId} onChange={e=>update(r.id,{commercialFamilyId:e.target.value||null,reportingGroupId:null})}><option value="">No family</option>{families.map(x=><option key={x.id} value={x.id}>{x.name}{!x.active?' (Archived)':''}</option>)}</select></label><label><span>Reporting Group</span><select className="input" aria-label={`${r.code} Reporting Group`} value={d.reportingGroupId||''} disabled={!d.commercialHeadId} onChange={e=>update(r.id,{reportingGroupId:e.target.value||null})}><option value="">Not set</option>{groups.map(x=><option key={x.id} value={x.id}>{x.name}{!x.active?' (Archived)':''}</option>)}</select></label>{!r.commercialHeadId&&r.commercialHead?<small>Unresolved legacy hierarchy: {currentLabels.commercialHead} · {currentLabels.reportingGroup||'No reporting group'}</small>:null}</section></article>;})}</div><div className="cost-code-hierarchy__pager"><span>{visible.length} cost codes</span><AdminButton disabled={page===1} onClick={()=>setPage(n=>n-1)}>Previous</AdminButton><span>Page {page}</span><AdminButton disabled={page*PAGE_SIZE>=visible.length} onClick={()=>setPage(n=>n+1)}>Next</AdminButton></div></>:<section className="po-module-card"><h2>Review hierarchy changes</h2><div className="cost-code-hierarchy__review">{changes.map(r=>{const before=hierarchyLabels(r,catalogue),after=pathLabels(catalogue,drafts[r.id]);return <article key={r.id}><strong>{r.code} — {r.description}</strong><span>{before.commercialHead||'Unallocated'} → {after.commercialHead||'Unallocated'}</span><span>{after.commercialFamily||'No family'} · {after.reportingGroup||'No reporting group'}</span></article>;})}</div><AdminButton onClick={()=>setReviewing(false)}>Back</AdminButton><AdminButton loading={saving} onClick={save}>Apply hierarchy changes</AdminButton></section>}</AdminPageShell>;
 }

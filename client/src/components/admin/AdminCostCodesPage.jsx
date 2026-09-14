@@ -1,9 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  getActiveFamilyNames,
-  getActiveHeadNames,
-  getActiveTradeNames,
-} from '../../admin/commercialStructureStore';
+import {activeHeads,familiesFor,groupsFor,loadCommercialStructure} from '../../admin/commercialStructureService';
 import {
   FORECAST_DRIVER_KEYS,
   SEMANTIC_GROUP_KEYS,
@@ -42,8 +38,11 @@ const EMPTY_FORM = {
   code: '',
   description: '',
   commercialHead: '',
+  commercialHeadId: null,
   commercialFamily: '',
+  commercialFamilyId: null,
   trade: '',
+  reportingGroupId: null,
   reportingOrder: 0,
   active: true,
   defaultVatTreatment: 'Standard',
@@ -89,6 +88,8 @@ export default function AdminCostCodesPage({ onBack }) {
   const savingRef = useRef(false);
   const [conflict, setConflict] = useState(false);
   const [hierarchySetup, setHierarchySetup] = useState(false);
+  const [commercialStructure,setCommercialStructure]=useState(null);
+  const [commercialStructureError,setCommercialStructureError]=useState('');
 
   async function loadClassifications() {
     try {
@@ -122,7 +123,7 @@ export default function AdminCostCodesPage({ onBack }) {
   }
 
   useEffect(() => {
-    Promise.all([loadMaster(), loadClassifications()]);
+    Promise.all([loadMaster(), loadClassifications(),loadCommercialStructure().then(setCommercialStructure).catch((error)=>setCommercialStructureError(error.message||'Could not load Commercial Structure.'))]);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initial mount only
   }, []);
 
@@ -149,14 +150,10 @@ export default function AdminCostCodesPage({ onBack }) {
     return items;
   }, [refresh, search, filterHead, filterTrade, filterActive, filterOrderType, filterGroup, classificationsByKey, allRecords]);
 
-  const heads = getActiveHeadNames();
+  const heads = commercialStructure ? activeHeads(commercialStructure) : [];
   const tradeOptions = [...new Set((allRecords || []).map((item) => item.reportingGroup || item.trade).filter(Boolean))].sort();
-  const families = getActiveFamilyNames(form.commercialHead);
-  const trades = getActiveTradeNames(form.commercialHead, form.commercialFamily);
-  const persistedReportingGroup = form.reportingGroup || form.trade || '';
-  const reportingGroupOptions = persistedReportingGroup && !trades.includes(persistedReportingGroup)
-    ? [persistedReportingGroup, ...trades]
-    : trades;
+  const families = commercialStructure ? familiesFor(commercialStructure,form.commercialHeadId,{includeId:form.commercialFamilyId}) : [];
+  const trades = commercialStructure ? groupsFor(commercialStructure,form.commercialHeadId,form.commercialFamilyId,{includeId:form.reportingGroupId}) : [];
   const showLoading = loading || (serverAuthority && readiness.loadState === 'loading');
   const showError = serverAuthority && (readiness.loadState === 'error' || Boolean(masterError)) && masterUnresolved;
   const listRecords = records || [];
@@ -177,14 +174,13 @@ export default function AdminCostCodesPage({ onBack }) {
   }
 
   function startNew() {
-    const commercialHead = heads[0] || '';
     setSelectedId('new');
     setIsNew(true);
     setForm({
       ...EMPTY_FORM,
-      commercialHead,
+      commercialHead: '', commercialHeadId:null,
       commercialFamily: '',
-      trade: '',
+      commercialFamilyId:null, trade: '', reportingGroup:'', reportingGroupId:null,
     });
     setClassification(unmappedClassification(''));
     setPartialSaveMessage('');
@@ -346,7 +342,7 @@ export default function AdminCostCodesPage({ onBack }) {
               <span className="dev-form__label">Commercial Head</span>
               <select className="input" value={filterHead} onChange={(e) => setFilterHead(e.target.value)}>
                 <option value="">All heads</option>
-                {heads.map((item) => <option key={item} value={item}>{item}</option>)}
+                {heads.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
               </select>
             </label>
             <label className="dev-form__field">
@@ -458,44 +454,49 @@ export default function AdminCostCodesPage({ onBack }) {
                 </label>
                 <label className="dev-form__field">
                   <span className="dev-form__label">Commercial Head</span>
-                  <select className="input" value={form.commercialHead} onChange={(e) => {
-                    const commercialHead = e.target.value;
+                  <select className="input" value={form.commercialHeadId || ''} onChange={(e) => {
+                    const commercialHeadId = e.target.value || null;
+                    const commercialHead = heads.find((item)=>item.id===commercialHeadId)?.name || '';
                     setForm((p) => ({
                       ...p,
-                      commercialHead,
-                      commercialFamily: '',
-                      trade: getActiveTradeNames(commercialHead, '')[0] || p.trade,
+                      commercialHead, commercialHeadId,
+                      commercialFamily: '', commercialFamilyId:null,
+                      trade: '', reportingGroup:'', reportingGroupId:null,
                     }));
                   }}>
                     <option value="">— Not set</option>
-                    {heads.map((item) => <option key={item} value={item}>{item}</option>)}
+                    {heads.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    {form.commercialHeadId && !heads.some((item)=>item.id===form.commercialHeadId)?<option value={form.commercialHeadId}>{form.commercialHead} (Archived)</option>:null}
                   </select>
                 </label>
                 <label className="dev-form__field">
                   <span className="dev-form__label">Commercial Family (optional)</span>
-                  <select className="input" value={form.commercialFamily} onChange={(e) => {
-                    const commercialFamily = e.target.value;
+                  <select className="input" value={form.commercialFamilyId || ''} onChange={(e) => {
+                    const commercialFamilyId=e.target.value||null;
+                    const commercialFamily=families.find((item)=>item.id===commercialFamilyId)?.name||'';
                     setForm((p) => ({
                       ...p,
-                      commercialFamily,
-                      trade: getActiveTradeNames(p.commercialHead, commercialFamily)[0] || p.trade,
+                      commercialFamily, commercialFamilyId,
+                      trade:'', reportingGroup:'', reportingGroupId:null,
                     }));
                   }}>
                     <option value="">— None (two-level structure)</option>
-                    {families.map((item) => <option key={item} value={item}>{item}</option>)}
+                    {families.map((item) => <option key={item.id} value={item.id}>{item.name}{!item.active?' (Archived)':''}</option>)}
                   </select>
                 </label>
                 <label className="dev-form__field">
                   <span className="dev-form__label">Reporting Group</span>
-                  <select className="input" value={form.trade} onChange={(e) => setForm((p) => ({ ...p, trade: e.target.value, reportingGroup: e.target.value }))}>
+                  <select className="input" value={form.reportingGroupId || ''} onChange={(e) => {const reportingGroupId=e.target.value||null;const reportingGroup=trades.find((item)=>item.id===reportingGroupId)?.name||'';setForm((p)=>({...p,trade:reportingGroup,reportingGroup,reportingGroupId}));}}>
                     <option value="">— Not set</option>
-                    {reportingGroupOptions.map((item) => (
-                      <option key={item} value={item}>
-                        {item}{item === persistedReportingGroup && !trades.includes(item) ? ' (persisted)' : ''}
+                    {trades.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}{!item.active ? ' (Archived)' : ''}
                       </option>
                     ))}
                   </select>
                 </label>
+                {!form.commercialHeadId && (form.commercialHead||form.trade)?<p className="admin-form__hint admin-form__field--wide">Unresolved legacy hierarchy: {[form.commercialHead,form.commercialFamily,form.trade].filter(Boolean).join(' · ')}. Select a company hierarchy path or clear to Unallocated.</p>:null}
+                {commercialStructureError?<p className="admin-inline-warning admin-form__field--wide" role="alert">{commercialStructureError}</p>:null}
                 <label className="dev-form__field">
                   <span className="dev-form__label">BuildLite Group</span>
                   <select

@@ -13,11 +13,15 @@ const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { putClassification } = require("../services/costCodeClassificationRepository");
 const { createCostCode } = require("../services/costCodeMasterRepository");
+const commercialStructure = require('../services/commercialStructureRepository');
+const { PERMISSIONS } = require('../auth/permissions');
 const { looksLikeDisplayLabel, preserveCostCodeIdentity } = require(
   "../services/costCodeMasterValidation"
 );
 
-const app = createApp();
+let app;
+let routeAuth;
+let hierarchy;
 const MIGRATION_013 = path.join(__dirname, "..", "migrations", "013_cost_code_classifications.sql");
 const MIGRATION_017 = path.join(__dirname, "..", "migrations", "017_cost_codes_tenant_master.sql");
 
@@ -35,6 +39,9 @@ function payload(overrides = {}) {
     commercialHead: "Preliminaries",
     commercialFamily: "",
     reportingGroup: "Cleaning",
+    commercialHeadId: hierarchy?.headId,
+    commercialFamilyId: null,
+    reportingGroupId: hierarchy?.groupId,
     defaultVatTreatment: "Standard",
     defaultOrderType: "S",
     ...overrides,
@@ -79,6 +86,12 @@ if (!isDbConfigured()) {
     assert.notEqual(db.rows[0].db, "buildlite_clone");
     await pool.query(fs.readFileSync(MIGRATION_013, "utf8"));
     await pool.query(fs.readFileSync(MIGRATION_017, "utf8"));
+    const active=await getActiveClient();
+    routeAuth={clientId:active.id,userId:'11111111-1111-4111-8111-111111111111',membershipId:'22222222-2222-4222-8222-222222222222',providerUserId:'cost-code-test',displayName:'Authenticated Structure Manager',roleKey:'custom',permissions:[PERMISSIONS.COMMERCIAL_READ,PERMISSIONS.COMMERCIAL_STRUCTURE_MANAGE]};
+    let structure=await commercialStructure.listStructure(active.id);let head=structure.heads.find(x=>x.active),group=structure.reportingGroups.find(x=>x.active&&x.headId===head?.id&&x.familyId==null);
+    if(!head)head=(await commercialStructure.createNode(active.id,'head',{name:'Test Head'},routeAuth)).node;
+    if(!group)group=(await commercialStructure.createNode(active.id,'reporting_group',{name:'Test Group',headId:head.id},routeAuth)).node;
+    hierarchy={headId:head.id,groupId:group.id};app=createApp({testPrincipal:routeAuth});
   });
 
   test.after(async () => {
@@ -104,36 +117,36 @@ if (!isDbConfigured()) {
     assert.equal(created.body.label, `${code} — Cleaning`);
     assert.equal(created.body.version, 1);
     assert.equal(created.body.active, true);
-    assert.equal(created.body.createdBy, "Commercial Manager");
+    assert.equal(created.body.createdBy, "Authenticated Structure Manager");
     assert.notEqual(created.body.code, created.body.label);
   });
 
   test("bulk hierarchy mapping is atomic, tenant-scoped and preserves legacy and classifications", async () => {
     const active = await getActiveClient();
     const code = `HIER-${Date.now()}`;
-    const created = await createCostCode(active.id, payload({ code }), { actor: "setup" });
+    const created = await createCostCode(active.id, payload({ code }), { auth: routeAuth });
     trackId(created.costCode.id);
     await pool.query(`UPDATE cost_codes SET commercial_head = NULL, commercial_family = NULL, reporting_group = NULL, sub_heading = 'Land', trade = 'Legacy trade', element = 'Legacy element' WHERE id = $1`, [created.costCode.id]);
     const classification = await putClassification(active.id, code, { version: 0, semanticGroup: "PRELIMS", forecastDriver: "STANDARD_CVR" }, { actor: "setup" });
     if (classification?.classification?.costCodeKey) testKeys.push(classification.classification.costCodeKey);
     const before = await pool.query(`SELECT code, description, sub_heading, trade, element FROM cost_codes WHERE id = $1`, [created.costCode.id]);
-    const applied = await request(app).put('/api/cost-codes/hierarchy/bulk').send({ updates: [{ id: created.costCode.id, version: created.costCode.version, commercialHead: 'Land', commercialFamily: null, reportingGroup: 'Land Cost' }] });
+    const applied = await request(app).put('/api/cost-codes/hierarchy/bulk').send({ updates: [{ id: created.costCode.id, version: created.costCode.version, commercialHeadId: hierarchy.headId, commercialFamilyId: null, reportingGroupId: hierarchy.groupId }] });
     assert.equal(applied.status, 200);
-    assert.equal(applied.body.costCodes[0].commercialHead, 'Land');
-    assert.equal(applied.body.costCodes[0].canonicalReportingGroup, 'Land Cost');
+    assert.ok(applied.body.costCodes[0].commercialHead);
+    assert.ok(applied.body.costCodes[0].canonicalReportingGroup);
     assert.deepEqual((await pool.query(`SELECT code, description, sub_heading, trade, element FROM cost_codes WHERE id = $1`, [created.costCode.id])).rows[0], before.rows[0]);
     assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM cost_code_classifications WHERE client_id = $1 AND lower(cost_code_key) = lower($2)`, [active.id, code])).rows[0].n, 1);
-    const cleared = await request(app).put('/api/cost-codes/hierarchy/bulk').send({ updates: [{ id: created.costCode.id, version: created.costCode.version + 1, commercialHead: null, commercialFamily: null, reportingGroup: null }] });
+    const cleared = await request(app).put('/api/cost-codes/hierarchy/bulk').send({ updates: [{ id: created.costCode.id, version: created.costCode.version + 1, commercialHeadId: null, commercialFamilyId: null, reportingGroupId: null }] });
     assert.equal(cleared.status, 200);
     assert.equal(cleared.body.costCodes[0].commercialHead, null);
     assert.equal(cleared.body.costCodes[0].canonicalReportingGroup, null);
     const atomicFailure = await request(app).put('/api/cost-codes/hierarchy/bulk').send({ updates: [
-      { id: created.costCode.id, version: created.costCode.version + 2, commercialHead: 'Land', reportingGroup: 'Land' },
-      { id: '33333333-3333-4333-8333-333333333333', version: 1, commercialHead: 'Land', reportingGroup: 'Foreign' },
+      { id: created.costCode.id, version: created.costCode.version + 2, commercialHeadId: hierarchy.headId, reportingGroupId: hierarchy.groupId },
+      { id: '33333333-3333-4333-8333-333333333333', version: 1, commercialHeadId: hierarchy.headId, reportingGroupId: hierarchy.groupId },
     ] });
     assert.equal(atomicFailure.status, 404);
     assert.equal((await pool.query(`SELECT version, commercial_head FROM cost_codes WHERE id = $1`, [created.costCode.id])).rows[0].commercial_head, null);
-    const invalid = await request(app).put('/api/cost-codes/hierarchy/bulk').send({ updates: [{ id: created.costCode.id, version: created.costCode.version + 2, commercialHead: 'Made Up', reportingGroup: 'X' }] });
+    const invalid = await request(app).put('/api/cost-codes/hierarchy/bulk').send({ updates: [{ id: created.costCode.id, version: created.costCode.version + 2, commercialHeadId: '33333333-3333-4333-8333-333333333333', reportingGroupId: hierarchy.groupId }] });
     assert.equal(invalid.status, 400);
   });
 
@@ -255,8 +268,7 @@ if (!isDbConfigured()) {
       .post("/api/cost-codes")
       .send({ code: `INCOMPLETE-${Date.now()}`, description: "Incomplete" });
     assert.equal(incomplete.status, 400);
-    assert.match(incomplete.body.message, /commercialHead is required/);
-    assert.match(incomplete.body.message, /reportingGroup is required/);
+    assert.match(incomplete.body.message, /Commercial Head and Reporting Group are required/);
   });
 
   test("deactivate retains the row and hides it from the compatibility select", async () => {
@@ -307,7 +319,8 @@ if (!isDbConfigured()) {
       [`CC-ISO-${Date.now()}`, "Cost code tenant B"]
     );
     testTenantIds.push(other.rows[0].id);
-    const created = await createCostCode(other.rows[0].id, payload({ code: `ISO-${Date.now()}` }));
+    const otherAuth={...routeAuth,clientId:other.rows[0].id};const h=(await pool.query("INSERT INTO commercial_structure_heads(client_id,name)VALUES($1,'Other Head')RETURNING *",[other.rows[0].id])).rows[0];const g=(await pool.query("INSERT INTO commercial_structure_reporting_groups(client_id,head_id,name)VALUES($1,$2,'Other Group')RETURNING *",[other.rows[0].id,h.id])).rows[0];
+    const created = await createCostCode(other.rows[0].id, payload({ code: `ISO-${Date.now()}`,commercialHeadId:h.id,reportingGroupId:g.id }),{auth:otherAuth});
     assert.equal(created.ok, true);
 
     const hidden = await request(app).get(`/api/cost-codes/${created.costCode.id}`);

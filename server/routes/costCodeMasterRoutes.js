@@ -11,13 +11,13 @@
 
 const express = require("express");
 const { isDbConfigured } = require("../db");
-const { getActiveClient } = require("../services/activeClient");
+const { requirePermission } = require("../auth/authorization");
+const { PERMISSIONS } = require("../auth/permissions");
 const {
   bulkUpdateCostCodeHierarchy,
   createCostCode,
   getCostCode,
   listCostCodes,
-  provisionalActor,
   setCostCodeActive,
   updateCostCode,
 } = require("../services/costCodeMasterRepository");
@@ -42,12 +42,12 @@ async function withActiveClient(req, res) {
     res.status(500).json({ message: "Database not configured" });
     return null;
   }
-  const active = await getActiveClient();
-  if (!active) {
-    res.status(404).json({ error: "No active client set" });
+  const clientId = req.buildliteAuth?.clientId;
+  if (!clientId) {
+    res.status(401).json({ message: "Authentication required" });
     return null;
   }
-  return active;
+  return { id: clientId };
 }
 
 function parseActiveOnly(query = {}) {
@@ -55,7 +55,7 @@ function parseActiveOnly(query = {}) {
   return raw === true || raw === "true" || raw === "1";
 }
 
-router.get("/", async (req, res) => {
+router.get("/", requirePermission(PERMISSIONS.COMMERCIAL_READ), async (req, res) => {
   try {
     const active = await withActiveClient(req, res);
     if (!active) return;
@@ -67,12 +67,12 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", requirePermission(PERMISSIONS.COMMERCIAL_STRUCTURE_MANAGE), async (req, res) => {
   try {
     const active = await withActiveClient(req, res);
     if (!active) return;
     const body = req.body || {};
-    const result = await createCostCode(active.id, body, { actor: provisionalActor(body) });
+    const result = await createCostCode(active.id, body, { auth: req.buildliteAuth });
     sendResult(res, result, "costCode", 201);
   } catch (err) {
     console.error("[Cost codes] CREATE error:", err);
@@ -80,12 +80,12 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.put("/hierarchy/bulk", async (req, res) => {
+router.put("/hierarchy/bulk", requirePermission(PERMISSIONS.COMMERCIAL_STRUCTURE_MANAGE), async (req, res) => {
   try {
     const active = await withActiveClient(req, res);
     if (!active) return;
     const body = req.body || {};
-    const result = await bulkUpdateCostCodeHierarchy(active.id, body, { actor: provisionalActor(body) });
+    const result = await bulkUpdateCostCodeHierarchy(active.id, body, { auth: req.buildliteAuth });
     if (!result.ok) {
       const payload = { message: result.message };
       if (result.errors) payload.errors = result.errors;
@@ -99,7 +99,7 @@ router.put("/hierarchy/bulk", async (req, res) => {
   }
 });
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", requirePermission(PERMISSIONS.COMMERCIAL_READ), async (req, res) => {
   try {
     const active = await withActiveClient(req, res);
     if (!active) return;
@@ -111,13 +111,13 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-router.put("/:id/active", async (req, res) => {
+router.put("/:id/active", requirePermission(PERMISSIONS.COMMERCIAL_STRUCTURE_MANAGE), async (req, res) => {
   try {
     const active = await withActiveClient(req, res);
     if (!active) return;
     const body = req.body || {};
     const result = await setCostCodeActive(active.id, req.params.id, body, {
-      actor: provisionalActor(body),
+      auth: req.buildliteAuth,
     });
     sendResult(res, result, "costCode");
   } catch (err) {
@@ -126,13 +126,13 @@ router.put("/:id/active", async (req, res) => {
   }
 });
 
-router.put("/:id", async (req, res) => {
+router.put("/:id", requirePermission(PERMISSIONS.COMMERCIAL_STRUCTURE_MANAGE), async (req, res) => {
   try {
     const active = await withActiveClient(req, res);
     if (!active) return;
     const body = req.body || {};
     const result = await updateCostCode(active.id, req.params.id, body, {
-      actor: provisionalActor(body),
+      auth: req.buildliteAuth,
     });
     sendResult(res, result, "costCode");
   } catch (err) {
