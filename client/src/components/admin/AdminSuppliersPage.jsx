@@ -7,7 +7,7 @@ import {
   getSupplierApprovalBadge,
   isSupplierApproved,
 } from '../../suppliers/supplierApproval';
-import { getActiveHeadNames, getActiveTradeNames } from '../../admin/commercialStructureStore';
+import { loadCommercialStructure } from '../../admin/commercialStructureService';
 import AdminPageShell from './AdminPageShell';
 import {
   AdminButton,
@@ -49,11 +49,11 @@ export default function AdminSuppliersPage({ onBack }) {
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [isNew, setIsNew] = useState(false);
+  const [catalogue,setCatalogue]=useState({heads:[],reportingGroups:[]});
+  const [catalogueState,setCatalogueState]=useState({loading:true,error:''});
 
-  const headOptions = getActiveHeadNames();
-  const tradeOptions = [
-    ...new Set(headOptions.flatMap((head) => getActiveTradeNames(head, 'General').concat('General'))),
-  ];
+  const headOptions = [...new Set([...catalogue.heads.filter(x=>x.active).map(x=>x.name),form.preferredCommercialHead].filter(Boolean))];
+  const tradeOptions = [...new Set([...catalogue.reportingGroups.filter(x=>x.active).map(x=>x.name),form.preferredTrade].filter(Boolean))];
 
   async function loadSuppliers() {
     setLoading(true);
@@ -67,6 +67,7 @@ export default function AdminSuppliersPage({ onBack }) {
 
   useEffect(() => {
     loadSuppliers();
+    loadCommercialStructure().then(value=>{setCatalogue(value);setCatalogueState({loading:false,error:''});}).catch(error=>setCatalogueState({loading:false,error:error?.message||'BuildLite could not load the company Commercial Structure.'}));
   }, []);
 
   const filteredSuppliers = useMemo(() => {
@@ -174,6 +175,7 @@ export default function AdminSuppliersPage({ onBack }) {
           { label: 'CIS Verified', value: cisVerified },
         ]}
       />
+      {catalogueState.error ? <p className="admin-inline-warning" role="alert">{catalogueState.error}</p> : null}
 
       <div className="admin-split-layout">
         <aside className="admin-split-layout__sidebar po-module-card">
@@ -240,14 +242,14 @@ export default function AdminSuppliersPage({ onBack }) {
                 </label>
                 <label className="dev-form__field">
                   <span className="dev-form__label">Preferred Trade</span>
-                  <select className="input" value={form.preferredTrade} onChange={(e) => setForm((p) => ({ ...p, preferredTrade: e.target.value }))}>
+                  <select className="input" disabled={catalogueState.loading||Boolean(catalogueState.error)} value={form.preferredTrade} onChange={(e) => setForm((p) => ({ ...p, preferredTrade: e.target.value }))}>
                     <option value="">—</option>
                     {tradeOptions.map((trade) => <option key={trade} value={trade}>{trade}</option>)}
                   </select>
                 </label>
                 <label className="dev-form__field">
                   <span className="dev-form__label">Preferred Commercial Head</span>
-                  <select className="input" value={form.preferredCommercialHead} onChange={(e) => setForm((p) => ({ ...p, preferredCommercialHead: e.target.value }))}>
+                  <select className="input" disabled={catalogueState.loading||Boolean(catalogueState.error)} value={form.preferredCommercialHead} onChange={(e) => setForm((p) => ({ ...p, preferredCommercialHead: e.target.value }))}>
                     <option value="">—</option>
                     {headOptions.map((head) => <option key={head} value={head}>{head}</option>)}
                   </select>

@@ -1,23 +1,24 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   FORECAST_SOURCE_OPTIONS,
   getCommercialBehaviourSettings,
   saveAllCommercialBehaviours,
 } from '../../admin/commercialBehaviourStore';
-import { getActiveHeadNames } from '../../admin/commercialStructureStore';
+import { loadCommercialStructure } from '../../admin/commercialStructureService';
 import AdminPageShell from './AdminPageShell';
 import { AdminButton, AdminKpiGrid } from './adminUi';
 
 export default function AdminCommercialBehaviourPage({ onBack }) {
   const [refresh, setRefresh] = useState(0);
   const [saved, setSaved] = useState(false);
+  const [heads,setHeads]=useState([]);
+  const [error,setError]=useState('');
+  useEffect(()=>{let live=true;loadCommercialStructure().then(x=>{if(live)setHeads(x.heads.filter(h=>h.active).map(h=>h.name));}).catch(e=>{if(live)setError(e.message||'Could not load Commercial Structure.');});return()=>{live=false};},[]);
 
   const settings = useMemo(() => {
     void refresh;
-    return getCommercialBehaviourSettings();
-  }, [refresh]);
-
-  const heads = getActiveHeadNames();
+    return getCommercialBehaviourSettings(heads);
+  }, [refresh,heads]);
 
   function updateHead(headName, field, value) {
     setSaved(false);
@@ -43,6 +44,7 @@ export default function AdminCommercialBehaviourPage({ onBack }) {
       lead="Default commercial behaviour by Commercial Head. Configuration only — no engine changes in this sprint."
       onBack={onBack}
     >
+      {error?<p className="admin-inline-warning" role="alert">{error}</p>:null}
       <AdminKpiGrid
         items={[
           { label: 'Commercial Heads', value: heads.length },

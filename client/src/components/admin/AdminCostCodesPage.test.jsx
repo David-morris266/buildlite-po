@@ -89,13 +89,34 @@ describe('AdminCostCodesPage (BL-033D.x.2A.2)', () => {
     networkGuard?.restore();
   });
 
-  async function renderPage() {
+  async function renderPage(props = {}) {
     await act(async () => {
-      root.render(<AdminCostCodesPage onBack={() => {}} />);
+      root.render(<AdminCostCodesPage onBack={() => {}} {...props} />);
       await Promise.resolve();
       await Promise.resolve();
     });
   }
+
+  it('limits an affected-record review and restores the full master when cleared', async () => {
+    authorityEnabled.value = true;
+    seedMockCostCodes([
+      { id: 'cc-a', code: 'A', description: 'Affected', version: 1 },
+      { id: 'cc-b', code: 'B', description: 'Unaffected', version: 1 },
+    ]);
+    const clear = vi.fn();
+    const issueFilter = { issueId: 'unresolved-hierarchy', label: 'Hierarchy requires review', records: [{ id: 'cc-a', code: 'A' }] };
+    await renderPage({ issueFilter, onClearIssueFilter: clear });
+    expect(container.querySelector('[aria-label="Active validation filter"]').textContent).toContain('Hierarchy requires review');
+    expect(container.textContent).toContain('Affected');
+    expect(container.textContent).not.toContain('Unaffected');
+    expect(container.textContent).toContain('Filtered1');
+    act(() => [...container.querySelectorAll('button')].find((item) => item.textContent.includes('Show all Cost Codes')).click());
+    expect(clear).toHaveBeenCalledOnce();
+    await renderPage();
+    expect(container.textContent).toContain('Affected');
+    expect(container.textContent).toContain('Unaffected');
+    expect(container.textContent).toContain('Filtered2');
+  });
 
   it('OFF shows localStorage records and does not call /api/cost-codes', async () => {
     addCostCodeMasterRecord({

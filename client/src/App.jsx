@@ -15,7 +15,6 @@ import { CommercialWorkspace } from './components/layout/WorkspaceShell';
 import { NavigationProvider } from './navigation/NavigationContext';
 import SetupAssistant, { dismissSetupAssistant } from './setup/SetupAssistant';
 import { buildPoFormSeedFromSetup, loadSetupDraft } from './setup/setupDraft';
-import { getCommercialStructure } from './admin/commercialStructureStore';
 import { useBuildLitePrincipal } from './auth/BuildLiteAuthProvider';
 import { shouldEnterSetup } from './navigation/startupDestination';
 import './styles/brand.css';
@@ -43,7 +42,6 @@ export default function App() {
   useEffect(() => {
     if (!localStorage.getItem('userEmail')) localStorage.setItem('userEmail', 'accounts@example.co.uk');
     if (!localStorage.getItem('userName')) localStorage.setItem('userName', 'Commercial Manager');
-    getCommercialStructure();
   }, []);
 
   const showSetup = shouldEnterSetup({

@@ -76,6 +76,8 @@ import {
   getMissingCostCodeFields,
 
 } from './costCodeImportFields';
+import {applyServerCostCodeImport,previewServerCostCodeImport} from '../api/costCodes';
+import {invalidateCostCodes} from '../admin/costCodeServerCache';
 
 
 
@@ -691,6 +693,28 @@ export function executeCostCodeImport(
 
   };
 
+}
+
+export function buildAuthoritativeImportRows(parsed,{fieldByColumn=parsed?.fieldByColumn||[]}={}){
+  if(!parsed)return [];
+  const seen=new Set();
+  return parsed.rows.slice(parsed.headerRowIndex+1).filter(row=>!isBlankRow(row)).map((row,index)=>{
+    const mapped=buildCostCodeMappedRow(row,fieldByColumn),code=String(mapped.costCode||'').trim(),codeKey=code.toLowerCase();
+    const duplicate=Boolean(code&&seen.has(codeKey));if(code)seen.add(codeKey);
+    return {rowNumber:parsed.headerRowIndex+index+2,code,description:String(mapped.description||'').trim(),commercialHead:String(mapped.commercialHead||'').trim(),commercialFamily:String(mapped.commercialFamily||'').trim(),reportingGroup:String(mapped.reportingGroup||mapped.trade||'').trim(),defaultOrderType:parseOrderType(mapped.defaultOrderType),defaultVatTreatment:parseVatTreatment(mapped.defaultVatTreatment),reportingOrder:Number.parseInt(String(mapped.reportingOrder||'0'),10)||0,active:parseActiveValue(mapped.active),clientIssue:duplicate?'Duplicate Cost Code in import.':null};
+  });
+}
+
+export async function previewAuthoritativeCostCodeImport(rows){
+  const localIssue=rows.find(x=>x.clientIssue||!x.code||!x.description);
+  if(localIssue)return {ok:false,errors:[localIssue.clientIssue||`Row ${localIssue.rowNumber}: Cost Code and Description are required.`]};
+  return {ok:true,...await previewServerCostCodeImport(rows)};
+}
+
+export async function applyAuthoritativeCostCodeImport(preview,rows){
+  const result=await applyServerCostCodeImport({rows,catalogueRevision:preview.catalogueRevision,reviewToken:preview.reviewToken,expectedCostCodes:preview.rows.filter(x=>x.isUpdate).map(x=>({code:x.code,version:x.costCodeVersion}))});
+  invalidateCostCodes();
+  return result.summary;
 }
 
 /** GP-5A.1 server-authoritative Setup import. Never reads or writes the browser master. */

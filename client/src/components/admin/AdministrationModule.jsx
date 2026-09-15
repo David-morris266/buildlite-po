@@ -30,9 +30,11 @@ export default function AdministrationModule({
   onReturnToDevelopment,
 }) {
   const [view, setView] = useState('landing');
+  const [viewContext, setViewContext] = useState(null);
   const [setupStep, setSetupStep] = useState(null);
   const goToDashboard = useCallback(() => {
     setSetupStep(null);
+    setViewContext(null);
     setView(ADMIN_LANDING_VIEW);
   }, []);
 
@@ -54,9 +56,10 @@ export default function AdministrationModule({
     </div>
   ) : null;
 
-  function openView(nextView) {
+  function openView(nextView, context = null) {
     if (!isAdminView(nextView)) return;
     setSetupStep(null);
+    setViewContext(context);
     setView(nextView);
   }
 
@@ -115,7 +118,7 @@ export default function AdministrationModule({
     return (
       <AdministrationWorkspace>
         {returnAction}
-        <AdminCostCodesPage onBack={goToDashboard} />
+        <AdminCostCodesPage onBack={goToDashboard} issueFilter={viewContext} onClearIssueFilter={() => setViewContext(null)} />
       </AdministrationWorkspace>
     );
   }
@@ -131,7 +134,7 @@ export default function AdministrationModule({
       <AdministrationWorkspace>
         <AdminValidationDashboardPage
           onBack={goToDashboard}
-          onNavigate={(nextView) => openView(nextView)}
+          onNavigate={(nextView, context) => openView(nextView, context)}
         />
       </AdministrationWorkspace>
     );

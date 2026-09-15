@@ -64,7 +64,7 @@ function boolSelect(value, onChange) {
   );
 }
 
-export default function AdminCostCodesPage({ onBack }) {
+export default function AdminCostCodesPage({ onBack, issueFilter = null, onClearIssueFilter }) {
   const serverAuthority = isAdminCostCodeServerAuthority();
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -137,7 +137,13 @@ export default function AdminCostCodesPage({ onBack }) {
 
   const records = useMemo(() => {
     void refresh;
-    let items = searchAdminCostCodeRecords(search, allRecords);
+    let population = allRecords;
+    if (population && issueFilter?.records?.length) {
+      const ids = new Set(issueFilter.records.map((item) => item.id).filter(Boolean));
+      const codes = new Set(issueFilter.records.map((item) => String(item.code || '').toLowerCase()).filter(Boolean));
+      population = population.filter((item) => ids.has(item.id) || codes.has(String(item.code || '').toLowerCase()));
+    }
+    let items = searchAdminCostCodeRecords(search, population);
     if (items == null) return null;
     if (filterHead) items = items.filter((item) => item.commercialHead === filterHead);
     if (filterTrade) items = items.filter((item) => (item.reportingGroup || item.trade) === filterTrade);
@@ -148,7 +154,7 @@ export default function AdminCostCodesPage({ onBack }) {
       items = items.filter((item) => lookupClassification(classificationsByKey, item.code).semanticGroup === filterGroup);
     }
     return items;
-  }, [refresh, search, filterHead, filterTrade, filterActive, filterOrderType, filterGroup, classificationsByKey, allRecords]);
+  }, [refresh, search, filterHead, filterTrade, filterActive, filterOrderType, filterGroup, classificationsByKey, allRecords, issueFilter]);
 
   const heads = commercialStructure ? activeHeads(commercialStructure) : [];
   const tradeOptions = [...new Set((allRecords || []).map((item) => item.reportingGroup || item.trade).filter(Boolean))].sort();
@@ -312,6 +318,15 @@ export default function AdminCostCodesPage({ onBack }) {
             Retry
           </AdminButton>
         </div>
+      ) : null}
+
+      {!showError && !masterUnresolved ? (
+        issueFilter?.records?.length ? (
+          <section className="po-module-card admin-context-return" aria-label="Active validation filter">
+            <span>Showing affected Cost Codes: {issueFilter.label}</span>
+            <AdminButton variant="secondary" onClick={onClearIssueFilter}>Show all Cost Codes</AdminButton>
+          </section>
+        ) : null
       ) : null}
 
       {!showError && !masterUnresolved ? (

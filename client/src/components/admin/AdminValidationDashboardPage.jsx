@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { listPOs } from '../../api';
 import { runMasterDataValidation } from '../../admin/masterDataValidation';
+import {loadCommercialStructure} from '../../admin/commercialStructureService';
+import {ensureAdminCostCodesReady,listAdminCostCodeRecords} from '../../admin/costCodeAdminService';
 import AdminPageShell from './AdminPageShell';
 import { AdminButton, AdminKpiGrid, AdminSkeleton } from './adminUi';
 
 const ISSUE_LINKS = {
-  'missing-head': 'cost-codes',
-  'missing-trade': 'cost-codes',
+  'unresolved-hierarchy': 'cost-codes',
+  'invalid-hierarchy': 'cost-codes',
   'duplicate-codes': 'cost-codes',
   'inactive-in-use': 'cost-codes',
   'unused-trades': 'commercial-structure',
@@ -32,19 +34,23 @@ function computeHealthScore(issues = []) {
 export default function AdminValidationDashboardPage({ onBack, onNavigate }) {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError,setLoadError]=useState('');
+  const [authority,setAuthority]=useState({structure:{heads:[],families:[],reportingGroups:[]},records:[]});
 
   useEffect(() => {
-    listPOs({ pageSize: 500 })
-      .then((data) => {
+    Promise.all([listPOs({ pageSize: 500 }),loadCommercialStructure(),ensureAdminCostCodesReady()])
+      .then(([data,structure]) => {
+        const records=listAdminCostCodeRecords();if(records==null)throw new Error('Cost Code Master is unavailable.');
         setPurchaseOrders(Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : []);
+        setAuthority({structure,records});
       })
-      .catch(() => setPurchaseOrders([]))
+      .catch(error => setLoadError(error?.message || 'BuildLite could not load authoritative master data.'))
       .finally(() => setLoading(false));
   }, []);
 
   const report = useMemo(
-    () => runMasterDataValidation({ purchaseOrders }),
-    [purchaseOrders]
+    () => runMasterDataValidation({ purchaseOrders,...authority }),
+    [purchaseOrders,authority]
   );
 
   const healthScore = computeHealthScore(report.issues);
@@ -59,8 +65,9 @@ export default function AdminValidationDashboardPage({ onBack, onNavigate }) {
       onBack={onBack}
     >
       {loading ? <AdminSkeleton rows={3} /> : null}
+      {!loading && loadError ? <p className="admin-inline-warning" role="alert">{loadError}</p> : null}
 
-      {!loading ? (
+      {!loading && !loadError ? (
         <>
           <section className="admin-health-hero po-module-card">
             <div className="admin-health-hero__score">
@@ -105,7 +112,11 @@ export default function AdminValidationDashboardPage({ onBack, onNavigate }) {
                   </header>
                   <p>{issue.detail}</p>
                   {linkTarget && onNavigate ? (
-                    <AdminButton variant="secondary" onClick={() => onNavigate(linkTarget)}>
+                    <AdminButton variant="secondary" onClick={() => onNavigate(linkTarget, {
+                      issueId: issue.id,
+                      label: issue.title,
+                      records: issue.affectedRecords || [],
+                    })}>
                       Review affected records
                     </AdminButton>
                   ) : null}

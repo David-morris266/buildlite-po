@@ -129,6 +129,18 @@ export function refreshCostCodes() {
   return ensureCostCodesReady();
 }
 
+/**
+ * Marks the authoritative Cost Code cache stale without manufacturing a
+ * replacement from client-side import intentions. The next consumer must GET
+ * the tenant master from the server.
+ */
+export function invalidateCostCodes() {
+  documents = null;
+  loadState = 'idle';
+  loadError = null;
+  loadPromise = null;
+}
+
 export function requireCachedCostCodes() {
   const readiness = getCostCodeReadiness();
   if (!readiness.ready) {
@@ -143,8 +155,5 @@ export function requireCachedCostCodes() {
 }
 
 export function __resetCostCodeServerCacheForTests() {
-  documents = null;
-  loadState = 'idle';
-  loadError = null;
-  loadPromise = null;
+  invalidateCostCodes();
 }

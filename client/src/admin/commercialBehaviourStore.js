@@ -1,4 +1,3 @@
-import { getActiveHeadNames } from './commercialStructureStore';
 import { readAdminStore, writeAdminStore } from './adminStorage';
 import { notifyMasterDataChanged } from './masterDataEvents';
 
@@ -30,11 +29,11 @@ function normaliseBehaviour(headName, record = {}) {
   };
 }
 
-export function getCommercialBehaviourSettings() {
+export function getCommercialBehaviourSettings(headNames = null) {
   const stored = readAdminStore(COMMERCIAL_BEHAVIOUR_KEY, {});
   const behaviours = {};
 
-  for (const headName of getActiveHeadNames()) {
+  for (const headName of headNames || Object.keys(stored.behaviours || {})) {
     behaviours[headName] = normaliseBehaviour(
       headName,
       stored.behaviours?.[headName] || defaultBehaviourForHead(headName)
@@ -48,14 +47,14 @@ export function getCommercialBehaviourSettings() {
 }
 
 export function getCommercialBehaviourForHead(headName) {
-  return getCommercialBehaviourSettings().behaviours[headName] || null;
+  return getCommercialBehaviourSettings([headName]).behaviours[headName] || null;
 }
 
 export function saveCommercialBehaviour(headName, patch = {}) {
   const label = String(headName || '').trim();
   if (!label) return { ok: false, errors: ['Commercial Head is required.'] };
 
-  const current = getCommercialBehaviourSettings();
+  const current = getCommercialBehaviourSettings([label]);
   const nextBehaviours = {
     ...current.behaviours,
     [label]: normaliseBehaviour(label, {
@@ -75,7 +74,7 @@ export function saveCommercialBehaviour(headName, patch = {}) {
 }
 
 export function saveAllCommercialBehaviours(behaviours = {}) {
-  const current = getCommercialBehaviourSettings();
+  const current = getCommercialBehaviourSettings(Object.keys(behaviours));
   const nextBehaviours = { ...current.behaviours };
 
   for (const [headName, patch] of Object.entries(behaviours)) {

@@ -1,5 +1,3 @@
-import { getActiveHeadNames, getCommercialStructure } from './commercialStructureStore';
-import { listCostCodeMasterRecords } from './costCodeMasterStore';
 import {
   buildMasterCodeLookup,
   countLiveCvrHierarchyUsage,
@@ -8,12 +6,15 @@ import {
   isLivePurchaseOrder,
   readCvrStoreSnapshot,
 } from './masterDataUsage';
+import {isCostCodeServerAuthorityEnabled} from './costCodeAuthority';
+import {getCommercialStructure} from './commercialStructureStore';
+import {listCostCodeMasterRecords} from './costCodeMasterStore';
 
-function issue(id, severity, title, detail, count = 0) {
-  return { id, severity, title, detail, count };
+function issue(id, severity, title, detail, records = []) {
+  return { id, severity, title, detail, count: records.length, affectedRecords: records.map(({ id: recordId, code }) => ({ id: recordId, code })) };
 }
 
-export function findDuplicateCostCodes(records = listCostCodeMasterRecords()) {
+export function findDuplicateCostCodes(records = []) {
   const seen = new Map();
   const duplicates = [];
 
@@ -31,7 +32,7 @@ export function findDuplicateCostCodes(records = listCostCodeMasterRecords()) {
 }
 
 export function findInactiveCostCodesInUse({
-  records = listCostCodeMasterRecords(),
+  records = [],
   purchaseOrders = [],
   cvrSnapshot = readCvrStoreSnapshot(),
 } = {}) {
@@ -67,69 +68,56 @@ export function findInactiveCostCodesInUse({
   return [...matches].map((code) => lookup.get(code) || { code });
 }
 
-export function findMissingCommercialHeadAssignments(records = listCostCodeMasterRecords()) {
-  const activeHeads = new Set(getActiveHeadNames().map((item) => item.toLowerCase()));
-  return records.filter((record) => {
-    const head = String(record.commercialHead || '').trim();
-    return !head || !activeHeads.has(head.toLowerCase());
-  });
+function hasLegacyHierarchyEvidence(record = {}) {
+  return [record.commercialHead, record.commercialFamily, record.reportingGroup, record.trade]
+    .some((value) => String(value || '').trim());
 }
 
-export function findMissingTradeAssignments(
-  records = listCostCodeMasterRecords(),
-  structure = getCommercialStructure()
-) {
-  const tradeKeys = new Set(
-    structure.trades
-      .filter((item) => !item.archived)
-      .map((item) => {
-        const family = structure.families.find((familyItem) => familyItem.id === item.familyId);
-        const head = structure.heads.find((headItem) => headItem.id === family?.headId);
-        return `${head?.name || ''}::${family?.name || ''}::${item.name}`.toLowerCase();
-      })
-  );
-
-  return records.filter((record) => {
-    const key = `${record.commercialHead}::${record.commercialFamily}::${record.trade}`.toLowerCase();
-    return !tradeKeys.has(key);
-  });
-}
-
-export function findUnusedTrades(structure = getCommercialStructure(), records = listCostCodeMasterRecords()) {
-  const usedTradeKeys = new Set(
-    records.map(
-      (item) => `${item.commercialHead}::${item.commercialFamily}::${item.trade}`.toLowerCase()
-    )
-  );
-
-  const unused = [];
-  for (const trade of structure.trades.filter((item) => !item.archived)) {
-    const family = structure.families.find((item) => item.id === trade.familyId && !item.archived);
-    if (!family) continue;
-    const head = structure.heads.find((item) => item.id === family.headId && !item.archived);
-    if (!head) continue;
-    const key = `${head.name}::${family.name}::${trade.name}`.toLowerCase();
-    if (!usedTradeKeys.has(key) && trade.name !== 'General') {
-      unused.push({ head: head.name, family: family.name, trade: trade.name });
+export function classifyCostCodeHierarchy(records = [], structure = { heads: [], families: [], reportingGroups: [] }) {
+  const heads = new Map((structure.heads || []).map((item) => [item.id, item]));
+  const families = new Map((structure.families || []).map((item) => [item.id, item]));
+  const groups = new Map((structure.reportingGroups || []).map((item) => [item.id, item]));
+  const result = { unallocated: [], unresolvedLegacy: [], invalidAssignments: [], valid: [] };
+  for (const record of records) {
+    const hasStableIdentity = Boolean(record.commercialHeadId || record.commercialFamilyId || record.reportingGroupId);
+    if (!hasStableIdentity) {
+      result[hasLegacyHierarchyEvidence(record) ? 'unresolvedLegacy' : 'unallocated'].push(record);
+      continue;
     }
+    const head = heads.get(record.commercialHeadId);
+    const family = record.commercialFamilyId ? families.get(record.commercialFamilyId) : null;
+    const group = groups.get(record.reportingGroupId);
+    const valid = Boolean(
+      head && head.active !== false && !head.archived &&
+      (!record.commercialFamilyId || (family && family.active !== false && !family.archived && family.headId === head.id)) &&
+      group && group.active !== false && !group.archived && group.headId === head.id &&
+      (group.familyId || null) === (record.commercialFamilyId || null)
+    );
+    result[valid ? 'valid' : 'invalidAssignments'].push(record);
   }
-  return unused;
+  return result;
+}
+
+const legacyStructure=()=>isCostCodeServerAuthorityEnabled()?{heads:[],families:[],reportingGroups:[]}:getCommercialStructure();
+const legacyRecords=()=>isCostCodeServerAuthorityEnabled()?[]:listCostCodeMasterRecords();
+
+export function findUnusedTrades(structure = {reportingGroups:[]}, records = []) {
+  const used=new Set(records.map(x=>x.reportingGroupId).filter(Boolean));return (structure.reportingGroups||[]).filter(x=>x.active!==false&&!used.has(x.id)).map(x=>({trade:x.name}));
 }
 
 export function findUnusedCommercialFamilies(
-  structure = getCommercialStructure(),
-  records = listCostCodeMasterRecords()
+  structure = {heads:[],families:[]},
+  records = []
 ) {
   const usedFamilyKeys = new Set(
-    records.map((item) => `${item.commercialHead}::${item.commercialFamily}`.toLowerCase())
+    records.map((item) => item.commercialFamilyId).filter(Boolean)
   );
 
   const unused = [];
-  for (const family of structure.families.filter((item) => !item.archived)) {
+  for (const family of structure.families.filter((item) => item.active!==false&&!item.archived)) {
     const head = structure.heads.find((item) => item.id === family.headId && !item.archived);
     if (!head) continue;
-    const key = `${head.name}::${family.name}`.toLowerCase();
-    if (!usedFamilyKeys.has(key) && family.name !== 'General') {
+    if (!usedFamilyKeys.has(family.id) && family.name !== 'General') {
       unused.push({ head: head.name, family: family.name });
     }
   }
@@ -138,13 +126,12 @@ export function findUnusedCommercialFamilies(
 
 export function runMasterDataValidation({
   purchaseOrders = [],
-  records = listCostCodeMasterRecords(),
-  structure = getCommercialStructure(),
+  records = legacyRecords(),
+  structure = legacyStructure(),
   cvrSnapshot = readCvrStoreSnapshot(),
 } = {}) {
   const duplicateCodes = findDuplicateCostCodes(records);
-  const missingHeads = findMissingCommercialHeadAssignments(records);
-  const missingTrades = findMissingTradeAssignments(records, structure);
+  const hierarchy = classifyCostCodeHierarchy(records, structure);
   const inactiveInUse = findInactiveCostCodesInUse({
     records,
     purchaseOrders,
@@ -155,26 +142,26 @@ export function runMasterDataValidation({
 
   const issues = [];
 
-  if (missingHeads.length) {
+  if (hierarchy.unresolvedLegacy.length) {
     issues.push(
       issue(
-        'missing-head',
-        'error',
-        'Missing Commercial Head',
-        'Cost codes without a valid active Commercial Head assignment.',
-        missingHeads.length
+        'unresolved-hierarchy',
+        'warning',
+        'Hierarchy requires review',
+        'Cost Codes with legacy commercial hierarchy information that has not yet been linked to the tenant Commercial Structure.',
+        hierarchy.unresolvedLegacy
       )
     );
   }
 
-  if (missingTrades.length) {
+  if (hierarchy.invalidAssignments.length) {
     issues.push(
       issue(
-        'missing-trade',
+        'invalid-hierarchy',
         'warning',
-        'Missing Trade',
-        'Cost codes referencing trades that are not in the active commercial structure.',
-        missingTrades.length
+        'Inactive or invalid hierarchy assignment',
+        'Cost Codes linked to an archived, inactive or mismatched Commercial Head, Family or Reporting Group.',
+        hierarchy.invalidAssignments
       )
     );
   }
@@ -186,7 +173,7 @@ export function runMasterDataValidation({
         'error',
         'Duplicate Cost Codes',
         'Multiple master records share the same cost code.',
-        duplicateCodes.length
+        duplicateCodes
       )
     );
   }
@@ -198,7 +185,7 @@ export function runMasterDataValidation({
         'warning',
         'Inactive Cost Codes in use',
         'Inactive master cost codes are referenced by live purchase orders or CVR cost centres.',
-        inactiveInUse.length
+        inactiveInUse
       )
     );
   }
@@ -210,7 +197,7 @@ export function runMasterDataValidation({
         'info',
         'Unused Trades',
         'Active trades with no linked master cost codes.',
-        unusedTrades.length
+        unusedTrades
       )
     );
   }
@@ -222,7 +209,7 @@ export function runMasterDataValidation({
         'info',
         'Unused Commercial Families',
         'Active commercial families with no linked master cost codes.',
-        unusedFamilies.length
+        unusedFamilies
       )
     );
   }
@@ -232,8 +219,7 @@ export function runMasterDataValidation({
     issues,
     details: {
       duplicateCodes,
-      missingHeads,
-      missingTrades,
+      hierarchy,
       inactiveInUse,
       unusedTrades,
       unusedFamilies,
@@ -246,42 +232,47 @@ export function runMasterDataValidation({
 }
 
 export function buildReportingStructurePreview(
-  structure = getCommercialStructure(),
-  records = listCostCodeMasterRecords()
+  structure = legacyStructure(),
+  records = legacyRecords()
 ) {
   const heads = structure.heads
-    .filter((item) => !item.archived)
-    .sort((a, b) => a.sortOrder - b.sortOrder);
+    .filter((item) => item.active!==false&&!item.archived)
+    .sort((a, b) => (a.displayOrder??a.sortOrder) - (b.displayOrder??b.sortOrder));
 
   return heads.map((head) => {
-    const families = structure.families
-      .filter((item) => item.headId === head.id && !item.archived)
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((family) => {
-        const trades = structure.trades
-          .filter((item) => item.familyId === family.id && !item.archived)
-          .sort((a, b) => a.sortOrder - b.sortOrder)
-          .map((trade) => {
-            const costCodes = records
-              .filter(
-                (item) =>
-                  item.commercialHead === head.name &&
-                  item.commercialFamily === family.name &&
-                  item.trade === trade.name &&
-                  item.active !== false
-              )
-              .sort((a, b) => (a.reportingOrder ?? 0) - (b.reportingOrder ?? 0) || a.code.localeCompare(b.code));
+    const buildReportingGroup = (group, familyId = null) => {
+      const costCodes = records
+        .filter(
+          (item) =>
+            item.commercialHeadId === head.id &&
+            (item.commercialFamilyId || null) === familyId &&
+            item.reportingGroupId === group.id &&
+            item.active !== false
+        )
+        .sort((a, b) => (a.reportingOrder ?? 0) - (b.reportingOrder ?? 0) || a.code.localeCompare(b.code));
 
-            return {
-              id: trade.id,
-              name: trade.name,
-              costCodeCount: costCodes.length,
-              costCodes: costCodes.map((item) => ({
-                code: item.code,
-                description: item.description,
-              })),
-            };
-          });
+      return {
+        id: group.id,
+        name: group.name,
+        costCodeCount: costCodes.length,
+        costCodes: costCodes.map((item) => ({
+          code: item.code,
+          description: item.description,
+        })),
+      };
+    };
+    const directReportingGroups = (structure.reportingGroups || structure.trades || [])
+      .filter((item) => item.headId === head.id && item.familyId == null && item.active !== false && !item.archived)
+      .sort((a, b) => (a.displayOrder ?? a.sortOrder) - (b.displayOrder ?? b.sortOrder))
+      .map((group) => buildReportingGroup(group));
+    const families = structure.families
+      .filter((item) => item.headId === head.id && item.active!==false&&!item.archived)
+      .sort((a, b) => (a.displayOrder??a.sortOrder) - (b.displayOrder??b.sortOrder))
+      .map((family) => {
+        const trades = (structure.reportingGroups||structure.trades||[])
+          .filter((item) => item.familyId === family.id && item.active!==false&&!item.archived)
+          .sort((a, b) => (a.displayOrder??a.sortOrder) - (b.displayOrder??b.sortOrder))
+          .map((trade) => buildReportingGroup(trade, family.id));
 
         return {
           id: family.id,
@@ -294,8 +285,11 @@ export function buildReportingStructurePreview(
     return {
       id: head.id,
       name: head.name,
+      directReportingGroups,
       families,
-      costCodeCount: families.reduce((sum, item) => sum + item.costCodeCount, 0),
+      costCodeCount:
+        directReportingGroups.reduce((sum, item) => sum + item.costCodeCount, 0) +
+        families.reduce((sum, item) => sum + item.costCodeCount, 0),
     };
   });
 }

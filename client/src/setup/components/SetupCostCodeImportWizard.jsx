@@ -7,11 +7,13 @@ import {
 import {
   detectImportHierarchyMapping,
   executeCostCodeImport,
-  executeAuthoritativeCostCodeImport,
+  applyAuthoritativeCostCodeImport,
+  buildAuthoritativeImportRows,
   HIERARCHY_MODE_THREE_LEVEL_DEFAULT_FAMILY,
   HIERARCHY_MODE_TWO_LEVEL,
   inferDefaultHierarchyMode,
   parseCostCodeImportFile,
+  previewAuthoritativeCostCodeImport,
   validateCostCodeImport,
 } from '../costCodeImportService';
 import { isCostCodeServerAuthorityEnabled } from '../../admin/costCodeAuthority';
@@ -38,6 +40,7 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
   const [summary, setSummary] = useState(null);
   const serverAuthority = isCostCodeServerAuthorityEnabled();
   const [authoritativeRecords, setAuthoritativeRecords] = useState(null);
+  const [serverPreview, setServerPreview] = useState(null);
 
   useEffect(() => {
     if (!serverAuthority) return undefined;
@@ -55,6 +58,10 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
 
   const validation = useMemo(() => {
     if (!parsed) return null;
+    if (serverAuthority) {
+      const rows = buildAuthoritativeImportRows(parsed, { fieldByColumn });
+      return { canImport: rows.length > 0 && rows.every((row) => row.code && row.description && !row.clientIssue), validRows: rows, errors: [], warnings: [], missingMappings: [], hierarchyMode, hierarchyModeLabel: hierarchyMode, summary: { validCount: rows.length, errorCount: 0, warningCount: 0 } };
+    }
     return validateCostCodeImport(
       { ...parsed, fieldByColumn },
       {
@@ -99,7 +106,7 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
     setProcessing(true);
     try {
       const result = serverAuthority
-        ? await executeAuthoritativeCostCodeImport(validation, { hierarchyMode, defaultFamilyName })
+        ? await applyAuthoritativeCostCodeImport(serverPreview, buildAuthoritativeImportRows(parsed, { fieldByColumn }))
         : executeCostCodeImport(validation, { hierarchyMode, defaultFamilyName });
       if (!result.ok) {
         setError(result.errors?.[0] || 'Import failed.');
@@ -113,6 +120,20 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
       setProcessing(false);
     }
   }
+
+  async function handleValidate() {
+    if (!serverAuthority) { setStepIndex(3); return; }
+    setProcessing(true); setError('');
+    try {
+      const result = await previewAuthoritativeCostCodeImport(buildAuthoritativeImportRows(parsed, { fieldByColumn }));
+      if (!result.ok) { setError(result.errors?.[0] || 'Could not preview import.'); return; }
+      setServerPreview(result.preview); setStepIndex(3);
+    } catch (previewError) { setError(previewError?.message || 'Could not preview import.'); }
+    finally { setProcessing(false); }
+  }
+
+  const displayedRows = serverAuthority ? (serverPreview?.rows || []) : (validation?.validRows || []);
+  const serverBlocked = serverAuthority && Boolean(serverPreview?.summary?.blocked);
 
   const showHierarchyChoice = Boolean(
     hierarchyDetection?.commercialFamilyAbsent && hierarchyDetection?.hasCommercialHead
@@ -260,7 +281,7 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
 
           <div className="setup-import-actions">
             <button type="button" className="po-list-btn-secondary" onClick={() => setStepIndex(1)}>Back</button>
-            <button type="button" className="po-btn-primary" onClick={() => setStepIndex(3)}>Validate import</button>
+            <button type="button" className="po-btn-primary" disabled={processing} onClick={handleValidate}>{processing ? 'Checking…' : 'Validate import'}</button>
           </div>
         </div>
       ) : null}
@@ -286,7 +307,7 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
               Row {item.rowNumber}: {item.message}
             </p>
           ))}
-          {validation.validRows.length ? (
+          {displayedRows.length ? (
             <div className="po-table-wrap">
               <table className="po-data-table">
                 <thead>
@@ -296,25 +317,35 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
                     <th>Commercial Head</th>
                     <th>Commercial Family</th>
                     <th>Reporting Group</th>
+                    {serverAuthority ? <th>Resolution</th> : null}
                   </tr>
                 </thead>
                 <tbody>
-                  {validation.validRows.slice(0, 8).map((row) => (
+                  {displayedRows.slice(0, 8).map((row) => (
                     <tr key={row.rowNumber}>
                       <td>{row.code}</td>
                       <td>{row.description}</td>
-                      <td>{row.commercialHead || '—'}</td>
-                      <td>{formatFamilyDisplay(row.commercialFamily)}</td>
-                      <td>{row.reportingGroup || row.trade || '—'}</td>
+                      <td>{serverAuthority ? (row.resolution?.labels?.commercialHead || row.resolution?.proposal?.commercialHead || 'Unallocated') : (row.commercialHead || '—')}</td>
+                      <td>{formatFamilyDisplay(serverAuthority ? (row.resolution?.labels?.commercialFamily || row.resolution?.proposal?.commercialFamily || '') : row.commercialFamily)}</td>
+                      <td>{serverAuthority ? (row.resolution?.labels?.reportingGroup || row.resolution?.proposal?.reportingGroup || '—') : (row.reportingGroup || row.trade || '—')}</td>
+                      {serverAuthority ? <td>{String(row.resolution?.state || '').replaceAll('_', ' ')}</td> : null}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : null}
+          {serverAuthority ? serverPreview?.rows.filter((row) => ['INVALID','AMBIGUOUS','ARCHIVED_MATCH'].includes(row.resolution?.state)).map((row) => <p key={`blocked-${row.rowNumber}`} className="setup-step__error">Row {row.rowNumber} ({row.code || 'no code'}): {row.resolution.reason}</p>) : null}
+          {serverAuthority && serverPreview?.proposals?.length ? (
+            <section className="setup-hierarchy-mode">
+              <h3>Proposed new Commercial Structure</h3>
+              <p>These items will be created only when you apply the import.</p>
+              {serverPreview.proposals.map((item) => <p key={item.key}><strong>{item.commercialHead}{item.commercialFamily ? ` → ${item.commercialFamily}` : ''} → {item.reportingGroup}</strong><small> Used by {item.costCodes.join(', ')}</small></p>)}
+            </section>
+          ) : null}
           <div className="setup-import-actions">
             <button type="button" className="po-list-btn-secondary" onClick={() => setStepIndex(2)}>Back</button>
-            <button type="button" className="po-btn-primary" disabled={!validation.canImport} onClick={() => setStepIndex(4)}>
+            <button type="button" className="po-btn-primary" disabled={serverAuthority ? serverBlocked : !validation.canImport} onClick={() => setStepIndex(4)}>
               Continue to import
             </button>
           </div>
@@ -323,7 +354,7 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
 
       {stepIndex === 4 && validation ? (
         <div className="setup-import-panel">
-          <p>Ready to import <strong>{validation.summary.validCount}</strong> cost codes using <strong>{validation.hierarchyModeLabel}</strong> hierarchy.</p>
+          <p>Ready to import <strong>{serverAuthority ? displayedRows.length : validation.summary.validCount}</strong> cost codes. Existing matches and proposed tenant structure will be applied together.</p>
           <div className="setup-import-actions">
             <button type="button" className="po-list-btn-secondary" onClick={() => setStepIndex(3)}>Back</button>
             <button type="button" className="po-btn-primary" disabled={processing} onClick={handleImport}>{processing ? 'Importing…' : 'Import cost codes'}</button>
