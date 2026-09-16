@@ -57,6 +57,11 @@ async function getActiveClient() {
 
 async function cleanup() {
   if (createdIds.length) {
+    await pool.query('ALTER TABLE cost_code_hierarchy_review_audit DISABLE TRIGGER USER');
+    await pool.query('DELETE FROM cost_code_hierarchy_review_audit WHERE cost_code_id = ANY($1::uuid[])',[createdIds]);
+    await pool.query('ALTER TABLE cost_code_hierarchy_review_audit ENABLE TRIGGER USER');
+  }
+  if (createdIds.length) {
     await pool.query(`DELETE FROM cost_codes WHERE id = ANY($1::uuid[])`, [createdIds]);
   }
   if (testKeys.length) {
@@ -148,6 +153,14 @@ if (!isDbConfigured()) {
     assert.equal((await pool.query(`SELECT version, commercial_head FROM cost_codes WHERE id = $1`, [created.costCode.id])).rows[0].commercial_head, null);
     const invalid = await request(app).put('/api/cost-codes/hierarchy/bulk').send({ updates: [{ id: created.costCode.id, version: created.costCode.version + 2, commercialHeadId: '33333333-3333-4333-8333-333333333333', reportingGroupId: hierarchy.groupId }] });
     assert.equal(invalid.status, 400);
+  });
+
+  test("explicit Not applicable is durable, audited and counted separately", async () => {
+    const active=await getActiveClient();const created=await createCostCode(active.id,payload({code:`NA-${Date.now()}`}),{auth:routeAuth});trackId(created.costCode.id);
+    const marked=await request(app).put('/api/cost-codes/hierarchy/bulk').send({updates:[{id:created.costCode.id,version:created.costCode.version,commercialHeadId:null,commercialFamilyId:null,reportingGroupId:null,reviewDisposition:'not_applicable'}]});
+    assert.equal(marked.status,200);assert.equal(marked.body.costCodes[0].hierarchyReviewDisposition,'not_applicable');
+    const summary=await request(app).get('/api/cost-codes/onboarding/summary');assert.equal(summary.status,200);assert.ok(summary.body.notApplicable>=1);
+    const audit=await pool.query("SELECT operation,actor_permission_key FROM cost_code_hierarchy_review_audit WHERE cost_code_id=$1",[created.costCode.id]);assert.deepEqual(audit.rows[0],{operation:'mark_not_applicable',actor_permission_key:PERMISSIONS.COMMERCIAL_STRUCTURE_MANAGE});
   });
 
   test("5231 and P100-SM preserve entered identity; case/trim uniqueness", async () => {

@@ -701,18 +701,19 @@ export function buildAuthoritativeImportRows(parsed,{fieldByColumn=parsed?.field
   return parsed.rows.slice(parsed.headerRowIndex+1).filter(row=>!isBlankRow(row)).map((row,index)=>{
     const mapped=buildCostCodeMappedRow(row,fieldByColumn),code=String(mapped.costCode||'').trim(),codeKey=code.toLowerCase();
     const duplicate=Boolean(code&&seen.has(codeKey));if(code)seen.add(codeKey);
-    return {rowNumber:parsed.headerRowIndex+index+2,code,description:String(mapped.description||'').trim(),commercialHead:String(mapped.commercialHead||'').trim(),commercialFamily:String(mapped.commercialFamily||'').trim(),reportingGroup:String(mapped.reportingGroup||mapped.trade||'').trim(),defaultOrderType:parseOrderType(mapped.defaultOrderType),defaultVatTreatment:parseVatTreatment(mapped.defaultVatTreatment),reportingOrder:Number.parseInt(String(mapped.reportingOrder||'0'),10)||0,active:parseActiveValue(mapped.active),clientIssue:duplicate?'Duplicate Cost Code in import.':null};
+    const hierarchyEvidence={};fieldByColumn.forEach((field,column)=>{if(['commercialHead','commercialFamily','trade','reportingGroup'].includes(field)){const value=String(row[column]??'').trim();if(value)hierarchyEvidence[parsed.headers?.[column]||`Column ${column+1}`]={target:field,value};}});
+    return {rowNumber:parsed.headerRowIndex+index+2,code,description:String(mapped.description||'').trim(),commercialHead:String(mapped.commercialHead||'').trim(),commercialFamily:String(mapped.commercialFamily||'').trim(),reportingGroup:String(mapped.reportingGroup||mapped.trade||'').trim(),sourceEvidence:hierarchyEvidence,defaultOrderType:parseOrderType(mapped.defaultOrderType),defaultVatTreatment:parseVatTreatment(mapped.defaultVatTreatment),reportingOrder:Number.parseInt(String(mapped.reportingOrder||'0'),10)||0,active:parseActiveValue(mapped.active),clientIssue:duplicate?'Duplicate Cost Code in import.':null};
   });
 }
 
-export async function previewAuthoritativeCostCodeImport(rows){
+export async function previewAuthoritativeCostCodeImport(rows,sourceFilename='Cost Code import'){
   const localIssue=rows.find(x=>x.clientIssue||!x.code||!x.description);
   if(localIssue)return {ok:false,errors:[localIssue.clientIssue||`Row ${localIssue.rowNumber}: Cost Code and Description are required.`]};
-  return {ok:true,...await previewServerCostCodeImport(rows)};
+  return {ok:true,...await previewServerCostCodeImport(rows,sourceFilename)};
 }
 
 export async function applyAuthoritativeCostCodeImport(preview,rows){
-  const result=await applyServerCostCodeImport({rows,catalogueRevision:preview.catalogueRevision,reviewToken:preview.reviewToken,expectedCostCodes:preview.rows.filter(x=>x.isUpdate).map(x=>({code:x.code,version:x.costCodeVersion}))});
+  const result=await applyServerCostCodeImport({rows,...(preview.sourceFilename?{sourceFilename:preview.sourceFilename}:{}),catalogueRevision:preview.catalogueRevision,reviewToken:preview.reviewToken,expectedCostCodes:preview.rows.filter(x=>x.isUpdate).map(x=>({code:x.code,version:x.costCodeVersion}))});
   invalidateCostCodes();
   return result.summary;
 }

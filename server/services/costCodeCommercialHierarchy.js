@@ -32,7 +32,9 @@ function validateHierarchyUpdates(body = {}) {
     if (commercialHeadId && !reportingGroupId) {
       errors.push(`updates[${index}].reportingGroup is required when Commercial Head is assigned.`);
     }
-    return { id, version, commercialHeadId, commercialFamilyId, reportingGroupId };
+    const reviewDisposition = entry?.reviewDisposition === 'not_applicable' ? 'not_applicable' : null;
+    if (reviewDisposition && (commercialHeadId || commercialFamilyId || reportingGroupId)) errors.push(`updates[${index}] cannot allocate hierarchy and mark Not applicable together.`);
+    return { id, version, commercialHeadId, commercialFamilyId, reportingGroupId, reviewDisposition };
   });
   return { ok: errors.length === 0, errors, updates };
 }

@@ -128,3 +128,7 @@ Adds the immutable Development Budget Authority event journal, exact signed cost
 ### 047_cvr_commercial_hierarchy_evidence.sql
 
 Adds immutable CVR submission-time Commercial Structure evidence and an optional Locked snapshot link. It is additive and does not backfill historic CVRs.
+
+### 048_cost_code_onboarding_review.sql
+
+Adds bounded append-only Cost Code import evidence, explicit hierarchy review disposition/provenance and immutable review audit. Existing hierarchy and CVR facts are not inferred or backfilled.

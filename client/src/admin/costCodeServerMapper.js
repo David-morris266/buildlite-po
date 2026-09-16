@@ -36,6 +36,11 @@ export function normalizeServerCostCode(document) {
     updatedAt: document.updatedAt || null,
     createdBy: document.createdBy ?? null,
     updatedBy: document.updatedBy ?? null,
+    hierarchyReviewState: document.hierarchyReviewState || null,
+    hierarchyReviewDisposition: document.hierarchyReviewDisposition || null,
+    hierarchyReviewedAt: document.hierarchyReviewedAt || null,
+    hierarchyReviewedBy: document.hierarchyReviewedBy || null,
+    importEvidence: Array.isArray(document.importEvidence) ? document.importEvidence : [],
     legacy: document.legacy || { subHeading: null, trade: null, element: null },
   };
 }

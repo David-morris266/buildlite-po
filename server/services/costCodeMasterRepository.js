@@ -25,6 +25,7 @@ function provisionalActor(body = {}) {
 }
 
 function actorFromAuth(auth) { return auth?.displayName || null; }
+const onboardingSelect = `,CASE WHEN c.commercial_head_id IS NOT NULL AND c.reporting_group_id IS NOT NULL AND h.id IS NOT NULL AND g.id IS NOT NULL AND (c.commercial_family_id IS NULL OR f.id IS NOT NULL) AND h.is_active AND g.is_active AND (f.id IS NULL OR f.is_active) THEN 'allocated' WHEN c.commercial_head_id IS NULL AND c.commercial_family_id IS NULL AND c.reporting_group_id IS NULL AND c.hierarchy_review_disposition='not_applicable' THEN 'not_applicable' WHEN c.commercial_head_id IS NULL AND c.commercial_family_id IS NULL AND c.reporting_group_id IS NULL THEN 'not_reviewed' ELSE 'needs_attention' END hierarchy_resolution_state,COALESCE((SELECT jsonb_agg(jsonb_build_object('batchId',e.batch_id,'sourceFilename',b.source_filename,'sourceRowNumber',e.source_row_number,'sourceCode',e.source_code,'sourceDescription',e.source_description,'hierarchyEvidence',e.selected_hierarchy_evidence,'targetMapping',e.selected_target_mapping,'importedAt',b.created_at) ORDER BY b.created_at DESC) FROM cost_code_import_row_evidence e JOIN cost_code_import_batches b ON b.id=e.batch_id WHERE e.client_id=c.client_id AND e.cost_code_id=c.id),'[]'::jsonb) import_evidence`;
 async function resolveHierarchy(db,clientId,input,current=null,{requireActive=true,requireAllocated=false}={}){
   const supplied=['commercialHeadId','commercialFamilyId','reportingGroupId'].some(k=>Object.prototype.hasOwnProperty.call(input,k));
   if(!supplied&&current&&!current.commercial_head_id)return {ok:true,headId:null,familyId:null,groupId:null,head:current.commercial_head||null,family:current.commercial_family||null,group:current.reporting_group||null};
@@ -72,7 +73,7 @@ async function findCostCodeRowByCode(clientId, code, dbClient = null) {
   const exec = dbClient ? dbClient.query.bind(dbClient) : query;
   const { rows } = await exec(
     `
-      SELECT c.*,h.name resolved_commercial_head,f.name resolved_commercial_family,g.name resolved_reporting_group
+      SELECT c.*,h.name resolved_commercial_head,f.name resolved_commercial_family,g.name resolved_reporting_group ${onboardingSelect}
       FROM cost_codes c LEFT JOIN commercial_structure_heads h ON h.client_id=c.client_id AND h.id=c.commercial_head_id LEFT JOIN commercial_structure_families f ON f.client_id=c.client_id AND f.id=c.commercial_family_id LEFT JOIN commercial_structure_reporting_groups g ON g.client_id=c.client_id AND g.id=c.reporting_group_id
       WHERE c.client_id = $1 AND lower(btrim(c.code)) = lower(btrim($2))
       LIMIT 1
@@ -87,7 +88,7 @@ async function findCostCodeRow(clientId, id, dbClient = null) {
   const exec = dbClient ? dbClient.query.bind(dbClient) : query;
   const { rows } = await exec(
     `
-      SELECT c.*,h.name resolved_commercial_head,f.name resolved_commercial_family,g.name resolved_reporting_group
+      SELECT c.*,h.name resolved_commercial_head,f.name resolved_commercial_family,g.name resolved_reporting_group ${onboardingSelect}
       FROM cost_codes c LEFT JOIN commercial_structure_heads h ON h.client_id=c.client_id AND h.id=c.commercial_head_id LEFT JOIN commercial_structure_families f ON f.client_id=c.client_id AND f.id=c.commercial_family_id LEFT JOIN commercial_structure_reporting_groups g ON g.client_id=c.client_id AND g.id=c.reporting_group_id
       WHERE c.client_id = $1 AND c.id = $2
       LIMIT 1
@@ -100,7 +101,7 @@ async function findCostCodeRow(clientId, id, dbClient = null) {
 async function listCostCodes(clientId, { activeOnly = false } = {}) {
   const { rows } = await query(
     `
-      SELECT c.*,h.name resolved_commercial_head,f.name resolved_commercial_family,g.name resolved_reporting_group
+      SELECT c.*,h.name resolved_commercial_head,f.name resolved_commercial_family,g.name resolved_reporting_group ${onboardingSelect}
       FROM cost_codes c LEFT JOIN commercial_structure_heads h ON h.client_id=c.client_id AND h.id=c.commercial_head_id LEFT JOIN commercial_structure_families f ON f.client_id=c.client_id AND f.id=c.commercial_family_id LEFT JOIN commercial_structure_reporting_groups g ON g.client_id=c.client_id AND g.id=c.reporting_group_id
       WHERE c.client_id = $1
         AND ($2::boolean = false OR c.is_active = true)
@@ -307,6 +308,8 @@ async function bulkUpdateCostCodeHierarchy(clientId, body = {}, { actor, auth } 
   const dbClient = await pool.connect();
   try {
     await dbClient.query("BEGIN");
+    const actorUserId=auth?.userId&&(await dbClient.query('SELECT 1 FROM buildlite_users WHERE id=$1',[auth.userId])).rowCount?auth.userId:null;
+    const actorMembershipId=auth?.membershipId&&(await dbClient.query('SELECT 1 FROM client_user_memberships WHERE id=$1 AND client_id=$2',[auth.membershipId,clientId])).rowCount?auth.membershipId:null;
     const updated = [];
     for (const entry of validated.updates) {
       const current = await findCostCodeRow(clientId, entry.id, dbClient);
@@ -324,17 +327,22 @@ async function bulkUpdateCostCodeHierarchy(clientId, body = {}, { actor, auth } 
         `UPDATE cost_codes
          SET commercial_head = $1, commercial_family = $2, reporting_group = $3,
              commercial_head_id=$9,commercial_family_id=$10,reporting_group_id=$11,
-             hierarchy_mode = $4, version = version + 1, updated_at = NOW(), updated_by = $5
+             hierarchy_mode = $4, version = version + 1, updated_at = NOW(), updated_by = $5,
+             hierarchy_review_disposition=$12,hierarchy_reviewed_at=NOW(),hierarchy_reviewed_by_user_id=$13,
+             hierarchy_reviewed_by_membership_id=$14,hierarchy_reviewed_by_provider_user_id=$15,
+             hierarchy_reviewed_by_display_name=$5,hierarchy_reviewed_by_role_key=$16
          WHERE client_id = $6 AND id = $7 AND version = $8 RETURNING *`,
         [hierarchy.head, hierarchy.family, hierarchy.group,
           hierarchy.headId ? (hierarchy.familyId ? "three-level" : "two-level") : null,
-          actor || null, clientId, entry.id, entry.version,hierarchy.headId,hierarchy.familyId,hierarchy.groupId]
+          actor || null, clientId, entry.id, entry.version,hierarchy.headId,hierarchy.familyId,hierarchy.groupId,entry.reviewDisposition,actorUserId,actorMembershipId,auth?.providerUserId||null,auth?.roleKey||null]
       );
       if (!result.rowCount) {
         await dbClient.query("ROLLBACK");
         return stale(current);
       }
-      updated.push(costCodeRowToDocument(result.rows[0]));
+      const row=result.rows[0];
+      await dbClient.query(`INSERT INTO cost_code_hierarchy_review_audit(client_id,cost_code_id,operation,before_document,after_document,resulting_cost_code_version,actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name,actor_role_key,actor_permission_key) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,[clientId,entry.id,hierarchy.headId?'allocate':entry.reviewDisposition?'mark_not_applicable':'clear',JSON.stringify({commercialHeadId:current.commercial_head_id,commercialFamilyId:current.commercial_family_id,reportingGroupId:current.reporting_group_id,reviewDisposition:current.hierarchy_review_disposition}),JSON.stringify({commercialHeadId:hierarchy.headId,commercialFamilyId:hierarchy.familyId,reportingGroupId:hierarchy.groupId,reviewDisposition:entry.reviewDisposition}),row.version,actorUserId,actorMembershipId,auth?.providerUserId||null,actor||null,auth?.roleKey||null,PERMISSIONS.COMMERCIAL_STRUCTURE_MANAGE]);
+      updated.push(costCodeRowToDocument(row));
     }
     await dbClient.query("COMMIT");
     return { ok: true, costCodes: updated };
@@ -346,11 +354,22 @@ async function bulkUpdateCostCodeHierarchy(clientId, body = {}, { actor, auth } 
   }
 }
 
+async function getCostCodeOnboardingSummary(clientId) {
+  const {rows}=await query(`SELECT COUNT(*)::int total,
+    COUNT(*) FILTER(WHERE c.commercial_head_id IS NOT NULL AND c.reporting_group_id IS NOT NULL AND h.id IS NOT NULL AND g.id IS NOT NULL AND (c.commercial_family_id IS NULL OR f.id IS NOT NULL) AND h.is_active AND g.is_active AND (f.id IS NULL OR f.is_active))::int allocated,
+    COUNT(*) FILTER(WHERE c.commercial_head_id IS NULL AND c.commercial_family_id IS NULL AND c.reporting_group_id IS NULL AND c.hierarchy_review_disposition IS NULL)::int not_reviewed,
+    COUNT(*) FILTER(WHERE c.commercial_head_id IS NULL AND c.commercial_family_id IS NULL AND c.reporting_group_id IS NULL AND c.hierarchy_review_disposition='not_applicable')::int not_applicable,
+    COUNT(*) FILTER(WHERE (c.commercial_head_id IS NOT NULL OR c.commercial_family_id IS NOT NULL OR c.reporting_group_id IS NOT NULL) AND NOT(c.commercial_head_id IS NOT NULL AND c.reporting_group_id IS NOT NULL AND h.id IS NOT NULL AND g.id IS NOT NULL AND (c.commercial_family_id IS NULL OR f.id IS NOT NULL) AND h.is_active AND g.is_active AND (f.id IS NULL OR f.is_active)))::int needs_attention
+    FROM cost_codes c LEFT JOIN commercial_structure_heads h ON h.client_id=c.client_id AND h.id=c.commercial_head_id LEFT JOIN commercial_structure_families f ON f.client_id=c.client_id AND f.id=c.commercial_family_id LEFT JOIN commercial_structure_reporting_groups g ON g.client_id=c.client_id AND g.id=c.reporting_group_id WHERE c.client_id=$1 AND c.is_active=true`,[clientId]);
+  const r=rows[0];return {ok:true,summary:{total:r.total,allocated:r.allocated,notReviewed:r.not_reviewed,notApplicable:r.not_applicable,needsAttention:r.needs_attention}};
+}
+
 module.exports = {
   bulkUpdateCostCodeHierarchy,
   createCostCode,
   findCostCodeRowByCode,
   getCostCode,
+  getCostCodeOnboardingSummary,
   listCostCodes,
   provisionalActor,
   setCostCodeActive,

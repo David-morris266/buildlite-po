@@ -86,9 +86,11 @@ export async function bulkUpdateServerCostCodeHierarchy(updates = []) {
   return handleJson(res);
 }
 
-export async function previewServerCostCodeImport(rows = []) {
-  const res=await fetch(buildUrl('/api/cost-codes/import/preview'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows})});return handleJson(res);
+export async function previewServerCostCodeImport(rows = [],sourceFilename='Cost Code import') {
+  const res=await fetch(buildUrl('/api/cost-codes/import/preview'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows,sourceFilename})});return handleJson(res);
 }
+
+export async function getCostCodeOnboardingSummary(){const res=await fetch(buildUrl('/api/cost-codes/onboarding/summary'));return handleJson(res);}
 
 export async function applyServerCostCodeImport(payload = {}) {
   const res=await fetch(buildUrl('/api/cost-codes/import/apply'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});return handleJson(res);

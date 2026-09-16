@@ -18,6 +18,7 @@ const {
   bulkUpdateCostCodeHierarchy,
   createCostCode,
   getCostCode,
+  getCostCodeOnboardingSummary,
   listCostCodes,
   setCostCodeActive,
   updateCostCode,
@@ -70,6 +71,7 @@ router.get("/", requirePermission(PERMISSIONS.COMMERCIAL_READ), async (req, res)
 
 router.post('/import/preview',requirePermission(PERMISSIONS.COMMERCIAL_STRUCTURE_MANAGE),async(req,res)=>{try{const client=await withActiveClient(req,res);if(!client)return;const result=await costCodeImport.preview(client.id,req.body||{},req.buildliteAuth);if(!result.ok)return res.status(result.status||400).json({message:result.message,errors:result.errors});return res.status(result.status||200).json({preview:result.preview});}catch(error){res.status(error.status||500).json({message:error.message||'Failed to preview Cost Code import.'});}});
 router.post('/import/apply',requirePermission(PERMISSIONS.COMMERCIAL_STRUCTURE_MANAGE),async(req,res)=>{try{const client=await withActiveClient(req,res);if(!client)return;const result=await costCodeImport.apply(client.id,req.body||{},req.buildliteAuth);if(!result.ok)return res.status(result.status||400).json({message:result.message,errors:result.errors});return res.status(result.status||200).json({summary:result.summary});}catch(error){res.status(error.status||500).json({message:error.message||'Failed to apply Cost Code import.'});}});
+router.get('/onboarding/summary',requirePermission(PERMISSIONS.COMMERCIAL_READ),async(req,res)=>{try{const client=await withActiveClient(req,res);if(!client)return;const result=await getCostCodeOnboardingSummary(client.id);return res.json(result.summary);}catch(error){return res.status(500).json({message:'Failed to load Cost Code onboarding summary.'});}});
 
 router.post("/", requirePermission(PERMISSIONS.COMMERCIAL_STRUCTURE_MANAGE), async (req, res) => {
   try {

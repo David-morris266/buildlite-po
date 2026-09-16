@@ -125,7 +125,7 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
     if (!serverAuthority) { setStepIndex(3); return; }
     setProcessing(true); setError('');
     try {
-      const result = await previewAuthoritativeCostCodeImport(buildAuthoritativeImportRows(parsed, { fieldByColumn }));
+      const result = await previewAuthoritativeCostCodeImport(buildAuthoritativeImportRows(parsed, { fieldByColumn }),parsed.fileName);
       if (!result.ok) { setError(result.errors?.[0] || 'Could not preview import.'); return; }
       setServerPreview(result.preview); setStepIndex(3);
     } catch (previewError) { setError(previewError?.message || 'Could not preview import.'); }
