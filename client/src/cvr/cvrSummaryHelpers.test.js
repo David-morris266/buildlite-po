@@ -323,8 +323,16 @@ describe('buildCommercialCostSummary', () => {
   it('aggregates rows by commercial head and reconciles with CVR totals', () => {
     seedBudgetRows();
     const model = buildCvrSummaryModel(development, { pos: [], periodKey: 'P01' });
-    const period = model.period;
-    const summary = buildCommercialCostSummary(model.rows, period.costCentres, model.summary);
+    const summary = buildCommercialCostSummary(model.rows, {
+      status: 'draft',
+      commercialHierarchy: {
+        state: 'live',
+        document: { costCodes: [
+          { costCodeKey: 'brickwork', resolutionState: 'allocated', head: { id: 'build', name: 'House Build' }, family: { id: 'super', name: 'Superstructure' }, reportingGroup: { id: 'brick', name: 'Brickwork' } },
+          { costCodeKey: 'land', resolutionState: 'allocated', head: { id: 'land', name: 'Land' }, family: null, reportingGroup: { id: 'land-cost', name: 'Land Cost' } },
+        ] },
+      },
+    }, model.summary);
 
     expect(summary.available).toBe(true);
     expect(summary.items.some((item) => item.head === 'Land')).toBe(true);
@@ -332,6 +340,22 @@ describe('buildCommercialCostSummary', () => {
     expect(summary.totals.reconciles).toBe(true);
     expect(summary.totals.budgetLabel).toBe('£600,000.00');
     expect(summary.totals.finalForecastLabel).toBe('£600,000.00');
+  });
+  it('reconciles exceptional hierarchy buckets without losing or balancing financial rows', () => {
+    const rows = [
+      { costCodeKey: 'A', currentBudget: 100, finalForecast: 90, variance: 10 },
+      { costCodeKey: 'B', currentBudget: 50, finalForecast: 60, variance: -10 },
+      { costCodeKey: 'C', currentBudget: 25, finalForecast: 20, variance: 5 },
+    ];
+    const summary = buildCommercialCostSummary(rows, {
+      status: 'submitted', commercialHierarchy: { state: 'submitted', captured: true, document: { costCodes: [
+        { costCodeKey: 'A', resolutionState: 'unallocated' },
+        { costCodeKey: 'B', resolutionState: 'unresolved_legacy' },
+      ] } },
+    }, { currentBudget: 175, finalForecast: 170, variance: 5 });
+    expect(summary.items.map((item) => item.head)).toEqual(['Unallocated', 'Legacy hierarchy unresolved', 'Hierarchy needs review']);
+    expect(summary.assignedRowCount).toBe(3);
+    expect(summary.totals).toMatchObject({ aggregatedBudget: 175, aggregatedForecast: 170, aggregatedVariance: 5, reconciles: true });
   });
 });
 
@@ -395,10 +419,8 @@ describe('buildCvrSummaryModel', () => {
     const model = buildCvrSummaryModel(development, { pos: [], periodKey: 'P01' });
 
     expect(model.commercialCostSummary.available).toBe(true);
-    expect(model.commercialCostSummary.items.some((item) => item.head === 'Land')).toBe(true);
-    expect(model.commercialCostSummary.items.some((item) => item.head === 'House Build')).toBe(
-      true
-    );
+    expect(model.commercialCostSummary.items.map((item) => item.head)).toEqual(['Hierarchy needs review']);
+    expect(model.commercialCostSummary.items.some((item) => item.head === 'Other')).toBe(false);
     expect(model.commercialCostSummary.totals.reconciles).toBe(true);
   });
 
@@ -479,7 +501,7 @@ describe('commentary draft-only editing', () => {
 
 describe('buildCommercialCostSummary empty state', () => {
   it('returns empty state when no cost code data exists', () => {
-    const summary = buildCommercialCostSummary([], [], {
+    const summary = buildCommercialCostSummary([], {}, {
       currentBudget: null,
       finalForecast: null,
       variance: null,

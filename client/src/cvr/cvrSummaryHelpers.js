@@ -36,13 +36,9 @@ import { snapshotHasFrozenRevenue } from './cvrSnapshotMapper';
 import {
   COMMERCIAL_HEADS,
   COMMERCIAL_FAMILIES,
-  buildHierarchyKeyMap,
-  migrateCostCentreHierarchy,
   normaliseCommercialFamily,
-  normaliseCommercialHead,
-  resolveRowCommercialHead,
 } from './commercialReportingHierarchy';
-import { getActiveHeadNames } from '../admin/commercialStructureStore';
+import { buildCvrCommercialHierarchyPresentation } from './cvrCommercialHierarchyPresentation';
 
 export {
   COMMERCIAL_HEADS,
@@ -61,56 +57,21 @@ export {
 /** @deprecated Use COMMERCIAL_HEADS for summary aggregation. */
 export const LEGACY_SUMMARY_FAMILIES = COMMERCIAL_HEADS;
 
-export function buildCommercialCostSummary(rows, periodCentres = [], cvrTotals = {}) {
-  const hierarchyMap = buildHierarchyKeyMap(periodCentres);
-  const headCatalog = getActiveHeadNames().length ? getActiveHeadNames() : COMMERCIAL_HEADS;
-  const buckets = new Map(
-    headCatalog.map((head) => [
-      head,
-      {
-        budget: [],
-        finalForecast: [],
-        variance: [],
-        costCodeKeys: [],
-        families: new Set(),
-        trades: new Set(),
-      },
-    ])
-  );
-
-  for (const row of rows) {
-    const head = resolveRowCommercialHead(row.costCodeKey, hierarchyMap);
-    const bucket = buckets.get(head);
-    if (!bucket) continue;
-
-    const hierarchy = hierarchyMap.get(row.costCodeKey);
-    bucket.costCodeKeys.push(row.costCodeKey);
-    if (hierarchy?.commercialFamily) bucket.families.add(hierarchy.commercialFamily);
-    if (hierarchy?.trade) bucket.trades.add(hierarchy.trade);
-    if (row.currentBudget != null) bucket.budget.push(row.currentBudget);
-    if (row.finalForecast != null) bucket.finalForecast.push(row.finalForecast);
-    if (row.variance != null) bucket.variance.push(row.variance);
-  }
-
-  const items = headCatalog.map((head) => {
-    const bucket = buckets.get(head);
-    const budget = sumNullable(bucket.budget);
-    const finalForecast = sumNullable(bucket.finalForecast);
-    const variance = sumNullable(bucket.variance);
-    const hasData =
-      bucket.costCodeKeys.length > 0 ||
-      budget != null ||
-      finalForecast != null ||
-      variance != null;
-
+export function buildCommercialCostSummary(rows, period = {}, cvrTotals = {}) {
+  const presentation = buildCvrCommercialHierarchyPresentation(rows, period);
+  const items = presentation.items.map((bucket) => {
+    const financialRows = bucket.rows.map(({ row }) => row);
+    const budget = sumNullable(financialRows.map((row) => row.currentBudget));
+    const finalForecast = sumNullable(financialRows.map((row) => row.finalForecast));
+    const variance = sumNullable(financialRows.map((row) => row.variance));
     return {
-      head,
-      headKey: head,
-      family: null,
-      familyKey: null,
-      drillDownLevel: 'head',
-      families: [...bucket.families],
-      trades: [...bucket.trades],
+      head: bucket.label,
+      headKey: bucket.key,
+      headId: bucket.headId,
+      kind: bucket.kind,
+      resolutionStates: bucket.resolutionStates,
+      families: bucket.families,
+      reportingGroups: bucket.reportingGroups,
       budget,
       finalForecast,
       variance,
@@ -118,10 +79,11 @@ export function buildCommercialCostSummary(rows, periodCentres = [], cvrTotals =
       finalForecastLabel: formatCvrMoney(finalForecast),
       varianceLabel: formatCvrMoney(variance),
       varianceState: getVarianceState(variance),
-      costCodeKeys: bucket.costCodeKeys,
-      hasData,
+      costCodeKeys: bucket.filter.costCodeKeys,
+      filter: bucket.filter,
+      hasData: true,
     };
-  }).filter((item) => item.hasData);
+  });
 
   const aggregatedBudget = sumNullable(items.map((item) => item.budget));
   const aggregatedForecast = sumNullable(items.map((item) => item.finalForecast));
@@ -129,6 +91,9 @@ export function buildCommercialCostSummary(rows, periodCentres = [], cvrTotals =
 
   return {
     available: items.length > 0,
+    authorityState: presentation.authorityState,
+    rowCount: presentation.rowCount,
+    assignedRowCount: presentation.assignedRowCount,
     emptyMessage:
       'Commercial Cost Summary will populate once cost codes are assigned to commercial heads.',
     items,
@@ -883,17 +848,6 @@ export function buildCvrSummaryModel(development, options = {}) {
           costSummary: previousModel.summary,
           snapshot: previousLocked?.snapshot || previousModel.period?.snapshot || null,
         });
-  const centres = historic
-    ? rows
-    : model.rows
-        .map((row) => {
-          const manual = period.costCentres?.find(
-            (centre) => centre.costCodeKey === row.costCodeKey && centre.active !== false
-          );
-          return manual || null;
-        })
-        .filter(Boolean);
-
   const status = getCvrPeriodStatusMeta(period.status);
   const readOnly = !isCvrPeriodEditable(period);
 
@@ -930,7 +884,7 @@ export function buildCvrSummaryModel(development, options = {}) {
     commercialExceptions: buildCommercialExceptions(rows, summary, { historic }),
     commercialCostSummary: buildCommercialCostSummary(
       rows,
-      historic ? rows : period.costCentres || centres,
+      period,
       model.totals
     ),
     recentActivity: buildRecentCommercialActivity(period, rows),

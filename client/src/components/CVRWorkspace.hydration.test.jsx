@@ -108,6 +108,25 @@ describe('CVRWorkspace input hydration (BL-031B)', () => {
     expect(getCvrMutationCallCounts().addMember).toBe(0);
     expect(getCvrMutationCallCounts().createInput).toBe(0);
   });
+
+  it('uses captured Cost Code membership for hierarchy drill-down and clears it explicitly', async () => {
+    const onClearHierarchyFilter = vi.fn();
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({ id: PERIOD_ID, developmentId: DEV.id }));
+    seedMockCvrInputs(PERIOD_ID, [
+      buildServerCvrInputFixture({ periodId: PERIOD_ID, costCodeKey: 'A', costCodeLabel: 'A — Included', currentBudget: 10 }),
+      buildServerCvrInputFixture({ periodId: PERIOD_ID, costCodeKey: 'B', costCodeLabel: 'B — Excluded', currentBudget: 20 }),
+    ]);
+    await act(async () => {
+      root.render(<CVRWorkspace development={DEV} periodKey="P01" hierarchyFilter={{ kind: 'commercial_head', headId: 'head-a', label: 'Duplicate name', costCodeKeys: [' A '] }} onClearHierarchyFilter={onClearHierarchyFilter} />);
+    });
+    await flush();
+    await flush();
+    expect(container.textContent).toContain('Included');
+    expect(container.textContent).not.toContain('Excluded');
+    expect(container.textContent).toContain('Showing hierarchy selection: Duplicate name');
+    act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Clear filter').click());
+    expect(onClearHierarchyFilter).toHaveBeenCalledOnce();
+  });
 });
 
 describe('CVR submission blocker presentation', () => {

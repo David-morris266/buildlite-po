@@ -131,7 +131,16 @@ describe('costCodeHierarchy', () => {
       { costCodeKey: '1110', currentBudget: 50, finalForecast: 45, variance: -5 },
     ];
 
-    const summary = buildCommercialCostSummary(rows, centres, {
+    const summary = buildCommercialCostSummary(rows, {
+      status: 'draft',
+      commercialHierarchy: { state: 'live', document: { costCodes: centres.map((centre, index) => ({
+        costCodeKey: centre.costCodeKey,
+        resolutionState: 'allocated',
+        head: { id: 'land', name: 'Land' },
+        family: null,
+        reportingGroup: { id: `group-${index}`, name: centre.trade },
+      })) } },
+    }, {
       currentBudget: 150,
       finalForecast: 135,
       variance: -15,
@@ -139,7 +148,7 @@ describe('costCodeHierarchy', () => {
 
     expect(summary.available).toBe(true);
     expect(summary.totals.reconciles).toBe(true);
-    expect(summary.items[0]?.trades).toContain('Vendor');
+    expect(summary.items[0]?.reportingGroups.map((item) => item.name)).toContain('Vendor');
   });
 
   it('counts only in-use hierarchy nodes for KPI cards', () => {

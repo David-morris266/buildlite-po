@@ -91,7 +91,7 @@ export default function DevelopmentWorkspace({
   const [cvrView, setCvrView] = useState(initialCvrPeriodKey ? 'summary' : 'register');
   const [cvrPeriodKey, setCvrPeriodKey] = useState(initialCvrPeriodKey);
   const [cvrFocusCostCodeKey, setCvrFocusCostCodeKey] = useState(null);
-  const [cvrHeadFilter, setCvrHeadFilter] = useState(null);
+  const [cvrHierarchyFilter, setCvrHierarchyFilter] = useState(null);
   const [plotRefresh, setPlotRefresh] = useState(0);
   const [ledgerRefresh, setLedgerRefresh] = useState(0);
   const [cvrRefresh, setCvrRefresh] = useState(0);
@@ -135,7 +135,7 @@ export default function DevelopmentWorkspace({
       setCvrPeriodKey(null);
     }
     setCvrFocusCostCodeKey(null);
-    setCvrHeadFilter(null);
+    setCvrHierarchyFilter(null);
     setFocusPlotId(null);
     setPos([]);
     setPosLoadState('loading');
@@ -592,7 +592,7 @@ export default function DevelopmentWorkspace({
     setCvrView('register');
     setCvrPeriodKey(null);
     setCvrFocusCostCodeKey(null);
-    setCvrHeadFilter(null);
+    setCvrHierarchyFilter(null);
   }
 
   function handleOpenPackageFromDevelopment(_orderKey, launchContext) {
@@ -827,7 +827,7 @@ export default function DevelopmentWorkspace({
     onBackToCvrSummary: () => {
       setCvrView('summary');
       setCvrFocusCostCodeKey(null);
-      setCvrHeadFilter(null);
+      setCvrHierarchyFilter(null);
     },
   });
 
@@ -1025,20 +1025,18 @@ export default function DevelopmentWorkspace({
               onBackToSummary={() => {
                 setCvrView('summary');
                 setCvrFocusCostCodeKey(null);
-                setCvrHeadFilter(null);
+                setCvrHierarchyFilter(null);
               }}
               onBackToRegister={() => {
                 setCvrView('register');
                 setCvrPeriodKey(null);
                 setCvrFocusCostCodeKey(null);
-                setCvrHeadFilter(null);
+                setCvrHierarchyFilter(null);
               }}
               onPeriodChanged={handleCvrChanged}
               initialCostCodeKey={cvrFocusCostCodeKey}
-              headFilter={cvrHeadFilter}
-              familyFilter={cvrHeadFilter}
-              onClearHeadFilter={() => setCvrHeadFilter(null)}
-              onClearFamilyFilter={() => setCvrHeadFilter(null)}
+              hierarchyFilter={cvrHierarchyFilter}
+              onClearHierarchyFilter={() => setCvrHierarchyFilter(null)}
             />
           ) : cvrView === 'summary' && cvrPeriodKey ? (
             <CVRSummaryPage
@@ -1050,13 +1048,12 @@ export default function DevelopmentWorkspace({
               certificatesReady={certificatesReady}
               certificatesError={certificatesErrorMessage}
               onContinueToCvr={() => setCvrView('worksheet')}
-              onOpenWorksheetForHead={(head) => setCvrHeadFilter(head)}
-              onOpenWorksheetForFamily={(head) => setCvrHeadFilter(head)}
+              onOpenWorksheetForHierarchy={setCvrHierarchyFilter}
               onBackToRegister={() => {
                 setCvrView('register');
                 setCvrPeriodKey(null);
                 setCvrFocusCostCodeKey(null);
-                setCvrHeadFilter(null);
+                setCvrHierarchyFilter(null);
               }}
               onOpenPackage={onOpenPackage}
               onPeriodChanged={handleCvrChanged}
@@ -1075,7 +1072,7 @@ export default function DevelopmentWorkspace({
                 setCvrPeriodKey(periodKey);
                 setCvrView('summary');
                 setCvrFocusCostCodeKey(null);
-                setCvrHeadFilter(null);
+                setCvrHierarchyFilter(null);
               }}
               onChanged={handleCvrChanged}
               commercialReadiness={commercialReadiness}

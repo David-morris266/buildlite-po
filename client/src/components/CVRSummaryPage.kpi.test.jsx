@@ -3,8 +3,8 @@
 import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, describe, expect, it } from 'vitest';
-import { SummaryKpiRibbon } from './CVRSummaryPage';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CommercialCostSummaryTable, SummaryKpiRibbon } from './CVRSummaryPage';
 
 const ITEMS = [
   { key: 'forecastRevenue', label: 'Forecast Revenue', value: '£1,000,000.00', modifier: 'primary', emphasis: 'hero' },
@@ -61,5 +61,26 @@ describe('CVR Summary KPI ribbon', () => {
     expect([...revenue.querySelectorAll('.cvr-summary__kpi-value')].map((node) => node.textContent)).toEqual(['—', '—', '—']);
     expect(revenue.querySelectorAll('.cvr-summary__kpi-hint')).toHaveLength(3);
     expect(revenue.textContent).toContain('Revenue unavailable');
+  });
+});
+
+describe('Commercial Cost Summary authority presentation', () => {
+  it('renders explicit hierarchy buckets and passes the stable membership descriptor', () => {
+    const onOpen = vi.fn();
+    const filter = { kind: 'hierarchy_resolution', resolutionStates: ['unresolved_legacy'], label: 'Legacy hierarchy unresolved', costCodeKeys: ['1110'] };
+    const summary = {
+      available: true,
+      items: [{ headKey: 'resolution:unresolved_legacy', head: filter.label, filter, budgetLabel: '£10.00', finalForecastLabel: '£12.00', varianceLabel: '−£2.00', varianceState: 'negative' }],
+      totals: { budgetLabel: '£10.00', finalForecastLabel: '£12.00', varianceLabel: '−£2.00', varianceState: 'negative' },
+    };
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => root.render(<CommercialCostSummaryTable summary={summary} onOpen={onOpen} />));
+    expect(container.textContent).toContain('Legacy hierarchy unresolved');
+    expect(container.textContent).not.toContain('Other');
+    expect(container.textContent).toContain('Select a Commercial Head or hierarchy status');
+    act(() => container.querySelector('button').click());
+    expect(onOpen).toHaveBeenCalledWith(filter);
   });
 });

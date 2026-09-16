@@ -131,6 +131,20 @@ function EmptyState({ message }) {
   return <p className="cvr-summary__empty">{message}</p>;
 }
 
+export function CommercialCostSummaryTable({ summary, onOpen }) {
+  if (!summary.available) return <EmptyState message={summary.emptyMessage} />;
+  return (
+    <div className="po-table-wrap">
+      <table className="po-data-table cvr-summary__table cvr-summary__cost-summary-table">
+        <thead><tr><th>Commercial Head</th><th style={{ textAlign: 'right' }}>Budget</th><th style={{ textAlign: 'right' }}>Final Forecast</th><th style={{ textAlign: 'right' }}>Variance</th></tr></thead>
+        <tbody>{summary.items.map((item) => <tr key={item.headKey}><td><button type="button" className="cvr-summary__family-link" onClick={() => onOpen?.(item.filter)}>{item.head}</button></td><td style={{ textAlign: 'right' }}>{item.budgetLabel}</td><td style={{ textAlign: 'right' }}>{item.finalForecastLabel}</td><td style={{ textAlign: 'right' }} className={`dev-cvr__variance dev-cvr__variance--${item.varianceState}`}>{item.varianceLabel}</td></tr>)}</tbody>
+        <tfoot><tr className="cvr-summary__cost-summary-total"><td><strong>Total</strong></td><td style={{ textAlign: 'right' }}><strong>{summary.totals.budgetLabel}</strong></td><td style={{ textAlign: 'right' }}><strong>{summary.totals.finalForecastLabel}</strong></td><td style={{ textAlign: 'right' }} className={`dev-cvr__variance dev-cvr__variance--${summary.totals.varianceState}`}><strong>{summary.totals.varianceLabel}</strong></td></tr></tfoot>
+      </table>
+      <p className="cvr-summary__hint">Select a Commercial Head or hierarchy status to view its Cost Codes in the CVR Worksheet.</p>
+    </div>
+  );
+}
+
 function RejectDialog({ open, onCancel, onConfirm }) {
   const [comment, setComment] = useState('');
 
@@ -180,8 +194,7 @@ export default function CVRSummaryPage({
   refreshToken = 0,
   pageNavigation = null,
   onContinueToCvr,
-  onOpenWorksheetForHead,
-  onOpenWorksheetForFamily,
+  onOpenWorksheetForHierarchy,
   onBackToRegister,
   onOpenPackage,
   onPeriodChanged,
@@ -384,9 +397,8 @@ export default function CVRSummaryPage({
     setSelectedRow(row);
   }
 
-  function openWorksheetForHead(head) {
-    onOpenWorksheetForHead?.(head);
-    onOpenWorksheetForFamily?.(head);
+  function openWorksheetForHierarchy(filter) {
+    onOpenWorksheetForHierarchy?.(filter);
     onContinueToCvr?.();
   }
 
@@ -620,67 +632,7 @@ export default function CVRSummaryPage({
           title="Commercial Cost Summary"
           className="cvr-summary__panel--wide cvr-summary__panel--centrepiece"
         >
-          {summary.commercialCostSummary.available ? (
-            <div className="po-table-wrap">
-              <table className="po-data-table cvr-summary__table cvr-summary__cost-summary-table">
-                <thead>
-                  <tr>
-                    <th>Commercial Head</th>
-                    <th style={{ textAlign: 'right' }}>Budget</th>
-                    <th style={{ textAlign: 'right' }}>Final Forecast</th>
-                    <th style={{ textAlign: 'right' }}>Variance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.commercialCostSummary.items.map((item) => (
-                    <tr key={item.head}>
-                      <td>
-                        <button
-                          type="button"
-                          className="cvr-summary__family-link"
-                          onClick={() => openWorksheetForHead(item.head)}
-                        >
-                          {item.head}
-                        </button>
-                      </td>
-                      <td style={{ textAlign: 'right' }}>{item.budgetLabel}</td>
-                      <td style={{ textAlign: 'right' }}>{item.finalForecastLabel}</td>
-                      <td
-                        style={{ textAlign: 'right' }}
-                        className={`dev-cvr__variance dev-cvr__variance--${item.varianceState}`}
-                      >
-                        {item.varianceLabel}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="cvr-summary__cost-summary-total">
-                    <td>
-                      <strong>Total</strong>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <strong>{summary.commercialCostSummary.totals.budgetLabel}</strong>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <strong>{summary.commercialCostSummary.totals.finalForecastLabel}</strong>
-                    </td>
-                    <td
-                      style={{ textAlign: 'right' }}
-                      className={`dev-cvr__variance dev-cvr__variance--${summary.commercialCostSummary.totals.varianceState}`}
-                    >
-                      <strong>{summary.commercialCostSummary.totals.varianceLabel}</strong>
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-              <p className="cvr-summary__hint">
-                Select a commercial head to open the CVR worksheet filtered to that reporting group.
-              </p>
-            </div>
-          ) : (
-            <EmptyState message={summary.commercialCostSummary.emptyMessage} />
-          )}
+          <CommercialCostSummaryTable summary={summary.commercialCostSummary} onOpen={openWorksheetForHierarchy} />
         </SummaryPanel>
 
         <SummaryPanel title="Financial Position" className="cvr-summary__panel--wide cvr-summary__panel--supporting">

@@ -11,10 +11,7 @@ import { subscribeCommercialChanged } from '../commercial/commercialEvents';
 import { buildCvrWorkspaceModel, formatCvrMoney, formatCvrTotals } from '../cvr/cvrHelpers';
 import { applyCostCentreSaveToCvrRow } from '../cvr/cvrForecastEngine';
 import { buildCvrTotals } from '../cvr/cvrCalculations';
-import {
-  buildHierarchyKeyMap,
-  resolveRowCommercialHead,
-} from '../cvr/commercialReportingHierarchy';
+import { filterCvrRowsByHierarchyDescriptor } from '../cvr/cvrCommercialHierarchyPresentation';
 import {
   buildCvrPeriodAuditItems,
   buildCvrPeriodHeaderMeta,
@@ -163,10 +160,8 @@ export default function CVRWorkspace({
   onBackToRegister,
   onPeriodChanged,
   initialCostCodeKey = null,
-  familyFilter = null,
-  headFilter = null,
-  onClearFamilyFilter,
-  onClearHeadFilter,
+  hierarchyFilter = null,
+  onClearHierarchyFilter,
   certificatesLoading = false,
   certificatesReady = true,
   certificatesError = '',
@@ -266,25 +261,15 @@ export default function CVRWorkspace({
     });
   }, [development, pos, periodKey, period, readOnly, refreshToken, localRefresh, certificatesReady]);
 
-  const activeHeadFilter = headFilter || familyFilter;
-
-  const hierarchyMap = useMemo(
-    () => buildHierarchyKeyMap(period?.costCentres || []),
-    [period?.costCentres]
-  );
-
   const displayedRows = useMemo(() => {
     if (!workspace?.rows) return [];
-    if (!activeHeadFilter) return workspace.rows;
-    return workspace.rows.filter(
-      (row) => resolveRowCommercialHead(row.costCodeKey, hierarchyMap) === activeHeadFilter
-    );
-  }, [workspace?.rows, activeHeadFilter, hierarchyMap]);
+    return filterCvrRowsByHierarchyDescriptor(workspace.rows, hierarchyFilter);
+  }, [workspace?.rows, hierarchyFilter]);
 
   const displayedTotals = useMemo(() => {
-    const rows = activeHeadFilter ? displayedRows : workspace?.rows || [];
+    const rows = hierarchyFilter ? displayedRows : workspace?.rows || [];
     return formatCvrTotals(buildCvrTotals(rows));
-  }, [workspace?.rows, displayedRows, activeHeadFilter]);
+  }, [workspace?.rows, displayedRows, hierarchyFilter]);
 
   const memberKeys = useMemo(() => {
     const keys = new Set();
@@ -763,18 +748,15 @@ export default function CVRWorkspace({
         </section>
       ) : null}
 
-      {activeHeadFilter ? (
+      {hierarchyFilter ? (
         <div className="cvr-workspace__family-filter" role="status">
           <span>
-            Showing commercial head: <strong>{activeHeadFilter}</strong>
+            Showing hierarchy selection: <strong>{hierarchyFilter.label}</strong>
           </span>
           <button
             type="button"
             className="cvr-summary__link-btn"
-            onClick={() => {
-              onClearHeadFilter?.();
-              onClearFamilyFilter?.();
-            }}
+            onClick={() => onClearHierarchyFilter?.()}
           >
             Clear filter
           </button>
@@ -786,7 +768,7 @@ export default function CVRWorkspace({
       {!historicUnavailable ? (
         <CVRTable
           rows={displayedRows}
-          totals={activeHeadFilter ? displayedTotals : workspace.totals}
+          totals={hierarchyFilter ? displayedTotals : workspace.totals}
           onRowSelect={setSelectedRow}
           onBudgetChange={readOnly || developmentBudgetAdopted ? undefined : handleBudgetChange}
           readOnly={readOnly || historic}

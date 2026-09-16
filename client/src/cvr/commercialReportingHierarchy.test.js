@@ -214,8 +214,12 @@ describe('reporting aggregation by commercial head', () => {
     );
 
     const model = buildCvrModel(DEV_ID, { periodKey: 'P01' });
-    const centres = listCostCentres(DEV_ID, 'P01');
-    const summary = buildCommercialCostSummary(model.rows, centres, model.totals);
+    const summary = buildCommercialCostSummary(model.rows, {
+      status: 'draft', commercialHierarchy: { state: 'live', document: { costCodes: [
+        { costCodeKey: 'brickwork', resolutionState: 'allocated', head: { id: 'build', name: 'House Build' }, family: { id: 'general', name: 'General' }, reportingGroup: { id: 'brickwork', name: 'Brickwork package' } },
+        { costCodeKey: 'land', resolutionState: 'allocated', head: { id: 'land', name: 'Land' }, family: null, reportingGroup: { id: 'land-cost', name: 'Land acquisition' } },
+      ] } },
+    }, model.totals);
 
     expect(summary.items.some((item) => item.head === 'Land')).toBe(true);
     expect(summary.items.some((item) => item.head === 'House Build')).toBe(true);
@@ -241,13 +245,15 @@ describe('reporting aggregation by commercial head', () => {
     const hierarchyMap = buildHierarchyKeyMap(centres);
     const landItem = buildCommercialCostSummary(
       buildCvrModel(DEV_ID, { periodKey: 'P01' }).rows,
-      centres,
+      { status: 'draft', commercialHierarchy: { state: 'live', document: { costCodes: [
+        { costCodeKey: 'land', resolutionState: 'allocated', head: { id: 'land', name: 'Land' }, family: null, reportingGroup: { id: 'land-cost', name: 'Land acquisition' } },
+      ] } } },
       buildCvrModel(DEV_ID, { periodKey: 'P01' }).totals
     ).items.find((item) => item.head === 'Land');
 
     expect(hierarchyMap.get('land')?.commercialHead).toBe('Land');
-    expect(landItem?.drillDownLevel).toBe('head');
-    expect(landItem?.families).toContain('Acquisition');
+    expect(landItem?.kind).toBe('commercial_head');
+    expect(landItem?.families).toEqual([]);
   });
 });
 
