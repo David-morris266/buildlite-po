@@ -43,7 +43,11 @@ describe('CvrReportingMonthDialog (BL-033C.1)', () => {
         />
       );
     });
-    const create = [...container.querySelectorAll('button')].find((item) =>
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog).toBeTruthy();
+    expect(container.contains(dialog)).toBe(false);
+    expect(dialog.parentElement?.classList.contains('dev-cvr-add-backdrop')).toBe(true);
+    const create = [...dialog.querySelectorAll('button')].find((item) =>
       /Create P04/i.test(item.textContent || '')
     );
     expect(create?.disabled).toBe(true);
@@ -67,7 +71,8 @@ describe('CvrReportingMonthDialog (BL-033C.1)', () => {
         />
       );
     });
-    const cancel = [...container.querySelectorAll('button')].find((item) =>
+    const dialog = document.body.querySelector('[role="dialog"]');
+    const cancel = [...dialog.querySelectorAll('button')].find((item) =>
       /^Cancel$/i.test(item.textContent || '')
     );
     await act(async () => {
@@ -83,25 +88,29 @@ describe('CvrReportingMonthDialog (BL-033C.1)', () => {
       root.render(
         <CvrReportingMonthDialog
           open
-          nextPeriodKey="P02"
-          suggestedMonth="2026-09"
+          nextPeriodKey="P03"
+          suggestedMonth="2027-01"
           onCancel={() => {}}
           onConfirm={onConfirm}
         />
       );
     });
-    const input = container.querySelector('input[type="month"]');
-    expect(input?.value).toBe('2026-09');
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog).toBeTruthy();
+    expect(container.contains(dialog)).toBe(false);
+    expect(dialog.textContent).toContain('Create P03');
+    const input = dialog.querySelector('input[type="month"]');
+    expect(input?.value).toBe('2027-01');
     await act(async () => {
-      setInputValue(input, '2026-10');
+      setInputValue(input, '2027-02');
     });
-    const create = [...container.querySelectorAll('button')].find((item) =>
-      /Create P02/i.test(item.textContent || '')
+    const create = [...dialog.querySelectorAll('button')].find((item) =>
+      /Create P03/i.test(item.textContent || '')
     );
     expect(create?.disabled).toBe(false);
     await act(async () => {
       create.click();
     });
-    expect(onConfirm).toHaveBeenCalledWith('2026-10');
+    expect(onConfirm).toHaveBeenCalledWith('2027-02');
   });
 });

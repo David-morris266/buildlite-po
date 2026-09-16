@@ -171,6 +171,11 @@ function snapshotHeaderToDocument(header, rows = [], plots = []) {
       hashScheme: header.budget_source_hash_scheme, hash: header.budget_source_sha256,
       document: header.budget_source_snapshot || null,
     } : { state: 'legacy_cvr', adopted: false, captured: false },
+    commercialHierarchy: header.hierarchy_submission_id ? {
+      state: 'locked', captured: true, submissionId: header.hierarchy_submission_id,
+      hashScheme: header.hierarchy_source_hash_scheme, hash: header.hierarchy_source_sha256,
+      document: header.hierarchy_source_snapshot || null,
+    } : { state: 'legacy_not_captured', captured: false },
     createdAt: toIso(header.created_at),
     createdBy: header.created_by ?? null,
     vaExposureUplift: mappedRows.reduce((sum, row) => Math.round((sum + Number(row.vaExposureUplift || 0)) * 100) / 100, 0),

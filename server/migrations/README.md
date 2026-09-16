@@ -124,3 +124,7 @@ Adds the explicit assessed/pending QS Forecast state used by internally reconcil
 ### 044_development_budget_authority.sql
 
 Adds the immutable Development Budget Authority event journal, exact signed cost-code lines, authenticated posting permission, tenant/development boundaries, canonical source evidence and zero-backfill read-model foundation. Existing CVR budget data is not read, copied or changed.
+
+### 047_cvr_commercial_hierarchy_evidence.sql
+
+Adds immutable CVR submission-time Commercial Structure evidence and an optional Locked snapshot link. It is additive and does not backfill historic CVRs.

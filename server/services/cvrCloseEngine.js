@@ -317,6 +317,7 @@ async function buildCvrCloseCandidate({
   loadSources = loadCvrCloseSources,
   variationExposureDocument = null,
   developmentBudgetDocument = null,
+  commercialHierarchyDocument = null,
 } = {}) {
   const loaded = await loadSources({ clientId, developmentId, periodId, dbClient });
   const sources = loaded.sources || {};
@@ -356,6 +357,7 @@ async function buildCvrCloseCandidate({
 
   const actuals = buildActualsByCostCode(transactions);
   const expectedLiabilities = buildExpectedLiabilityByCostCode(events);
+  const hierarchyByCostCode = new Map((commercialHierarchyDocument?.costCodes || []).map((entry) => [normaliseCostCodeKey(entry.costCodeKey), entry]));
   const variationExposureByCostCode = new Map();
   const authorityBudgetByCostCode = new Map((developmentBudgetDocument?.positions || []).map((p) => [normaliseCostCodeKey(p.costCode), p]));
   const usesDevelopmentBudget = Boolean(developmentBudgetDocument);
@@ -409,21 +411,29 @@ async function buildCvrCloseCandidate({
         ? 0
         : 0;
     const actualCost = actuals.totals.has(key) ? actuals.totals.get(key) : 0;
+    const hierarchy = hierarchyByCostCode.get(key) || (commercialHierarchyDocument ? {
+      costCodeId: null, costCodeKey: key, costCodeLabel: '', costCodeActive: false,
+      resolutionState: 'missing_cost_code', head: null, family: null, reportingGroup: null,
+      legacyEvidence: { commercialHead: null, commercialFamily: null, reportingGroup: null },
+    } : null);
+    const resolvedHierarchy = hierarchy && ['allocated', 'archived_assignment'].includes(hierarchy.resolutionState);
 
     return enrichCvrForecastRow({
       costCodeKey: manual?.costCodeKey || key,
       costCodeLabel: label,
       description: manual?.description || "",
-      commercialHead: manual?.commercialHead || "",
-      commercialFamily: manual?.commercialFamily || "",
-      trade: manual?.trade || "",
+      commercialHead: hierarchy ? (resolvedHierarchy ? hierarchy.head?.name || '' : '') : manual?.commercialHead || "",
+      commercialFamily: hierarchy ? (resolvedHierarchy ? hierarchy.family?.name || '' : '') : manual?.commercialFamily || "",
+      trade: hierarchy ? (resolvedHierarchy ? hierarchy.reportingGroup?.name || '' : '') : manual?.trade || "",
       active: manual?.active !== false,
       originalBudget: usesDevelopmentBudget ? (authorityBudget?.originalPence || 0) / 100 : (manual?.originalBudget ?? null),
       currentBudget: usesDevelopmentBudget ? (authorityBudget?.currentPence || 0) / 100 : (manual?.currentBudget ?? null),
       commercialAdjustment: manual?.commercialAdjustment ?? 0,
       adjustmentReason: manual?.adjustmentReason || "",
       notes: manual?.notes || "",
-      displayMetadata: manual?.displayMetadata || {},
+      displayMetadata: hierarchy
+        ? { ...(manual?.displayMetadata || {}), commercialHierarchy: hierarchy }
+        : manual?.displayMetadata || {},
       committed: roundMoney(committed) ?? 0,
       certified: roundMoney(certifiedValue) ?? 0,
       actualCost: roundMoney(actualCost) ?? 0,

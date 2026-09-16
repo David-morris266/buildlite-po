@@ -211,6 +211,18 @@ async function createDevelopment(overrides = {}) {
   });
   assert.equal(res.status, 201);
   trackDevelopment(res.body.id);
+  const client = await getActiveClient();
+  await pool.query(
+    `
+      INSERT INTO cvr_periods (
+        client_id, development_id, period_key, period_label, status, commentary,
+        submitted_at, submitted_by, approved_at, approved_by, budget_source
+      )
+      VALUES ($1, $2, 'P00', 'Historic baseline', 'locked', '{}'::jsonb,
+        NOW(), 'legacy-fixture', NOW(), 'legacy-fixture', 'legacy_cvr')
+    `,
+    [client.id, res.body.id]
+  );
   return res.body;
 }
 

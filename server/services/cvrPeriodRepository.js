@@ -117,6 +117,28 @@ async function hydratePeriod(clientId, row, dbClient = null) {
   const audit = await loadAuditRows(clientId, row.id, dbClient);
   const snapshot = await getSnapshotForPeriod(clientId, row.id, dbClient);
   const document = periodRowToDocument(row, audit, snapshot);
+  const hierarchySnapshots = require('./cvrCommercialHierarchySnapshot');
+  const hierarchyDb = dbClient || { query };
+  if (row.status === CVR_PERIOD_STATUSES.draft) {
+    document.commercialHierarchy = {
+      state: 'live', captured: false,
+      document: await hierarchySnapshots.liveDocument(hierarchyDb, clientId),
+    };
+  } else if (row.status === CVR_PERIOD_STATUSES.submitted) {
+    const submittedHierarchy = hierarchySnapshots.submittedDocument(
+      await hierarchySnapshots.latest(hierarchyDb, clientId, row.id)
+    );
+    document.commercialHierarchy = submittedHierarchy.legacy
+      ? { state: 'legacy_not_captured', captured: false }
+      : { state: 'submitted', captured: true, document: submittedHierarchy.document,
+          hash: submittedHierarchy.row.source_snapshot_sha256,
+          hashScheme: submittedHierarchy.row.source_snapshot_hash_scheme,
+          integrity: submittedHierarchy.integrity };
+  } else if (row.status === CVR_PERIOD_STATUSES.locked) {
+    document.commercialHierarchy = document.snapshot?.commercialHierarchy || {
+      state: 'legacy_not_captured', captured: false,
+    };
+  }
   const budgetSnapshots = require('./cvrDevelopmentBudgetSnapshot');
   const db = dbClient || { query };
   if ((row.budget_source || 'legacy_cvr') === 'development_budget') {
@@ -368,7 +390,7 @@ async function patchCvrPeriod(clientId, developmentId, periodId, body = {}, { ac
   }
 }
 
-async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, { actor } = {}) {
+async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, { actor, auth } = {}) {
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
   if (!isValidUuid(periodId)) return { ok: false, status: 400, message: "periodId must be a valid UUID." };
@@ -388,6 +410,9 @@ async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, { a
       const budget = await require('./cvrDevelopmentBudgetSnapshot').appendSubmission(dbClient, { clientId, developmentId, periodId, actor });
       if (!budget.ok) { await dbClient.query('ROLLBACK'); return { ok:false,status:409,message:budget.message }; }
     }
+    await require('./cvrCommercialHierarchySnapshot').appendSubmission(dbClient, {
+      clientId, developmentId, periodId, actor, auth,
+    });
     const updated = (await dbClient.query(`UPDATE cvr_periods SET status='submitted',submitted_at=NOW(),submitted_by=$1,version=version+1,updated_at=NOW(),updated_by=$1 WHERE client_id=$2 AND development_id=$3 AND id=$4 AND status='draft' RETURNING *`, [actor || null, clientId, developmentId, periodId])).rows[0];
     await insertAudit(dbClient, { clientId, periodId, action: CVR_PERIOD_AUDIT_ACTIONS.submitted, actor, comment: body.comment || '', priorStatus: row.status, newStatus: CVR_PERIOD_STATUSES.submitted });
     await dbClient.query('COMMIT');
@@ -526,6 +551,14 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
       await dbClient.query('ROLLBACK');
       return { ok:false,status:409,code:CVR_CLOSE_NOT_READY_CODE,message:'Development Budget changed after this CVR was submitted. Reject, review and resubmit before Lock.', blockers:(budgetComparison?.reasons || ['development_budget_not_captured']).map(reason=>({source:'developmentBudget',reason})) };
     }
+    const hierarchySnapshots = require('./cvrCommercialHierarchySnapshot');
+    const hierarchySubmission = hierarchySnapshots.submittedDocument(
+      await hierarchySnapshots.latest(dbClient, clientId, periodId)
+    );
+    if (!hierarchySubmission.legacy && hierarchySubmission.integrity?.valid !== true) {
+      await dbClient.query('ROLLBACK');
+      return { ok:false,status:409,code:CVR_CLOSE_NOT_READY_CODE,message:'Submitted Commercial Structure evidence failed its integrity check.',blockers:[{source:'commercialHierarchy',reason:'submitted_hierarchy_integrity_invalid'}] };
+    }
     if (!variationExposure.legacy) {
       const required = acknowledgementRequirements(variationExposure.submitted.source_snapshot);
       const acknowledgements = await listAcknowledgements(dbClient, clientId, variationExposure.submitted.id);
@@ -550,6 +583,7 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
       ...(options.loadSettingsRow ? { loadSettingsRow: options.loadSettingsRow } : {}),
       variationExposureDocument: variationExposure.submitted?.source_snapshot || null,
       developmentBudgetDocument: budgetComparison?.submitted?.source_snapshot || null,
+      commercialHierarchyDocument: hierarchySubmission.document || null,
     });
 
     if (
@@ -577,6 +611,7 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
       failAfter,
       variationExposureSubmissionId: variationExposure.submitted?.id || null,
       budgetSubmissionId: budgetComparison?.submitted?.id || null,
+      hierarchySubmissionId: hierarchySubmission.row?.id || null,
     });
 
     if (failAfter === "period") {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { isValidReportingYearMonth } from '../cvr/cvrReportingMonth';
 
 export default function CvrReportingMonthDialog({
@@ -32,7 +33,7 @@ export default function CvrReportingMonthDialog({
     onConfirm?.(value);
   }
 
-  return (
+  return createPortal(
     <div className="dev-cvr-add-backdrop" role="presentation">
       <div className="dev-cvr-add modal" role="dialog" aria-modal="true" aria-labelledby="cvr-reporting-month-title">
         <h3 id="cvr-reporting-month-title">Reporting month</h3>
@@ -77,6 +78,7 @@ export default function CvrReportingMonthDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

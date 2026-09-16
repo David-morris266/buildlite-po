@@ -64,6 +64,7 @@ export function normalizeServerCvrPeriod(document, inputs = []) {
     status,
     budgetSourceMode: document.budgetSourceMode || 'legacy_cvr',
     budgetSource: document.budgetSource || null,
+    commercialHierarchy: document.commercialHierarchy || null,
     version: Number(document.version) || 1,
     createdAt: document.createdAt || null,
     updatedAt: document.updatedAt || null,

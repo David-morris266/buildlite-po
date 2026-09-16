@@ -139,8 +139,10 @@ describe('Create Next Period navigation (BL-031F)', () => {
     await flush();
     expect(createNextCvrPeriod).not.toHaveBeenCalled();
 
-    const dialog = container.querySelector('[role="dialog"]');
+    const dialog = document.body.querySelector('[role="dialog"]');
     expect(dialog).toBeTruthy();
+    expect(container.contains(dialog)).toBe(false);
+    expect(dialog.parentElement?.classList.contains('dev-cvr-add-backdrop')).toBe(true);
     const input = dialog.querySelector('input[type="month"]');
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
     await act(async () => {
@@ -180,7 +182,9 @@ describe('Create Next Period navigation (BL-031F)', () => {
       button.click();
     });
     await flush();
-    const cancel = [...container.querySelectorAll('button')].find((item) =>
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(container.contains(dialog)).toBe(false);
+    const cancel = [...dialog.querySelectorAll('button')].find((item) =>
       /^Cancel$/i.test(item.textContent || '')
     );
     await act(async () => {
@@ -189,7 +193,7 @@ describe('Create Next Period navigation (BL-031F)', () => {
     await flush();
     expect(createNextCvrPeriod).not.toHaveBeenCalled();
     expect(onBackToRegister).not.toHaveBeenCalled();
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it('Summary refreshes authoritative submitted state, warns when stale and gates approval only', async () => {
@@ -253,7 +257,8 @@ describe('Create Next Period navigation (BL-031F)', () => {
     });
     await flush();
     expect(createNextCvrPeriod).not.toHaveBeenCalled();
-    const dialog = container.querySelector('[role="dialog"]');
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(container.contains(dialog)).toBe(false);
     const input = dialog.querySelector('input[type="month"]');
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
     await act(async () => {
