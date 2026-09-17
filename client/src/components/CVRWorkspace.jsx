@@ -59,6 +59,7 @@ import {
   getLedgerReadiness,
 } from '../ledger/ledgerServerCache';
 import { formatCvrSubmissionBlockers } from '../cvr/cvrSubmissionBlockerPresentation';
+import { buildCvrPeriodComparisonForPeriod } from '../cvr/cvrPeriodMovement';
 
 function StatusBadge({ status }) {
   return (
@@ -260,6 +261,10 @@ export default function CVRWorkspace({
       readOnly,
     });
   }, [development, pos, periodKey, period, readOnly, refreshToken, localRefresh, certificatesReady]);
+
+  const periodComparison = useMemo(() => buildCvrPeriodComparisonForPeriod(development.id, {
+    periodKey, period, pos,
+  }), [development.id, periodKey, period, pos, refreshToken, localRefresh]);
 
   const displayedRows = useMemo(() => {
     if (!workspace?.rows) return [];
@@ -769,6 +774,7 @@ export default function CVRWorkspace({
         <CVRTable
           rows={displayedRows}
           totals={hierarchyFilter ? displayedTotals : workspace.totals}
+          comparison={periodComparison}
           onRowSelect={setSelectedRow}
           onBudgetChange={readOnly || developmentBudgetAdopted ? undefined : handleBudgetChange}
           readOnly={readOnly || historic}

@@ -1049,6 +1049,10 @@ export default function DevelopmentWorkspace({
               certificatesError={certificatesErrorMessage}
               onContinueToCvr={() => setCvrView('worksheet')}
               onOpenWorksheetForHierarchy={setCvrHierarchyFilter}
+              onOpenWorksheetForCostCode={(costCodeKey) => {
+                setCvrHierarchyFilter(null);
+                setCvrFocusCostCodeKey(costCodeKey);
+              }}
               onBackToRegister={() => {
                 setCvrView('register');
                 setCvrPeriodKey(null);

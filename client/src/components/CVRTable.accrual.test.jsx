@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { act } from 'react-dom/test-utils';
+import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CVRTable from './CVRTable';
@@ -23,7 +23,7 @@ describe('CVRTable current cost and accrual visibility', () => {
     container.remove();
   });
 
-  it('shows accrual and current cost on the worksheet row and totals', () => {
+  it('keeps accrual and current cost available in supporting detail', () => {
     act(() => {
       root.render(
         <CVRTable
@@ -73,8 +73,13 @@ describe('CVRTable current cost and accrual visibility', () => {
     const headers = Array.from(container.querySelectorAll('thead th')).map(
       (header) => header.textContent.trim()
     );
-    expect(headers.indexOf('Actual')).toBeLessThan(headers.indexOf('Accrual'));
-    expect(headers.indexOf('Accrual')).toBeLessThan(headers.indexOf('Current Cost'));
-    expect(headers.indexOf('Current Cost')).toBeLessThan(headers.indexOf('System Forecast'));
+    expect(headers).toEqual([
+      'Cost Code', 'Description', 'Current Budget', 'Previous CVR', 'Current CVR',
+      'Movement', 'Variance to Budget', 'Supporting detail',
+    ]);
+    const detailLabels = [...container.querySelectorAll('.dev-cvr__supporting-detail dt')].map((node) => node.textContent);
+    expect(detailLabels.indexOf('Actual')).toBeLessThan(detailLabels.indexOf('Manual Accrual'));
+    expect(detailLabels.indexOf('Manual Accrual')).toBeLessThan(detailLabels.indexOf('Current Cost'));
+    expect(detailLabels.indexOf('Current Cost')).toBeLessThan(detailLabels.indexOf('System Forecast'));
   });
 });

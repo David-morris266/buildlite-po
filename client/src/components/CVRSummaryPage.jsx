@@ -136,13 +136,70 @@ export function CommercialCostSummaryTable({ summary, onOpen }) {
   return (
     <div className="po-table-wrap">
       <table className="po-data-table cvr-summary__table cvr-summary__cost-summary-table">
-        <thead><tr><th>Commercial Head</th><th style={{ textAlign: 'right' }}>Budget</th><th style={{ textAlign: 'right' }}>Final Forecast</th><th style={{ textAlign: 'right' }}>Variance</th></tr></thead>
-        <tbody>{summary.items.map((item) => <tr key={item.headKey}><td><button type="button" className="cvr-summary__family-link" onClick={() => onOpen?.(item.filter)}>{item.head}</button></td><td style={{ textAlign: 'right' }}>{item.budgetLabel}</td><td style={{ textAlign: 'right' }}>{item.finalForecastLabel}</td><td style={{ textAlign: 'right' }} className={`dev-cvr__variance dev-cvr__variance--${item.varianceState}`}>{item.varianceLabel}</td></tr>)}</tbody>
-        <tfoot><tr className="cvr-summary__cost-summary-total"><td><strong>Total</strong></td><td style={{ textAlign: 'right' }}><strong>{summary.totals.budgetLabel}</strong></td><td style={{ textAlign: 'right' }}><strong>{summary.totals.finalForecastLabel}</strong></td><td style={{ textAlign: 'right' }} className={`dev-cvr__variance dev-cvr__variance--${summary.totals.varianceState}`}><strong>{summary.totals.varianceLabel}</strong></td></tr></tfoot>
+        <thead><tr><th>Commercial Head</th><th className="cvr-summary__numeric">Current Budget</th><th className="cvr-summary__numeric">Previous CVR</th><th className="cvr-summary__numeric">Current CVR</th><th className="cvr-summary__numeric">Movement</th><th className="cvr-summary__numeric">Variance to Budget</th></tr></thead>
+        <tbody>{summary.items.map((item) => <tr key={item.headKey}><td><button type="button" className="cvr-summary__family-link" onClick={() => onOpen?.(item.filter)}>{item.head}</button>{item.hierarchyChanged ? <small className="cvr-summary__hierarchy-change">Hierarchy changed</small> : null}</td><td className="cvr-summary__numeric">{item.budgetLabel}</td><td className="cvr-summary__numeric">{item.previousForecastLabel}</td><td className="cvr-summary__numeric">{item.currentForecastLabel}</td><td className={`cvr-summary__numeric cvr-movement--${item.movementState}`}><strong>{item.movementLabel}</strong></td><td className={`cvr-summary__numeric dev-cvr__variance dev-cvr__variance--${item.varianceState}`}>{item.varianceLabel}</td></tr>)}</tbody>
+        <tfoot><tr className="cvr-summary__cost-summary-total"><td><strong>Total</strong></td><td className="cvr-summary__numeric"><strong>{summary.totals.budgetLabel}</strong></td><td className="cvr-summary__numeric"><strong>{summary.totals.previousForecastLabel}</strong></td><td className="cvr-summary__numeric"><strong>{summary.totals.currentForecastLabel}</strong></td><td className={`cvr-summary__numeric cvr-movement--${summary.totals.movementState}`}><strong>{summary.totals.movementLabel}</strong></td><td className={`cvr-summary__numeric dev-cvr__variance dev-cvr__variance--${summary.totals.varianceState}`}><strong>{summary.totals.varianceLabel}</strong></td></tr></tfoot>
       </table>
       <p className="cvr-summary__hint">Select a Commercial Head or hierarchy status to view its Cost Codes in the CVR Worksheet.</p>
     </div>
   );
+}
+
+function MovementRows({ title, rows, onOpen }) {
+  if (!rows.length) return null;
+  return (
+    <section className="cvr-movement__section" aria-label={title}>
+      <h3>{title}</h3>
+      <div className="po-table-wrap">
+        <table className="po-data-table cvr-summary__table cvr-movement__table">
+          <thead><tr><th>Cost Code</th><th>Description</th><th>Previous CVR</th><th>Current CVR</th><th>Movement</th><th>Current Budget</th><th>Variance to Budget</th><th>Movement detail</th></tr></thead>
+          <tbody>{rows.map((row) => (
+            <tr key={row.id}>
+              <td><button type="button" className="dev-cvr__row-link" onClick={() => onOpen?.(row)}>{row.costCodeLabel}</button></td>
+              <td>{row.description || '—'}</td><td>{row.previousForecastLabel}</td><td>{row.currentForecastLabel}</td>
+              <td className={row.movement > 0 ? 'cvr-movement--adverse' : row.movement < 0 ? 'cvr-movement--favourable' : ''}><strong>{row.movementLabel}</strong></td>
+              <td>{row.currentBudgetLabel}</td><td>{row.varianceLabel}</td>
+              <td>
+                <details>
+                  <summary>{row.unexplained ? `Unreconciled ${row.residualLabel}` : 'Component reconciled'}</summary>
+                  <dl className="cvr-movement__bridge">
+                    {row.components.map((component) => <div key={component.key}><dt>{component.label}</dt><dd>{component.movementLabel}</dd></div>)}
+                    <div><dt>Reconciled movement</dt><dd>{row.explainedLabel}</dd></div><div><dt>Unreconciled</dt><dd>{row.residualLabel}</dd></div>
+                  </dl>
+                  {row.adjustmentReason ? <p>Commercial Adjustment: {row.adjustmentReason}</p> : null}
+                  {row.hierarchyChanged ? <p>Hierarchy changed: {row.previousHierarchy.label} → {row.currentHierarchy.label}</p> : null}
+                </details>
+              </td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+export function CvrMovementReport({ report, onOpen }) {
+  if (!report?.available) return <EmptyState message="Period movement will be available after the first CVR is Locked and the next period is created." />;
+  return (
+    <div className="cvr-movement" aria-label="CVR Movement Report">
+      <MovementRows title="Key adverse movements" rows={report.sections.adverse} onOpen={onOpen} />
+      <MovementRows title="Key favourable movements" rows={report.sections.favourable} onOpen={onOpen} />
+      <MovementRows title="Other movements" rows={report.sections.other} onOpen={onOpen} />
+      <MovementRows title="Unreconciled movements requiring review" rows={report.sections.unexplained} onOpen={onOpen} />
+      {!report.sections.adverse.length && !report.sections.favourable.length && !report.sections.other.length && !report.sections.unexplained.length
+        ? <p className="cvr-summary__empty">No Final Forecast movement this period.</p>
+        : null}
+    </div>
+  );
+}
+
+export function RevenueMovementTable({ executive }) {
+  const rows = [
+    ['Forecast Revenue', executive.labels.previousForecastRevenue, executive.labels.forecastRevenue, executive.labels.revenueMovement],
+    ['Gross Profit', executive.labels.previousGrossProfit, executive.labels.grossProfit, executive.labels.profitMovement],
+    ['Gross Margin', executive.labels.previousGrossMargin, executive.labels.grossMargin, executive.labels.marginMovement],
+  ];
+  return <div className="po-table-wrap"><table className="po-data-table cvr-summary__table cvr-summary__revenue-movement"><thead><tr><th>Metric</th><th className="cvr-summary__numeric">Previous CVR</th><th className="cvr-summary__numeric">Current</th><th className="cvr-summary__numeric">Movement</th></tr></thead><tbody>{rows.map(([label, previous, current, movement]) => <tr key={label}><td>{label}</td><td className="cvr-summary__numeric">{previous}</td><td className="cvr-summary__numeric">{current}</td><td className="cvr-summary__numeric">{movement}</td></tr>)}</tbody></table></div>;
 }
 
 function RejectDialog({ open, onCancel, onConfirm }) {
@@ -195,8 +252,8 @@ export default function CVRSummaryPage({
   pageNavigation = null,
   onContinueToCvr,
   onOpenWorksheetForHierarchy,
+  onOpenWorksheetForCostCode,
   onBackToRegister,
-  onOpenPackage,
   onPeriodChanged,
   initialCostCodeKey = null,
   certificatesLoading = false,
@@ -399,6 +456,11 @@ export default function CVRSummaryPage({
 
   function openWorksheetForHierarchy(filter) {
     onOpenWorksheetForHierarchy?.(filter);
+    onContinueToCvr?.();
+  }
+
+  function openMovementRow(row) {
+    onOpenWorksheetForCostCode?.(row.costCodeKey);
     onContinueToCvr?.();
   }
 
@@ -633,6 +695,11 @@ export default function CVRSummaryPage({
           className="cvr-summary__panel--wide cvr-summary__panel--centrepiece"
         >
           <CommercialCostSummaryTable summary={summary.commercialCostSummary} onOpen={openWorksheetForHierarchy} />
+          <h3 className="cvr-summary__subheading">Revenue and margin movement</h3>
+          <RevenueMovementTable executive={summary.movementReport.executive} />
+        </SummaryPanel>
+        <SummaryPanel title="Movement explanations" className="cvr-summary__panel--wide cvr-summary__panel--centrepiece">
+          <CvrMovementReport report={summary.movementReport} onOpen={openMovementRow} />
         </SummaryPanel>
 
         <SummaryPanel title="Financial Position" className="cvr-summary__panel--wide cvr-summary__panel--supporting">

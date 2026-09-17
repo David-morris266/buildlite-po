@@ -22,8 +22,6 @@ import {
   isCvrPeriodEditable,
   isCvrPeriodLocked,
   isCvrPeriodSubmitted,
-  parsePeriodNumber,
-  sortPeriodKeys,
 } from './cvrPeriodStatus';
 import { CVR_HISTORIC_REVENUE_UNAVAILABLE } from './cvrHistoricConstants';
 import {
@@ -32,6 +30,11 @@ import {
   previousRevenueForMovement,
 } from './cvrCommercialPosition';
 import { snapshotHasFrozenRevenue } from './cvrSnapshotMapper';
+import {
+  buildCvrPeriodComparison,
+  findPreviousLockedCvrPeriod,
+  formatSignedMovement,
+} from './cvrPeriodMovement';
 
 import {
   COMMERCIAL_HEADS,
@@ -116,6 +119,73 @@ export function buildCommercialCostSummary(rows, period = {}, cvrTotals = {}) {
   };
 }
 
+function movementBucketMap(rows, period) {
+  const presentation = buildCvrCommercialHierarchyPresentation(rows, period);
+  return new Map(presentation.items.map((bucket) => {
+    const financialRows = bucket.rows.map(({ row }) => row);
+    return [bucket.key, {
+      bucket,
+      forecast: sumNullable(financialRows.map((row) => row.finalForecast)) ?? 0,
+      budget: sumNullable(financialRows.map((row) => row.currentBudget)) ?? 0,
+      variance: sumNullable(financialRows.map((row) => row.variance)) ?? 0,
+    }];
+  }));
+}
+
+export function buildCommercialCostMovementSummary({
+  currentRows = [], previousRows = [], currentPeriod = {}, previousPeriod = null,
+  currentTotals = {}, movementReport = null,
+} = {}) {
+  const current = movementBucketMap(currentRows, currentPeriod);
+  const previous = movementReport?.available ? movementBucketMap(previousRows, previousPeriod) : new Map();
+  const keys = [...new Set([...current.keys(), ...previous.keys()])];
+  const changedRows = (movementReport?.rows || []).filter((row) => row.hierarchyChanged);
+  const items = keys.map((key) => {
+    const now = current.get(key);
+    const prior = previous.get(key);
+    const bucket = now?.bucket || prior?.bucket;
+    const currentForecast = now?.forecast ?? 0;
+    const previousForecast = movementReport?.available ? prior?.forecast ?? 0 : null;
+    const movement = previousForecast == null ? null : roundMoney(currentForecast - previousForecast);
+    const costCodeKeys = [...new Set([...(now?.bucket.filter.costCodeKeys || []), ...(prior?.bucket.filter.costCodeKeys || [])])];
+    const bucketHeadId = bucket.headId || null;
+    const hierarchyChanged = changedRows.some((row) => {
+      const currentHeadId = row.currentHierarchy?.ids?.[0] || null;
+      const previousHeadId = row.previousHierarchy?.ids?.[0] || null;
+      return bucketHeadId ? currentHeadId === bucketHeadId || previousHeadId === bucketHeadId : costCodeKeys.includes(row.costCodeKey);
+    });
+    return {
+      head: bucket.label, headKey: key, headId: bucket.headId, kind: bucket.kind,
+      resolutionStates: bucket.resolutionStates, families: bucket.families, reportingGroups: bucket.reportingGroups,
+      budget: now?.budget ?? 0, previousForecast, currentForecast, movement,
+      finalForecast: currentForecast, variance: now?.variance ?? 0,
+      budgetLabel: formatCvrMoney(now?.budget ?? 0), previousForecastLabel: formatCvrMoney(previousForecast),
+      currentForecastLabel: formatCvrMoney(currentForecast), movementLabel: formatSignedMovement(movement),
+      finalForecastLabel: formatCvrMoney(currentForecast), varianceLabel: formatCvrMoney(now?.variance ?? 0),
+      varianceState: getVarianceState(now?.variance ?? 0), movementState: movement > 0 ? 'adverse' : movement < 0 ? 'favourable' : 'neutral',
+      hierarchyChanged, costCodeKeys,
+      filter: { ...bucket.filter, costCodeKeys }, hasData: true,
+    };
+  });
+  const totals = {
+    budget: currentTotals.currentBudget,
+    previousForecast: movementReport?.available ? roundMoney(previousRows.reduce((sum, row) => sum + (Number(row.finalForecast) || 0), 0)) : null,
+    currentForecast: currentTotals.finalForecast,
+    movement: movementReport?.totalMovement ?? null,
+    variance: currentTotals.variance,
+  };
+  Object.assign(totals, {
+    budgetLabel: formatCvrMoney(totals.budget), previousForecastLabel: formatCvrMoney(totals.previousForecast),
+    currentForecastLabel: formatCvrMoney(totals.currentForecast), movementLabel: formatSignedMovement(totals.movement),
+    varianceLabel: formatCvrMoney(totals.variance), varianceState: getVarianceState(totals.variance),
+    movementState: totals.movement > 0 ? 'adverse' : totals.movement < 0 ? 'favourable' : 'neutral',
+    reconciles: roundMoney(items.reduce((sum, item) => sum + item.currentForecast, 0)) === roundMoney(totals.currentForecast)
+      && (totals.previousForecast == null || roundMoney(items.reduce((sum, item) => sum + (item.previousForecast || 0), 0)) === roundMoney(totals.previousForecast))
+      && (totals.movement == null || roundMoney(items.reduce((sum, item) => sum + (item.movement || 0), 0)) === roundMoney(totals.movement)),
+  });
+  return { available: items.length > 0, emptyMessage: 'Commercial Cost Summary will populate once Cost Codes are available.', items, totals };
+}
+
 function moneyValueExists(value) {
   if (value == null || value === '') return false;
   return roundMoney(value) != null;
@@ -168,16 +238,6 @@ export function formatMarginPointMovement(current, previous) {
 function formatRevenueMovement(current, previousCommercial, key) {
   if (!previousCommercial?.revenueAvailable) return null;
   return formatPeriodMovement(current, previousRevenueForMovement(previousCommercial, key));
-}
-
-function getPreviousLockedPeriod(developmentId, periodKey) {
-  const locked = listCvrPeriods(developmentId)
-    .filter((period) => isCvrPeriodLocked(period))
-    .sort((a, b) => parsePeriodNumber(a.periodKey) - parsePeriodNumber(b.periodKey));
-
-  const currentNumber = parsePeriodNumber(periodKey);
-  const previous = locked.filter((period) => parsePeriodNumber(period.periodKey) < currentNumber);
-  return previous[previous.length - 1] || null;
 }
 
 function profitModifier(value) {
@@ -553,35 +613,6 @@ export function buildPackageAttentionList(developmentId, pos = [], limit = 5) {
   return attention.sort((a, b) => b.rankValue - a.rankValue).slice(0, limit);
 }
 
-function buildForecastMovement(developmentId, pos = []) {
-  const periods = listCvrPeriods(developmentId);
-  if (periods.length < 2) {
-    return {
-      available: false,
-      emptyMessage:
-        'Forecast movement will appear after the next CVR period is created.',
-      rows: [],
-    };
-  }
-
-  const rows = sortPeriodKeys(periods.map((item) => item.periodKey)).map((periodKey) => {
-    const period = getCvrPeriod(developmentId, periodKey);
-    const model = buildCvrModel(developmentId, { pos, periodKey });
-    return {
-      periodKey,
-      status: getCvrPeriodStatusMeta(period.status).label,
-      finalForecastLabel: formatCvrMoney(model.summary.finalForecast),
-      currentBudgetLabel: formatCvrMoney(model.summary.currentBudget),
-      actualCostLabel: formatCvrMoney(model.summary.actualCost),
-      finalForecast: model.summary.finalForecast,
-      currentBudget: model.summary.currentBudget,
-      actualCost: model.summary.actualCost,
-    };
-  });
-
-  return { available: true, emptyMessage: null, rows };
-}
-
 function normaliseCategoryLabel(family) {
   const value = String(family || '').trim();
   if (!value) return 'Other';
@@ -823,7 +854,7 @@ export function buildCvrSummaryModel(development, options = {}) {
 
   const rows = model.rows.map(formatCvrRow);
   const summary = model.summary;
-  const previousLocked = getPreviousLockedPeriod(developmentId, periodKey);
+  const previousLocked = findPreviousLockedCvrPeriod(developmentId, periodKey);
   const previousModel = previousLocked
     ? buildCvrModel(developmentId, { pos, periodKey: previousLocked.periodKey })
     : null;
@@ -848,6 +879,47 @@ export function buildCvrSummaryModel(development, options = {}) {
           costSummary: previousModel.summary,
           snapshot: previousLocked?.snapshot || previousModel.period?.snapshot || null,
         });
+  const movementReport = buildCvrPeriodComparison({
+    currentModel: model,
+    previousModel,
+    currentPeriod: period,
+    previousPeriod: previousLocked,
+  });
+  movementReport.executive = {
+    previousForecastCost: previousSummary?.finalForecast ?? null,
+    currentForecastCost: summary.finalForecast,
+    netMovement: movementReport.totalMovement,
+    currentBudget: summary.currentBudget,
+    variance: summary.variance,
+    forecastRevenue: commercial.forecastRevenue,
+    grossProfit: commercial.grossProfit,
+    grossMarginPercent: commercial.grossMarginPercent,
+    previousForecastRevenue: previousCommercial?.revenueAvailable ? previousCommercial.forecastRevenue : null,
+    previousGrossProfit: previousCommercial?.grossProfitAvailable ? previousCommercial.grossProfit : null,
+    previousGrossMarginPercent: previousCommercial?.grossMarginAvailable ? previousCommercial.grossMarginPercent : null,
+    revenueMovement: commercial.revenueAvailable && previousCommercial?.revenueAvailable
+      ? (commercial.forecastRevenue ?? 0) - (previousCommercial.forecastRevenue ?? 0) : null,
+    profitMovement: commercial.grossProfitAvailable && previousCommercial?.grossProfitAvailable
+      ? (commercial.grossProfit ?? 0) - (previousCommercial.grossProfit ?? 0) : null,
+    marginMovement: commercial.grossMarginAvailable && previousCommercial?.grossMarginAvailable
+      ? (commercial.grossMarginPercent ?? 0) - (previousCommercial.grossMarginPercent ?? 0) : null,
+  };
+  movementReport.executive.labels = {
+    previousForecastCost: formatCvrMoney(movementReport.executive.previousForecastCost),
+    currentForecastCost: formatCvrMoney(movementReport.executive.currentForecastCost),
+    netMovement: formatSignedMovement(movementReport.executive.netMovement),
+    currentBudget: formatCvrMoney(movementReport.executive.currentBudget),
+    variance: formatCvrMoney(movementReport.executive.variance),
+    forecastRevenue: formatCvrMoney(movementReport.executive.forecastRevenue),
+    grossProfit: formatCvrMoney(movementReport.executive.grossProfit),
+    previousForecastRevenue: formatCvrMoney(movementReport.executive.previousForecastRevenue),
+    previousGrossProfit: formatCvrMoney(movementReport.executive.previousGrossProfit),
+    previousGrossMargin: movementReport.executive.previousGrossMarginPercent == null ? '—' : `${movementReport.executive.previousGrossMarginPercent.toFixed(1)}%`,
+    grossMargin: movementReport.executive.grossMarginPercent == null ? '—' : `${movementReport.executive.grossMarginPercent.toFixed(1)}%`,
+    revenueMovement: formatSignedMovement(movementReport.executive.revenueMovement),
+    profitMovement: formatSignedMovement(movementReport.executive.profitMovement),
+    marginMovement: movementReport.executive.marginMovement == null ? '—' : `${movementReport.executive.marginMovement > 0 ? '+' : '−'}${Math.abs(movementReport.executive.marginMovement).toFixed(1)}pp`,
+  };
   const status = getCvrPeriodStatusMeta(period.status);
   const readOnly = !isCvrPeriodEditable(period);
 
@@ -881,12 +953,16 @@ export function buildCvrSummaryModel(development, options = {}) {
     financialPosition: buildFinancialPosition(summary, { historic }),
     developmentSummary: buildDevelopmentSummaryPanel(development, historic ? [] : pos, commercial),
     topVariances: buildTopCostVariances(rows),
+    movementReport,
     commercialExceptions: buildCommercialExceptions(rows, summary, { historic }),
-    commercialCostSummary: buildCommercialCostSummary(
-      rows,
-      period,
-      model.totals
-    ),
+    commercialCostSummary: buildCommercialCostMovementSummary({
+      currentRows: model.rows,
+      previousRows: previousModel?.rows || [],
+      currentPeriod: period,
+      previousPeriod: previousLocked,
+      currentTotals: model.totals,
+      movementReport,
+    }),
     recentActivity: buildRecentCommercialActivity(period, rows),
     commentary: getCvrPeriodCommentary(developmentId, periodKey),
     rows,

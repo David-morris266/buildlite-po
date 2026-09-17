@@ -41,6 +41,7 @@ import {
   submitCvrPeriod,
 } from './cvrPeriodStore';
 import {
+  buildCommercialCostMovementSummary,
   buildCommercialCostSummary,
   buildCommercialExceptions,
   buildCvrSummaryModel,
@@ -357,6 +358,76 @@ describe('buildCommercialCostSummary', () => {
     expect(summary.items.map((item) => item.head)).toEqual(['Unallocated', 'Legacy hierarchy unresolved', 'Not applicable']);
     expect(summary.assignedRowCount).toBe(3);
     expect(summary.totals).toMatchObject({ aggregatedBudget: 175, aggregatedForecast: 170, aggregatedVariance: 5, reconciles: true });
+  });
+});
+
+describe('buildCommercialCostMovementSummary', () => {
+  const period = (costCodes) => ({
+    commercialHierarchy: { state: 'live', captured: false, document: { costCodes } },
+  });
+  const allocated = (costCodeKey, headId, headName) => ({
+    costCodeKey,
+    resolutionState: 'allocated',
+    head: { id: headId, name: headName },
+    family: null,
+    reportingGroup: { id: `${headId}-group`, name: `${headName} group` },
+  });
+
+  it('reconciles the six-column matrix and uses cost movement signs consistently', () => {
+    const currentRows = [{ costCodeKey: '4120', currentBudget: 130, finalForecast: 120, variance: 10 }];
+    const previousRows = [{ costCodeKey: '4120', currentBudget: 120, finalForecast: 100, variance: 20 }];
+    const hierarchy = period([allocated('4120', 'house-build', 'House Build')]);
+    const summary = buildCommercialCostMovementSummary({
+      currentRows, previousRows, currentPeriod: hierarchy, previousPeriod: hierarchy,
+      currentTotals: { currentBudget: 130, finalForecast: 120, variance: 10 },
+      movementReport: { available: true, totalMovement: 20, rows: [] },
+    });
+
+    expect(summary.items).toHaveLength(1);
+    expect(summary.items[0]).toMatchObject({ head: 'House Build', budget: 130, previousForecast: 100, currentForecast: 120, movement: 20, movementState: 'adverse', variance: 10 });
+    expect(summary.totals).toMatchObject({ budget: 130, previousForecast: 100, currentForecast: 120, movement: 20, variance: 10, reconciles: true });
+    expect(summary.totals.previousForecast + summary.totals.movement).toBe(summary.totals.currentForecast);
+  });
+
+  it('shows a hierarchy transfer as equal movement out and in without recasting either period', () => {
+    const currentRows = [{ costCodeKey: '4120', currentBudget: 100, finalForecast: 100, variance: 0 }];
+    const previousRows = [{ costCodeKey: '4120', currentBudget: 100, finalForecast: 100, variance: 0 }];
+    const summary = buildCommercialCostMovementSummary({
+      currentRows, previousRows,
+      currentPeriod: period([allocated('4120', 'house-build', 'House Build')]),
+      previousPeriod: period([allocated('4120', 'external', 'External Works')]),
+      currentTotals: { currentBudget: 100, finalForecast: 100, variance: 0 },
+      movementReport: {
+        available: true, totalMovement: 0,
+        rows: [{ costCodeKey: '4120', hierarchyChanged: true, previousHierarchy: { ids: ['external'] }, currentHierarchy: { ids: ['house-build'] } }],
+      },
+    });
+
+    expect(summary.items.map(({ head, previousForecast, currentForecast, movement, movementState, hierarchyChanged }) => ({ head, previousForecast, currentForecast, movement, movementState, hierarchyChanged }))).toEqual([
+      { head: 'House Build', previousForecast: 0, currentForecast: 100, movement: 100, movementState: 'adverse', hierarchyChanged: true },
+      { head: 'External Works', previousForecast: 100, currentForecast: 0, movement: -100, movementState: 'favourable', hierarchyChanged: true },
+    ]);
+    expect(summary.totals).toMatchObject({ previousForecast: 100, currentForecast: 100, movement: 0, reconciles: true });
+  });
+
+  it('keeps exceptional hierarchy buckets distinct and does not manufacture hierarchy', () => {
+    const currentRows = [
+      { costCodeKey: 'A', currentBudget: 0, finalForecast: 10, variance: -10 },
+      { costCodeKey: 'B', currentBudget: 0, finalForecast: 20, variance: -20 },
+    ];
+    const summary = buildCommercialCostMovementSummary({
+      currentRows,
+      currentPeriod: period([
+        { costCodeKey: 'A', resolutionState: 'unresolved_legacy' },
+        { costCodeKey: 'B', resolutionState: 'not_applicable' },
+      ]),
+      currentTotals: { currentBudget: 0, finalForecast: 30, variance: -30 },
+      movementReport: { available: false, rows: [] },
+    });
+
+    expect(summary.items.map((item) => item.head)).toEqual(['Legacy hierarchy unresolved', 'Not applicable']);
+    expect(summary.items.flatMap((item) => item.costCodeKeys)).toEqual(['A', 'B']);
+    expect(summary.totals).toMatchObject({ currentForecast: 30, variance: -30, reconciles: true });
   });
 });
 
