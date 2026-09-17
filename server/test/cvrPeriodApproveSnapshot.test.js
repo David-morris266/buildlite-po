@@ -118,6 +118,26 @@ async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_012, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_021, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_022, "utf8"));
+  // Migration 012 is intentionally replayed by this legacy fixture. Restore the
+  // production Migration 049 mode-aware constraint it supersedes.
+  await pool.query(`
+    ALTER TABLE cvr_period_snapshots DROP CONSTRAINT IF EXISTS chk_cvr_snapshot_revenue_presence;
+    ALTER TABLE cvr_period_snapshots ADD CONSTRAINT chk_cvr_snapshot_revenue_presence CHECK (
+      (schema_version = 1 AND forecast_revenue IS NULL AND secured_revenue IS NULL
+        AND remaining_forecast_revenue IS NULL AND plots_sold IS NULL AND plots_remaining IS NULL
+        AND gross_profit IS NULL AND gross_margin_percent IS NULL)
+      OR
+      (schema_version >= 2 AND forecast_revenue IS NOT NULL AND gross_profit IS NOT NULL AND (
+        (COALESCE(revenue_assumptions->>'revenueMode','sales_register') = 'sales_register'
+          AND secured_revenue IS NOT NULL AND remaining_forecast_revenue IS NOT NULL
+          AND plots_sold IS NOT NULL AND plots_remaining IS NOT NULL)
+        OR
+        (revenue_assumptions->>'revenueMode' = 'summary'
+          AND secured_revenue IS NULL AND remaining_forecast_revenue IS NULL
+          AND plots_sold IS NULL AND plots_remaining IS NULL)
+      ))
+    )
+  `);
 }
 
 async function cleanup() {
@@ -465,11 +485,14 @@ function uniquePo(prefix = "S-AP") {
 }
 
 async function seedDefaultRevenueSettings(developmentId) {
-  const res = await request(app)
-    .put(`/api/developments/${encodeURIComponent(developmentId)}/revenue/settings`)
-    .send({ version: 0, recognitionPolicy: "completion", actor: "Director" });
-  assert.equal(res.status, 201, res.body?.message || JSON.stringify(res.body));
-  return res.body;
+  const result = await pool.query(`
+    INSERT INTO development_revenue_settings(client_id,development_id,recognition_policy,created_by,updated_by)
+    SELECT client_id,id,'completion','Approve snapshot fixture','Approve snapshot fixture'
+    FROM developments WHERE id=$1
+    RETURNING *
+  `, [developmentId]);
+  assert.equal(result.rowCount, 1);
+  return result.rows[0];
 }
 
 async function seedPlotMaster(development, plots) {
@@ -1444,5 +1467,60 @@ if (!isDbConfigured()) {
     assert.equal(Number(locked.body.snapshot.forecastRevenue), 1000000);
     assert.equal(Number(locked.body.snapshot.securedRevenue), 0);
     assert.notEqual(Number(locked.body.snapshot.grossProfit), 3);
+  });
+
+  test("Summary Revenue locks immutable authority and Create Next returns to current live authority", async () => {
+    const world = await setupBase({ plots: [] });
+    const summaryLines = [
+      { id: "private", description: "Private Sales", forecastRevenue: 700000 },
+      { id: "affordable", description: "Affordable Housing", forecastRevenue: 300000 },
+    ];
+    const settings = await pool.query(
+      `UPDATE development_revenue_settings
+       SET revenue_mode='summary', summary_revenue_lines=$1::jsonb, version=version+1,
+           updated_by='Summary lifecycle test', updated_at=NOW()
+       WHERE client_id=$2 AND development_id=$3 RETURNING *`,
+      [JSON.stringify(summaryLines), world.client.id, world.development.id]
+    );
+    assert.equal(settings.rowCount, 1);
+
+    await submitPeriod(world.development.id, world.period.id);
+    const locked = await request(app)
+      .post(`${periodUrl(world.development.id, world.period.id)}/approve`)
+      .send({ actor: "Director", comment: "Lock Summary Revenue" });
+    assert.equal(locked.status, 200, locked.body?.message || JSON.stringify(locked.body));
+    assert.equal(Number(locked.body.snapshot.forecastRevenue), 1000000);
+    assert.equal(locked.body.snapshot.securedRevenue, null);
+    assert.equal(locked.body.snapshot.remainingForecastRevenue, null);
+    assert.equal(locked.body.snapshot.revenueAssumptions.revenueMode, "summary");
+    assert.deepEqual(locked.body.snapshot.revenueAssumptions.summaryRevenueLines, summaryLines);
+    assert.equal(locked.body.snapshot.revenueAssumptions.settingsId, settings.rows[0].id);
+    assert.equal(locked.body.snapshot.revenueAssumptions.settingsVersion, settings.rows[0].version);
+    assert.equal(locked.body.snapshot.revenueAssumptions.settingsUpdatedBy, "Summary lifecycle test");
+
+    const liveLines = [{ id: "private", description: "Private Sales", forecastRevenue: 1200000 }];
+    await pool.query(
+      `UPDATE development_revenue_settings
+       SET summary_revenue_lines=$1::jsonb, version=version+1, updated_by='Later live edit', updated_at=NOW()
+       WHERE client_id=$2 AND development_id=$3`,
+      [JSON.stringify(liveLines), world.client.id, world.development.id]
+    );
+    const frozen = await getCvrPeriod(world.client.id, world.development.id, world.period.id);
+    assert.equal(Number(frozen.period.snapshot.forecastRevenue), 1000000);
+    assert.deepEqual(frozen.period.snapshot.revenueAssumptions.summaryRevenueLines, summaryLines);
+
+    const next = await request(app)
+      .post(periodUrl(world.development.id))
+      .send({ actor: "QS", reportingMonth: "2027-01" });
+    assert.equal(next.status, 201, next.body?.message || JSON.stringify(next.body));
+    assert.equal(next.body.periodKey, "P02");
+    assert.equal(next.body.status, "draft");
+    assert.equal(next.body.snapshot, null);
+
+    const { getRevenueSettings } = require("../services/revenueSettingsRepository");
+    const current = await getRevenueSettings(world.client.id, world.development.id);
+    assert.equal(current.settings.revenueMode, "summary");
+    assert.deepEqual(current.settings.summaryRevenueLines, liveLines);
+    assert.equal(Number(current.settings.revenueAuthority.summary.forecastRevenue), 1200000);
   });
 }

@@ -109,6 +109,23 @@ describe('RevenueWorkspace async loading guard', () => {
     expect(document.body.textContent).toContain('Revenue Strategy Panel');
   });
 
+  it('renders Summary Revenue lines without Sales Register controls or false secondary metrics', async () => {
+    getRevenuePricingContext.mockResolvedValue({
+      ...sampleContext,
+      revenueMode: 'summary',
+      summaryRevenueLines: [{ id:'line-1', description:'Private Sales', forecastRevenue:100000 }],
+      settings: { revenueMode:'summary', summaryRevenueLines:[], version:1 },
+    });
+    renderRevenue();
+    await act(async () => { await Promise.resolve(); });
+    expect(document.body.textContent).toContain('Summary Revenue');
+    expect(document.querySelector('input[aria-label="Revenue line 1 description"]')?.value).toBe('Private Sales');
+    expect(document.body.textContent).toContain('Total Forecast Revenue');
+    expect(document.body.textContent).toContain('not tracked in Summary Revenue');
+    expect(document.body.textContent).not.toContain('Revenue Strategy Panel');
+    expect(document.body.textContent).not.toContain('Revenue Dashboard');
+  });
+
   it('shows a visible error instead of permanent loading when fetch rejects', async () => {
     getRevenuePricingContext.mockRejectedValue(new Error('Network failed'));
 

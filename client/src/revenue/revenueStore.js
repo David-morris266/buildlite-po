@@ -30,6 +30,8 @@ function writeStore(store) {
 
 export function emptyRevenueRecord() {
   return {
+    revenueMode: 'sales_register',
+    summaryRevenueLines: [],
     revenueStrategy: emptyRevenueStrategy(),
     houseTypePricing: {},
     revenueAdjustments: [],
@@ -48,6 +50,8 @@ function normalizeRevenueRecord(record = {}) {
   const version = Number(record.metadata?.version) || 2;
 
   return {
+    revenueMode: record.revenueMode === 'summary' ? 'summary' : 'sales_register',
+    summaryRevenueLines: Array.isArray(record.summaryRevenueLines) ? record.summaryRevenueLines : [],
     revenueStrategy: normalizeRevenueStrategy(record.revenueStrategy || empty.revenueStrategy),
     houseTypePricing: normalizeHouseTypePricingMap(record.houseTypePricing || {}),
     revenueAdjustments: Array.isArray(record.revenueAdjustments)
@@ -73,6 +77,9 @@ function fromCachedSettings(cached) {
     exists: cached.exists !== false && Boolean(cached.id),
     version: Number.isInteger(Number(cached.version)) ? Number(cached.version) : 0,
     recognitionPolicy: cached.recognitionPolicy === 'exchange' ? 'exchange' : 'completion',
+    revenueMode: cached.revenueMode === 'summary' ? 'summary' : 'sales_register',
+    summaryRevenueLines: Array.isArray(cached.summaryRevenueLines) ? cached.summaryRevenueLines : [],
+    revenueAuthority: cached.revenueAuthority || null,
     revenueStrategy: normalizeRevenueStrategy(cached.revenueStrategy || emptyRevenueStrategy()),
     houseTypePricing: normalizeHouseTypePricingMap(cached.houseTypePricing || {}),
     revenueAdjustments: Array.isArray(cached.revenueAdjustments) ? cached.revenueAdjustments : [],
@@ -113,6 +120,8 @@ export function saveRevenueRecord(developmentId, record) {
       return putServerRevenueSettings(developmentId, {
         version: cached.version,
         recognitionPolicy: next.recognitionPolicy || cached.recognitionPolicy || 'completion',
+        revenueMode: next.revenueMode,
+        summaryRevenueLines: next.summaryRevenueLines,
         revenueStrategy: next.revenueStrategy,
         houseTypePricing: next.houseTypePricing,
         revenueAdjustments: next.revenueAdjustments,

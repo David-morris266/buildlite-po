@@ -44,6 +44,8 @@ function emptyRevenueStrategy() {
 
 function emptySettingsDocument() {
   return {
+    revenueMode: "sales_register",
+    summaryRevenueLines: [],
     recognitionPolicy: DEFAULT_REVENUE_RECOGNITION_POLICY,
     revenueStrategy: emptyRevenueStrategy(),
     houseTypePricing: {},

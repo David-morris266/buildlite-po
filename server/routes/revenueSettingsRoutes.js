@@ -5,11 +5,11 @@
 
 const express = require("express");
 const { isDbConfigured } = require("../db");
-const { getActiveClient } = require("../services/activeClient");
+const { requirePermission } = require("../auth/authorization");
+const { PERMISSIONS } = require("../auth/permissions");
 const {
   getRevenueSettings,
   putRevenueSettings,
-  provisionalActor,
 } = require("../services/revenueSettingsRepository");
 
 const router = express.Router({ mergeParams: true });
@@ -24,15 +24,12 @@ function sendResult(res, result, successStatus = 200) {
   return res.status(result.status || successStatus).json(result.settings);
 }
 
-router.get("/revenue/settings", async (req, res) => {
+router.get("/revenue/settings", requirePermission(PERMISSIONS.COMMERCIAL_READ), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
     }
-    const active = await getActiveClient();
-    if (!active) return res.status(404).json({ error: "No active client set" });
-
-    const result = await getRevenueSettings(active.id, req.params.developmentId);
+    const result = await getRevenueSettings(req.buildliteAuth.clientId, req.params.developmentId);
     sendResult(res, result);
   } catch (err) {
     console.error("[Revenue settings] GET error:", err);
@@ -40,17 +37,14 @@ router.get("/revenue/settings", async (req, res) => {
   }
 });
 
-router.put("/revenue/settings", async (req, res) => {
+router.put("/revenue/settings", requirePermission(PERMISSIONS.REVENUE_MANAGE), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
     }
-    const active = await getActiveClient();
-    if (!active) return res.status(404).json({ error: "No active client set" });
-
     const body = req.body || {};
-    const result = await putRevenueSettings(active.id, req.params.developmentId, body, {
-      actor: provisionalActor(body),
+    const result = await putRevenueSettings(req.buildliteAuth.clientId, req.params.developmentId, body, {
+      auth: req.buildliteAuth,
     });
     sendResult(res, result, result.status === 201 ? 201 : 200);
   } catch (err) {

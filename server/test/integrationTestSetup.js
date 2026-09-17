@@ -33,6 +33,10 @@ async function prepareIntegrationTestDatabase(pool) {
   if (!hasOnboardingReview.rowCount) {
     await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '048_cost_code_onboarding_review.sql'), 'utf8'));
   }
+  const hasSummaryRevenue = await pool.query("SELECT 1 FROM information_schema.columns WHERE table_name='development_revenue_settings' AND column_name='revenue_mode'");
+  if (!hasSummaryRevenue.rowCount) {
+    await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '049_summary_revenue_mode.sql'), 'utf8'));
+  }
   await ensureActiveTestClient(pool);
 }
 

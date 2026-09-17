@@ -12,8 +12,10 @@ const createApp = require("../app");
 const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { CLOSE_SOURCE_KEYS, CVR_SNAPSHOT_SCHEMA_VERSION } = require("../services/cvrCloseConstants");
+const { PERMISSIONS } = require("../auth/permissions");
 
-const app = createApp();
+const routeAuth = {};
+const app = createApp({ testPrincipal: routeAuth });
 const MIGRATION_004 = path.join(__dirname, "..", "migrations", "004_developments.sql");
 const MIGRATION_011 = path.join(
   __dirname,
@@ -83,6 +85,9 @@ if (!isDbConfigured()) {
     assert.equal(db.rows[0].db, "buildlite_test");
     assert.notEqual(db.rows[0].db, "buildlite_clone");
     await ensureSchema();
+    const active=await getActiveClient();
+    const principal=(await pool.query(`SELECT u.id user_id,u.provider_user_id,u.display_name,m.id membership_id,r.key role_key,r.name role_name FROM client_user_memberships m JOIN buildlite_users u ON u.id=m.user_id JOIN roles r ON r.id=m.role_id WHERE m.client_id=$1 AND m.is_active=true AND u.status='active' ORDER BY m.created_at LIMIT 1`,[active.id])).rows[0];
+    Object.assign(routeAuth,{clientId:active.id,userId:principal.user_id,membershipId:principal.membership_id,providerUserId:principal.provider_user_id,displayName:principal.display_name,roleKey:principal.role_key,roleName:principal.role_name,permissions:[PERMISSIONS.COMMERCIAL_READ,PERMISSIONS.REVENUE_MANAGE]});
   });
 
   test.after(async () => {
@@ -96,6 +101,7 @@ if (!isDbConfigured()) {
       "inputs",
       "purchaseOrders",
       "commercialEvents",
+      "variationOrders",
       "certificates",
       "ledger",
     ]);
@@ -157,13 +163,17 @@ if (!isDbConfigured()) {
     assert.equal(created.body.recognitionPolicy, "completion");
     assert.equal(created.body.revenueStrategy.openMarket.ratePerFt2, 375);
     assert.equal(created.body.houseTypePricing["Type A"].representativeNiaFt2, 950);
-    assert.equal(created.body.createdBy, "Commercial Manager");
+    assert.equal(created.body.createdBy, routeAuth.displayName);
+    assert.equal(created.body.revenueAuthority.ready, false);
+    assert.ok(created.body.revenueAuthority.blockers.some((item) => item.reason === "plot-master-unavailable"));
 
     const loaded = await request(app).get(`/api/developments/${developmentId}/revenue/settings`);
     assert.equal(loaded.status, 200);
     assert.equal(loaded.body.version, 1);
     assert.equal(loaded.body.revenueStrategy.openMarket.ratePerFt2, 375);
     assert.equal(loaded.body.revenueStrategy.garagePremiums.single, 13000);
+    assert.equal(loaded.body.revenueAuthority.ready, false);
+    assert.ok(loaded.body.revenueAuthority.blockers.some((item) => item.reason === "plot-master-unavailable"));
   });
 
   test("PUT increments version and stale version returns 409", async () => {

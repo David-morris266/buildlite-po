@@ -16,6 +16,7 @@ const PERMISSIONS = Object.freeze({
   PAYMENT_RELEASE_EXECUTE: 'payment_release.execute',
   DEVELOPMENT_BUDGET_POST: 'development_budget.post',
   COMMERCIAL_STRUCTURE_MANAGE: 'commercial_structure.manage',
+  REVENUE_MANAGE: 'revenue.manage',
 });
 
 module.exports = { PERMISSIONS };

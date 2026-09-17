@@ -39,17 +39,6 @@ async function handleJson(res) {
   return body;
 }
 
-function sessionActor() {
-  if (typeof localStorage === 'undefined') return null;
-  return localStorage.getItem('userName') || localStorage.getItem('userEmail') || null;
-}
-
-function withActor(payload = {}) {
-  const actor = sessionActor();
-  if (!actor) return payload;
-  return { ...payload, actor };
-}
-
 function settingsUrl(developmentId) {
   return `/api/developments/${encodeURIComponent(developmentId)}/revenue/settings`;
 }
@@ -63,7 +52,7 @@ export async function putRevenueSettingsForDevelopment(developmentId, payload = 
   const res = await fetch(buildUrl(settingsUrl(developmentId)), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(withActor(payload)),
+    body: JSON.stringify(payload),
   });
   return handleJson(res);
 }

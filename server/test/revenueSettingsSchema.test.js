@@ -16,6 +16,7 @@ const MIGRATION_011 = path.join(
   "migrations",
   "011_development_revenue_settings.sql"
 );
+const MIGRATION_049 = path.join(__dirname, "..", "migrations", "049_summary_revenue_mode.sql");
 
 const testDevelopmentIds = [];
 const testTenantIds = [];
@@ -27,6 +28,8 @@ function trackDevelopment(id) {
 async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_004, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_011, "utf8"));
+  const exists = await pool.query("SELECT 1 FROM information_schema.columns WHERE table_name='development_revenue_settings' AND column_name='revenue_mode'");
+  if (!exists.rowCount) await pool.query(fs.readFileSync(MIGRATION_049, "utf8"));
 }
 
 async function cleanup() {
@@ -88,6 +91,10 @@ if (!isDbConfigured()) {
       "updated_at",
       "created_by",
       "updated_by",
+      "revenue_mode",
+      "summary_revenue_lines",
+      "updated_by_user_id",
+      "updated_by_membership_id",
     ]) {
       assert.ok(names.includes(name), `missing column ${name}`);
     }
@@ -128,6 +135,13 @@ if (!isDbConfigured()) {
       `
     );
     assert.match(String(policyDefault.rows[0].column_default), /completion/);
+  });
+
+  test("049 defaults existing Revenue settings to Sales Register without inventing Summary lines", async () => {
+    const defaults = await pool.query(`SELECT column_default FROM information_schema.columns WHERE table_name='development_revenue_settings' AND column_name='revenue_mode'`);
+    assert.match(String(defaults.rows[0].column_default), /sales_register/);
+    const rows = await pool.query(`SELECT revenue_mode,summary_revenue_lines FROM development_revenue_settings`);
+    assert.ok(rows.rows.every((row) => row.revenue_mode === 'sales_register' && Array.isArray(row.summary_revenue_lines) && row.summary_revenue_lines.length === 0));
   });
 
   test("011 rejects invalid recognition_policy and duplicate development rows", async () => {

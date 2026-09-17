@@ -60,6 +60,7 @@ import { buildRevenueHouseTypeSummary } from '../revenue/revenueHouseTypeSummary
 import { buildStrategyInsights } from '../revenue/revenueStrategyCalculations';
 
 import { getRevenuePricingContext, emptyRevenueStrategy } from '../revenue/revenueStrategy';
+import { saveRevenueRecord } from '../revenue/revenueStore';
 
 import { REVENUE_STREAMS } from '../revenue/revenueTypes';
 
@@ -246,6 +247,9 @@ export default function RevenueWorkspace({
   const [pricingContext, setPricingContext] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [summaryLines, setSummaryLines] = useState([]);
+  const [savingSummary, setSavingSummary] = useState(false);
+  const [summaryMessage, setSummaryMessage] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -259,6 +263,7 @@ export default function RevenueWorkspace({
       .then((context) => {
         if (!cancelled) {
           setPricingContext(context);
+          setSummaryLines(context.summaryRevenueLines || []);
           setLoadError('');
           setLoading(false);
         }
@@ -565,6 +570,16 @@ export default function RevenueWorkspace({
 
   const hasCommercialActions = exceptions.length > 0 || actionableInsights.length > 0;
 
+  async function saveRevenueMode(revenueMode, lines = summaryLines) {
+    if (revenueMode !== pricingContext.revenueMode && !window.confirm(`Switch Revenue mode to ${revenueMode === 'summary' ? 'Summary Revenue' : 'Sales Register'}? Existing data will be preserved but only the selected mode will contribute to CVR Revenue.`)) return;
+    setSavingSummary(true); setSummaryMessage('');
+    const result = await saveRevenueRecord(developmentId, { ...pricingContext.settings, revenueMode, summaryRevenueLines: lines });
+    setSavingSummary(false);
+    if (!result?.ok) { setSummaryMessage(result?.errors?.[0] || 'Could not save Revenue.'); return; }
+    setSummaryMessage('Revenue saved.');
+    setLocalRefresh((value) => value + 1); onRevenueChanged?.();
+  }
+
 
 
   if (loadError) {
@@ -590,6 +605,28 @@ export default function RevenueWorkspace({
   return (
 
     <div className="revenue-workspace">
+      <section className="revenue-workspace__section" aria-labelledby="revenue-mode-title">
+        <h2 id="revenue-mode-title" className="po-matrix-section__title">Revenue mode</h2>
+        <div className="po-button-row">
+          <button type="button" className={pricingContext.revenueMode === 'summary' ? 'po-button po-button--primary' : 'po-button'} onClick={() => saveRevenueMode('summary', summaryLines.length ? summaryLines : [{ id: crypto.randomUUID(), description: 'Total Forecast Revenue', forecastRevenue: 0 }])}>Summary Revenue</button>
+          <button type="button" className={pricingContext.revenueMode !== 'summary' ? 'po-button po-button--primary' : 'po-button'} onClick={() => saveRevenueMode('sales_register')}>Sales Register</button>
+        </div>
+      </section>
+
+      {pricingContext.revenueMode === 'summary' ? (
+        <section className="revenue-workspace__section" aria-labelledby="summary-revenue-title">
+          <h2 id="summary-revenue-title" className="po-matrix-section__title">Summary Revenue</h2>
+          <p className="revenue-workspace__lead">Secured Revenue, Remaining Forecast and plot sales are not tracked in Summary Revenue.</p>
+          <div className="po-table-wrap"><table className="po-table"><thead><tr><th>Description</th><th>Forecast Revenue</th><th aria-label="Actions" /></tr></thead><tbody>
+            {summaryLines.map((line, index) => <tr key={line.id}><td><input aria-label={`Revenue line ${index + 1} description`} value={line.description} onChange={(event) => setSummaryLines((rows) => rows.map((row) => row.id === line.id ? {...row, description:event.target.value} : row))} /></td><td><input aria-label={`Revenue line ${index + 1} forecast revenue`} type="number" min="0" step="0.01" value={line.forecastRevenue} onChange={(event) => setSummaryLines((rows) => rows.map((row) => row.id === line.id ? {...row, forecastRevenue:event.target.value} : row))} /></td><td><button type="button" className="po-button" onClick={() => setSummaryLines((rows) => rows.filter((row) => row.id !== line.id))}>Remove</button></td></tr>)}
+          </tbody></table></div>
+          <p><strong>Total Forecast Revenue:</strong> £{summaryLines.reduce((sum, line) => sum + (Number(line.forecastRevenue) || 0), 0).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2})}</p>
+          <div className="po-button-row"><button type="button" className="po-button" onClick={() => setSummaryLines((rows) => [...rows, {id:crypto.randomUUID(), description:'', forecastRevenue:0}])}>Add Revenue Line</button><button type="button" className="po-button po-button--primary" disabled={savingSummary} onClick={() => saveRevenueMode('summary')}>{savingSummary ? 'Saving…' : 'Save'}</button></div>
+          {summaryMessage ? <p role="status">{summaryMessage}</p> : null}
+        </section>
+      ) : null}
+
+      {pricingContext.revenueMode !== 'summary' ? <>
 
       <div className="revenue-workspace__zone revenue-workspace__zone--assumptions">
 
@@ -1131,6 +1168,7 @@ export default function RevenueWorkspace({
 
       />
 
+      </> : null}
     </div>
 
   );

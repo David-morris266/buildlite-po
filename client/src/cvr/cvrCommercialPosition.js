@@ -11,6 +11,7 @@ import { isRevenueServerAuthorityEnabled } from '../revenue/revenueAuthority';
 import { buildRevenueSummary } from '../revenue/revenueCalculations';
 import { getPricedPlots } from '../revenue/revenueStrategy';
 import { getRevenueSettingsReadiness } from '../revenue/revenueSettingsServerCache';
+import { getRevenueRecord } from '../revenue/revenueStore';
 import { roundMoney } from './cvrCalculations';
 import { CVR_HISTORIC_REVENUE_UNAVAILABLE } from './cvrHistoricConstants';
 import { snapshotHasFrozenRevenue } from './cvrSnapshotMapper';
@@ -111,6 +112,45 @@ export function loadLiveCvrRevenueSummary(developmentId) {
   }
 
   try {
+    const settings = getRevenueRecord(developmentId);
+    if (isRevenueServerAuthorityEnabled()) {
+      const authority = settings.revenueAuthority;
+      if (!authority?.ready || !authority?.summary) {
+        return unavailableRevenue({
+          reason: authority?.blockers?.[0]?.reason || 'revenue-authority-not-ready',
+          hint: CVR_REVENUE_UNAVAILABLE_HINT,
+        });
+      }
+      return {
+        revenueAvailable: true,
+        reason: null,
+        hint: null,
+        error: null,
+        forecastRevenue: roundMoney(authority.summary.forecastRevenue) ?? 0,
+        securedRevenue: authority.summary.securedRevenue == null ? null : roundMoney(authority.summary.securedRevenue),
+        remainingForecast: authority.summary.remainingForecast == null ? null : roundMoney(authority.summary.remainingForecast),
+        plotsSold: authority.summary.plotsSold == null ? null : Number(authority.summary.plotsSold),
+        plotsRemaining: authority.summary.plotsRemaining == null ? null : Number(authority.summary.plotsRemaining),
+        revenueMode: settings.revenueMode,
+      };
+    }
+    if (settings.revenueMode === 'summary') {
+      const forecastRevenue = (settings.summaryRevenueLines || []).reduce(
+        (total, line) => roundMoney(total + Number(line.forecastRevenue || 0)), 0
+      );
+      return {
+        revenueAvailable: true,
+        reason: null,
+        hint: null,
+        error: null,
+        forecastRevenue,
+        securedRevenue: null,
+        remainingForecast: null,
+        plotsSold: null,
+        plotsRemaining: null,
+        revenueMode: 'summary',
+      };
+    }
     const plots = getPlots(developmentId);
     const pricedPlots = getPricedPlots(developmentId);
     const summary = buildRevenueSummary({ plots, pricedPlots });
@@ -161,11 +201,11 @@ export function buildCvrCommercialPosition({
       hint: null,
       error: null,
       forecastRevenue: roundMoney(totals.forecastRevenue) ?? 0,
-      securedRevenue: roundMoney(totals.securedRevenue) ?? 0,
+      securedRevenue: totals.securedRevenue == null ? null : roundMoney(totals.securedRevenue),
       remainingForecast:
-        roundMoney(totals.remainingForecast ?? totals.remainingForecastRevenue) ?? 0,
-      plotsSold: Number(totals.plotsSold) || 0,
-      plotsRemaining: Number(totals.plotsRemaining) || 0,
+        (totals.remainingForecast ?? totals.remainingForecastRevenue) == null ? null : roundMoney(totals.remainingForecast ?? totals.remainingForecastRevenue),
+      plotsSold: totals.plotsSold == null ? null : Number(totals.plotsSold),
+      plotsRemaining: totals.plotsRemaining == null ? null : Number(totals.plotsRemaining),
     };
   } else {
     revenue = loadLiveCvrRevenueSummary(developmentId);

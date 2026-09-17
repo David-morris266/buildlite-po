@@ -437,14 +437,11 @@ async function persistCvrPeriodSnapshot(
   if (Number(snapshot.schemaVersion) !== CVR_SNAPSHOT_EXPECTED_LIABILITY_SCHEMA_VERSION) {
     throw new Error("Whole-CVR lock requires snapshot schema version 3.");
   }
-  if (
-    snapshot.forecastRevenue == null ||
-    snapshot.securedRevenue == null ||
-    snapshot.remainingForecastRevenue == null ||
-    snapshot.plotsSold == null ||
-    snapshot.plotsRemaining == null ||
-    snapshot.grossProfit == null
-  ) {
+  const summaryRevenue = snapshot.revenueAssumptions?.revenueMode === "summary";
+  if (snapshot.forecastRevenue == null || snapshot.grossProfit == null || (!summaryRevenue && (
+    snapshot.securedRevenue == null || snapshot.remainingForecastRevenue == null ||
+    snapshot.plotsSold == null || snapshot.plotsRemaining == null
+  ))) {
     throw new Error("Whole-CVR snapshot is missing required Revenue totals.");
   }
   if (!snapshot.revenueAssumptions || typeof snapshot.revenueAssumptions !== "object") {

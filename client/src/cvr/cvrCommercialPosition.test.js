@@ -162,6 +162,21 @@ describe('BL-032C live Revenue compose', () => {
     expect(position.plotsSold).toBe(0);
   });
 
+  it('uses Summary Revenue as the sole Draft source and keeps secondary metrics unavailable', () => {
+    seedDevelopment([manualPlot({ manualForecastValue: 999999 })]);
+    storage.set('buildlite_revenue_v1', JSON.stringify({[DEV_ID]:{
+      revenueMode:'summary',
+      summaryRevenueLines:[{id:'a',description:'Private Sales',forecastRevenue:700000},{id:'b',description:'Affordable',forecastRevenue:300000}],
+    }}));
+    const position=buildCvrCommercialPosition({developmentId:DEV_ID,costSummary:{finalForecast:600000}});
+    expect(position.forecastRevenue).toBe(1000000);
+    expect(position.grossProfit).toBe(400000);
+    expect(position.grossMarginPercent).toBe(40);
+    expect(position.securedRevenue).toBeNull();
+    expect(position.remainingForecast).toBeNull();
+    expect(position.plotsSold).toBeNull();
+  });
+
   it('allows negative Gross Profit and Gross Margin', () => {
     seedDevelopment([manualPlot({ manualForecastValue: 100000, forecastSellingPrice: 100000 })]);
     const position = buildCvrCommercialPosition({
@@ -254,6 +269,33 @@ describe('BL-032C live Revenue compose', () => {
     expect(position.revenueAvailable).toBe(true);
     expect(position.forecastRevenue).toBe(1000000);
     expect(position.grossProfit).toBe(600000);
+  });
+
+  it('uses the server-derived Summary Revenue candidate without recalculating its lines', () => {
+    revenueAuthority.value = true;
+    seedDevelopment([manualPlot({ manualForecastValue: 999999 })]);
+    replaceCachedRevenueSettings(DEV_ID, buildServerRevenueSettingsFixture({
+      id: 'settings-summary',
+      developmentId: DEV_ID,
+      revenueMode: 'summary',
+      summaryRevenueLines: [{ id: 'line-1', description: 'Stale client line', forecastRevenue: 1 }],
+      revenueAuthority: {
+        ready: true,
+        canLock: true,
+        blockers: [],
+        summary: {
+          forecastRevenue: 1000000,
+          securedRevenue: null,
+          remainingForecast: null,
+          plotsSold: null,
+          plotsRemaining: null,
+        },
+      },
+    }));
+    const position = buildCvrCommercialPosition({ developmentId: DEV_ID, costSummary: { finalForecast: 600000 } });
+    expect(position.forecastRevenue).toBe(1000000);
+    expect(position.grossProfit).toBe(400000);
+    expect(position.securedRevenue).toBeNull();
   });
 
   it('uses local Revenue infrastructure when authority is OFF', () => {

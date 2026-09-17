@@ -82,6 +82,8 @@ function snapshotPlotFromEnriched(plot, index) {
 function freezeAssumptions(settingsDocument) {
   const strategy = settingsDocument.revenueStrategy || {};
   return {
+    revenueMode: settingsDocument.revenueMode || "sales_register",
+    summaryRevenueLines: JSON.parse(JSON.stringify(settingsDocument.summaryRevenueLines || [])),
     recognitionPolicy: settingsDocument.recognitionPolicy || "completion",
     openMarket: {
       ratePerFt2: strategy.openMarket?.ratePerFt2 ?? null,
@@ -99,6 +101,10 @@ function freezeAssumptions(settingsDocument) {
         : {},
     settingsId: settingsDocument.id || null,
     settingsVersion: Number(settingsDocument.version) || null,
+    settingsUpdatedAt: settingsDocument.updatedAt || null,
+    settingsUpdatedBy: settingsDocument.updatedBy || null,
+    settingsUpdatedByUserId: settingsDocument.updatedByUserId || null,
+    settingsUpdatedByMembershipId: settingsDocument.updatedByMembershipId || null,
   };
 }
 
@@ -133,6 +139,95 @@ async function lockDevelopmentForShare(clientId, developmentId, dbClient) {
   );
   if (!rows[0]) return null;
   return findDevelopmentById(clientId, developmentId, dbClient);
+}
+
+function buildRevenueAuthorityFromDocuments({ clientId, developmentId, development, settingsDocument } = {}) {
+  const sources = {
+    plotMaster: sourceFailure("not-loaded"),
+    revenueSettings: sourceFailure("not-loaded"),
+  };
+  const blockers = [];
+  const plots = plotsFromDevelopment(development);
+
+  if (!development) {
+    sources.plotMaster = sourceFailure("development-not-found");
+    blockers.push({ source: "plotMaster", reason: "development-not-found" });
+  } else if (plots == null) {
+    sources.plotMaster = sourceFailure("plot-master-unavailable");
+    blockers.push({ source: "plotMaster", reason: "plot-master-unavailable" });
+  } else {
+    sources.plotMaster = sourceOk(plots);
+  }
+
+  if (!settingsDocument || settingsDocument.exists === false) {
+    sources.revenueSettings = sourceFailure("revenue-settings-missing");
+    blockers.push({ source: "revenueSettings", reason: "revenue-settings-missing" });
+  } else {
+    sources.revenueSettings = sourceOk(settingsDocument);
+  }
+
+  const summaryMode = settingsDocument?.revenueMode === "summary";
+  if (summaryMode) {
+    const settingsBlockers = blockers.filter((item) => item.source === "revenueSettings");
+    if (settingsBlockers.length) return notReady({ clientId, developmentId, blockers: settingsBlockers, sources });
+    const lines = settingsDocument.summaryRevenueLines || [];
+    if (!lines.length) return notReady({ clientId, developmentId, blockers:[{source:"revenueSettings",reason:"summary-revenue-lines-missing"}], sources });
+    const forecastRevenue = lines.reduce((total, line) => roundPlotMoney(total + Number(line.forecastRevenue || 0)), 0);
+    return {
+      ready:true, complete:true, canLock:true, clientId, developmentId, blockers:[], sourceReadiness:sources,
+      summary:{ forecastRevenue, securedRevenue:null, remainingForecast:null, plotsSold:null, plotsRemaining:null },
+      plots:[], assumptions:freezeAssumptions(settingsDocument), settingsId:settingsDocument.id,
+      settingsVersion:Number(settingsDocument.version)||null,
+    };
+  }
+
+  if (blockers.length) return notReady({ clientId, developmentId, blockers, sources });
+
+  const invalid = invalidSecuredPlots(plots);
+  if (invalid.length) {
+    const plotNumbers = invalid.map((plot) => String(plot.plotNumber || plot.id || "?"));
+    blockers.push({
+      source: "plotMaster",
+      reason: "invalid-secured-selling-price",
+      plotNumbers,
+      message: `Exchanged/Completed plots require sellingPrice > 0: ${plotNumbers.join(", ")}.`,
+    });
+    return notReady({ clientId, developmentId, blockers, sources });
+  }
+
+  let priced;
+  try {
+    priced = enrichPlotsWithPricing(
+      plots,
+      settingsDocument.revenueStrategy || {},
+      settingsDocument.houseTypePricing || {}
+    );
+  } catch (err) {
+    blockers.push({ source: "revenue", reason: "revenue-calculation-failed", error: err.message });
+    return notReady({ clientId, developmentId, blockers, sources });
+  }
+
+  const summary = summarizePricedPlots(priced);
+  const snapshotPlots = priced.map((plot, index) => snapshotPlotFromEnriched(plot, index));
+  const seen = new Set();
+  for (const row of snapshotPlots) {
+    if (seen.has(row.plotId)) {
+      blockers.push({
+        source: "plotMaster",
+        reason: "duplicate-plot-id",
+        message: `Duplicate plot identity in Plot Master: ${row.plotId}.`,
+      });
+      return notReady({ clientId, developmentId, blockers, sources });
+    }
+    seen.add(row.plotId);
+  }
+
+  return {
+    ready: true, complete: true, canLock: true, clientId, developmentId, blockers: [],
+    sourceReadiness: sources, summary, plots: snapshotPlots,
+    assumptions: freezeAssumptions(settingsDocument), settingsId: settingsDocument.id,
+    settingsVersion: Number(settingsDocument.version) || null,
+  };
 }
 
 async function buildCvrRevenueCloseCandidate({
@@ -188,68 +283,15 @@ async function buildCvrRevenueCloseCandidate({
     blockers.push({ source: "revenueSettings", reason: "revenue-settings-query-failed" });
   }
 
-  if (blockers.length) {
+  if (blockers.some((item) => item.reason.endsWith("query-failed"))) {
     return notReady({ clientId, developmentId, blockers, sources });
   }
-
-  const plots = sources.plotMaster.value;
-  const invalid = invalidSecuredPlots(plots);
-  if (invalid.length) {
-    const plotNumbers = invalid.map((plot) => String(plot.plotNumber || plot.id || "?"));
-    blockers.push({
-      source: "plotMaster",
-      reason: "invalid-secured-selling-price",
-      plotNumbers,
-      message: `Exchanged/Completed plots require sellingPrice > 0: ${plotNumbers.join(", ")}.`,
-    });
-    return notReady({ clientId, developmentId, blockers, sources });
-  }
-
-  let priced;
-  try {
-    priced = enrichPlotsWithPricing(
-      plots,
-      settingsDocument.revenueStrategy || {},
-      settingsDocument.houseTypePricing || {}
-    );
-  } catch (err) {
-    blockers.push({ source: "revenue", reason: "revenue-calculation-failed", error: err.message });
-    return notReady({ clientId, developmentId, blockers, sources });
-  }
-
-  const summary = summarizePricedPlots(priced);
-  const snapshotPlots = priced.map((plot, index) => snapshotPlotFromEnriched(plot, index));
-  const seen = new Set();
-  for (const row of snapshotPlots) {
-    if (seen.has(row.plotId)) {
-      blockers.push({
-        source: "plotMaster",
-        reason: "duplicate-plot-id",
-        message: `Duplicate plot identity in Plot Master: ${row.plotId}.`,
-      });
-      return notReady({ clientId, developmentId, blockers, sources });
-    }
-    seen.add(row.plotId);
-  }
-
-  return {
-    ready: true,
-    complete: true,
-    canLock: true,
-    clientId,
-    developmentId,
-    blockers: [],
-    sourceReadiness: sources,
-    summary,
-    plots: snapshotPlots,
-    assumptions: freezeAssumptions(settingsDocument),
-    settingsId: settingsDocument.id,
-    settingsVersion: Number(settingsDocument.version) || null,
-  };
+  return buildRevenueAuthorityFromDocuments({ clientId, developmentId, development, settingsDocument });
 }
 
 module.exports = {
   buildCvrRevenueCloseCandidate,
+  buildRevenueAuthorityFromDocuments,
   plotsFromDevelopment,
   invalidSecuredPlots,
   freezeAssumptions,

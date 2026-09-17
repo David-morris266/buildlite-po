@@ -132,3 +132,7 @@ Adds immutable CVR submission-time Commercial Structure evidence and an optional
 ### 048_cost_code_onboarding_review.sql
 
 Adds bounded append-only Cost Code import evidence, explicit hierarchy review disposition/provenance and immutable review audit. Existing hierarchy and CVR facts are not inferred or backfilled.
+
+### 049_summary_revenue_mode.sql
+
+Adds development-scoped Summary Revenue mode and owner-defined lines, authenticated settings provenance and a mode-aware CVR snapshot constraint. Existing settings remain Sales Register and historic snapshots are not backfilled.

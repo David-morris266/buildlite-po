@@ -386,6 +386,9 @@ export async function getRevenuePricingContext(developmentId, { refresh = false 
   const pricedPlots = enrichPlotsWithPricing(plots, strategy, mergedHouseTypes);
 
   return {
+    settings: getRevenueRecord(developmentId),
+    revenueMode: getRevenueRecord(developmentId).revenueMode || 'sales_register',
+    summaryRevenueLines: getRevenueRecord(developmentId).summaryRevenueLines || [],
     plots,
     pricedPlots,
     strategy,

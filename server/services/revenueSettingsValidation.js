@@ -177,6 +177,23 @@ function validatePutSettingsBody(body = {}) {
     "recognitionSettings",
     errors
   );
+  const revenueMode = body.revenueMode === "summary" ? "summary" : body.revenueMode == null || body.revenueMode === "sales_register" ? "sales_register" : null;
+  if (!revenueMode) errors.push("revenueMode must be sales_register or summary.");
+  const rawLines = body.summaryRevenueLines == null ? [] : body.summaryRevenueLines;
+  const summaryRevenueLines = [];
+  const lineIds = new Set();
+  if (!Array.isArray(rawLines)) errors.push("summaryRevenueLines must be an array.");
+  else for (const [index, line] of rawLines.entries()) {
+    const id = String(line?.id || "").trim();
+    const description = String(line?.description || "").trim();
+    const amount = Number(line?.forecastRevenue);
+    if (!id || lineIds.has(id)) errors.push(`summaryRevenueLines[${index}].id must be unique and non-empty.`);
+    if (!description) errors.push(`summaryRevenueLines[${index}].description is required.`);
+    if (!Number.isFinite(amount) || amount < 0 || Math.round(amount * 100) !== amount * 100) errors.push(`summaryRevenueLines[${index}].forecastRevenue must be a non-negative exact-pence amount.`);
+    lineIds.add(id);
+    summaryRevenueLines.push({ id, description, forecastRevenue: amount });
+  }
+  if (revenueMode === "summary" && summaryRevenueLines.length === 0) errors.push("Summary Revenue requires at least one revenue line.");
 
   if (errors.length) {
     return { ok: false, errors };
@@ -191,6 +208,8 @@ function validatePutSettingsBody(body = {}) {
       houseTypePricing,
       revenueAdjustments,
       recognitionSettings,
+      revenueMode,
+      summaryRevenueLines,
     },
   };
 }

@@ -59,6 +59,18 @@ export function buildServerRevenueSettingsFixture(overrides = {}) {
     updatedAt: overrides.updatedAt || null,
     createdBy: overrides.createdBy ?? null,
     updatedBy: overrides.updatedBy ?? null,
+    revenueAuthority: overrides.revenueAuthority || {
+      ready: true,
+      canLock: true,
+      blockers: [],
+      summary: {
+        forecastRevenue: 1000000,
+        securedRevenue: 0,
+        remainingForecast: 1000000,
+        plotsSold: 0,
+        plotsRemaining: 1,
+      },
+    },
     metadata: {
       version: 3,
       createdAt: overrides.createdAt || null,

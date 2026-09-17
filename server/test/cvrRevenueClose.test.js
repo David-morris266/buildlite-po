@@ -6,7 +6,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
 const path = require("path");
-const { buildCvrRevenueCloseCandidate, invalidSecuredPlots } = require(
+const { buildCvrRevenueCloseCandidate, buildRevenueAuthorityFromDocuments, invalidSecuredPlots } = require(
   "../services/cvrRevenueClose"
 );
 
@@ -111,4 +111,56 @@ test("Test Site 1 fixture close matches characterisation", async () => {
   assert.equal(candidate.plots.length, 31);
   assert.equal(candidate.assumptions.settingsId, fixture.settings.id);
   assert.equal(candidate.settingsVersion, Number(fixture.settings.version));
+});
+
+test("Summary Revenue is exact, plot-independent and leaves secondary metrics unavailable", async () => {
+  const candidate = await buildCvrRevenueCloseCandidate({
+    clientId: "client-1",
+    developmentId: "dev-summary",
+    loadDevelopment: async () => ({ id: "dev-summary" }),
+    loadSettingsRow: async () => settingsRow({
+      development_id: "dev-summary",
+      revenue_mode: "summary",
+      summary_revenue_lines: [
+        { id: "private", description: "Private Sales", forecastRevenue: 100000.01 },
+        { id: "affordable", description: "Affordable Housing", forecastRevenue: 50000.02 },
+      ],
+      updated_by: "Authenticated QS",
+      updated_by_membership_id: "membership-1",
+    }),
+  });
+  assert.equal(candidate.canLock, true);
+  assert.equal(candidate.summary.forecastRevenue, 150000.03);
+  assert.equal(candidate.summary.securedRevenue, null);
+  assert.equal(candidate.summary.remainingForecast, null);
+  assert.equal(candidate.summary.plotsSold, null);
+  assert.deepEqual(candidate.plots, []);
+  assert.equal(candidate.assumptions.revenueMode, "summary");
+  assert.equal(candidate.assumptions.summaryRevenueLines.length, 2);
+  assert.equal(candidate.assumptions.settingsUpdatedByMembershipId, "membership-1");
+});
+
+test("Sales Register mode switching uses the complete close-candidate readiness contract", () => {
+  const duplicate = buildRevenueAuthorityFromDocuments({
+    clientId: "client-1",
+    developmentId: "dev-close",
+    development: { id: "dev-close", plotMaster: { plots: [
+      { id: "same", plotNumber: "1", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 10 },
+      { id: "same", plotNumber: "2", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 20 },
+    ] } },
+    settingsDocument: { ...require("../services/revenueSettingsMapper").settingsRowToDocument(settingsRow(), "dev-close"), exists: true },
+  });
+  assert.equal(duplicate.ready, false);
+  assert.ok(duplicate.blockers.some((item) => item.reason === "duplicate-plot-id"));
+
+  const invalidPricing = buildRevenueAuthorityFromDocuments({
+    clientId: "client-1",
+    developmentId: "dev-close",
+    development: { id: "dev-close", plotMaster: { plots: [
+      { id: "plot-1", plotNumber: "1", revenueStatus: "Available", revenueSource: "Development Strategy", niaFt2: Symbol("invalid") },
+    ] } },
+    settingsDocument: { ...require("../services/revenueSettingsMapper").settingsRowToDocument(settingsRow(), "dev-close"), exists: true },
+  });
+  assert.equal(invalidPricing.ready, false);
+  assert.ok(invalidPricing.blockers.some((item) => item.reason === "revenue-calculation-failed"));
 });
