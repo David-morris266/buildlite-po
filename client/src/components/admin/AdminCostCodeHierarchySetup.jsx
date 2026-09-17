@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { bulkUpdateCostCodeHierarchyOnServer } from '../../admin/costCodeServerMutations';
 import { hierarchyLabels, hierarchyOf, hierarchyProposal } from '../../admin/costCodeCommercialHierarchy';
 import { activeHeads, familiesFor, groupsFor, loadCommercialStructure, pathLabels } from '../../admin/commercialStructureService';
 import { getCostCodeOnboardingSummary } from '../../api/costCodes';
+import { applyCostCodeHierarchyWorksheet, getCostCodeHierarchyWorksheet, previewCostCodeHierarchyWorksheet } from '../../api/costCodes';
+import { downloadHierarchyWorksheet, parseHierarchyWorksheet } from '../../admin/costCodeHierarchyWorksheet';
+import { invalidateCostCodes, refreshCostCodes } from '../../admin/costCodeServerCache';
 import AdminPageShell from './AdminPageShell';
 import { AdminButton } from './adminUi';
 
@@ -12,7 +15,9 @@ const equal = (a, b) => KEYS.every((key) => (a?.[key] || null) === (b?.[key] || 
 const stateOf = (record) => record.hierarchyReviewState || 'needs_attention';
 
 export default function AdminCostCodeHierarchySetup({ records = [], onCancel, onApplied }) {
-  const activeRecords = useMemo(() => records.filter((record) => record.active !== false), [records]);
+  const worksheetInput = useRef(null);
+  const [worksheetRecords, setWorksheetRecords] = useState(null);
+  const activeRecords = useMemo(() => (worksheetRecords || records).filter((record) => record.active !== false), [records, worksheetRecords]);
   const [catalogue, setCatalogue] = useState(null);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -27,6 +32,11 @@ export default function AdminCostCodeHierarchySetup({ records = [], onCancel, on
   const [bulkGroup, setBulkGroup] = useState('');
   const [reviewing, setReviewing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [worksheetBusy, setWorksheetBusy] = useState(false);
+  const [worksheetRows, setWorksheetRows] = useState(null);
+  const [worksheetFilename, setWorksheetFilename] = useState('');
+  const [worksheetPreview, setWorksheetPreview] = useState(null);
+  const [worksheetResult, setWorksheetResult] = useState(null);
 
   useEffect(() => {
     let live = true;
@@ -71,6 +81,36 @@ export default function AdminCostCodeHierarchySetup({ records = [], onCancel, on
     onApplied?.(result.costCodes);
   }
 
+  async function exportWorksheet() {
+    setWorksheetBusy(true); setError('');
+    try { const response = await getCostCodeHierarchyWorksheet(); await downloadHierarchyWorksheet(response.worksheet); }
+    catch (cause) { setError(cause.message || 'Could not export the mapping worksheet.'); }
+    finally { setWorksheetBusy(false); }
+  }
+
+  async function importWorksheet(file) {
+    if (!file) return;
+    setWorksheetBusy(true); setError(''); setWorksheetPreview(null); setWorksheetResult(null);
+    try {
+      const rows = await parseHierarchyWorksheet(file);
+      const response = await previewCostCodeHierarchyWorksheet(rows, file.name);
+      setWorksheetRows(rows); setWorksheetFilename(file.name); setWorksheetPreview(response.preview);
+    } catch (cause) { setError(cause.message || 'Could not preview the mapping worksheet.'); }
+    finally { setWorksheetBusy(false); if (worksheetInput.current) worksheetInput.current.value = ''; }
+  }
+
+  async function applyWorksheet() {
+    setWorksheetBusy(true); setError('');
+    try {
+      const response = await applyCostCodeHierarchyWorksheet({ rows: worksheetRows, sourceFilename: worksheetFilename, catalogueRevision: worksheetPreview.catalogueRevision, reviewToken: worksheetPreview.reviewToken });
+      invalidateCostCodes();
+      const [freshRecords, freshStructure, freshSummary] = await Promise.all([refreshCostCodes(), loadCommercialStructure(), getCostCodeOnboardingSummary()]);
+      setWorksheetRecords(freshRecords); setDrafts(Object.fromEntries(freshRecords.filter((record) => record.active !== false).map((record) => [record.id, { ...hierarchyOf(record), reviewDisposition: record.hierarchyReviewDisposition || null }]))); setSelected(new Set()); setCatalogue(freshStructure); setSummary(freshSummary);
+      setWorksheetResult(response.summary); setWorksheetPreview(null); setWorksheetRows(null);
+    } catch (cause) { setError(cause.message || 'Could not apply the reviewed mapping.'); }
+    finally { setWorksheetBusy(false); }
+  }
+
   if (loading) return <AdminPageShell title="Cost Code Commercial Hierarchy" onBack={onCancel}><p>Loading company Commercial Structure…</p></AdminPageShell>;
   if (!catalogue || !summary) return <AdminPageShell title="Cost Code Commercial Hierarchy" onBack={onCancel}><p role="alert">{error || 'Cost Code onboarding authority is unavailable.'}</p><AdminButton onClick={onCancel}>Back</AdminButton></AdminPageShell>;
 
@@ -79,6 +119,12 @@ export default function AdminCostCodeHierarchySetup({ records = [], onCancel, on
     {error ? <p className="admin-inline-warning" role="alert">{error}</p> : null}
     {!reviewing ? <>
       <section className="po-module-card"><h2>Onboarding review</h2><p>{summary.total} active{separator}{summary.allocated} Allocated{separator}{summary.notReviewed} Not reviewed{separator}{summary.notApplicable} Not applicable{separator}{summary.needsAttention} Needs attention</p></section>
+      <section className="po-module-card">
+        <h2>Mapping worksheet</h2><p>Use Excel to review a large Cost Code population, then preview every hierarchy change before applying it.</p>
+        <div className="setup-import-actions"><AdminButton variant="secondary" loading={worksheetBusy} onClick={exportWorksheet}>Export mapping worksheet</AdminButton><AdminButton variant="secondary" disabled={worksheetBusy} onClick={() => worksheetInput.current?.click()}>Import completed mapping</AdminButton><input ref={worksheetInput} hidden type="file" accept=".xlsx" aria-label="Completed hierarchy mapping worksheet" onChange={(event) => importWorksheet(event.target.files?.[0])} /></div>
+        {worksheetPreview ? <div className="cost-code-hierarchy__worksheet-preview"><h3>Review mapping worksheet</h3><p>{worksheetPreview.summary.rowsReviewed} rows reviewed{separator}{worksheetPreview.summary.allocations} allocations{separator}{worksheetPreview.summary.notApplicable} Not Applicable{separator}{worksheetPreview.summary.unchanged} unchanged{separator}{worksheetPreview.summary.blockers} blockers</p><p>{worksheetPreview.summary.existingPathsMatched} existing paths{separator}{worksheetPreview.summary.newHeads} new Heads{separator}{worksheetPreview.summary.newFamilies} new Families{separator}{worksheetPreview.summary.newReportingGroups} new Reporting Groups</p>{worksheetPreview.proposals?.length ? <details><summary>Proposed new Commercial Structure</summary>{worksheetPreview.proposals.map((proposal) => <p key={proposal.key}>{proposal.commercialHead}{proposal.commercialFamily ? ` → ${proposal.commercialFamily}` : ''} → {proposal.reportingGroup} ({proposal.costCodes.length} Cost Codes)</p>)}</details> : null}<details><summary>Before → after detail</summary>{worksheetPreview.rows.map((row) => <p key={`${row.rowNumber}-${row.id}`} className={row.blocker ? 'setup-step__error' : ''}><strong>{row.code}</strong>: {row.before?.labels?.commercialHead || row.before?.state || 'Unreviewed'} → {row.action === 'not_applicable' ? 'Not Applicable' : row.after?.labels?.commercialHead ? `${row.after.labels.commercialHead}${row.after.labels.commercialFamily ? ` → ${row.after.labels.commercialFamily}` : ''} → ${row.after.labels.reportingGroup}` : row.action}{row.blocker ? ` — ${row.blocker}` : ''}</p>)}</details><AdminButton variant="secondary" onClick={() => { setWorksheetPreview(null); setWorksheetRows(null); }}>Cancel preview</AdminButton><AdminButton loading={worksheetBusy} disabled={worksheetPreview.summary.blockers > 0} onClick={applyWorksheet}>Apply reviewed mapping</AdminButton></div> : null}
+        {worksheetResult ? <div role="status"><strong>Mapping applied.</strong> {worksheetResult.updated} Cost Codes updated. <AdminButton onClick={() => onApplied?.()}>Done</AdminButton></div> : null}
+      </section>
       <section className="po-module-card cost-code-hierarchy__tools">
         <label><span>Search codes or import evidence</span><input className="input" aria-label="Search cost codes" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} /></label>
         <label><span>Show</span><select className="input" aria-label="Show cost codes" value={filter} onChange={(event) => setFilter(event.target.value)}><option value="not_reviewed">Not reviewed</option><option value="needs_attention">Needs attention</option><option value="not_applicable">Not applicable</option><option value="allocated">Allocated</option><option value="all">All</option></select></label>

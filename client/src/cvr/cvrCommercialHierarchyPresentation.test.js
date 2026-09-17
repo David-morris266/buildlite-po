@@ -18,12 +18,12 @@ describe('CVR Commercial hierarchy presentation authority', () => {
   it('partitions every financial row once across tenant Heads and explicit exceptional states', () => {
     const rows = [
       money('A', 100, 110, -10), money('B', 200, 190, 10), money('C', 10, 10, 0),
-      money('D', 20, 25, -5), money('E', 30, 30, 0), money('F', 40, 45, -5), money('G', 50, 55, -5),
+      money('D', 20, 25, -5), money('E', 30, 30, 0), money('F', 40, 45, -5), money('G', 50, 55, -5), money('NA', 0, 0, 0),
     ];
     const document = [
       evidence('A', 'allocated', { head: head('h1', 'Tenant Custom'), reportingGroup: group('g1', 'Direct') }),
       evidence('B', 'allocated', { head: head('h2', 'Tenant Custom'), family: { id: 'f1', name: 'Family', active: true }, reportingGroup: group('g2', 'Nested') }),
-      evidence('C', 'unallocated'), evidence('D', 'unresolved_legacy'),
+      evidence('C', 'unallocated'), evidence('D', 'unresolved_legacy'), evidence('NA', 'not_applicable', { legacyEvidence: { commercialHead: null, commercialFamily: null, reportingGroup: 'Legacy control' } }),
       evidence('E', 'archived_assignment', { head: head('ha', 'Old') }),
       evidence('F', 'invalid_assignment'),
       evidence('HIERARCHY-ONLY', 'allocated', { head: head('h3', 'No money'), reportingGroup: group('g3', 'No money') }),
@@ -35,7 +35,28 @@ describe('CVR Commercial hierarchy presentation authority', () => {
     expect(result.items.find((item) => item.headId === 'h1').families).toEqual([]);
     expect(result.items.find((item) => item.headId === 'h2').families[0].name).toBe('Family');
     expect(result.items.find((item) => item.label === 'Hierarchy needs review').resolutionStates).toEqual(['invalid_assignment', 'missing_cost_code']);
+    expect(result.items.find((item) => item.label === 'Not applicable').rows.map(({ row }) => row.costCodeKey)).toEqual(['NA']);
     expect(result.items.some((item) => item.label === 'No money')).toBe(false);
+  });
+
+  it('keeps zero-value Not applicable visible with exact captured membership across lifecycle states', () => {
+    const rows = [money('A', 100, 90, 10), money('NA', 0, 0, 0)];
+    const frozenDocument = [
+      evidence('A', 'allocated', { head: head('h1', 'Build'), reportingGroup: group('g1', 'Works') }),
+      evidence('NA', 'not_applicable', { legacyEvidence: { commercialHead: null, commercialFamily: null, reportingGroup: 'Legacy control' } }),
+    ];
+    for (const period of [
+      { status: 'draft', commercialHierarchy: authority('live', frozenDocument) },
+      { status: 'submitted', commercialHierarchy: authority('submitted', frozenDocument) },
+      { status: 'locked', snapshot: { commercialHierarchy: authority('locked', frozenDocument) } },
+    ]) {
+      const result = buildCvrCommercialHierarchyPresentation(rows, period);
+      const bucket = result.items.find((item) => item.label === 'Not applicable');
+      expect(bucket.rows).toHaveLength(1);
+      expect(bucket.rows[0].row).toMatchObject({ costCodeKey: 'NA', currentBudget: 0, finalForecast: 0, variance: 0 });
+      expect(filterCvrRowsByHierarchyDescriptor(rows, bucket.filter).map((row) => row.costCodeKey)).toEqual(['NA']);
+      expect(result.assignedRowCount).toBe(rows.length);
+    }
   });
 
   it('uses lifecycle-selected frozen evidence and makes historic compatibility explicit', () => {

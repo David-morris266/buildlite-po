@@ -23,6 +23,7 @@ function fakeHierarchyRows() {
     { id:'three',code:'B',description:'Three level',is_active:true,commercial_head_id:'h2',commercial_family_id:'f2',reporting_group_id:'g2',head_id:'h2',head_name:'Build',head_active:true,family_id:'f2',family_name:'Envelope',family_active:true,family_head_id:'h2',group_id:'g2',group_name:'Brickwork',group_active:true,group_head_id:'h2',group_family_id:'f2' },
     { id:'empty',code:'C',description:'Unallocated',is_active:true },
     { id:'legacy',code:'D',description:'Legacy',is_active:true,commercial_head:'Old Head',reporting_group:'Old Group' },
+    { id:'not-applicable',code:'NA',description:'Not applicable',is_active:true,trade:'Legacy control',hierarchy_review_disposition:'not_applicable' },
     { id:'archived',code:'E',description:'Archived',is_active:true,commercial_head_id:'ha',reporting_group_id:'ga',head_id:'ha',head_name:'Old Head',head_active:false,group_id:'ga',group_name:'Old Group',group_active:true,group_head_id:'ha',group_family_id:null },
     { id:'invalid',code:'F',description:'Invalid',is_active:true,commercial_head_id:'h1',reporting_group_id:'g2',head_id:'h1',head_name:'Custom Head',head_active:true,group_id:'g2',group_name:'Brickwork',group_active:true,group_head_id:'h2',group_family_id:'f2' },
   ];
@@ -39,6 +40,11 @@ test('resolution model preserves two/three-level authority and all explicit non-
   assert.equal(byCode.get('C').resolutionState, 'unallocated');
   assert.equal(byCode.get('D').resolutionState, 'unresolved_legacy');
   assert.equal(byCode.get('D').head, null);
+  assert.equal(byCode.get('NA').resolutionState, 'not_applicable');
+  assert.equal(byCode.get('NA').head, null);
+  assert.equal(byCode.get('NA').family, null);
+  assert.equal(byCode.get('NA').reportingGroup, null);
+  assert.equal(byCode.get('NA').legacyEvidence.reportingGroup, 'Legacy control');
   assert.equal(byCode.get('E').resolutionState, 'archived_assignment');
   assert.equal(byCode.get('F').resolutionState, 'invalid_assignment');
   assert.equal(hierarchy.resolveCostCodes(document, ['missing'])[0].resolutionState, 'missing_cost_code');
@@ -67,13 +73,14 @@ if (!isDbConfigured()) {
     const family = (await pool.query("INSERT INTO commercial_structure_families(client_id,head_id,name,display_order) VALUES($1,$2,'Family',5) RETURNING *", [client.id, head.id])).rows[0];
     const nested = (await pool.query("INSERT INTO commercial_structure_reporting_groups(client_id,head_id,family_id,name,display_order) VALUES($1,$2,$3,'Nested',6) RETURNING *", [client.id, head.id, family.id])).rows[0];
     await pool.query("INSERT INTO cost_codes(client_id,code,description,commercial_head_id,reporting_group_id,commercial_head,reporting_group,trade,is_active) VALUES($1,'TWO','Two',$2,$3,'Tenant Custom','Direct','Direct',true),($1,'EMPTY','Empty',NULL,NULL,NULL,NULL,NULL,true),($1,'LEGACY','Legacy',NULL,NULL,'Historic',NULL,'Historic Group',true)", [client.id, head.id, direct.id]);
+    const notApplicable = (await pool.query("INSERT INTO cost_codes(client_id,code,description,trade,hierarchy_review_disposition,is_active) VALUES($1,'NOTAPP','Revenue control','Legacy revenue control','not_applicable',true) RETURNING *", [client.id])).rows[0];
     await pool.query("INSERT INTO cost_codes(client_id,code,description,commercial_head_id,commercial_family_id,reporting_group_id,commercial_head,commercial_family,reporting_group,trade,is_active) VALUES($1,'THREE','Three',$2,$3,$4,'Tenant Custom','Family','Nested','Nested',true)", [client.id, head.id, family.id, nested.id]);
     await pool.query("INSERT INTO cost_codes(client_id,code,description,is_active) VALUES($1,'OTHER','Other tenant',true)", [other.id]);
     const period = (await pool.query("INSERT INTO cvr_periods(client_id,development_id,period_key,period_label,status,commentary,version,budget_source) VALUES($1,$2,'P01','P01','draft','{}',1,'legacy_cvr') RETURNING *", [client.id, developmentId])).rows[0];
     const user = (await pool.query("INSERT INTO buildlite_users(auth_provider,provider_user_id,email_snapshot,display_name,status) VALUES('clerk',$1,'hierarchy@test','Hierarchy QS','active') RETURNING *", [`hierarchy-${randomUUID()}`])).rows[0];
     const role = (await pool.query("SELECT id FROM roles WHERE key='qs'")).rows[0];
     const membership = (await pool.query('INSERT INTO client_user_memberships(client_id,user_id,role_id,is_active) VALUES($1,$2,$3,true) RETURNING *', [client.id, user.id, role.id])).rows[0];
-    fixture = { client, other, developmentId, head, direct, family, nested, period, user, membership,
+    fixture = { client, other, developmentId, head, direct, family, nested, notApplicable, period, user, membership,
       auth:{clientId:client.id,userId:user.id,membershipId:membership.id,providerUserId:user.provider_user_id,displayName:user.display_name,roleKey:'qs',permissions:['commercial.read']} };
   });
 
@@ -82,8 +89,9 @@ if (!isDbConfigured()) {
   test('Draft authority is tenant-scoped and Submit freezes canonical hash and authenticated provenance', async () => {
     const draft = await periods.getCvrPeriod(fixture.client.id, fixture.developmentId, fixture.period.id);
     assert.equal(draft.period.commercialHierarchy.state, 'live');
-    assert.deepEqual(draft.period.commercialHierarchy.document.costCodes.map(row => row.costCodeKey), ['EMPTY','LEGACY','THREE','TWO']);
+    assert.deepEqual(draft.period.commercialHierarchy.document.costCodes.map(row => row.costCodeKey), ['EMPTY','LEGACY','NOTAPP','THREE','TWO']);
     assert.equal(draft.period.commercialHierarchy.document.costCodes.find(row => row.costCodeKey === 'TWO').family, null);
+    assert.equal(draft.period.commercialHierarchy.document.costCodes.find(row => row.costCodeKey === 'NOTAPP').resolutionState, 'not_applicable');
     const submitted = await periods.submitCvrPeriod(fixture.client.id, fixture.developmentId, fixture.period.id, {}, { actor:'Hierarchy QS', auth:fixture.auth });
     assert.equal(submitted.ok, true, submitted.message);
     assert.equal(submitted.period.commercialHierarchy.state, 'submitted');
@@ -92,12 +100,16 @@ if (!isDbConfigured()) {
     assert.equal(evidence.captured_by_user_id, fixture.user.id);
     assert.equal(evidence.captured_by_membership_id, fixture.membership.id);
     assert.equal(evidence.captured_by_role_key, 'qs');
+    assert.equal(evidence.source_snapshot.costCodes.find(row => row.costCodeKey === 'NOTAPP').resolutionState, 'not_applicable');
     await pool.query("UPDATE commercial_structure_heads SET name='Renamed after Submit',display_order=9 WHERE id=$1", [fixture.head.id]);
+    await pool.query("UPDATE cost_codes SET hierarchy_review_disposition=NULL WHERE id=$1", [fixture.notApplicable.id]);
     const reloaded = await periods.getCvrPeriod(fixture.client.id, fixture.developmentId, fixture.period.id);
     assert.equal(reloaded.period.commercialHierarchy.document.costCodes.find(row => row.costCodeKey === 'TWO').head.name, 'Tenant Custom');
+    assert.equal(reloaded.period.commercialHierarchy.document.costCodes.find(row => row.costCodeKey === 'NOTAPP').resolutionState, 'not_applicable');
     await assert.rejects(pool.query("UPDATE cvr_period_hierarchy_submissions SET captured_by_display_name='Changed' WHERE id=$1", [evidence.id]), /immutable/i);
     const live = await hierarchy.liveDocument(pool, fixture.client.id);
     assert.equal(live.costCodes.find(row => row.costCodeKey === 'TWO').head.name, 'Renamed after Submit');
+    assert.equal(live.costCodes.find(row => row.costCodeKey === 'NOTAPP').resolutionState, 'unresolved_legacy');
     assert.equal(live.costCodes.some(row => row.costCodeKey === 'OTHER'), false);
 
     const nextDevelopmentId = `dev-${randomUUID()}`;
@@ -109,6 +121,7 @@ if (!isDbConfigured()) {
     assert.equal(next.ok, true, next.message);
     assert.equal(next.period.commercialHierarchy.state, 'live');
     assert.equal(next.period.commercialHierarchy.document.costCodes.find(row => row.costCodeKey === 'TWO').head.name, 'Renamed after Submit');
+    assert.equal(next.period.commercialHierarchy.document.costCodes.find(row => row.costCodeKey === 'NOTAPP').resolutionState, 'unresolved_legacy');
   });
 
   test('hierarchy evidence changes labels only and leaves financial close totals unchanged', async () => {
@@ -120,5 +133,8 @@ if (!isDbConfigured()) {
     assert.deepEqual(withHierarchy.snapshot.rows.map(row => ({currentBudget:row.currentBudget,finalForecast:row.finalForecast,variance:row.variance})), without.snapshot.rows.map(row => ({currentBudget:row.currentBudget,finalForecast:row.finalForecast,variance:row.variance})));
     assert.equal(withHierarchy.snapshot.rows[0].commercialHead, 'Renamed after Submit');
     assert.equal(withHierarchy.snapshot.rows[0].commercialFamily, '');
+    const submittedEvidence = (await pool.query('SELECT source_snapshot FROM cvr_period_hierarchy_submissions WHERE period_id=$1 ORDER BY attempt_number DESC LIMIT 1', [fixture.period.id])).rows[0].source_snapshot;
+    const frozenClose = await buildCvrCloseCandidate({clientId:fixture.client.id,developmentId:fixture.developmentId,periodId:fixture.period.id,loadSources,commercialHierarchyDocument:submittedEvidence});
+    assert.deepEqual(frozenClose.snapshot.rows.map(row => ({currentBudget:row.currentBudget,finalForecast:row.finalForecast,variance:row.variance})), without.snapshot.rows.map(row => ({currentBudget:row.currentBudget,finalForecast:row.finalForecast,variance:row.variance})));
   });
 }

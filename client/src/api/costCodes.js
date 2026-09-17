@@ -92,6 +92,10 @@ export async function previewServerCostCodeImport(rows = [],sourceFilename='Cost
 
 export async function getCostCodeOnboardingSummary(){const res=await fetch(buildUrl('/api/cost-codes/onboarding/summary'));return handleJson(res);}
 
+export async function getCostCodeHierarchyWorksheet(){const res=await fetch(buildUrl('/api/cost-codes/hierarchy-worksheet'));return handleJson(res);}
+export async function previewCostCodeHierarchyWorksheet(rows,sourceFilename){const res=await fetch(buildUrl('/api/cost-codes/hierarchy-worksheet/preview'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows,sourceFilename})});return handleJson(res);}
+export async function applyCostCodeHierarchyWorksheet(payload){const res=await fetch(buildUrl('/api/cost-codes/hierarchy-worksheet/apply'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});return handleJson(res);}
+
 export async function applyServerCostCodeImport(payload = {}) {
   const res=await fetch(buildUrl('/api/cost-codes/import/apply'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});return handleJson(res);
 }

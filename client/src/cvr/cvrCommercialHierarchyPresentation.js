@@ -1,4 +1,5 @@
 const EXCEPTION_BUCKETS = Object.freeze({
+  not_applicable: { key: 'resolution:not_applicable', label: 'Not applicable' },
   unallocated: { key: 'resolution:unallocated', label: 'Unallocated' },
   unresolved_legacy: { key: 'resolution:unresolved_legacy', label: 'Legacy hierarchy unresolved' },
   archived_assignment: { key: 'resolution:archived_assignment', label: 'Archived hierarchy assignment' },

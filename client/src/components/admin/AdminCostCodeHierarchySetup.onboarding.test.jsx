@@ -3,12 +3,16 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminCostCodeHierarchySetup from './AdminCostCodeHierarchySetup';
-import { getCostCodeOnboardingSummary } from '../../api/costCodes';
+import { applyCostCodeHierarchyWorksheet, getCostCodeOnboardingSummary, previewCostCodeHierarchyWorksheet } from '../../api/costCodes';
+import { parseHierarchyWorksheet } from '../../admin/costCodeHierarchyWorksheet';
+import { invalidateCostCodes, refreshCostCodes } from '../../admin/costCodeServerCache';
 
 const HEAD_ID = '11111111-1111-4111-8111-111111111110';
 const GROUP_ID = '11111111-1111-4111-8111-111111111120';
 
-vi.mock('../../api/costCodes', () => ({ getCostCodeOnboardingSummary: vi.fn() }));
+vi.mock('../../api/costCodes', () => ({ getCostCodeOnboardingSummary: vi.fn(), getCostCodeHierarchyWorksheet: vi.fn(), previewCostCodeHierarchyWorksheet: vi.fn(), applyCostCodeHierarchyWorksheet: vi.fn() }));
+vi.mock('../../admin/costCodeHierarchyWorksheet', () => ({ downloadHierarchyWorksheet: vi.fn(), parseHierarchyWorksheet: vi.fn() }));
+vi.mock('../../admin/costCodeServerCache', () => ({ invalidateCostCodes: vi.fn(), refreshCostCodes: vi.fn() }));
 vi.mock('../../admin/costCodeServerMutations', () => ({ bulkUpdateCostCodeHierarchyOnServer: vi.fn() }));
 vi.mock('../../admin/commercialStructureService', async () => {
   const actual = await vi.importActual('../../admin/commercialStructureService');
@@ -37,6 +41,7 @@ const settle = () => act(async () => { await Promise.resolve(); await Promise.re
 describe('Cost Code onboarding state convergence', () => {
   beforeEach(() => {
     getCostCodeOnboardingSummary.mockResolvedValue({ total: 3, allocated: 1, notReviewed: 1, notApplicable: 0, needsAttention: 1 });
+    refreshCostCodes.mockResolvedValue([]);
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -68,5 +73,24 @@ describe('Cost Code onboarding state convergence', () => {
     expect(container.textContent).toContain('1120');
     expect(container.textContent).not.toContain('1110');
     expect(container.textContent).not.toContain('UATC02');
+  });
+
+  it('previews before applying and refreshes authoritative caches only after success', async () => {
+    const worksheetRows = [{ id: 'review', code: '1110', description: 'Legal Fees', version: 1, commercialHead: 'Professional Fees', reportingGroup: 'Legal Fees' }];
+    parseHierarchyWorksheet.mockResolvedValue(worksheetRows);
+    previewCostCodeHierarchyWorksheet.mockResolvedValue({ preview: { catalogueRevision: 'revision', reviewToken: 'token', proposals: [], rows: [{ ...worksheetRows[0], action: 'allocate', before: { state: 'not_reviewed', labels: {} }, after: { labels: { commercialHead: 'Professional Fees', commercialFamily: '', reportingGroup: 'Legal Fees' } } }], summary: { rowsReviewed: 1, allocations: 1, notApplicable: 0, unchanged: 0, blockers: 0, existingPathsMatched: 0, newHeads: 1, newFamilies: 0, newReportingGroups: 1 } } });
+    applyCostCodeHierarchyWorksheet.mockResolvedValue({ summary: { updated: 1 } });
+    await act(async () => root.render(<AdminCostCodeHierarchySetup records={records} />)); await settle();
+    const input = container.querySelector('[aria-label="Completed hierarchy mapping worksheet"]');
+    const file = new File(['workbook'], 'mapping.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    Object.defineProperty(input, 'files', { value: [file] });
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true }))); await settle();
+    expect(container.textContent).toContain('Review mapping worksheet');
+    expect(applyCostCodeHierarchyWorksheet).not.toHaveBeenCalled();
+    const apply = [...container.querySelectorAll('button')].find((node) => node.textContent.includes('Apply reviewed mapping'));
+    await act(async () => apply.click()); await settle();
+    expect(applyCostCodeHierarchyWorksheet).toHaveBeenCalledWith({ rows: worksheetRows, sourceFilename: 'mapping.xlsx', catalogueRevision: 'revision', reviewToken: 'token' });
+    expect(invalidateCostCodes).toHaveBeenCalledOnce(); expect(refreshCostCodes).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain('Mapping applied.');
   });
 });

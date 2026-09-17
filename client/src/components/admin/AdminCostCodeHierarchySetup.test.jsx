@@ -4,7 +4,7 @@ import AdminCostCodeHierarchySetup from './AdminCostCodeHierarchySetup';import {
 const H='11111111-1111-4111-8111-111111111110',G='11111111-1111-4111-8111-111111111120',C='11111111-1111-4111-8111-111111111111';
 const catalogue={heads:[{id:H,name:'Land',active:true,version:1,displayOrder:0},{id:'custom',name:'Tenant Custom',active:true,version:1,displayOrder:1}],families:[],reportingGroups:[{id:G,headId:H,familyId:null,name:'Land Cost',active:true,version:1,displayOrder:0}],adoptionIssues:[]};
 vi.mock('../../admin/costCodeServerMutations',()=>({bulkUpdateCostCodeHierarchyOnServer:vi.fn()}));
-vi.mock('../../api/costCodes',()=>({getCostCodeOnboardingSummary:vi.fn()}));
+vi.mock('../../api/costCodes',()=>({getCostCodeOnboardingSummary:vi.fn(),getCostCodeHierarchyWorksheet:vi.fn(),previewCostCodeHierarchyWorksheet:vi.fn(),applyCostCodeHierarchyWorksheet:vi.fn()}));
 vi.mock('../../admin/commercialStructureService',async()=>{const actual=await vi.importActual('../../admin/commercialStructureService');return {...actual,loadCommercialStructure:vi.fn(async()=>catalogue)};});
 const records=[{id:C,version:2,code:'1100',description:'Land Cost',commercialHeadId:null,commercialFamilyId:null,reportingGroupId:null,hierarchyReviewState:'not_reviewed',legacy:{subHeading:'Land',trade:'Land',element:'Land purchase'}},{id:'22222222-2222-4222-8222-222222222222',version:4,code:'4120',description:'Brickwork',hierarchyReviewState:'not_reviewed',legacy:{subHeading:'Super-Structure',trade:'Sub-Con',element:'Brickwork'}}];
 let container,root;const click=n=>act(()=>n.click());const button=t=>[...container.querySelectorAll('button')].find(n=>n.textContent.includes(t));const settle=()=>act(async()=>{await Promise.resolve();await Promise.resolve();});

@@ -351,9 +351,10 @@ describe('buildCommercialCostSummary', () => {
       status: 'submitted', commercialHierarchy: { state: 'submitted', captured: true, document: { costCodes: [
         { costCodeKey: 'A', resolutionState: 'unallocated' },
         { costCodeKey: 'B', resolutionState: 'unresolved_legacy' },
+        { costCodeKey: 'C', resolutionState: 'not_applicable' },
       ] } },
     }, { currentBudget: 175, finalForecast: 170, variance: 5 });
-    expect(summary.items.map((item) => item.head)).toEqual(['Unallocated', 'Legacy hierarchy unresolved', 'Hierarchy needs review']);
+    expect(summary.items.map((item) => item.head)).toEqual(['Unallocated', 'Legacy hierarchy unresolved', 'Not applicable']);
     expect(summary.assignedRowCount).toBe(3);
     expect(summary.totals).toMatchObject({ aggregatedBudget: 175, aggregatedForecast: 170, aggregatedVariance: 5, reconciles: true });
   });
