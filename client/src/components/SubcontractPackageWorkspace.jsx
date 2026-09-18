@@ -30,6 +30,7 @@ export default function SubcontractPackageWorkspace({
   navigationContext = null,
   commercialEventTarget = null,
   certificateTarget = null,
+  variationAccountTarget = null,
   developmentName = null,
   onBackToDevelopmentList = null,
   onNavigateToLinkedCommercialEvent = null,
@@ -235,7 +236,10 @@ export default function SubcontractPackageWorkspace({
         ) : null}
 
         {activeTab === 'variation-account' ? (
-          <PackageVariationAccount packageId={pkg.packageUuid || pkg.id} />
+          <PackageVariationAccount
+            packageId={pkg.packageUuid || pkg.id}
+            focusItemId={variationAccountTarget?.itemId || navigationContext?.variationAccountTarget?.itemId || null}
+          />
         ) : null}
 
         {activeTab === 'history' ? (

@@ -29,6 +29,8 @@ describe('PackageVariationAccount', () => {
     mocks.permissions.add('variation_account.authority_allocate');
     const { host, root } = await render([{ id: 'va1', reference: 'VA-0001', description: 'Drainage changes', qsForecast: 17000, authority: { allocatedCeAuthority: 8000, allocatedVoAuthority: 12000, effectiveRecognisedAuthority: 12000, remainingForecastExposure: 5000, allocations: [{ id: 'a1', sourceType: 'commercial_event', sourceReference: 'CE-1', allocatedAmount: 8000, effectiveAmount: 0, allocationKind: 'authority' }] } }], [{ sourceType: 'variation_order_line', sourceId: 'line1', reference: 'PO/VO-1', availableAmount: 12000 }]);
     expect(host.textContent).toContain('VA-0001'); expect(host.textContent).toContain('£17,000.00'); expect(host.textContent).toContain('£12,000.00'); expect(host.textContent).toContain('£5,000.00'); expect(host.textContent).toContain('Additional authority'); expect(host.textContent).toContain('Replaces existing authority');
+    expect(host.textContent).toContain('reconciled explicitly to prevent double counting');
+    expect(host.textContent).not.toContain('never infers overlap');
     await act(async () => root.unmount());
   });
   it('seeds an exact predecessor amount and prevents wheel increments on money inputs', async () => {

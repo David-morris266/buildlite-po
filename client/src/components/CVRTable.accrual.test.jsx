@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CVRTable from './CVRTable';
 
-describe('CVRTable current cost and accrual visibility', () => {
+describe('CVRTable Storyboard selection contract', () => {
   let container;
   let root;
 
@@ -23,7 +23,8 @@ describe('CVRTable current cost and accrual visibility', () => {
     container.remove();
   });
 
-  it('keeps accrual and current cost available in supporting detail', () => {
+  it('keeps the matrix concise and delegates detail through the canonical Cost Code action', () => {
+    const onRowSelect = vi.fn();
     act(() => {
       root.render(
         <CVRTable
@@ -61,25 +62,26 @@ describe('CVRTable current cost and accrual visibility', () => {
             costToComplete: 2365273,
             varianceLabel: '—',
           }}
-          onRowSelect={vi.fn()}
+          onRowSelect={onRowSelect}
         />
       );
     });
 
     const text = container.textContent;
-    expect(text).toMatch(/Accrual/);
-    expect(text).toMatch(/Current Cost/);
-    expect(text).toMatch(/£100\.00/);
+    expect(text).not.toMatch(/Accrual/);
+    expect(text).not.toMatch(/Current Cost/);
+    expect(text).not.toContain('View detail');
     const headers = Array.from(container.querySelectorAll('thead th')).map(
       (header) => header.textContent.trim()
     );
     expect(headers).toEqual([
       'Cost Code', 'Description', 'Current Budget', 'Previous CVR', 'Current CVR',
-      'Movement', 'Variance to Budget', 'Supporting detail',
+      'Movement', 'Variance to Budget',
     ]);
-    const detailLabels = [...container.querySelectorAll('.dev-cvr__supporting-detail dt')].map((node) => node.textContent);
-    expect(detailLabels.indexOf('Actual')).toBeLessThan(detailLabels.indexOf('Manual Accrual'));
-    expect(detailLabels.indexOf('Manual Accrual')).toBeLessThan(detailLabels.indexOf('Current Cost'));
-    expect(detailLabels.indexOf('Current Cost')).toBeLessThan(detailLabels.indexOf('System Forecast'));
+    const action = container.querySelector('.dev-cvr__row-link');
+    act(() => action.click());
+    expect(onRowSelect).toHaveBeenCalledOnce();
+    expect(onRowSelect.mock.calls[0][0].costCodeKey).toBe('5231');
+    expect(onRowSelect.mock.calls[0][1]).toBe(action);
   });
 });

@@ -82,6 +82,13 @@ describe('Commercial Cost Summary authority presentation', () => {
     expect([...container.querySelectorAll('thead th')].map((node) => node.textContent)).toEqual([
       'Commercial Head', 'Current Budget', 'Previous CVR', 'Current CVR', 'Movement', 'Variance to Budget',
     ]);
+    expect(container.querySelectorAll('thead th.cvr-summary__numeric')).toHaveLength(5);
+    expect(container.querySelectorAll('tbody td.cvr-summary__numeric')).toHaveLength(5);
+    expect(container.querySelectorAll('tfoot td.cvr-summary__numeric')).toHaveLength(5);
+    expect(container.querySelectorAll('col.cvr-summary__cost-head-column')).toHaveLength(1);
+    expect(container.querySelectorAll('col.cvr-summary__cost-value-column')).toHaveLength(3);
+    expect(container.querySelectorAll('col.cvr-summary__cost-movement-column')).toHaveLength(1);
+    expect(container.querySelectorAll('col.cvr-summary__cost-variance-column')).toHaveLength(1);
     expect(container.textContent).toContain('Select a Commercial Head or hierarchy status');
     act(() => container.querySelector('button').click());
     expect(onOpen).toHaveBeenCalledWith(filter);
@@ -97,7 +104,7 @@ describe('CVR Movement Report presentation', () => {
       movement: 25, currentBudgetLabel: '£120.00', varianceLabel: '−£5.00', unexplained: false,
       explainedLabel: '+£25.00', residualLabel: '£0.00', adjustmentReason: 'Revised brick allowance',
       hierarchyChanged: true, previousHierarchy: { label: 'Build → Masonry' }, currentHierarchy: { label: 'House Build → Brickwork' },
-      components: [{ key: 'systemForecast', label: 'System Forecast', movementLabel: '+£25.00' }, { key: 'expectedLiability', label: 'Expected Liability', movementLabel: '£0.00' }, { key: 'vaExposureUplift', label: 'VA Exposure', movementLabel: '£0.00' }, { key: 'commercialAdjustment', label: 'Commercial Adjustment', movementLabel: '£0.00' }],
+      components: [{ key: 'systemForecast', label: 'System Forecast', movementLabel: '+£25.00' }, { key: 'expectedLiability', label: 'Expected Liability', movementLabel: '£0.00' }, { key: 'vaExposureUplift', label: 'Variation Account exposure', movementLabel: '£0.00' }, { key: 'commercialAdjustment', label: 'Commercial Adjustment', movementLabel: '£0.00' }],
     };
     const report = {
       available: true,
@@ -121,7 +128,7 @@ describe('CVR Movement Report presentation', () => {
     expect(container.textContent).not.toContain('Explanation');
     expect(container.querySelector('.cvr-movement__executive')).toBeNull();
     act(() => container.querySelector('.dev-cvr__row-link').click());
-    expect(onOpen).toHaveBeenCalledWith(movement);
+    expect(onOpen).toHaveBeenCalledWith(movement, expect.any(HTMLButtonElement));
   });
 
   it('keeps a non-zero component residual visibly unreconciled', () => {
@@ -145,11 +152,26 @@ describe('CVR Movement Report presentation', () => {
     expect(container.textContent).not.toContain('No Final Forecast movement this period.');
   });
 
+  it('offers stable Variation Account drill-through only when attribution carries that identity', () => {
+    const open = vi.fn();
+    const movement = { id: '4180', costCodeLabel: '4180', description: 'Roofing', previousForecastLabel: '£118.00', currentForecastLabel: '£119.00', movementLabel: '+£1.00', movement: 1, currentBudgetLabel: '£100.00', varianceLabel: '−£19.00', unexplained: false, explainedLabel: '+£1.00', residualLabel: '£0.00', components: [{ key: 'vaExposureUplift', label: 'Variation Account exposure', movementLabel: '+£1.00', attributions: [{ sourceType: 'variation_account', sourceId: 'va-1', reference: 'VA-0001', description: 'Valley detail', amount: 1, drillThrough: { type: 'variation_account', id: 'va-1' } }, { sourceType: 'supporting', sourceId: 'none', reference: 'Note', description: 'No identity', amount: 0 }] }] };
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    act(() => root.render(<CvrMovementReport report={{ available: true, totalMovement: 1, automaticallyAttributed: 1, qsExplained: 0, awaitingExplanation: 0, sections: { adverse: [movement], favourable: [], other: [], unexplained: [] } }} onOpenVariationAccount={open} />));
+    const links = [...container.querySelectorAll('button')].filter(button => button.textContent === 'Open Variation Account item');
+    expect(links).toHaveLength(1);
+    act(() => links[0].click());
+    expect(open).toHaveBeenCalledWith({ id: 'va-1', reference: 'VA-0001' });
+  });
+
   it('renders Revenue, profit and margin comparison compactly and preserves unavailable evidence', () => {
     const executive = { labels: { previousForecastRevenue: '—', forecastRevenue: '£500.00', revenueMovement: '—', previousGrossProfit: '—', grossProfit: '£375.00', profitMovement: '—', previousGrossMargin: '—', grossMargin: '75.0%', marginMovement: '—' } };
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
     act(() => root.render(<RevenueMovementTable executive={executive} />));
     expect([...container.querySelectorAll('thead th')].map((node) => node.textContent)).toEqual(['Metric', 'Previous CVR', 'Current', 'Movement']);
+    expect(container.querySelectorAll('thead th.cvr-summary__numeric')).toHaveLength(3);
+    expect(container.querySelectorAll('tbody td.cvr-summary__numeric')).toHaveLength(9);
+    expect(container.querySelectorAll('col.cvr-summary__revenue-metric-column')).toHaveLength(1);
+    expect(container.querySelectorAll('col.cvr-summary__revenue-value-column')).toHaveLength(3);
     expect(container.textContent).toContain('Forecast Revenue');
     expect(container.querySelectorAll('tbody tr')).toHaveLength(3);
     expect(container.textContent).not.toContain('£0.00');

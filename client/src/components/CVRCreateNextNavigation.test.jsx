@@ -224,7 +224,7 @@ describe('Create Next Period navigation (BL-031F)', () => {
     });
     await flush();
     await flush();
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Variation exposure changed after this CVR was submitted');
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Variation Account exposure changed after this CVR was submitted');
     const labels = Array.from(container.querySelectorAll('button')).map(button => button.textContent.trim());
     expect(labels).not.toContain('Approve & Lock');
     expect(labels).toContain('Reject');

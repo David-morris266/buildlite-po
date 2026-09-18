@@ -4,6 +4,7 @@ export const PACKAGE_OPENED_FROM = {
   DevelopmentPackages: 'DevelopmentPackages',
   PaymentCertificates: 'PaymentCertificates',
   CommercialEventLink: 'CommercialEventLink',
+  DevelopmentVariationAccount: 'DevelopmentVariationAccount',
 };
 
 /**
@@ -17,6 +18,7 @@ export function buildPackageWorkspaceLaunchContext({
   developmentId = null,
   commercialEventTarget = null,
   certificateTarget = null,
+  variationAccountTarget = null,
 }) {
   const resolvedDevelopmentId =
     developmentId || packageRow?.developmentId || null;
@@ -46,6 +48,7 @@ export function buildPackageWorkspaceLaunchContext({
     initialTab: resolvePackageWorkspaceInitialTab(openedFrom, initialTab),
     commercialEventTarget: commercialEventTarget || null,
     certificateTarget: certificateTarget || null,
+    variationAccountTarget: variationAccountTarget || null,
     identityError,
   };
 }

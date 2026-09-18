@@ -58,14 +58,83 @@ describe('CostCentreDrawer accrual and forecast UX', () => {
         <CostCentreDrawer
           open
           row={props.row || baseRow}
+          movement={props.movement}
           onClose={vi.fn()}
           onSaveNotes={onSaveNotes}
           onSaveCommercialAdjustment={onSaveCommercialAdjustment}
+          onOpenVariationAccount={props.onOpenVariationAccount}
+          storyboard
+          sideBySide={props.sideBySide ?? true}
         />
       );
     });
     return { onSaveNotes, onSaveCommercialAdjustment };
   }
+
+  it('uses a non-modal labelled Storyboard region in side-by-side mode', () => {
+    renderDrawer({ sideBySide: true });
+    expect(container.querySelector('.dev-cvr-storyboard--side')).not.toBeNull();
+    expect(container.querySelector('[role="region"]')).not.toBeNull();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.textContent).toContain('Close');
+  });
+
+  it('portals the constrained Storyboard as a focused sheet', () => {
+    document.documentElement.style.overflow = 'auto';
+    document.body.style.overflow = 'scroll';
+    renderDrawer({ sideBySide: false });
+    expect(container.querySelector('.dev-cvr-storyboard')).toBeNull();
+    const sheet = document.body.querySelector('.dev-cvr-storyboard--sheet');
+    expect(sheet).not.toBeNull();
+    expect(sheet.getAttribute('role')).toBe('dialog');
+    expect(sheet.getAttribute('aria-modal')).toBe('true');
+    expect(document.body.querySelector('.dev-cvr-storyboard__backdrop')).not.toBeNull();
+    expect(sheet.textContent).toContain('Back to Worksheet');
+    expect(document.documentElement.style.overflow).toBe('hidden');
+    expect(document.body.style.overflow).toBe('hidden');
+    act(() => [...sheet.querySelectorAll('button')].find((button) => button.textContent === 'Back to Worksheet').click());
+    act(() => root.render(<CostCentreDrawer open={false} row={baseRow} onClose={vi.fn()} />));
+    expect(document.documentElement.style.overflow).toBe('auto');
+    expect(document.body.style.overflow).toBe('scroll');
+    document.documentElement.style.overflow = '';
+    document.body.style.overflow = '';
+  });
+
+  it('restores document scroll when a sheet transitions to side-by-side mode', () => {
+    renderDrawer({ sideBySide: false });
+    expect(document.body.style.overflow).toBe('hidden');
+    renderDrawer({ sideBySide: true });
+    expect(document.body.style.overflow).toBe('');
+    expect(container.querySelectorAll('.dev-cvr-storyboard__body')).toHaveLength(1);
+    expect(container.querySelector('.dev-cvr-storyboard--side')).not.toBeNull();
+  });
+
+  it('offers Variation Account drill-through only with stable item and package identity', () => {
+    const onOpenVariationAccount = vi.fn();
+    renderDrawer({ row: { ...baseRow, variationExposureItems: [{ variationAccountItemId: 'va-1', packageId: 'pkg-1', reference: 'VA-0001', vaExposureUplift: 1000, authorityComposition: {} }, { variationAccountItemId: 'va-2', reference: 'VA-0002', vaExposureUplift: 500, authorityComposition: {} }] }, onOpenVariationAccount });
+    const links = [...container.querySelectorAll('button')].filter(button => button.textContent === 'Open Variation Account item');
+    expect(links).toHaveLength(1);
+    act(() => links[0].click());
+    expect(onOpenVariationAccount).toHaveBeenCalledWith({ id: 'va-1', packageId: 'pkg-1', reference: 'VA-0001' });
+    expect(container.textContent).toContain('Commercial Event authority');
+    expect(container.textContent).toContain('Issued Variation Order authority');
+    expect(container.textContent).not.toContain('Effective VA Exposure');
+  });
+
+  it('preserves Current Cost and hierarchy-change evidence in the Storyboard', () => {
+    renderDrawer({
+      row: { ...baseRow, actualCost: 48200, currentCost: 48200 },
+      movement: {
+        hierarchyChanged: true,
+        previousHierarchy: { label: 'External Works / Landscaping' },
+        currentHierarchy: { label: 'Plot Works / Landscaping' },
+      },
+    });
+    expect(container.textContent).toContain('Current Cost');
+    expect(container.textContent).toMatch(/Current Cost[^0-9]*48,200\.00/);
+    const supporting = [...container.querySelectorAll('details')].find((node) => node.querySelector('summary')?.textContent === 'Supporting evidence');
+    expect(supporting.textContent).toContain('Hierarchy changed: External Works / Landscaping → Plot Works / Landscaping');
+  });
 
   function accrualInput() {
     return container.querySelector('input[aria-describedby="manual-accrual-help"]');

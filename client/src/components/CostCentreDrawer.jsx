@@ -1,53 +1,89 @@
-import { useEffect, useMemo, useState } from 'react';
-import PODrawerShell from './PODrawerShell';
-import ApplicationDrawerHeader from './layout/ApplicationDrawerHeader';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { formatCvrMoney } from '../cvr/cvrHelpers';
 import { formatPoDate } from './poDrawerHelpers';
 import { getAdjustmentState, enrichCvrForecastRow } from '../cvr/cvrForecastEngine';
 import { CVR_HISTORIC_DRAWER_NOTE } from '../cvr/cvrHistoricConstants';
 
-function DrawerSection({ title, children, className = '' }) {
-  return (
-    <section className={`po-drawer-section dev-cvr-drawer__section${className ? ` ${className}` : ''}`}>
-      <h3 className="po-drawer-section__title">{title}</h3>
+function parseMoney(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return 0;
+  const number = Number(text.replace(/,/g, ''));
+  return Number.isFinite(number) ? number : null;
+}
+
+function moneyChanged(left, right) {
+  const a = parseMoney(left);
+  const b = parseMoney(right);
+  return a == null || b == null ? a !== b : Math.abs(a - b) > 0.005;
+}
+
+function StoryboardShell({ open, sideBySide, title, onClose, children }) {
+  const panelRef = useRef(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    panelRef.current?.focus();
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousBodyOverflow = document.body.style.overflow;
+    if (!sideBySide) {
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.overflow = 'hidden';
+    }
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') closeRef.current?.();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      if (!sideBySide) {
+        document.documentElement.style.overflow = previousHtmlOverflow;
+        document.body.style.overflow = previousBodyOverflow;
+      }
+    };
+  }, [open, sideBySide]);
+
+  if (!open) return null;
+  const panel = (
+    <aside
+      ref={panelRef}
+      className={`dev-cvr-storyboard${sideBySide ? ' dev-cvr-storyboard--side' : ' dev-cvr-storyboard--sheet'}`}
+      role={sideBySide ? 'region' : 'dialog'}
+      aria-modal={sideBySide ? undefined : 'true'}
+      aria-label={`Cost Code Storyboard for ${title}`}
+      tabIndex={-1}
+    >
       {children}
-    </section>
+    </aside>
   );
+  if (sideBySide) return panel;
+  return createPortal(<><div className="po-drawer-backdrop dev-cvr-storyboard__backdrop" aria-hidden="true" onClick={onClose} />{panel}</>, document.body);
 }
 
-function parseAdjustmentInput(value) {
-  const trimmed = String(value ?? '').trim();
-  if (!trimmed) return 0;
-  const parsed = Number(trimmed.replace(/,/g, ''));
-  return Number.isFinite(parsed) ? parsed : null;
+function Section({ title, children, emphasis = false }) {
+  return <section className={`dev-cvr-storyboard__section${emphasis ? ' dev-cvr-storyboard__section--emphasis' : ''}`}><h3>{title}</h3>{children}</section>;
 }
 
-function moneyValuesDiffer(left, right) {
-  const parsedLeft = parseAdjustmentInput(left);
-  const parsedRight = parseAdjustmentInput(right);
-  if (parsedLeft == null && parsedRight == null) return false;
-  if (parsedLeft == null || parsedRight == null) return true;
-  return Math.abs(parsedLeft - parsedRight) > 0.005;
-}
-
-function textValuesDiffer(left, right) {
-  return String(left || '').trim() !== String(right || '').trim();
+function EvidenceTables({ packages, ledgerRows, certificates, ledgerReady, ledgerError, movement }) {
+  const packageTotal = packages.reduce((sum, item) => sum + (Number(item.committedValue) || 0), 0);
+  const ledgerTotal = ledgerRows.reduce((sum, item) => sum + (Number(item.netAmount) || 0), 0);
+  return <details className="dev-cvr-storyboard__disclosure"><summary>Supporting evidence</summary><div className="dev-cvr-storyboard__disclosure-body">
+    {movement?.hierarchyChanged ? <p><strong>Hierarchy changed:</strong> {movement.previousHierarchy?.label || '—'} → {movement.currentHierarchy?.label || '—'}</p> : null}
+    <h4>Packages / commitments</h4>
+    {packages.length ? <div className="po-table-wrap"><table className="po-data-table dev-cvr-drawer__table"><thead><tr><th>Supplier</th><th>POs</th><th className="dev-cvr__money-col">Committed</th><th className="dev-cvr__money-col">Certified</th></tr></thead><tbody>{packages.map((item) => <tr key={item.id}><td>{item.label}</td><td>{item.poNumbers?.join(', ') || '—'}</td><td className="dev-cvr__money-col">{formatCvrMoney(item.committedValue)}</td><td className="dev-cvr__money-col">{formatCvrMoney(item.certifiedValue)}</td></tr>)}</tbody><tfoot><tr><td colSpan={2}><strong>Total</strong></td><td className="dev-cvr__money-col"><strong>{formatCvrMoney(packageTotal)}</strong></td><td /></tr></tfoot></table></div> : <p>No packages for this Cost Code.</p>}
+    <h4>Approved Certificates</h4>
+    {certificates.length ? <div className="po-table-wrap"><table className="po-data-table dev-cvr-drawer__table"><thead><tr><th>Package</th><th>Certificate</th><th>Date</th><th className="dev-cvr__money-col">Value</th></tr></thead><tbody>{certificates.map((item) => <tr key={item.id}><td>{item.packageLabel}</td><td>{item.certificateNumber}</td><td>{formatPoDate(item.certificateDate)}</td><td className="dev-cvr__money-col">{formatCvrMoney(item.certifiedValue)}</td></tr>)}</tbody></table></div> : <p>No approved certificates for this Cost Code.</p>}
+    <h4>Ledger Transactions</h4>
+    {!ledgerReady ? <p role="status">{ledgerError ? 'Unable to load ledger data' : 'Loading ledger data…'}</p> : ledgerRows.length ? <div className="po-table-wrap"><table className="po-data-table dev-cvr-drawer__table"><thead><tr><th>Date</th><th>Supplier</th><th>Invoice</th><th className="dev-cvr__money-col">Amount</th></tr></thead><tbody>{ledgerRows.map((item) => <tr key={item.id}><td>{formatPoDate(item.date)}</td><td>{item.supplier || '—'}</td><td>{item.invoiceNumber || '—'}</td><td className="dev-cvr__money-col">{formatCvrMoney(item.netAmount)}</td></tr>)}</tbody><tfoot><tr><td colSpan={3}><strong>Total</strong></td><td className="dev-cvr__money-col"><strong>{formatCvrMoney(ledgerTotal)}</strong></td></tr></tfoot></table></div> : <p>No ledger transactions for this Cost Code.</p>}
+  </div></details>;
 }
 
 export default function CostCentreDrawer({
-  open,
-  row,
-  drawerBreadcrumbs = [],
-  packages = [],
-  ledgerRows = [],
-  certificates = [],
-  ledgerReady = true,
-  ledgerError = false,
-  readOnly = false,
-  historic = false,
-  onClose,
-  onSaveNotes,
-  onSaveCommercialAdjustment,
+  open, row, movement, packages = [], ledgerRows = [], certificates = [], ledgerReady = true,
+  ledgerError = false, readOnly = false, historic = false, onClose, onSaveNotes,
+  onSaveCommercialAdjustment, onOpenVariationAccount, storyboard = false, sideBySide = false,
 }) {
   const title = row?.costCodeLabel || 'Cost Code';
   const [adjustment, setAdjustment] = useState('');
@@ -57,566 +93,85 @@ export default function CostCentreDrawer({
   const [saveError, setSaveError] = useState('');
   const [saveErrorScope, setSaveErrorScope] = useState('');
   const [saveSuccess, setSaveSuccess] = useState('');
-
   const isHistoric = Boolean(historic || row?.historic);
-  const displayRow = useMemo(() => {
-    if (!row) return null;
-    if (historic || row.historic) return row;
-    return enrichCvrForecastRow(row);
-  }, [row, historic]);
-  const packageTotal = useMemo(
-    () =>
-      packages.reduce((sum, item) => sum + (Number(item.committedValue) || 0), 0),
-    [packages]
-  );
-
-  const actualTotal = useMemo(
-    () =>
-      ledgerRows.reduce((sum, item) => sum + (Number(item.netAmount) || 0), 0),
-    [ledgerRows]
-  );
+  const displayRow = useMemo(() => row ? (isHistoric ? row : enrichCvrForecastRow(row)) : null, [row, isHistoric]);
+  const rowId = row?.id;
+  const rowAdjustment = row?.commercialAdjustment;
+  const rowReason = row?.commercialReason;
+  const rowAccrual = row?.manualAccrual;
+  const rowNotes = row?.commercialNotes;
 
   useEffect(() => {
-    if (!row) return;
-    setAdjustment(
-      row.commercialAdjustment == null ? '' : String(row.commercialAdjustment)
-    );
-    setReason(row.commercialReason || '');
-    setAccrual(row.manualAccrual == null ? '' : String(row.manualAccrual));
-    setNotes(row.commercialNotes || '');
-    setSaveError('');
-    setSaveErrorScope('');
-  }, [row?.id, row?.commercialAdjustment, row?.commercialReason, row?.manualAccrual, row?.commercialNotes]);
+    if (!rowId) return;
+    setAdjustment(rowAdjustment == null ? '' : String(rowAdjustment));
+    setReason(rowReason || '');
+    setAccrual(rowAccrual == null ? '' : String(rowAccrual));
+    setNotes(rowNotes || '');
+    setSaveError(''); setSaveErrorScope('');
+  }, [rowId, rowAdjustment, rowReason, rowAccrual, rowNotes]);
 
   useEffect(() => {
     setSaveSuccess('');
-  }, [row?.id]);
-
-  const adjustmentValue = useMemo(() => parseAdjustmentInput(adjustment), [adjustment]);
-  const reasonRequired = useMemo(() => {
-    if (adjustmentValue == null) return false;
-    return Math.abs(adjustmentValue) > 0.005;
-  }, [adjustmentValue]);
-  const adjustmentState = useMemo(
-    () => getAdjustmentState(adjustmentValue ?? 0),
-    [adjustmentValue]
-  );
-  const reasonMissing = reasonRequired && !String(reason || '').trim();
-  const accrualDirty = moneyValuesDiffer(accrual, displayRow?.manualAccrual ?? 0);
-  const adjustmentDirty =
-    moneyValuesDiffer(adjustment, displayRow?.commercialAdjustment ?? 0) ||
-    textValuesDiffer(reason, displayRow?.commercialReason);
+  }, [rowId]);
 
   if (!row || !displayRow) return null;
+  const adjustmentValue = parseMoney(adjustment);
+  const reasonRequired = adjustmentValue != null && Math.abs(adjustmentValue) > 0.005;
+  const reasonMissing = reasonRequired && !reason.trim();
+  const adjustmentDirty = moneyChanged(adjustment, displayRow.commercialAdjustment) || reason.trim() !== String(displayRow.commercialReason || '').trim();
+  const accrualDirty = moneyChanged(accrual, displayRow.manualAccrual);
 
-  async function handleSaveCommercial() {
+  async function saveAdjustment() {
     if (readOnly || !adjustmentDirty || reasonMissing || adjustmentValue == null) return;
-    const result = await Promise.resolve(
-      onSaveCommercialAdjustment?.({
-        commercialAdjustment: adjustment,
-        commercialReason: reason,
-      })
-    );
-    if (result?.ok === false) {
-      setSaveError(result.errors?.[0] || 'Could not save commercial adjustment.');
-      setSaveErrorScope('adjustment');
-      setSaveSuccess('');
-      return;
-    }
-    setSaveError('');
-    setSaveErrorScope('');
-    setSaveSuccess('Commercial adjustment saved.');
+    const result = await Promise.resolve(onSaveCommercialAdjustment?.({ commercialAdjustment: adjustment, commercialReason: reason }));
+    if (result?.ok === false) { setSaveError(result.errors?.[0] || 'Could not save commercial adjustment.'); setSaveErrorScope('adjustment'); setSaveSuccess(''); return; }
+    setSaveError(''); setSaveErrorScope(''); setSaveSuccess('Commercial adjustment saved.');
   }
-
-  async function handleSaveAccrual() {
+  async function saveAccrual() {
+    const value = parseMoney(accrual);
     if (readOnly || !accrualDirty) return;
-    const parsed = parseAdjustmentInput(accrual);
-    if (parsed == null) {
-      setSaveError('Manual accrual must be a number.');
-      setSaveErrorScope('accrual');
-      return;
-    }
-    const result = await Promise.resolve(onSaveNotes?.({ manualAccrual: parsed }));
-    if (result?.ok === false) {
-      setSaveError(result.errors?.[0] || 'Could not save manual accrual.');
-      setSaveErrorScope('accrual');
-      return;
-    }
-    setSaveError('');
-    setSaveErrorScope('');
+    if (value == null) { setSaveError('Manual accrual must be a number.'); setSaveErrorScope('accrual'); return; }
+    const result = await Promise.resolve(onSaveNotes?.({ manualAccrual: value }));
+    if (result?.ok === false) { setSaveError(result.errors?.[0] || 'Could not save manual accrual.'); setSaveErrorScope('accrual'); return; }
+    setSaveError(''); setSaveErrorScope(''); setSaveSuccess('Manual accrual saved.');
   }
-
-  async function handleNotesBlur() {
+  async function saveNotes() {
     if (readOnly) return;
     const result = await Promise.resolve(onSaveNotes?.({ commercialNotes: notes }));
-    if (result?.ok === false) {
-      setSaveError(result.errors?.[0] || 'Could not save notes.');
-      setSaveErrorScope('notes');
-      setNotes(row.commercialNotes || '');
-      return;
-    }
-    setSaveError('');
-    setSaveErrorScope('');
+    if (result?.ok === false) { setSaveError(result.errors?.[0] || 'Could not save notes.'); setSaveErrorScope('notes'); setNotes(row.commercialNotes || ''); }
   }
 
-  return (
-    <PODrawerShell
-      open={open}
-      onClose={onClose}
-      wide
-      ariaLabel={`Cost code details for ${title}`}
-    >
-      <ApplicationDrawerHeader
-        eyebrow="Cost Code"
-        breadcrumbs={drawerBreadcrumbs}
-        title={title}
-        onBack={onClose}
-      />
+  const Shell = StoryboardShell;
+  return <Shell open={open} sideBySide={storyboard ? sideBySide : true} title={title} onClose={onClose}>
+    <header className="dev-cvr-storyboard__header"><div><span>Cost Code Storyboard</span><h2>{title}</h2></div><button type="button" className="po-list-btn-secondary" onClick={onClose}>{sideBySide ? 'Close' : 'Back to Worksheet'}</button></header>
+    <div className="dev-cvr-storyboard__body">
+      <dl className="dev-cvr-storyboard__movement" aria-label="Cost Code period movement">
+        <div><dt>Previous CVR</dt><dd>{movement?.previousForecastLabel || 'Unavailable'}</dd></div>
+        <div><dt>Current CVR</dt><dd>{movement?.currentForecastLabel || formatCvrMoney(displayRow.finalForecast)}</dd></div>
+        <div className="dev-cvr-storyboard__movement-primary"><dt>Movement</dt><dd className={Number(movement?.movement) > 0 ? 'cvr-movement--adverse' : Number(movement?.movement) < 0 ? 'cvr-movement--favourable' : ''}>{movement?.movementLabel || 'Unavailable'}</dd></div>
+        <div><dt>Current Budget</dt><dd>{formatCvrMoney(displayRow.currentBudget)}</dd></div>
+        <div><dt>Variance to Budget</dt><dd className={`dev-cvr__variance dev-cvr__variance--${displayRow.varianceState || 'neutral'}`}>{formatCvrMoney(displayRow.variance)}</dd></div>
+      </dl>
 
-      <div className="po-drawer-body dev-cvr-drawer dev-cvr-drawer--stacked dev-cvr-drawer--dense">
-        <DrawerSection title="Commercial Facts">
-          {isHistoric ? (
-            <p className="dev-cvr-drawer__empty" role="status">
-              {CVR_HISTORIC_DRAWER_NOTE}
-            </p>
-          ) : null}
-          <dl className="dev-cvr-drawer__group-grid dev-cvr-drawer__facts-compact">
-            <div>
-              <dt>Original Budget</dt>
-              <dd>{formatCvrMoney(displayRow.originalBudget)}</dd>
-            </div>
-            <div>
-              <dt>Current Budget</dt>
-              <dd>{formatCvrMoney(displayRow.currentBudget)}</dd>
-            </div>
-            <div>
-              <dt>Committed</dt>
-              <dd>{formatCvrMoney(displayRow.committed)}</dd>
-            </div>
-            <div>
-              <dt>Certified</dt>
-              <dd>{formatCvrMoney(displayRow.certified)}</dd>
-            </div>
-            <div>
-              <dt>Actual</dt>
-              <dd>{formatCvrMoney(displayRow.actualCost)}</dd>
-            </div>
-            <div>
-              <dt>Manual Accrual</dt>
-              <dd>{formatCvrMoney(displayRow.manualAccrual)}</dd>
-            </div>
-            <div>
-              <dt>Current Cost</dt>
-              <dd>{formatCvrMoney(displayRow.currentCost)}</dd>
-            </div>
-            <div>
-              <dt>Outstanding Certified</dt>
-              <dd
-                className={`dev-cvr__outstanding dev-cvr__outstanding--${displayRow.outstandingCertifiedState || 'neutral'}`}
-              >
-                {formatCvrMoney(displayRow.outstandingCertified)}
-              </dd>
-            </div>
-          </dl>
-        </DrawerSection>
+      <Section title="Forecast position" emphasis>
+        {isHistoric ? <p role="status">{CVR_HISTORIC_DRAWER_NOTE}</p> : null}
+        <dl className="dev-cvr-storyboard__forecast">
+          <div><dt>Committed</dt><dd>{formatCvrMoney(displayRow.committed)}</dd></div><div><dt>Certified</dt><dd>{formatCvrMoney(displayRow.certified)}</dd></div><div><dt>Actual</dt><dd>{formatCvrMoney(displayRow.actualCost)}</dd></div><div><dt>Manual Accrual</dt><dd>{formatCvrMoney(displayRow.manualAccrual)}</dd></div><div><dt>Current Cost</dt><dd>{formatCvrMoney(displayRow.currentCost)}</dd></div><div><dt>System Forecast</dt><dd>{formatCvrMoney(displayRow.systemForecast)}</dd></div><div><dt>Expected Liability</dt><dd>{formatCvrMoney(displayRow.expectedLiability)}</dd></div><div><dt>Variation Account exposure</dt><dd>{formatCvrMoney(displayRow.vaExposureUplift)}</dd></div><div><dt>Commercial Adjustment</dt><dd>{formatCvrMoney(displayRow.commercialAdjustment)}</dd></div><div className="dev-cvr-storyboard__forecast-primary"><dt>Final Forecast</dt><dd>{formatCvrMoney(displayRow.finalForecast)}</dd></div><div><dt>Cost to Complete</dt><dd>{formatCvrMoney(displayRow.costToComplete)}</dd></div>
+        </dl>
+      </Section>
 
-        <DrawerSection title="Cost incurred / accrual">
-          {readOnly || isHistoric ? (
-            <p className="dev-cvr-drawer__empty">
-              {isHistoric
-                ? 'Frozen manual accrual from the approved snapshot. This value cannot be changed.'
-                : 'This period is read-only. Manual accrual cannot be changed.'}
-            </p>
-          ) : (
-            <div className="dev-cvr-drawer__adjustment-panel">
-              {saveError && saveErrorScope === 'accrual' ? (
-                <div className="po-list-feedback po-list-feedback--error" role="alert">
-                  {saveError}
-                </div>
-              ) : null}
-              <label className="dev-form__field dev-cvr-drawer__notes-field">
-                <span className="dev-form__label">Manual Accrual</span>
-                <input
-                  className="input"
-                  type="text"
-                  inputMode="decimal"
-                  value={accrual}
-                  onChange={(event) => {
-                    setAccrual(event.target.value);
-                    setSaveError('');
-                  }}
-                  placeholder="Cost incurred not yet in the ledger"
-                  aria-describedby="manual-accrual-help"
-                />
-                <span id="manual-accrual-help" className="dev-cvr-drawer__field-hint">
-                  Incurred cost not yet in the ledger. Does not change commitment, certified,
-                  or ledger actual. Save accrual to persist.
-                </span>
-              </label>
-              <div className="dev-cvr-drawer__adjustment-actions">
-                <button
-                  type="button"
-                  className="po-btn-primary dev-cvr-drawer__save-accrual"
-                  onClick={() => {
-                    void handleSaveAccrual();
-                  }}
-                  disabled={!accrualDirty}
-                  title={accrualDirty ? 'Save manual accrual' : 'No unsaved accrual changes'}
-                >
-                  Save accrual
-                </button>
-              </div>
-            </div>
-          )}
-        </DrawerSection>
+      <Section title="Commercial Adjustment">
+        {readOnly || isHistoric ? <p>This period is read-only. Commercial Adjustment cannot be changed.{displayRow.commercialReason ? ` Reason: ${displayRow.commercialReason}` : ''}</p> : <><div className="dev-cvr-drawer__adjustment-fields"><label className="dev-form__field"><span className="dev-form__label">Adjustment</span><input className={`input dev-cvr-drawer__adjustment-input dev-cvr__adjustment--${getAdjustmentState(adjustmentValue || 0)}`} value={adjustment} inputMode="decimal" aria-describedby="commercial-adjustment-help" onChange={(event) => { setAdjustment(event.target.value); setSaveError(''); setSaveSuccess(''); }} /><small id="commercial-adjustment-help">Positive or negative. Zero for no adjustment.</small></label><label className="dev-form__field dev-cvr-drawer__reason-field"><span className="dev-form__label">Reason {reasonRequired ? <small>Required</small> : null}</span><input className="input dev-cvr-drawer__reason-input" value={reason} aria-required={reasonRequired} aria-invalid={reasonMissing} onChange={(event) => { setReason(event.target.value); setSaveError(''); setSaveSuccess(''); }} /></label></div>{reasonMissing ? <p className="po-list-feedback po-list-feedback--warning">Commercial Reason is required when the adjustment is not zero.</p> : null}{saveErrorScope === 'adjustment' ? <p className="po-list-feedback po-list-feedback--error" role="alert">{saveError}</p> : null}{saveSuccess === 'Commercial adjustment saved.' ? <p className="po-list-feedback po-list-feedback--success" role="status">{saveSuccess}</p> : null}<div className="dev-cvr-storyboard__actions"><button type="button" className="po-btn-primary dev-cvr-drawer__save-adjustment" disabled={!adjustmentDirty || reasonMissing || adjustmentValue == null} title={adjustmentDirty ? 'Save commercial adjustment' : 'No unsaved commercial adjustment changes'} onClick={saveAdjustment}>Save commercial adjustment</button></div></>}
+      </Section>
 
-        {displayRow.variationExposureItems?.length ? (
-          <DrawerSection title="Variation Account exposure">
-            {displayRow.variationExposureItems.map((item) => (
-              <details key={item.variationAccountItemId} className="dev-cvr-drawer__variation-exposure">
-                <summary>{item.reference || 'Variation'} — {formatCvrMoney(item.vaExposureUplift)} CVR uplift</summary>
-                <dl className="dev-cvr-drawer__group-grid">
-                  <div><dt>Contractor Value</dt><dd>{formatCvrMoney(item.contractorValue)}</dd></div>
-                  <div><dt>Contractor Claim</dt><dd>{formatCvrMoney(item.contractorClaim)}</dd></div>
-                  <div><dt>QS Forecast</dt><dd>{formatCvrMoney(item.qsForecast)}</dd></div>
-                  <div><dt>Recognised Authority</dt><dd>{formatCvrMoney(item.effectiveRecognisedAuthority)}</dd></div>
-                  <div><dt>Authority in Current Contract</dt><dd>{formatCvrMoney(item.authorityAlreadyInCurrentContract)}</dd></div>
-                  <div><dt>Locked Certified Exposure</dt><dd>{formatCvrMoney(item.cumulativeLockedCertification)}</dd></div>
-                  <div><dt>Effective VA Exposure</dt><dd>{formatCvrMoney(item.effectiveVaExposure)}</dd></div>
-                  <div><dt>Remaining Forecast Exposure</dt><dd>{formatCvrMoney(item.remainingForecastExposure)}</dd></div>
-                </dl>
-                <p className="dev-cvr-drawer__field-hint">CE {formatCvrMoney(item.authorityComposition?.effectiveCommercialEvent)} · VO {formatCvrMoney(item.authorityComposition?.effectiveVariationOrder)} · Payment Authority {formatCvrMoney(item.authorityComposition?.effectivePaymentAuthority)}</p>
-                {item.exceptions?.length ? <p className="po-list-feedback po-list-feedback--warning">Exceptions: {item.exceptions.join(', ')}</p> : null}
-              </details>
-            ))}
-          </DrawerSection>
-        ) : null}
+      <Section title="Manual Accrual">
+        {readOnly || isHistoric ? <p>This period is read-only. Manual Accrual cannot be changed.</p> : <><label className="dev-form__field"><span className="dev-form__label">Cost incurred not yet in the ledger</span><input className="input" value={accrual} inputMode="decimal" aria-describedby="manual-accrual-help" onChange={(event) => { setAccrual(event.target.value); setSaveError(''); setSaveSuccess(''); }} /><small id="manual-accrual-help">Does not change commitment, certified or ledger actual.</small></label>{saveErrorScope === 'accrual' ? <p className="po-list-feedback po-list-feedback--error" role="alert">{saveError}</p> : null}{saveSuccess === 'Manual accrual saved.' ? <p className="po-list-feedback po-list-feedback--success" role="status">{saveSuccess}</p> : null}<div className="dev-cvr-storyboard__actions"><button type="button" className="po-btn-primary dev-cvr-drawer__save-accrual" disabled={!accrualDirty} title={accrualDirty ? 'Save manual accrual' : 'No unsaved accrual changes'} onClick={saveAccrual}>Save accrual</button></div></>}
+      </Section>
 
-        <DrawerSection title="Forecast">
-          <dl className="dev-cvr-drawer__group-grid dev-cvr-drawer__forecast-grid">
-            <div>
-              <dt>System Forecast</dt>
-              <dd>{formatCvrMoney(displayRow.systemForecast)}</dd>
-            </div>
-            <div>
-              <dt>Commercial Adjustment</dt>
-              <dd
-                className={`dev-cvr__adjustment dev-cvr__adjustment--${displayRow.adjustmentState || 'zero'}`}
-              >
-                {displayRow.commercialAdjustmentLabel ||
-                  formatCvrMoney(displayRow.commercialAdjustment)}
-              </dd>
-            </div>
-            <div><dt>VA Exposure Uplift</dt><dd>{formatCvrMoney(displayRow.vaExposureUplift)}</dd></div>
-            <div>
-              <dt>Final Forecast</dt>
-              <dd>{formatCvrMoney(displayRow.finalForecast)}</dd>
-            </div>
-            <div>
-              <dt>Cost To Complete</dt>
-              <dd
-                className={`dev-cvr__ctc${
-                  Number(displayRow.costToComplete) < -0.005 ? ' dev-cvr__ctc--negative' : ''
-                }`}
-              >
-                {formatCvrMoney(displayRow.costToComplete)}
-              </dd>
-            </div>
-            <div>
-              <dt>Variance</dt>
-              <dd className={`dev-cvr__variance dev-cvr__variance--${displayRow.varianceState}`}>
-                {formatCvrMoney(displayRow.variance)}
-              </dd>
-            </div>
-          </dl>
+      {displayRow.variationExposureItems?.length ? <Section title="Variation Account">{displayRow.variationExposureItems.map((item) => <article key={item.variationAccountItemId} className="dev-cvr-storyboard__va"><div><strong>{item.reference || 'Unreferenced item'}</strong><span>{formatCvrMoney(item.vaExposureUplift)} CVR uplift</span></div>{item.exceptions?.length ? <p className="po-list-feedback po-list-feedback--warning">{item.exceptions.join(', ')}</p> : null}{item.variationAccountItemId && item.packageId ? <button type="button" className="cvr-summary__link-btn" onClick={() => onOpenVariationAccount?.({ id: item.variationAccountItemId, packageId: item.packageId, reference: item.reference })}>Open Variation Account item</button> : null}<details><summary>Authority detail</summary><dl className="dev-cvr-storyboard__forecast"><div><dt>QS Forecast</dt><dd>{formatCvrMoney(item.qsForecast)}</dd></div><div><dt>Recognised Authority</dt><dd>{formatCvrMoney(item.effectiveRecognisedAuthority)}</dd></div><div><dt>Commercial Event authority</dt><dd>{formatCvrMoney(item.authorityComposition?.effectiveCommercialEvent)}</dd></div><div><dt>Issued Variation Order authority</dt><dd>{formatCvrMoney(item.authorityComposition?.effectiveVariationOrder)}</dd></div><div><dt>Payment Authority</dt><dd>{formatCvrMoney(item.authorityComposition?.effectivePaymentAuthority)}</dd></div><div><dt>Remaining Exposure</dt><dd>{formatCvrMoney(item.remainingForecastExposure)}</dd></div></dl></details></article>)}</Section> : null}
 
-          {readOnly || isHistoric ? (
-            <div>
-              <p className="dev-cvr-drawer__empty">
-                {isHistoric
-                  ? 'Frozen commercial adjustment from the approved snapshot. This value cannot be changed.'
-                  : 'This period is read-only. Commercial adjustments cannot be changed.'}
-              </p>
-              {isHistoric && (displayRow.commercialReason || displayRow.adjustmentReason) ? (
-                <p className="dev-cvr-drawer__field-hint">
-                  Reason: {displayRow.commercialReason || displayRow.adjustmentReason}
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <div className="dev-cvr-drawer__adjustment-panel">
-              {saveError && saveErrorScope === 'adjustment' ? (
-                <div className="po-list-feedback po-list-feedback--error" role="alert">
-                  {saveError}
-                </div>
-              ) : null}
-              {saveSuccess ? (
-                <div className="po-list-feedback po-list-feedback--success" role="status">
-                  {saveSuccess}
-                </div>
-              ) : null}
-              {reasonMissing ? (
-                <div className="po-list-feedback po-list-feedback--warning" role="status">
-                  Commercial Reason is required when the adjustment is not zero.
-                </div>
-              ) : null}
-              <div className="dev-cvr-drawer__adjustment-fields">
-                <label className="dev-form__field dev-cvr-drawer__adjustment-field">
-                  <span className="dev-form__label">Adjustment</span>
-                  <input
-                    className={`input dev-cvr-drawer__adjustment-input dev-cvr__adjustment--${adjustmentState}`}
-                    type="text"
-                    inputMode="decimal"
-                    value={adjustment}
-                    onChange={(event) => {
-                      setAdjustment(event.target.value);
-                      setSaveError('');
-                      setSaveErrorScope('');
-                      setSaveSuccess('');
-                    }}
-                    placeholder="e.g. +18000 or -5000"
-                    aria-describedby="commercial-adjustment-help"
-                  />
-                  <span id="commercial-adjustment-help" className="dev-cvr-drawer__field-hint">
-                    Positive or negative. Zero for no adjustment.
-                  </span>
-                </label>
-                <label
-                  className={`dev-form__field dev-cvr-drawer__reason-field${
-                    reasonRequired ? ' dev-cvr-drawer__field--required' : ''
-                  }`}
-                >
-                  <span className="dev-form__label">
-                    Reason
-                    {reasonRequired ? (
-                      <span className="dev-cvr-drawer__required-mark">Required</span>
-                    ) : null}
-                  </span>
-                  <input
-                    className="input"
-                    type="text"
-                    value={reason}
-                    onChange={(event) => {
-                      setReason(event.target.value);
-                      setSaveError('');
-                      setSaveErrorScope('');
-                      setSaveSuccess('');
-                    }}
-                    placeholder={
-                      reasonRequired
-                        ? 'e.g. Expected Brickwork Variation'
-                        : 'Optional when adjustment is zero'
-                    }
-                    aria-required={reasonRequired}
-                    aria-invalid={reasonMissing}
-                  />
-                </label>
-              </div>
-              <div className="dev-cvr-drawer__adjustment-actions">
-                <button
-                  type="button"
-                  className="po-btn-primary dev-cvr-drawer__save-adjustment"
-                  onClick={handleSaveCommercial}
-                  disabled={reasonMissing || adjustmentValue == null || !adjustmentDirty}
-                  title={
-                    adjustmentDirty
-                      ? 'Save commercial adjustment'
-                      : 'No unsaved commercial adjustment changes'
-                  }
-                >
-                  Save commercial adjustment
-                </button>
-              </div>
-            </div>
-          )}
-        </DrawerSection>
-
-        <DrawerSection
-          title="Commercial Journal (Future)"
-          className="dev-cvr-drawer__section--placeholder"
-        >
-          <p className="dev-cvr-drawer__journal-placeholder">
-            Commercial journal entries will appear here for timing adjustments, supplier
-            credits, ledger corrections, and other temporary commercial movements.
-          </p>
-        </DrawerSection>
-
-        <DrawerSection title="Audit">
-          {row.adjustmentHistory?.length ? (
-            <ul className="dev-cvr-drawer__history">
-              {row.adjustmentHistory.map((entry) => (
-                <li key={entry.id}>
-                  <strong>
-                    {formatCvrMoney(entry.previousAdjustment)} →{' '}
-                    {formatCvrMoney(entry.newAdjustment)}
-                  </strong>
-                  <span>{entry.reason || '—'}</span>
-                  <span>
-                    {entry.user || '—'} · {formatPoDate(entry.date)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="dev-cvr-drawer__empty">No commercial adjustments recorded yet.</p>
-          )}
-          <label className="dev-form__field dev-cvr-drawer__notes-field">
-            {saveError && saveErrorScope === 'notes' ? (
-              <div className="po-list-feedback po-list-feedback--error" role="alert">{saveError}</div>
-            ) : null}
-            <span className="dev-form__label">Notes</span>
-            <textarea
-              className="input dev-cvr-drawer__notes"
-              rows={3}
-              value={notes}
-              onChange={(event) => {
-                setNotes(event.target.value);
-                setSaveError('');
-              }}
-              onBlur={() => {
-                void handleNotesBlur();
-              }}
-              readOnly={readOnly || isHistoric}
-              placeholder="Record commercial commentary for month-end review."
-            />
-          </label>
-        </DrawerSection>
-
-        {!isHistoric ? (
-          <>
-        <DrawerSection title="Packages">
-          {packages.length ? (
-            <div className="po-table-wrap">
-              <table className="po-data-table dev-cvr-drawer__table">
-                <thead>
-                  <tr>
-                    <th>Supplier</th>
-                    <th>POs</th>
-                    <th style={{ textAlign: 'right' }}>Committed</th>
-                    <th style={{ textAlign: 'right' }}>Certified</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {packages.map((pkg) => (
-                    <tr key={pkg.id}>
-                      <td>{pkg.label}</td>
-                      <td>{pkg.poNumbers?.join(', ') || '—'}</td>
-                      <td style={{ textAlign: 'right' }}>
-                        {formatCvrMoney(pkg.committedValue)}
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        {formatCvrMoney(pkg.certifiedValue)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={2}>
-                      <strong>Package total</strong>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <strong>{formatCvrMoney(packageTotal)}</strong>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <strong>
-                        {formatCvrMoney(
-                          packages.reduce(
-                            (sum, item) => sum + (Number(item.certifiedValue) || 0),
-                            0
-                          )
-                        )}
-                      </strong>
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          ) : (
-            <p className="dev-cvr-drawer__empty">No subcontract packages for this cost code.</p>
-          )}
-        </DrawerSection>
-
-        <DrawerSection title="Ledger Transactions">
-          {!ledgerReady ? (
-            <p className="dev-cvr-drawer__empty" role="status">
-              {ledgerError ? 'Unable to load ledger data' : 'Loading ledger data…'}
-            </p>
-          ) : ledgerRows.length ? (
-            <div className="po-table-wrap">
-              <table className="po-data-table dev-cvr-drawer__table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Supplier</th>
-                    <th>Invoice</th>
-                    <th style={{ textAlign: 'right' }}>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ledgerRows.map((txn) => (
-                    <tr key={txn.id}>
-                      <td>{formatPoDate(txn.date)}</td>
-                      <td>{txn.supplier || '—'}</td>
-                      <td>{txn.invoiceNumber || '—'}</td>
-                      <td style={{ textAlign: 'right' }}>
-                        {formatCvrMoney(txn.netAmount)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={3}>
-                      <strong>Ledger total</strong>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <strong>{formatCvrMoney(actualTotal)}</strong>
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          ) : (
-            <p className="dev-cvr-drawer__empty">No ledger transactions for this cost code.</p>
-          )}
-        </DrawerSection>
-
-        <DrawerSection title="Approved Certificates">
-          {certificates.length ? (
-            <div className="po-table-wrap">
-              <table className="po-data-table dev-cvr-drawer__table">
-                <thead>
-                  <tr>
-                    <th>Package</th>
-                    <th>Cert No.</th>
-                    <th>Date</th>
-                    <th style={{ textAlign: 'right' }}>Certified Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {certificates.map((certificate) => (
-                    <tr key={certificate.id}>
-                      <td>{certificate.packageLabel}</td>
-                      <td>{certificate.certificateNumber}</td>
-                      <td>{formatPoDate(certificate.certificateDate)}</td>
-                      <td style={{ textAlign: 'right' }}>
-                        {formatCvrMoney(certificate.certifiedValue)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="dev-cvr-drawer__empty">
-              No approved certificates for this cost code.
-            </p>
-          )}
-        </DrawerSection>
-          </>
-        ) : null}
-      </div>
-    </PODrawerShell>
-  );
+      {!isHistoric ? <EvidenceTables packages={packages} ledgerRows={ledgerRows} certificates={certificates} ledgerReady={ledgerReady} ledgerError={ledgerError} movement={movement} /> : null}
+      <details className="dev-cvr-storyboard__disclosure"><summary>History &amp; notes</summary><div className="dev-cvr-storyboard__disclosure-body">{row.adjustmentHistory?.length ? <ul className="dev-cvr-drawer__history">{row.adjustmentHistory.map((entry) => <li key={entry.id}><strong>{formatCvrMoney(entry.previousAdjustment)} → {formatCvrMoney(entry.newAdjustment)}</strong><span>{entry.reason || '—'}</span><span>{entry.user || '—'} · {formatPoDate(entry.date)}</span></li>)}</ul> : <p>No Commercial Adjustments recorded yet.</p>}<label className="dev-form__field"><span className="dev-form__label">Notes</span><textarea className="input dev-cvr-drawer__notes" rows={3} value={notes} readOnly={readOnly || isHistoric} onChange={(event) => setNotes(event.target.value)} onBlur={() => void saveNotes()} /></label>{saveErrorScope === 'notes' ? <p className="po-list-feedback po-list-feedback--error" role="alert">{saveError}</p> : null}</div></details>
+    </div>
+  </Shell>;
 }

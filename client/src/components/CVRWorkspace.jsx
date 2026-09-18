@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, memo } from 'react';
+import { useEffect, useMemo, useRef, useState, memo } from 'react';
 import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import CvrReportingMonthDialog from './CvrReportingMonthDialog';
 import CVRTable from './CVRTable';
@@ -160,6 +160,7 @@ export default function CVRWorkspace({
   onBackToSummary,
   onBackToRegister,
   onPeriodChanged,
+  onOpenVariationAccount,
   initialCostCodeKey = null,
   hierarchyFilter = null,
   onClearHierarchyFilter,
@@ -170,6 +171,9 @@ export default function CVRWorkspace({
   const [pos, setPos] = useState([]);
   const [localRefresh, setLocalRefresh] = useState(0);
   const [selectedRow, setSelectedRow] = useState(null);
+  const [storyboardSideBySide, setStoryboardSideBySide] = useState(false);
+  const storyboardTriggerRef = useRef(null);
+  const workbenchRef = useRef(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addFeedback, setAddFeedback] = useState('');
   const [budgetImportOpen, setBudgetImportOpen] = useState(false);
@@ -265,6 +269,30 @@ export default function CVRWorkspace({
   const periodComparison = useMemo(() => buildCvrPeriodComparisonForPeriod(development.id, {
     periodKey, period, pos,
   }), [development.id, periodKey, period, pos, refreshToken, localRefresh]);
+
+  const selectedMovement = useMemo(() => {
+    if (!selectedRow) return null;
+    const key = String(selectedRow.costCodeKey || '').trim().toLowerCase();
+    return periodComparison?.rows?.find(
+      (entry) => String(entry.costCodeKey || '').trim().toLowerCase() === key
+    ) || null;
+  }, [periodComparison, selectedRow]);
+  const storyboardOpen = Boolean(selectedRow);
+  const storyboardWideOpen = storyboardOpen && storyboardSideBySide;
+
+  useEffect(() => {
+    const node = workbenchRef.current;
+    if (!node) return undefined;
+    const update = () => setStoryboardSideBySide(node.getBoundingClientRect().width >= 1360);
+    update();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', update);
+      return () => window.removeEventListener('resize', update);
+    }
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [workspace?.rows?.length]);
 
   const displayedRows = useMemo(() => {
     if (!workspace?.rows) return [];
@@ -475,6 +503,16 @@ export default function CVRWorkspace({
     setDialog(null);
     refresh();
   }
+
+  function handleSelectRow(row, trigger) {
+    storyboardTriggerRef.current = trigger || storyboardTriggerRef.current;
+    setSelectedRow(row);
+  }
+
+  function handleCloseStoryboard() {
+    setSelectedRow(null);
+    queueMicrotask(() => storyboardTriggerRef.current?.focus());
+  }
   async function handleAdoptDevelopmentBudget() {
     const result = await adoptServerCvrDevelopmentBudget(development.id, period.id);
     if (!result.ok) { window.alert(result.errors?.[0] || 'Could not use Development Budget.'); return; }
@@ -489,7 +527,7 @@ export default function CVRWorkspace({
       upsertCachedCvrPeriod(development.id, updatedPeriod);
       refresh();
     } catch (error) {
-      window.alert(error?.message || 'Could not acknowledge Variation exposure.');
+      window.alert(error?.message || 'Could not acknowledge Variation Account exposure.');
     } finally { setAcknowledging(''); }
   }
 
@@ -730,18 +768,18 @@ export default function CVRWorkspace({
 
       {submitted && variationExposure?.stale ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">
-          Variation exposure changed after this CVR was submitted. Reject to Draft, review the updated position and resubmit before Lock.
+          Variation Account exposure changed after this CVR was submitted. Reject to Draft, review the updated position and resubmit before Lock.
           {variationExposure.staleReasons?.length ? ` ${variationExposure.staleReasons.join(', ')}` : ''}
         </div>
       ) : null}
 
       {variationExposure?.state === 'legacy_not_captured' ? (
-        <div className="po-list-feedback po-list-feedback--info">VA exposure not captured for this reporting period.</div>
+        <div className="po-list-feedback po-list-feedback--info">Variation Account exposure was not captured for this reporting period.</div>
       ) : null}
 
       {submitted && requirements.length ? (
-        <section className="dev-cvr__notes-panel" aria-label="Variation exposure acknowledgements">
-          <h3>Variation exposure exceptions</h3>
+        <section className="dev-cvr__notes-panel" aria-label="Variation Account exposure acknowledgements">
+          <h3>Variation Account exposure exceptions</h3>
           {requirements.map((entry) => {
             const key = `${entry.variationAccountItemId}:${entry.exceptionCode}`;
             const done = acknowledgedKeys.has(key);
@@ -771,14 +809,41 @@ export default function CVRWorkspace({
       <MemoCvrSummaryDashboard cards={workspace.summaryCards} />
 
       {!historicUnavailable ? (
-        <CVRTable
-          rows={displayedRows}
-          totals={hierarchyFilter ? displayedTotals : workspace.totals}
-          comparison={periodComparison}
-          onRowSelect={setSelectedRow}
-          onBudgetChange={readOnly || developmentBudgetAdopted ? undefined : handleBudgetChange}
-          readOnly={readOnly || historic}
-        />
+        <div ref={workbenchRef} className={`dev-cvr__workbench${storyboardOpen ? ' dev-cvr__workbench--storyboard-open' : ''}${storyboardWideOpen ? ' dev-cvr__workbench--side-by-side' : ''}`}>
+          <div className="dev-cvr__matrix-pane">
+            <CVRTable
+              rows={displayedRows}
+              totals={hierarchyFilter ? displayedTotals : workspace.totals}
+              comparison={periodComparison}
+              onRowSelect={handleSelectRow}
+              selectedRow={selectedRow}
+              onBudgetChange={readOnly || developmentBudgetAdopted ? undefined : handleBudgetChange}
+              readOnly={readOnly || historic}
+            />
+          </div>
+          <CostCentreDrawer
+            open={Boolean(selectedRow)}
+            row={selectedRow}
+            movement={selectedMovement}
+            storyboard
+            sideBySide={storyboardWideOpen}
+            drawerBreadcrumbs={[
+              ...(pageNavigation?.breadcrumbs || []),
+              ...(selectedRow?.costCodeLabel ? [{ label: selectedRow.costCodeLabel }] : []),
+            ]}
+            packages={drawerPackages}
+            ledgerRows={drawerLedgerRows}
+            certificates={drawerCertificates}
+            ledgerReady={!isLedgerServerAuthorityEnabled() || ledgerReadiness.ready}
+            ledgerError={ledgerError}
+            readOnly={readOnly || historic}
+            historic={historic}
+            onClose={handleCloseStoryboard}
+            onSaveNotes={handleSaveNotes}
+            onSaveCommercialAdjustment={handleSaveCommercialAdjustment}
+            onOpenVariationAccount={onOpenVariationAccount}
+          />
+        </div>
       ) : null}
 
       {!historicUnavailable ? (
@@ -795,25 +860,6 @@ export default function CVRWorkspace({
           />
         </details>
       ) : null}
-
-      <CostCentreDrawer
-        open={Boolean(selectedRow) && !historicUnavailable}
-        row={selectedRow}
-        drawerBreadcrumbs={[
-          ...(pageNavigation?.breadcrumbs || []),
-          ...(selectedRow?.costCodeLabel ? [{ label: selectedRow.costCodeLabel }] : []),
-        ]}
-        packages={drawerPackages}
-        ledgerRows={drawerLedgerRows}
-        certificates={drawerCertificates}
-        ledgerReady={!isLedgerServerAuthorityEnabled() || ledgerReadiness.ready}
-        ledgerError={ledgerError}
-        readOnly={readOnly || historic}
-        historic={historic}
-        onClose={() => setSelectedRow(null)}
-        onSaveNotes={handleSaveNotes}
-        onSaveCommercialAdjustment={handleSaveCommercialAdjustment}
-      />
 
       <CvrAddCostCodeDialog
         open={addOpen}
@@ -847,7 +893,7 @@ export default function CVRWorkspace({
           <p className="dev-cvr-add__lead">
             Locked periods become permanent historical records.
           </p>
-          {missingAcknowledgements.length ? <p className="po-list-feedback po-list-feedback--warning">Acknowledge {missingAcknowledgements.length} submitted Variation exposure exception{missingAcknowledgements.length === 1 ? '' : 's'} before Lock.</p> : null}
+          {missingAcknowledgements.length ? <p className="po-list-feedback po-list-feedback--warning">Acknowledge {missingAcknowledgements.length} submitted Variation Account exposure exception{missingAcknowledgements.length === 1 ? '' : 's'} before Lock.</p> : null}
         </WorkflowDialog>
       ) : null}
 

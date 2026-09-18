@@ -3,6 +3,7 @@ export const DEVELOPMENT_WORKSPACE_TABS = [
   { id: 'plot-master', label: 'Plot Master' },
   { id: 'packages', label: 'Packages' },
   { id: 'commercial', label: 'Commercial Events' },
+  { id: 'variation-account', label: 'Variation Account' },
   { id: 'ledger', label: 'Ledger' },
   { id: 'budget', label: 'Budget' },
   { id: 'revenue', label: 'Revenue' },

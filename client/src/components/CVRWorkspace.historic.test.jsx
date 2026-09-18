@@ -108,7 +108,6 @@ describe('CVRWorkspace historic snapshot (BL-031E.4)', () => {
 
     const text = container.textContent;
     expect(text).toContain(CVR_HISTORIC_SNAPSHOT_BANNER);
-    expect(text).toMatch(/50,250/);
     expect(text).toMatch(/2,150/);
     expect(text).toMatch(/50,750/);
     expect(text).not.toContain('Import Budget');
@@ -116,6 +115,14 @@ describe('CVRWorkspace historic snapshot (BL-031E.4)', () => {
     expect(text).not.toContain('Save accrual');
     expect(text).not.toContain('Save commercial adjustment');
     expect(container.querySelector('.dev-cvr__cell-input')).toBeNull();
+    const rowButton = [...container.querySelectorAll('.dev-cvr__row-link')].find((button) => button.textContent === '5231');
+    act(() => rowButton.click());
+    const storyboard = document.body.querySelector('[aria-label*="Cost Code Storyboard for 5231"]');
+    expect(storyboard.textContent).toMatch(/50,250/);
+    expect(storyboard.textContent).toMatch(/2,150/);
+    expect(storyboard.textContent).toContain('Current Cost');
+    expect(storyboard.textContent).not.toContain('Save accrual');
+    expect(storyboard.textContent).not.toContain('Save commercial adjustment');
   });
 
   it('shows the legacy historic-unavailable banner instead of live figures', async () => {
@@ -229,7 +236,7 @@ describe('CVRWorkspace historic snapshot (BL-031E.4)', () => {
     await act(async () => approve.click());
     const dialog = container.querySelector('[role="dialog"]');
     expect(dialog).toBeTruthy();
-    expect(dialog.textContent).toContain('Acknowledge 1 submitted Variation exposure exception before Lock.');
+    expect(dialog.textContent).toContain('Acknowledge 1 submitted Variation Account exposure exception before Lock.');
     expect([...dialog.querySelectorAll('button')].find((button) => button.textContent === 'Approve & Lock').disabled).toBe(true);
 
     await act(async () => {
@@ -248,7 +255,7 @@ describe('CVRWorkspace historic snapshot (BL-031E.4)', () => {
     const approveAfterAcknowledgement = [...container.querySelectorAll('button')].find((button) => button.textContent.trim() === 'Approve & Lock');
     await act(async () => approveAfterAcknowledgement.click());
     const refreshedDialog = container.querySelector('[role="dialog"]');
-    expect(refreshedDialog.textContent).not.toContain('Acknowledge 1 submitted Variation exposure exception before Lock.');
+    expect(refreshedDialog.textContent).not.toContain('Acknowledge 1 submitted Variation Account exposure exception before Lock.');
     expect([...refreshedDialog.querySelectorAll('button')].find((button) => button.textContent === 'Approve & Lock').disabled).toBe(false);
   });
 });

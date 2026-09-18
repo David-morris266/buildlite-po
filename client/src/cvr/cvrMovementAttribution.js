@@ -1,7 +1,7 @@
 const COMPONENT_LABELS = {
   systemForecast: 'System Forecast',
   expectedLiability: 'Expected Liability',
-  vaExposureUplift: 'VA Exposure',
+  vaExposureUplift: 'Variation Account exposure',
   commercialAdjustment: 'Commercial Adjustment',
 };
 

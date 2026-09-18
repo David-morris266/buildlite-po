@@ -607,9 +607,10 @@ export default function RevenueWorkspace({
     <div className="revenue-workspace">
       <section className="revenue-workspace__section" aria-labelledby="revenue-mode-title">
         <h2 id="revenue-mode-title" className="po-matrix-section__title">Revenue mode</h2>
-        <div className="po-button-row">
-          <button type="button" className={pricingContext.revenueMode === 'summary' ? 'po-button po-button--primary' : 'po-button'} onClick={() => saveRevenueMode('summary', summaryLines.length ? summaryLines : [{ id: crypto.randomUUID(), description: 'Total Forecast Revenue', forecastRevenue: 0 }])}>Summary Revenue</button>
-          <button type="button" className={pricingContext.revenueMode !== 'summary' ? 'po-button po-button--primary' : 'po-button'} onClick={() => saveRevenueMode('sales_register')}>Sales Register</button>
+        <p className="revenue-workspace__current-mode"><strong>Current mode:</strong> {pricingContext.revenueMode === 'summary' ? 'Summary Revenue' : 'Sales Register'}. CVR Revenue currently uses {pricingContext.revenueMode === 'summary' ? 'Summary Revenue' : 'Sales Register'}.</p>
+        <div className="po-button-row revenue-workspace__mode-switch" role="group" aria-label="Revenue mode">
+          <button type="button" aria-pressed={pricingContext.revenueMode === 'summary'} className={pricingContext.revenueMode === 'summary' ? 'po-button po-button--primary' : 'po-button'} onClick={() => saveRevenueMode('summary', summaryLines.length ? summaryLines : [{ id: crypto.randomUUID(), description: 'Total Forecast Revenue', forecastRevenue: 0 }])}>Summary Revenue</button>
+          <button type="button" aria-pressed={pricingContext.revenueMode !== 'summary'} className={pricingContext.revenueMode !== 'summary' ? 'po-button po-button--primary' : 'po-button'} onClick={() => saveRevenueMode('sales_register')}>Sales Register</button>
         </div>
       </section>
 

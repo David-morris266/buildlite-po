@@ -107,6 +107,9 @@ describe('RevenueWorkspace async loading guard', () => {
 
     expect(document.body.textContent).toContain('Revenue Dashboard');
     expect(document.body.textContent).toContain('Revenue Strategy Panel');
+    expect(document.body.textContent).toContain('Current mode: Sales Register');
+    expect(document.body.textContent).toContain('CVR Revenue currently uses Sales Register');
+    expect(container.querySelector('button[aria-pressed="true"]')?.textContent).toBe('Sales Register');
   });
 
   it('renders Summary Revenue lines without Sales Register controls or false secondary metrics', async () => {

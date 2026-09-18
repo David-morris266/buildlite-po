@@ -32,6 +32,8 @@ import {
   getDevelopmentCertificateLoadState,
 } from '../payments/paymentCertificateServerCache';
 import DevelopmentCommercialEvents from './DevelopmentCommercialEvents';
+import DevelopmentVariationAccountRegister from './DevelopmentVariationAccountRegister';
+import { listVariationAccount } from '../api/variationAccounts';
 import DevelopmentOverview, {
   DevelopmentPackagesTab,
   SummaryDashboard,
@@ -59,6 +61,7 @@ import {
 import { useCommercialAssistantScope } from '../commercialAssistant/CommercialAssistantContext';
 import { buildPoOrdersForDevelopment } from '../payments/packageIdentityMerge';
 import { resolvePackageWorkspaceOrder } from '../payments/packageWorkspaceOrderResolver';
+import { buildPackageWorkspaceLaunchContext, PACKAGE_OPENED_FROM } from '../payments/packageWorkspaceLaunch';
 import {
   applyDevelopmentWorkspaceTabSelection,
   DEVELOPMENT_WORKSPACE_TABS,
@@ -610,6 +613,26 @@ export default function DevelopmentWorkspace({
     setActiveTab('packages');
   }
 
+  async function handleOpenVariationAccountItem(target) {
+    if (!target?.id) return;
+    const packages = model?.packages || [];
+    for (const pkg of packages) {
+      const packageId = pkg.packageUuid || pkg.id;
+      if (!packageId) continue;
+      const items = await listVariationAccount(packageId);
+      const item = items.find(candidate => candidate.id === target.id);
+      if (!item) continue;
+      handleOpenPackageFromDevelopment(pkg.orderKey, buildPackageWorkspaceLaunchContext({
+        packageRow: pkg,
+        openedFrom: PACKAGE_OPENED_FROM.DevelopmentVariationAccount,
+        initialTab: 'variation-account',
+        variationAccountTarget: { itemId: item.id, reference: item.reference },
+      }));
+      return;
+    }
+    setPackageLaunchError('Variation Account item could not be found in this Development.');
+  }
+
   function handleBackToDevelopmentPackages() {
     setPackageLaunch(null);
     setPackageLaunchError('');
@@ -797,6 +820,7 @@ export default function DevelopmentWorkspace({
           navigationContext={packageLaunch}
           commercialEventTarget={packageLaunch.commercialEventTarget}
           certificateTarget={packageLaunch.certificateTarget}
+          variationAccountTarget={packageLaunch.variationAccountTarget}
           developmentName={model.developmentName}
           onBackToDevelopmentList={onBackToList}
           onBackToList={handlePackageWorkspaceBack}
@@ -991,6 +1015,13 @@ export default function DevelopmentWorkspace({
           />
         ) : null}
 
+        {activeTab === 'variation-account' ? (
+          <DevelopmentVariationAccountRegister
+            packages={model.packages}
+            onOpenPackage={handleOpenPackageFromDevelopment}
+          />
+        ) : null}
+
         {activeTab === 'budget' ? (
           <DevelopmentBudgetWorkspace developmentId={model.id} />
         ) : null}
@@ -1034,6 +1065,7 @@ export default function DevelopmentWorkspace({
                 setCvrHierarchyFilter(null);
               }}
               onPeriodChanged={handleCvrChanged}
+              onOpenVariationAccount={handleOpenVariationAccountItem}
               initialCostCodeKey={cvrFocusCostCodeKey}
               hierarchyFilter={cvrHierarchyFilter}
               onClearHierarchyFilter={() => setCvrHierarchyFilter(null)}
@@ -1060,6 +1092,7 @@ export default function DevelopmentWorkspace({
                 setCvrHierarchyFilter(null);
               }}
               onOpenPackage={onOpenPackage}
+              onOpenVariationAccount={handleOpenVariationAccountItem}
               onPeriodChanged={handleCvrChanged}
               initialCostCodeKey={cvrFocusCostCodeKey}
             />

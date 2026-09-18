@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, memo } from 'react';
+import { useEffect, useMemo, useRef, useState, memo } from 'react';
 import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import CvrReportingMonthDialog from './CvrReportingMonthDialog';
 import { listPOs } from '../api';
@@ -15,22 +15,10 @@ import {
 } from '../cvr/cvrPeriodStore';
 import { resolveCreateNextReportingMonthAction } from '../cvr/cvrCreateNextReportingMonth';
 import {
-  updateCostCentre,
-  upsertAutoCostCentre,
-} from '../cvr/costCentreStore';
-import CostCentreDrawer from './CostCentreDrawer';
-import { applyCostCentreSaveToCvrRow } from '../cvr/cvrForecastEngine';
-import {
   CVR_HISTORIC_SNAPSHOT_BANNER,
   CVR_HISTORIC_UNAVAILABLE_MESSAGE,
 } from '../cvr/cvrHistoricConstants';
-import {
-  buildCertificatesForCostCentre,
-  buildLedgerRowsForCostCentre,
-  buildPackagesForCostCentre,
-} from '../cvr/cvrEngine';
 import { isCvrServerAuthorityEnabled } from '../cvr/cvrPeriodAuthority';
-import { ensureDraftCvrOverlayMemberOnServer } from '../cvr/cvrPeriodAuthorityWrites';
 import {
   ensureCvrPeriodAndInputsReady,
   getCvrPeriodReadiness,
@@ -137,6 +125,7 @@ export function CommercialCostSummaryTable({ summary, onOpen }) {
   return (
     <div className="po-table-wrap">
       <table className="po-data-table cvr-summary__table cvr-summary__cost-summary-table">
+        <colgroup><col className="cvr-summary__cost-head-column" /><col className="cvr-summary__cost-value-column" /><col className="cvr-summary__cost-value-column" /><col className="cvr-summary__cost-value-column" /><col className="cvr-summary__cost-movement-column" /><col className="cvr-summary__cost-variance-column" /></colgroup>
         <thead><tr><th>Commercial Head</th><th className="cvr-summary__numeric">Current Budget</th><th className="cvr-summary__numeric">Previous CVR</th><th className="cvr-summary__numeric">Current CVR</th><th className="cvr-summary__numeric">Movement</th><th className="cvr-summary__numeric">Variance to Budget</th></tr></thead>
         <tbody>{summary.items.map((item) => <tr key={item.headKey}><td><button type="button" className="cvr-summary__family-link" onClick={() => onOpen?.(item.filter)}>{item.head}</button>{item.hierarchyChanged ? <small className="cvr-summary__hierarchy-change">Hierarchy changed</small> : null}</td><td className="cvr-summary__numeric">{item.budgetLabel}</td><td className="cvr-summary__numeric">{item.previousForecastLabel}</td><td className="cvr-summary__numeric">{item.currentForecastLabel}</td><td className={`cvr-summary__numeric cvr-movement--${item.movementState}`}><strong>{item.movementLabel}</strong></td><td className={`cvr-summary__numeric dev-cvr__variance dev-cvr__variance--${item.varianceState}`}>{item.varianceLabel}</td></tr>)}</tbody>
         <tfoot><tr className="cvr-summary__cost-summary-total"><td><strong>Total</strong></td><td className="cvr-summary__numeric"><strong>{summary.totals.budgetLabel}</strong></td><td className="cvr-summary__numeric"><strong>{summary.totals.previousForecastLabel}</strong></td><td className="cvr-summary__numeric"><strong>{summary.totals.currentForecastLabel}</strong></td><td className={`cvr-summary__numeric cvr-movement--${summary.totals.movementState}`}><strong>{summary.totals.movementLabel}</strong></td><td className={`cvr-summary__numeric dev-cvr__variance dev-cvr__variance--${summary.totals.varianceState}`}><strong>{summary.totals.varianceLabel}</strong></td></tr></tfoot>
@@ -160,7 +149,7 @@ function ResidualExplanation({ row, component, readOnly, onSave }) {
   </div>;
 }
 
-function MovementRows({ title, rows, onOpen, readOnly, onSaveExplanation }) {
+function MovementRows({ title, rows, onOpen, onOpenVariationAccount, readOnly, onSaveExplanation }) {
   if (!rows.length) return null;
   return (
     <section className="cvr-movement__section" aria-label={title}>
@@ -170,7 +159,7 @@ function MovementRows({ title, rows, onOpen, readOnly, onSaveExplanation }) {
           <thead><tr><th>Cost Code</th><th>Description</th><th>Previous CVR</th><th>Current CVR</th><th>Movement</th><th>Current Budget</th><th>Variance to Budget</th><th>Movement detail</th></tr></thead>
           <tbody>{rows.map((row) => (
             <tr key={row.id}>
-              <td><button type="button" className="dev-cvr__row-link" onClick={() => onOpen?.(row)}>{row.costCodeLabel}</button></td>
+              <td><button type="button" className="dev-cvr__row-link" onClick={(event) => onOpen?.(row, event.currentTarget)}>{row.costCodeLabel}</button></td>
               <td>{row.description || '—'}</td><td>{row.previousForecastLabel}</td><td>{row.currentForecastLabel}</td>
               <td className={row.movement > 0 ? 'cvr-movement--adverse' : row.movement < 0 ? 'cvr-movement--favourable' : ''}><strong>{row.movementLabel}</strong></td>
               <td>{row.currentBudgetLabel}</td><td>{row.varianceLabel}</td>
@@ -182,7 +171,7 @@ function MovementRows({ title, rows, onOpen, readOnly, onSaveExplanation }) {
                     <div><dt>Reconciled movement</dt><dd>{row.explainedLabel}</dd></div><div><dt>Unreconciled</dt><dd>{row.residualLabel}</dd></div>
                   </dl>
                   <h4>Commercial attribution</h4>
-                  {row.components.flatMap((component) => component.attributions || []).map((item) => <p key={`${item.sourceType}-${item.sourceId}`}><strong>{item.reference}:</strong> {item.description} {formatSignedMovement(item.amount)}</p>)}
+                  {row.components.flatMap((component) => component.attributions || []).map((item) => <p key={`${item.sourceType}-${item.sourceId}`}><strong>{item.reference}:</strong> {item.description} {formatSignedMovement(item.amount)} {item.drillThrough?.type === 'variation_account' ? <button type="button" className="cvr-summary__link-btn" onClick={() => onOpenVariationAccount?.({ id: item.drillThrough.id, reference: item.reference })}>Open Variation Account item</button> : null}</p>)}
                   {row.components.map((component) => <ResidualExplanation key={component.key} row={row} component={component} readOnly={readOnly} onSave={onSaveExplanation} />)}
                   {row.supportingActivity?.length ? <><h4>Supporting activity only</h4>{row.supportingActivity.map((item) => <p key={item.sourceType}>{item.description}: {formatSignedMovement(item.amountPence / 100)}</p>)}</> : null}
                   {row.adjustmentReason ? <p>Commercial Adjustment: {row.adjustmentReason}</p> : null}
@@ -197,20 +186,35 @@ function MovementRows({ title, rows, onOpen, readOnly, onSaveExplanation }) {
   );
 }
 
-export function CvrMovementReport({ report, onOpen, readOnly = true, onSaveExplanation }) {
+export function CvrMovementReport({ report, onOpen, onOpenVariationAccount, readOnly = true, onSaveExplanation }) {
   if (!report?.available) return <EmptyState message="Period movement will be available after the first CVR is Locked and the next period is created." />;
   return (
     <div className="cvr-movement" aria-label="CVR Movement Report">
       <p><strong>Total movement:</strong> {formatSignedMovement(report.totalMovement)} · <strong>Automatically attributed:</strong> {formatSignedMovement(report.automaticallyAttributed)} · <strong>QS explained:</strong> {formatSignedMovement(report.qsExplained)} · <strong>Awaiting explanation:</strong> {formatSignedMovement(report.awaitingExplanation)}</p>
-      <MovementRows title="Key adverse movements" rows={report.sections.adverse} onOpen={onOpen} readOnly={readOnly} onSaveExplanation={onSaveExplanation} />
-      <MovementRows title="Key favourable movements" rows={report.sections.favourable} onOpen={onOpen} readOnly={readOnly} onSaveExplanation={onSaveExplanation} />
-      <MovementRows title="Other movements" rows={report.sections.other} onOpen={onOpen} readOnly={readOnly} onSaveExplanation={onSaveExplanation} />
-      <MovementRows title="Unreconciled movements requiring review" rows={report.sections.unexplained} onOpen={onOpen} readOnly={readOnly} onSaveExplanation={onSaveExplanation} />
+      <MovementRows title="Key adverse movements" rows={report.sections.adverse} onOpen={onOpen} onOpenVariationAccount={onOpenVariationAccount} readOnly={readOnly} onSaveExplanation={onSaveExplanation} />
+      <MovementRows title="Key favourable movements" rows={report.sections.favourable} onOpen={onOpen} onOpenVariationAccount={onOpenVariationAccount} readOnly={readOnly} onSaveExplanation={onSaveExplanation} />
+      <MovementRows title="Other movements" rows={report.sections.other} onOpen={onOpen} onOpenVariationAccount={onOpenVariationAccount} readOnly={readOnly} onSaveExplanation={onSaveExplanation} />
+      <MovementRows title="Unreconciled movements requiring review" rows={report.sections.unexplained} onOpen={onOpen} onOpenVariationAccount={onOpenVariationAccount} readOnly={readOnly} onSaveExplanation={onSaveExplanation} />
       {!report.sections.adverse.length && !report.sections.favourable.length && !report.sections.other.length && !report.sections.unexplained.length
         ? <p className="cvr-summary__empty">No Final Forecast movement this period.</p>
         : null}
     </div>
   );
+}
+
+export function CvrMovementInspection({ row, onClose, onOpenWorksheet, onOpenVariationAccount }) {
+  const inspectionRef = useRef(null);
+  useEffect(() => inspectionRef.current?.focus(), []);
+  if (!row) return null;
+  const attributions = row.components.flatMap((component) => component.attributions || []);
+  const hasAdjustmentAttribution = attributions.some((item) => item.sourceType === 'commercial_adjustment' || item.reference === 'Commercial Adjustment');
+  return <section ref={inspectionRef} tabIndex={-1} className="cvr-movement-inspection" role="region" aria-label={`Movement inspection for ${row.costCodeLabel}`}>
+    <div className="cvr-movement-inspection__header"><div><span>Cost Code movement</span><h3>{row.costCodeLabel}{row.description ? ` — ${row.description}` : ''}</h3></div><button type="button" className="po-list-btn-secondary" onClick={onClose}>Close</button></div>
+    <dl className="cvr-movement-inspection__position"><div><dt>Previous CVR</dt><dd>{row.previousForecastLabel}</dd></div><div><dt>Current CVR</dt><dd>{row.currentForecastLabel}</dd></div><div><dt>Movement</dt><dd className={row.movement > 0 ? 'cvr-movement--adverse' : row.movement < 0 ? 'cvr-movement--favourable' : ''}>{row.movementLabel}</dd></div></dl>
+    <div className="po-table-wrap"><table className="po-data-table cvr-movement-inspection__bridge"><colgroup><col className="cvr-movement-inspection__component-column" /><col className="cvr-movement-inspection__numeric-column" /><col className="cvr-movement-inspection__numeric-column" /><col className="cvr-movement-inspection__numeric-column" /></colgroup><thead><tr><th>Component</th><th className="cvr-summary__numeric">Previous</th><th className="cvr-summary__numeric">Current</th><th className="cvr-summary__numeric">Movement</th></tr></thead><tbody>{row.components.map((component) => <tr key={component.key}><td>{component.label}</td><td className="cvr-summary__numeric">{component.previousLabel || '—'}</td><td className="cvr-summary__numeric">{component.currentLabel || '—'}</td><td className="cvr-summary__numeric">{component.movementLabel}</td></tr>)}<tr><th>Final Forecast</th><td className="cvr-summary__numeric">{row.previousForecastLabel}</td><td className="cvr-summary__numeric">{row.currentForecastLabel}</td><td className="cvr-summary__numeric">{row.movementLabel}</td></tr></tbody></table></div>
+    <div className="cvr-movement-inspection__evidence"><h4>Commercial attribution</h4>{attributions.map((item) => <p key={`${item.sourceType}-${item.sourceId}`}><strong>{item.reference}:</strong> {item.description} {formatSignedMovement(item.amount)} {item.drillThrough?.type === 'variation_account' ? <button type="button" className="cvr-summary__link-btn" onClick={() => onOpenVariationAccount?.({ id: item.drillThrough.id, reference: item.reference })}>Open Variation Account item</button> : null}</p>)}{row.components.map((component) => component.explanation ? <p key={`${component.key}-explanation`}><strong>{component.explanation.stale ? 'Stale QS explanation' : 'QS explanation'}:</strong> {component.explanation.reason}</p> : component.requiresExplanation ? <p key={`${component.key}-awaiting`}><strong>Awaiting QS explanation:</strong> {component.movementLabel}</p> : null)}{row.adjustmentReason && !hasAdjustmentAttribution ? <p><strong>Commercial Adjustment:</strong> {row.adjustmentReason}</p> : null}<p><strong>Reconciled movement:</strong> {row.explainedLabel} · <strong>Unreconciled:</strong> {row.residualLabel}</p></div>
+    <button type="button" className="po-btn-primary" onClick={() => onOpenWorksheet?.(row.costCodeKey)}>Open in CVR Worksheet</button>
+  </section>;
 }
 
 export function RevenueMovementTable({ executive }) {
@@ -219,7 +223,7 @@ export function RevenueMovementTable({ executive }) {
     ['Gross Profit', executive.labels.previousGrossProfit, executive.labels.grossProfit, executive.labels.profitMovement],
     ['Gross Margin', executive.labels.previousGrossMargin, executive.labels.grossMargin, executive.labels.marginMovement],
   ];
-  return <div className="po-table-wrap"><table className="po-data-table cvr-summary__table cvr-summary__revenue-movement"><thead><tr><th>Metric</th><th className="cvr-summary__numeric">Previous CVR</th><th className="cvr-summary__numeric">Current</th><th className="cvr-summary__numeric">Movement</th></tr></thead><tbody>{rows.map(([label, previous, current, movement]) => <tr key={label}><td>{label}</td><td className="cvr-summary__numeric">{previous}</td><td className="cvr-summary__numeric">{current}</td><td className="cvr-summary__numeric">{movement}</td></tr>)}</tbody></table></div>;
+  return <div className="po-table-wrap"><table className="po-data-table cvr-summary__table cvr-summary__revenue-movement"><colgroup><col className="cvr-summary__revenue-metric-column" /><col className="cvr-summary__revenue-value-column" /><col className="cvr-summary__revenue-value-column" /><col className="cvr-summary__revenue-value-column" /></colgroup><thead><tr><th>Metric</th><th className="cvr-summary__numeric">Previous CVR</th><th className="cvr-summary__numeric">Current</th><th className="cvr-summary__numeric">Movement</th></tr></thead><tbody>{rows.map(([label, previous, current, movement]) => <tr key={label}><td>{label}</td><td className="cvr-summary__numeric">{previous}</td><td className="cvr-summary__numeric">{current}</td><td className="cvr-summary__numeric">{movement}</td></tr>)}</tbody></table></div>;
 }
 
 function RejectDialog({ open, onCancel, onConfirm }) {
@@ -275,6 +279,7 @@ export default function CVRSummaryPage({
   onOpenWorksheetForCostCode,
   onBackToRegister,
   onPeriodChanged,
+  onOpenVariationAccount,
   initialCostCodeKey = null,
   certificatesLoading = false,
   certificatesReady = true,
@@ -283,9 +288,12 @@ export default function CVRSummaryPage({
   const [pos, setPos] = useState([]);
   const [localRefresh, setLocalRefresh] = useState(0);
   const [selectedRow, setSelectedRow] = useState(null);
+  const [selectedMovement, setSelectedMovement] = useState(null);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [reportingMonthPrompt, setReportingMonthPrompt] = useState(null);
   const [reportingMonthBusy, setReportingMonthBusy] = useState(false);
+  const movementReportRef = useRef(null);
+  const movementOriginRef = useRef(null);
   const [commentary, setCommentary] = useState({
     keyCommercialIssues: '',
     commercialOpportunities: '',
@@ -371,8 +379,10 @@ export default function CVRSummaryPage({
   useEffect(() => {
     if (!initialCostCodeKey || !summary?.rows?.length) return;
     const row = summary.rows.find((item) => item.costCodeKey === initialCostCodeKey);
-    if (row) setSelectedRow(row);
-  }, [initialCostCodeKey, summary?.rows]);
+    const movements = summary.movementReport?.sections ? Object.values(summary.movementReport.sections).flat() : [];
+    const movement = movements.find((item) => item.costCodeKey === initialCostCodeKey);
+    if (row && movement) { setSelectedRow(row); setSelectedMovement(movement); }
+  }, [initialCostCodeKey, summary?.rows, summary?.movementReport?.sections]);
 
   useEffect(() => {
     if (!selectedRow || !summary?.rows?.length) return;
@@ -384,7 +394,8 @@ export default function CVRSummaryPage({
           row.costCodeKey === selectedRow.costCodeKey)
     );
     if (latest) setSelectedRow(latest);
-  }, [summary?.rows]);
+    else { setSelectedRow(null); setSelectedMovement(null); }
+  }, [selectedRow, summary?.rows]);
 
   function refresh() {
     setLocalRefresh((value) => value + 1);
@@ -493,7 +504,8 @@ export default function CVRSummaryPage({
   }
 
   function openCostCodeRow(row) {
-    setSelectedRow(row);
+    onOpenWorksheetForCostCode?.(row.costCodeKey);
+    onContinueToCvr?.();
   }
 
   function openWorksheetForHierarchy(filter) {
@@ -501,77 +513,20 @@ export default function CVRSummaryPage({
     onContinueToCvr?.();
   }
 
-  function openMovementRow(row) {
-    onOpenWorksheetForCostCode?.(row.costCodeKey);
-    onContinueToCvr?.();
+  function openMovementRow(row, trigger) {
+    const costCodeKey = String(row?.costCodeKey || '').trim();
+    const canonicalRow = costCodeKey
+      ? summary.rows.find((candidate) => String(candidate.costCodeKey || '').trim() === costCodeKey)
+      : null;
+    movementOriginRef.current = trigger || null;
+    setSelectedRow(canonicalRow || null);
+    setSelectedMovement(canonicalRow ? row : null);
   }
 
-  async function resolveCentreId(row) {
-    if (!row?.id || row.id.startsWith('auto-') === false) return row?.id || null;
-    if (isCvrServerAuthorityEnabled()) {
-      const result = await ensureDraftCvrOverlayMemberOnServer(
-        development.id,
-        periodKey,
-        row.costCodeKey
-      );
-      if (!result.ok) {
-        window.alert(result.errors?.[0] || 'Could not add this cost code to the CVR.');
-        refresh();
-        return null;
-      }
-      return result.costCentre?.id || result.input?.id || null;
-    }
-    const created = await Promise.resolve(
-      upsertAutoCostCentre(
-        development.id,
-        {
-          costCodeKey: row.costCodeKey,
-          costCodeLabel: row.costCodeLabel,
-        },
-        periodKey
-      )
-    );
-    return created?.id || null;
-  }
-
-  async function handleSaveCommercialAdjustment(values) {
-    if (summary.readOnly || !selectedRow) {
-      return { ok: false, errors: ['This CVR period is read-only.'] };
-    }
-
-    const centreId = await resolveCentreId(selectedRow);
-    if (!centreId) return { ok: false, errors: ['Could not resolve cost code.'] };
-
-    const result = await Promise.resolve(
-      updateCostCentre(development.id, centreId, values, periodKey)
-    );
-    if (!result.ok) return result;
-
-    setSelectedRow((prev) =>
-      prev ? applyCostCentreSaveToCvrRow(prev, result.costCentre) : prev
-    );
-    refresh();
-    return result;
-  }
-
-  async function handleSaveNotes(patch) {
-    if (summary.readOnly || !selectedRow) return;
-
-    const targetId = await resolveCentreId(selectedRow);
-    if (!targetId) return;
-
-    const result = await Promise.resolve(
-      updateCostCentre(development.id, targetId, patch, periodKey)
-    );
-    if (!result.ok) {
-      window.alert(result.errors?.[0] || 'Could not save cost-code notes.');
-      return result;
-    }
-    setSelectedRow((prev) =>
-      prev ? applyCostCentreSaveToCvrRow(prev, result.costCentre || patch) : prev
-    );
-    refresh();
-    return result;
+  function closeSummaryCostCodeDetail() {
+    setSelectedRow(null);
+    setSelectedMovement(null);
+    queueMicrotask(() => (movementOriginRef.current || movementReportRef.current)?.focus());
   }
 
   if (!summary) return null;
@@ -605,19 +560,6 @@ export default function CVRSummaryPage({
     );
   }
 
-  const drawerPackages =
-    selectedRow && !summary.historic && !summary.historicUnavailable
-      ? buildPackagesForCostCentre(development.id, selectedRow.costCodeKey, pos)
-      : [];
-  const drawerLedgerRows =
-    selectedRow && !summary.historic && !summary.historicUnavailable
-      ? buildLedgerRowsForCostCentre(development.id, selectedRow.costCodeKey)
-      : [];
-  const drawerCertificates =
-    selectedRow && !summary.historic && !summary.historicUnavailable
-      ? buildCertificatesForCostCentre(development.id, selectedRow.costCodeKey, pos)
-      : [];
-
   return (
     <div className="dev-cvr dev-cvr-workspace dev-cvr-workspace--focused cvr-summary">
       <ApplicationPageHeader
@@ -633,7 +575,7 @@ export default function CVRSummaryPage({
               </button>
             ) : null}
             {summary.workflow.showSubmit ? (
-              <button type="button" className="po-list-btn-secondary" onClick={handleSubmit}>
+              <button type="button" className="po-list-btn-secondary pilot-lifecycle-action" onClick={handleSubmit}>
                 Submit for Approval
               </button>
             ) : null}
@@ -645,14 +587,14 @@ export default function CVRSummaryPage({
             {summary.workflow.showReject ? (
               <button
                 type="button"
-                className="po-list-btn-secondary"
+                className="po-list-btn-secondary pilot-lifecycle-action"
                 onClick={() => setRejectOpen(true)}
               >
                 Reject
               </button>
             ) : null}
             {summary.workflow.showCreateNext ? (
-              <button type="button" className="po-list-btn-secondary" onClick={handleCreateNextPeriod}>
+              <button type="button" className="po-list-btn-secondary pilot-lifecycle-action" onClick={handleCreateNextPeriod}>
                 Create Next Period
               </button>
             ) : null}
@@ -692,7 +634,7 @@ export default function CVRSummaryPage({
 
       {summary.period?.status === 'submitted' && summary.period?.variationExposure?.stale ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">
-          Variation exposure changed after this CVR was submitted. Reject to Draft, review the updated position and resubmit before Lock.
+          Variation Account exposure changed after this CVR was submitted. Reject to Draft, review the updated position and resubmit before Lock.
           {summary.period.variationExposure.staleReasons?.length
             ? ` ${summary.period.variationExposure.staleReasons.join(', ')}`
             : ''}
@@ -741,12 +683,16 @@ export default function CVRSummaryPage({
           <RevenueMovementTable executive={summary.movementReport.executive} />
         </SummaryPanel>
         <SummaryPanel title="Movement explanations" className="cvr-summary__panel--wide cvr-summary__panel--centrepiece">
-          <CvrMovementReport
-            report={summary.movementReport}
-            onOpen={openMovementRow}
-            readOnly={summary.readOnly}
-            onSaveExplanation={handleSaveMovementExplanation}
-          />
+          <div ref={movementReportRef} tabIndex={-1}>
+            <CvrMovementReport
+              report={summary.movementReport}
+              onOpen={openMovementRow}
+              onOpenVariationAccount={onOpenVariationAccount}
+              readOnly={summary.readOnly}
+              onSaveExplanation={handleSaveMovementExplanation}
+            />
+          </div>
+          {selectedRow && selectedMovement ? <CvrMovementInspection row={selectedMovement} onClose={closeSummaryCostCodeDetail} onOpenWorksheet={(costCodeKey) => { onOpenWorksheetForCostCode?.(costCodeKey); onContinueToCvr?.(); }} onOpenVariationAccount={onOpenVariationAccount} /> : null}
         </SummaryPanel>
 
         <SummaryPanel title="Financial Position" className="cvr-summary__panel--wide cvr-summary__panel--supporting">
@@ -965,25 +911,6 @@ export default function CVRSummaryPage({
         </SummaryPanel>
       </div>
       ) : null}
-
-      <CostCentreDrawer
-        open={Boolean(selectedRow)}
-        row={selectedRow}
-        drawerBreadcrumbs={[
-          ...(pageNavigation?.breadcrumbs || []),
-          ...(selectedRow?.costCodeLabel ? [{ label: selectedRow.costCodeLabel }] : []),
-        ]}
-        packages={drawerPackages}
-        ledgerRows={drawerLedgerRows}
-        certificates={drawerCertificates}
-        ledgerReady={!isLedgerServerAuthorityEnabled() || ledgerReadiness.ready}
-        ledgerError={ledgerError}
-        readOnly={summary.readOnly}
-        historic={Boolean(summary.historic)}
-        onClose={() => setSelectedRow(null)}
-        onSaveNotes={handleSaveNotes}
-        onSaveCommercialAdjustment={handleSaveCommercialAdjustment}
-      />
 
       <RejectDialog
         open={rejectOpen}

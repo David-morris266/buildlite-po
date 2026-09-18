@@ -8,7 +8,7 @@ import { attributeCvrMovementRow } from './cvrMovementAttribution';
 const COMPONENTS = [
   ['systemForecast', 'System Forecast'],
   ['expectedLiability', 'Expected Liability'],
-  ['vaExposureUplift', 'VA Exposure'],
+  ['vaExposureUplift', 'Variation Account exposure'],
   ['commercialAdjustment', 'Commercial Adjustment'],
 ];
 
@@ -60,10 +60,12 @@ function componentDelta(name, current, previous, comparable) {
   const captured = name !== 'expectedLiability'
     || (current?.expectedLiabilityCaptured !== false && previous?.expectedLiabilityCaptured !== false);
   if (!comparable || !captured || currentPence == null || previousPence == null) {
-    return { key: name, label: COMPONENTS.find(([key]) => key === name)?.[1], available: false, movement: null, movementLabel: '—' };
+    return { key: name, label: COMPONENTS.find(([key]) => key === name)?.[1], available: false, previous: null, current: null, movement: null, previousLabel: '—', currentLabel: '—', movementLabel: '—' };
   }
+  const previousValue = money(previousPence);
+  const currentValue = money(currentPence);
   const movement = money(currentPence - previousPence);
-  return { key: name, label: COMPONENTS.find(([key]) => key === name)?.[1], available: true, movement, movementLabel: formatSignedMovement(movement) };
+  return { key: name, label: COMPONENTS.find(([key]) => key === name)?.[1], available: true, previous: previousValue, current: currentValue, movement, previousLabel: formatCvrMoney(previousValue), currentLabel: formatCvrMoney(currentValue), movementLabel: formatSignedMovement(movement) };
 }
 
 export function formatSignedMovement(value) {
