@@ -153,16 +153,39 @@ export function buildActualsByCostCode(developmentId) {
 export function buildExpectedLiabilityByCostCode(developmentId) {
   const totals = new Map();
   const labels = new Map();
+  const provenance = new Map();
+  const evidence = new Map();
   for (const event of listCommercialEventsByDevelopment(developmentId)) {
-    const amount = effectiveExpectedLiability(event);
-    if (!Number.isFinite(amount) || Math.abs(amount) < 0.005) continue;
     const costCode = event.costCode || event.costCodeKey;
     const key = normaliseCostCodeKey(costCode);
     if (!key) continue;
+    const eventEvidence = evidence.get(key) || [];
+    eventEvidence.push({
+      ceId: event.id || null, ceReference: event.eventNumber || event.reference || event.id || null,
+      status: event.status || null, issuedVariationOrderId: event.issuedVariationOrderId || null,
+    });
+    evidence.set(key, eventEvidence);
+    const amount = effectiveExpectedLiability(event);
+    if (!Number.isFinite(amount) || Math.abs(amount) < 0.005) continue;
     totals.set(key, (totals.get(key) || 0) + amount);
     if (!labels.has(key)) labels.set(key, buildCostCodeLabel(key, costCode));
+    const entries = provenance.get(key) || [];
+    entries.push({
+      ceId: event.id || null,
+      ceReference: event.eventNumber || event.reference || event.id || null,
+      eventNumber: event.eventNumber || null,
+      costCode: String(costCode),
+      factualValue: Number(event.value) || 0,
+      statusAtLock: event.status,
+      expectedTreatment: event.expectedTreatment || 'default',
+      overrideAmount: event.expectedTreatment === 'override' ? Number(event.expectedAmount) || 0 : null,
+      effectiveExpectedAmount: amount,
+      reason: event.expectedTreatment === 'default' ? null : String(event.expectedReason || '').trim() || null,
+      issuedVariationOrderId: event.issuedVariationOrderId || null,
+    });
+    provenance.set(key, entries);
   }
-  return { totals, labels };
+  return { totals, labels, provenance, evidence };
 }
 
 export function buildCertifiedByCostCode(developmentId, pos = []) {
@@ -294,6 +317,8 @@ export function buildCvrRows(developmentId, options = {}) {
           ? null
           : actuals.totals.get(key) ?? (hasManualBudget ? 0 : null),
         expectedLiability: expectedLiabilities.totals.get(key) ?? 0,
+        expectedLiabilityProvenance: expectedLiabilities.provenance.get(key) || [],
+        commercialEventEvidence: expectedLiabilities.evidence.get(key) || [],
         vaExposureUplift: (variationExposureByCostCode.get(key)?.pence || 0) / 100,
         variationExposureItems: variationExposureByCostCode.get(key)?.items || [],
         commercialAdjustment: manual?.commercialAdjustment ?? 0,

@@ -55,6 +55,8 @@ export default function CostCentreDrawer({
   const [accrual, setAccrual] = useState('');
   const [notes, setNotes] = useState('');
   const [saveError, setSaveError] = useState('');
+  const [saveErrorScope, setSaveErrorScope] = useState('');
+  const [saveSuccess, setSaveSuccess] = useState('');
 
   const isHistoric = Boolean(historic || row?.historic);
   const displayRow = useMemo(() => {
@@ -83,7 +85,12 @@ export default function CostCentreDrawer({
     setAccrual(row.manualAccrual == null ? '' : String(row.manualAccrual));
     setNotes(row.commercialNotes || '');
     setSaveError('');
+    setSaveErrorScope('');
   }, [row?.id, row?.commercialAdjustment, row?.commercialReason, row?.manualAccrual, row?.commercialNotes]);
+
+  useEffect(() => {
+    setSaveSuccess('');
+  }, [row?.id]);
 
   const adjustmentValue = useMemo(() => parseAdjustmentInput(adjustment), [adjustment]);
   const reasonRequired = useMemo(() => {
@@ -112,9 +119,13 @@ export default function CostCentreDrawer({
     );
     if (result?.ok === false) {
       setSaveError(result.errors?.[0] || 'Could not save commercial adjustment.');
+      setSaveErrorScope('adjustment');
+      setSaveSuccess('');
       return;
     }
     setSaveError('');
+    setSaveErrorScope('');
+    setSaveSuccess('Commercial adjustment saved.');
   }
 
   async function handleSaveAccrual() {
@@ -122,14 +133,17 @@ export default function CostCentreDrawer({
     const parsed = parseAdjustmentInput(accrual);
     if (parsed == null) {
       setSaveError('Manual accrual must be a number.');
+      setSaveErrorScope('accrual');
       return;
     }
     const result = await Promise.resolve(onSaveNotes?.({ manualAccrual: parsed }));
     if (result?.ok === false) {
       setSaveError(result.errors?.[0] || 'Could not save manual accrual.');
+      setSaveErrorScope('accrual');
       return;
     }
     setSaveError('');
+    setSaveErrorScope('');
   }
 
   async function handleNotesBlur() {
@@ -137,10 +151,12 @@ export default function CostCentreDrawer({
     const result = await Promise.resolve(onSaveNotes?.({ commercialNotes: notes }));
     if (result?.ok === false) {
       setSaveError(result.errors?.[0] || 'Could not save notes.');
+      setSaveErrorScope('notes');
       setNotes(row.commercialNotes || '');
       return;
     }
     setSaveError('');
+    setSaveErrorScope('');
   }
 
   return (
@@ -213,7 +229,7 @@ export default function CostCentreDrawer({
             </p>
           ) : (
             <div className="dev-cvr-drawer__adjustment-panel">
-              {saveError ? (
+              {saveError && saveErrorScope === 'accrual' ? (
                 <div className="po-list-feedback po-list-feedback--error" role="alert">
                   {saveError}
                 </div>
@@ -329,9 +345,14 @@ export default function CostCentreDrawer({
             </div>
           ) : (
             <div className="dev-cvr-drawer__adjustment-panel">
-              {saveError ? (
+              {saveError && saveErrorScope === 'adjustment' ? (
                 <div className="po-list-feedback po-list-feedback--error" role="alert">
                   {saveError}
+                </div>
+              ) : null}
+              {saveSuccess ? (
+                <div className="po-list-feedback po-list-feedback--success" role="status">
+                  {saveSuccess}
                 </div>
               ) : null}
               {reasonMissing ? (
@@ -350,6 +371,8 @@ export default function CostCentreDrawer({
                     onChange={(event) => {
                       setAdjustment(event.target.value);
                       setSaveError('');
+                      setSaveErrorScope('');
+                      setSaveSuccess('');
                     }}
                     placeholder="e.g. +18000 or -5000"
                     aria-describedby="commercial-adjustment-help"
@@ -376,6 +399,8 @@ export default function CostCentreDrawer({
                     onChange={(event) => {
                       setReason(event.target.value);
                       setSaveError('');
+                      setSaveErrorScope('');
+                      setSaveSuccess('');
                     }}
                     placeholder={
                       reasonRequired
@@ -436,6 +461,9 @@ export default function CostCentreDrawer({
             <p className="dev-cvr-drawer__empty">No commercial adjustments recorded yet.</p>
           )}
           <label className="dev-form__field dev-cvr-drawer__notes-field">
+            {saveError && saveErrorScope === 'notes' ? (
+              <div className="po-list-feedback po-list-feedback--error" role="alert">{saveError}</div>
+            ) : null}
             <span className="dev-form__label">Notes</span>
             <textarea
               className="input dev-cvr-drawer__notes"

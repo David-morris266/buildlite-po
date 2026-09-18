@@ -101,12 +101,17 @@ describe('CVR Movement Report presentation', () => {
     };
     const report = {
       available: true,
+      totalMovement: 25, automaticallyAttributed: 10, qsExplained: 5, awaitingExplanation: 10,
       executive: { labels: { previousForecastCost: '£100.00', currentForecastCost: '£125.00', netMovement: '+£25.00', currentBudget: '£120.00', variance: '−£5.00', forecastRevenue: '£500.00', grossProfit: '£375.00', grossMargin: '75.0%', revenueMovement: '—', profitMovement: '—', marginMovement: '—' } },
       sections: { adverse: [movement], favourable: [], other: [], unexplained: [] },
     };
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
     act(() => root.render(<CvrMovementReport report={report} onOpen={onOpen} />));
     expect(container.textContent).toContain('Key adverse movements');
+    expect(container.textContent).toContain('Total movement: +£25.00');
+    expect(container.textContent).toContain('Automatically attributed: +£10.00');
+    expect(container.textContent).toContain('QS explained: +£5.00');
+    expect(container.textContent).toContain('Awaiting explanation: +£10.00');
     expect(container.textContent).toContain('Movement detail');
     expect(container.textContent).toContain('Component reconciled');
     expect(container.textContent).toContain('Reconciled movement+£25.00');
@@ -129,6 +134,7 @@ describe('CVR Movement Report presentation', () => {
     };
     const report = {
       available: true,
+      totalMovement: 500, automaticallyAttributed: 0, qsExplained: 0, awaitingExplanation: 500,
       sections: { adverse: [], favourable: [], other: [], unexplained: [movement] },
     };
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);

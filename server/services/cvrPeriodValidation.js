@@ -84,11 +84,32 @@ function normaliseCommentary(value, errors) {
     errors.push("commentary must be an object.");
     return emptyCommentary();
   }
+  const movementExplanations = Array.isArray(value.movementExplanations)
+    ? value.movementExplanations.map((item, index) => {
+      const reason = trimText(item?.reason, 2000);
+      const component = String(item?.component || '');
+      if (!item?.costCodeKey || !['systemForecast', 'expectedLiability', 'vaExposureUplift', 'commercialAdjustment'].includes(component)) {
+        errors.push(`movementExplanations[${index}] has invalid Cost Code/component identity.`);
+      }
+      if (!reason) errors.push(`movementExplanations[${index}].reason is required.`);
+      const amount = Number(item?.unexplainedAmount);
+      if (!Number.isFinite(amount) || Math.round(amount * 100) === 0) {
+        errors.push(`movementExplanations[${index}].unexplainedAmount must be non-zero.`);
+      }
+      return {
+        costCodeKey: String(item?.costCodeKey || '').trim(), component,
+        previousPeriodId: item?.previousPeriodId ? String(item.previousPeriodId) : null,
+        previousSnapshotId: item?.previousSnapshotId ? String(item.previousSnapshotId) : null,
+        fingerprint: String(item?.fingerprint || ''), unexplainedAmount: amount,
+        reason,
+      };
+    }) : [];
   return {
     keyCommercialIssues: trimText(value.keyCommercialIssues, 4000),
     commercialOpportunities: trimText(value.commercialOpportunities, 4000),
     financialRisks: trimText(value.financialRisks, 4000),
     actionsBeforeNextCvr: trimText(value.actionsBeforeNextCvr, 4000),
+    movementExplanations,
   };
 }
 
@@ -109,6 +130,7 @@ function validateCreatePeriodBody(body = {}) {
   const periodLabel = trimText(body.periodLabel || periodKey || "");
   const reportingMonth = parseReportingMonth(body.reportingMonth, errors);
   const commentary = normaliseCommentary(body.commentary, errors);
+  commentary.movementExplanations = [];
 
   return {
     ok: errors.length === 0,

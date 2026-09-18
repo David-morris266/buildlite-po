@@ -141,6 +141,7 @@ function copyPeriodManualData(sourcePeriod, periodKey) {
       actionsBeforeNextCvr: String(
         sourcePeriod?.commercialCommentary?.actionsBeforeNextCvr || ''
       ),
+      movementExplanations: [],
     },
     updatedAt: now,
   };

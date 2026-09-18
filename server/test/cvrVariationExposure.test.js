@@ -170,6 +170,7 @@ test('loader returns deterministic source/version facts from persisted-shape row
     [{ id: 'assessment-uuid', certificate_id: 'certificate-uuid', variation_account_item_id: 'va-uuid', application_variation_line_id: 'line-uuid', signed_current_assessment: '8000.00', previous_certified_at_lock: '0.00', cumulative_certified_at_lock: '8000.00', source_authority_snapshot: {}, locked_at: '2026-09-01', locked_by_user_id: 'user-uuid', version: 1 }],
     [{ variation_account_item_id: 'va-uuid', contractor_claim: '10000.00' }],
     [],
+    [{ id: 'history-uuid', variation_account_item_id: 'va-uuid', prior_qs_forecast: '16000.00', new_qs_forecast: '17000.00', reason: 'Revised forecast', item_version: 4, actor_user_id: 'user-uuid', actor_membership_id: 'membership-uuid', actor_provider_user_id: 'provider-user', actor_display_name: 'QS', created_at: '2026-09-02' }],
   ];
   const db = { query: async () => ({ rows: responses.shift() }) };
   const [result] = await loadVariationExposureFacts(db, 'client-uuid', 'dev-1');
@@ -180,4 +181,11 @@ test('loader returns deterministic source/version facts from persisted-shape row
     variationAccountItemVersion: 4,
     allocationIds: ['allocation-uuid'], substitutionIds: [], lockedAssessmentIds: ['assessment-uuid'],
   });
+  assert.deepEqual(result.forecastHistory, [{
+    id: 'history-uuid', priorValue: 16000, newValue: 17000, reason: 'Revised forecast',
+    itemVersion: 4, at: '2026-09-02', actor: {
+      userId: 'user-uuid', membershipId: 'membership-uuid',
+      providerUserId: 'provider-user', displayName: 'QS',
+    },
+  }]);
 });

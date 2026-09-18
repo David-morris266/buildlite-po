@@ -25,6 +25,8 @@ function commentaryOf(raw) {
     ),
     financialRisks: String(source.financialRisks || base.financialRisks),
     actionsBeforeNextCvr: String(source.actionsBeforeNextCvr || base.actionsBeforeNextCvr),
+    movementExplanations: Array.isArray(source.movementExplanations)
+      ? source.movementExplanations.map((item) => ({ ...item })) : [],
   };
 }
 
@@ -199,6 +201,13 @@ export function normalizeCvrSnapshotRow(document) {
         document.expected_liability_provenance
       );
       return Array.isArray(value) ? value : null;
+    })(),
+    variationExposureItems: (() => {
+      const value = firstDefined(
+        document.variationExposureItems,
+        document.variation_exposure_items
+      );
+      return Array.isArray(value) ? value.map((item) => ({ ...item })) : [];
     })(),
     finalForecast: moneyFrom(document, 'finalForecast', 'final_forecast', 0),
     costToComplete: moneyFrom(document, 'costToComplete', 'cost_to_complete', 0),

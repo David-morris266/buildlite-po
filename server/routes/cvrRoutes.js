@@ -135,7 +135,7 @@ router.patch("/cvr/periods/:periodId", async (req, res) => {
       req.params.developmentId,
       req.params.periodId,
       body,
-      { actor: provisionalActor(body) }
+      { actor: req.buildliteAuth?.displayName || provisionalActor(body), auth: req.buildliteAuth }
     );
     sendResult(res, result, 200, "period");
   } catch (err) {

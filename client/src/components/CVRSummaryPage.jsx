@@ -4,6 +4,7 @@ import CvrReportingMonthDialog from './CvrReportingMonthDialog';
 import { listPOs } from '../api';
 import { subscribeCommercialChanged } from '../commercial/commercialEvents';
 import { buildCvrSummaryModel } from '../cvr/cvrSummaryHelpers';
+import { formatSignedMovement } from '../cvr/cvrPeriodMovement';
 import {
   approveCvrPeriod,
   createNextCvrPeriod,
@@ -145,7 +146,21 @@ export function CommercialCostSummaryTable({ summary, onOpen }) {
   );
 }
 
-function MovementRows({ title, rows, onOpen }) {
+function ResidualExplanation({ row, component, readOnly, onSave }) {
+  const [reason, setReason] = useState(component.explanation?.stale ? '' : component.explanation?.reason || '');
+  if (!component.unattributed) return null;
+  if (component.explanation && !component.explanation.stale) {
+    return <p><strong>QS explanation:</strong> {component.explanation.reason} <small>— {component.explanation.actor || 'authorised user'}</small></p>;
+  }
+  return <div className="cvr-movement__explanation">
+    <p><strong>Commercial reason not yet attributed:</strong> {formatSignedMovement(component.unattributed)}</p>
+    {component.explanation?.stale ? <p className="cvr-summary__hint">The saved explanation is stale because the underlying movement changed.</p> : null}
+    {!readOnly ? <><textarea className="input" rows={2} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Explain the whole residual movement" />
+      <button type="button" className="po-list-btn-secondary" disabled={!reason.trim()} onClick={() => onSave?.(row, component, reason.trim())}>Save explanation</button></> : null}
+  </div>;
+}
+
+function MovementRows({ title, rows, onOpen, readOnly, onSaveExplanation }) {
   if (!rows.length) return null;
   return (
     <section className="cvr-movement__section" aria-label={title}>
@@ -166,6 +181,10 @@ function MovementRows({ title, rows, onOpen }) {
                     {row.components.map((component) => <div key={component.key}><dt>{component.label}</dt><dd>{component.movementLabel}</dd></div>)}
                     <div><dt>Reconciled movement</dt><dd>{row.explainedLabel}</dd></div><div><dt>Unreconciled</dt><dd>{row.residualLabel}</dd></div>
                   </dl>
+                  <h4>Commercial attribution</h4>
+                  {row.components.flatMap((component) => component.attributions || []).map((item) => <p key={`${item.sourceType}-${item.sourceId}`}><strong>{item.reference}:</strong> {item.description} {formatSignedMovement(item.amount)}</p>)}
+                  {row.components.map((component) => <ResidualExplanation key={component.key} row={row} component={component} readOnly={readOnly} onSave={onSaveExplanation} />)}
+                  {row.supportingActivity?.length ? <><h4>Supporting activity only</h4>{row.supportingActivity.map((item) => <p key={item.sourceType}>{item.description}: {formatSignedMovement(item.amountPence / 100)}</p>)}</> : null}
                   {row.adjustmentReason ? <p>Commercial Adjustment: {row.adjustmentReason}</p> : null}
                   {row.hierarchyChanged ? <p>Hierarchy changed: {row.previousHierarchy.label} → {row.currentHierarchy.label}</p> : null}
                 </details>
@@ -178,14 +197,15 @@ function MovementRows({ title, rows, onOpen }) {
   );
 }
 
-export function CvrMovementReport({ report, onOpen }) {
+export function CvrMovementReport({ report, onOpen, readOnly = true, onSaveExplanation }) {
   if (!report?.available) return <EmptyState message="Period movement will be available after the first CVR is Locked and the next period is created." />;
   return (
     <div className="cvr-movement" aria-label="CVR Movement Report">
-      <MovementRows title="Key adverse movements" rows={report.sections.adverse} onOpen={onOpen} />
-      <MovementRows title="Key favourable movements" rows={report.sections.favourable} onOpen={onOpen} />
-      <MovementRows title="Other movements" rows={report.sections.other} onOpen={onOpen} />
-      <MovementRows title="Unreconciled movements requiring review" rows={report.sections.unexplained} onOpen={onOpen} />
+      <p><strong>Total movement:</strong> {formatSignedMovement(report.totalMovement)} · <strong>Automatically attributed:</strong> {formatSignedMovement(report.automaticallyAttributed)} · <strong>QS explained:</strong> {formatSignedMovement(report.qsExplained)} · <strong>Awaiting explanation:</strong> {formatSignedMovement(report.awaitingExplanation)}</p>
+      <MovementRows title="Key adverse movements" rows={report.sections.adverse} onOpen={onOpen} readOnly={readOnly} onSaveExplanation={onSaveExplanation} />
+      <MovementRows title="Key favourable movements" rows={report.sections.favourable} onOpen={onOpen} readOnly={readOnly} onSaveExplanation={onSaveExplanation} />
+      <MovementRows title="Other movements" rows={report.sections.other} onOpen={onOpen} readOnly={readOnly} onSaveExplanation={onSaveExplanation} />
+      <MovementRows title="Unreconciled movements requiring review" rows={report.sections.unexplained} onOpen={onOpen} readOnly={readOnly} onSaveExplanation={onSaveExplanation} />
       {!report.sections.adverse.length && !report.sections.favourable.length && !report.sections.other.length && !report.sections.unexplained.length
         ? <p className="cvr-summary__empty">No Final Forecast movement this period.</p>
         : null}
@@ -450,6 +470,28 @@ export default function CVRSummaryPage({
     refresh();
   }
 
+  async function handleSaveMovementExplanation(row, component, reason) {
+    if (summary.readOnly) return;
+    const existing = (summary.commentary.movementExplanations || []).filter((item) =>
+      !(item.costCodeKey === row.costCodeKey && item.component === component.key));
+    const result = await Promise.resolve(saveCvrPeriodCommentary(development.id, periodKey, {
+      movementExplanations: [...existing, {
+        costCodeKey: row.costCodeKey,
+        component: component.key,
+        previousPeriodId: summary.movementReport.previousPeriodId,
+        previousSnapshotId: summary.movementReport.previousSnapshotId,
+        fingerprint: component.fingerprint,
+        unexplainedAmount: component.unattributed,
+        reason,
+      }],
+    }));
+    if (!result.ok) {
+      window.alert(result.errors?.[0] || 'Could not save movement explanation.');
+      return;
+    }
+    refresh();
+  }
+
   function openCostCodeRow(row) {
     setSelectedRow(row);
   }
@@ -699,7 +741,12 @@ export default function CVRSummaryPage({
           <RevenueMovementTable executive={summary.movementReport.executive} />
         </SummaryPanel>
         <SummaryPanel title="Movement explanations" className="cvr-summary__panel--wide cvr-summary__panel--centrepiece">
-          <CvrMovementReport report={summary.movementReport} onOpen={openMovementRow} />
+          <CvrMovementReport
+            report={summary.movementReport}
+            onOpen={openMovementRow}
+            readOnly={summary.readOnly}
+            onSaveExplanation={handleSaveMovementExplanation}
+          />
         </SummaryPanel>
 
         <SummaryPanel title="Financial Position" className="cvr-summary__panel--wide cvr-summary__panel--supporting">

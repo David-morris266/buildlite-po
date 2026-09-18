@@ -72,6 +72,7 @@ function emptyCommentary() {
     commercialOpportunities: "",
     financialRisks: "",
     actionsBeforeNextCvr: "",
+    movementExplanations: [],
   };
 }
 

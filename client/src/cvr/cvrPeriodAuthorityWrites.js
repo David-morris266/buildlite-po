@@ -253,6 +253,7 @@ export async function createDraftPeriodOnServer(developmentId, {
 
   const nextKey = formatNextPeriodKey(periodKeys || []);
   const commentary = mapLocalCommentary(sourcePeriod?.commercialCommentary);
+  commentary.movementExplanations = [];
   let nextReportingMonth = null;
   if (reportingMonth != null && String(reportingMonth).trim() !== '') {
     nextReportingMonth = toYearMonth(reportingMonth);
@@ -363,11 +364,16 @@ export async function patchCostCentreOnServer(developmentId, periodKey, centre) 
   if (!centre?.id) return { ok: false, errors: ['Cost code not found.'] };
   const mapped = toServerInputPayload(centre);
   if (!mapped.ok) return mapped;
+  const payload = { ...mapped.value };
+  if (resolved.period.budgetSourceMode === 'development_budget') {
+    delete payload.originalBudget;
+    delete payload.currentBudget;
+  }
   const result = await patchServerCvrPeriodInput(
     developmentId,
     resolved.period.id,
     centre.id,
-    mapped.value
+    payload
   );
   if (!result.ok) return result;
   return { ok: true, costCentre: result.input };

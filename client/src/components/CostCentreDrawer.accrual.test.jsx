@@ -251,4 +251,63 @@ describe('CostCentreDrawer accrual and forecast UX', () => {
     expect(container.textContent).toMatch(/version conflict/i);
     expectActivePrimarySave(accrualSaveButton());
   });
+
+  it('shows one adjustment-scoped server failure without duplicating it in the drawer', async () => {
+    const onSaveCommercialAdjustment = vi.fn(async () => ({
+      ok: false,
+      status: 409,
+      errors: ['Budget is managed from Development Budget.'],
+    }));
+    renderDrawer({
+      row: { ...baseRow, commercialAdjustment: 8000, commercialReason: 'Existing' },
+      onSaveCommercialAdjustment,
+    });
+    const adjustment = container.querySelector(
+      'input[aria-describedby="commercial-adjustment-help"]'
+    );
+    const reason = container.querySelector('.dev-cvr-drawer__reason-field input');
+    await act(async () => {
+      changeInput(adjustment, '9000');
+      changeInput(reason, 'Updated reason');
+      container.querySelector('.dev-cvr-drawer__save-adjustment').click();
+    });
+
+    expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
+    expect(container.querySelector('[role="alert"]').textContent).toMatch(/Budget is managed/);
+    expect(adjustment.value).toBe('9000');
+    expectActivePrimarySave(container.querySelector('.dev-cvr-drawer__save-adjustment'));
+  });
+
+  it('shows saved confirmation and becomes clean when the authoritative row refreshes', async () => {
+    const onSaveCommercialAdjustment = vi.fn(async () => ({
+      ok: true,
+      costCentre: { commercialAdjustment: 9000, commercialReason: 'Updated reason' },
+    }));
+    const initialRow = {
+      ...baseRow,
+      commercialAdjustment: 8000,
+      commercialReason: 'Existing',
+    };
+    renderDrawer({ row: initialRow, onSaveCommercialAdjustment });
+    await act(async () => {
+      changeInput(
+        container.querySelector('input[aria-describedby="commercial-adjustment-help"]'),
+        '9000'
+      );
+      changeInput(container.querySelector('.dev-cvr-drawer__reason-field input'), 'Updated reason');
+      container.querySelector('.dev-cvr-drawer__save-adjustment').click();
+    });
+    expect(container.querySelector('[role="status"]').textContent).toMatch(/saved/i);
+
+    renderDrawer({
+      row: {
+        ...initialRow,
+        commercialAdjustment: 9000,
+        commercialReason: 'Updated reason',
+      },
+      onSaveCommercialAdjustment,
+    });
+    expect(container.querySelector('.dev-cvr-drawer__save-adjustment').disabled).toBe(true);
+    expect(container.textContent).toMatch(/Commercial adjustment saved/i);
+  });
 });

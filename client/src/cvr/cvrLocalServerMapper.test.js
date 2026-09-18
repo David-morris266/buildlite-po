@@ -83,6 +83,7 @@ describe('CVR local→server mapper (BL-031C)', () => {
       commercialOpportunities: '',
       financialRisks: '',
       actionsBeforeNextCvr: '',
+      movementExplanations: [],
     });
   });
 

@@ -113,6 +113,7 @@ function calculateVariationExposure({
     ready: !cannotCalculate,
     variationAccountItemId: item?.id || null,
     reference: item?.reference || null,
+    description: item?.description || null,
     status: item?.status || null,
     itemVersion: item?.version == null ? null : Number(item.version),
     developmentId: item?.developmentId || null,
@@ -121,6 +122,9 @@ function calculateVariationExposure({
     contractorValue: item?.contractorValue == null ? null : fromPence(toPence(item.contractorValue)),
     contractorClaim: item?.contractorClaim == null ? null : fromPence(toPence(item.contractorClaim)),
     qsForecast: forecastPending ? null : fromPence(forecastPence),
+    forecastHistory: Array.isArray(item?.forecastHistory)
+      ? item.forecastHistory.map((entry) => ({ ...entry }))
+      : [],
     forecastStatus: forecastPending ? 'pending' : 'assessed',
     effectiveRecognisedAuthority: fromPence(recognisedPence),
     cumulativeLockedCertification: fromPence(certifiedPence),
@@ -157,7 +161,7 @@ async function loadVariationExposureFacts(db, clientId, developmentId) {
      ORDER BY va.package_id,va.created_at,va.id`, [clientId, developmentId]);
   if (!itemRows.length) return [];
   const ids = itemRows.map((row) => row.id);
-  const [{ rows: allocationRows }, { rows: substitutionRows }, { rows: assessmentRows }, { rows: claimRows }, { rows: supersededCeRows }] = await Promise.all([
+  const [{ rows: allocationRows }, { rows: substitutionRows }, { rows: assessmentRows }, { rows: claimRows }, { rows: supersededCeRows }, { rows: forecastHistoryRows }] = await Promise.all([
     db.query(`SELECT * FROM package_variation_account_authority_allocations WHERE client_id=$1 AND variation_account_item_id=ANY($2::uuid[]) ORDER BY created_at,id`, [clientId, ids]),
     db.query(`SELECT * FROM package_variation_account_authority_substitutions WHERE client_id=$1 AND variation_account_item_id=ANY($2::uuid[]) ORDER BY created_at,id`, [clientId, ids]),
     db.query(`SELECT id,certificate_id,variation_account_item_id,application_variation_line_id,signed_current_assessment,previous_certified_at_lock,cumulative_certified_at_lock,source_authority_snapshot,locked_at,locked_by_user_id,version FROM package_variation_account_certificate_assessments WHERE client_id=$1 AND variation_account_item_id=ANY($2::uuid[]) AND status='locked' ORDER BY locked_at,id`, [clientId, ids]),
@@ -172,6 +176,11 @@ async function loadVariationExposureFacts(db, clientId, developmentId) {
       JOIN variation_order_lines line ON line.id=link.variation_order_line_id AND line.client_id=link.client_id
       JOIN variation_orders vo ON vo.id=line.variation_order_id AND vo.client_id=line.client_id
      WHERE link.client_id=$1 AND vo.development_id=$2 AND vo.status='issued'`, [clientId, developmentId]),
+    db.query(`SELECT id,variation_account_item_id,prior_qs_forecast,new_qs_forecast,reason,item_version,
+        actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name,created_at
+      FROM package_variation_account_forecast_history
+      WHERE client_id=$1 AND variation_account_item_id=ANY($2::uuid[])
+      ORDER BY variation_account_item_id,item_version,created_at,id`, [clientId, ids]),
   ]);
   const group = (rows, key) => rows.reduce((map, row) => {
     const id = row[key];
@@ -182,6 +191,7 @@ async function loadVariationExposureFacts(db, clientId, developmentId) {
   const allocationsByItem = group(allocationRows, 'variation_account_item_id');
   const substitutionsByItem = group(substitutionRows, 'variation_account_item_id');
   const assessmentsByItem = group(assessmentRows, 'variation_account_item_id');
+  const forecastHistoryByItem = group(forecastHistoryRows, 'variation_account_item_id');
   const claims = new Map(claimRows.map((row) => [row.variation_account_item_id, row.contractor_claim]));
   const supersededCeIds = new Set(supersededCeRows.map((row) => String(row.commercial_event_id)));
 
@@ -189,6 +199,7 @@ async function loadVariationExposureFacts(db, clientId, developmentId) {
     item: {
       id: row.id,
       reference: row.variation_reference,
+      description: row.description,
       status: row.status,
       version: row.version,
       developmentId: row.development_id,
@@ -198,6 +209,20 @@ async function loadVariationExposureFacts(db, clientId, developmentId) {
       contractorClaim: claims.get(row.id) ?? null,
       qsForecast: row.current_qs_forecast,
       forecastStatus: row.forecast_status,
+      forecastHistory: (forecastHistoryByItem.get(row.id) || []).map((entry) => ({
+        id: entry.id,
+        priorValue: entry.prior_qs_forecast == null ? null : Number(entry.prior_qs_forecast),
+        newValue: Number(entry.new_qs_forecast),
+        reason: entry.reason,
+        itemVersion: Number(entry.item_version),
+        at: entry.created_at,
+        actor: {
+          userId: entry.actor_user_id,
+          membershipId: entry.actor_membership_id,
+          providerUserId: entry.actor_provider_user_id,
+          displayName: entry.actor_display_name,
+        },
+      })),
     },
     packageCostCode: row.package_cost_code,
     allocations: (allocationsByItem.get(row.id) || []).map((allocationRow) => ({

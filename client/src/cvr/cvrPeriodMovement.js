@@ -3,6 +3,7 @@ import { formatCvrMoney } from './cvrHelpers';
 import { listCvrPeriods } from './cvrPeriodStore';
 import { isCvrPeriodLocked } from './cvrPeriodStatus';
 import { normaliseHierarchyCostCodeKey, selectCvrCommercialHierarchy } from './cvrCommercialHierarchyPresentation';
+import { attributeCvrMovementRow } from './cvrMovementAttribution';
 
 const COMPONENTS = [
   ['systemForecast', 'System Forecast'],
@@ -114,7 +115,7 @@ export function buildCvrPeriodComparison({ currentModel, previousModel, currentP
     const adjustmentReason = adjustmentChanged
       ? current?.adjustmentReason || current?.commercialReason || current?.adjustmentHistory?.at(-1)?.reason || null
       : null;
-    return {
+    const row = {
       id: `movement-${key}`, costCodeKey: source?.costCodeKey || key,
       costCodeLabel: source?.costCodeLabel || key.toUpperCase(), description: source?.description || '',
       previousForecast: money(previousForecastPence), currentForecast: money(currentForecastPence),
@@ -127,6 +128,7 @@ export function buildCvrPeriodComparison({ currentModel, previousModel, currentP
       unexplained: residualPence == null ? movementPence !== 0 : residualPence !== 0,
       adjustmentReason, newCode, previousOnly, currentHierarchy: currentPath, previousHierarchy: previousPath, hierarchyChanged,
     };
+    return attributeCvrMovementRow({ row, current, previous, currentPeriod, previousPeriod });
   }).sort((a, b) => Math.abs(pence(b.movement) || 0) - Math.abs(pence(a.movement) || 0));
 
   const moved = rows.filter((row) => row.comparable && pence(row.movement) !== 0);
@@ -136,18 +138,32 @@ export function buildCvrPeriodComparison({ currentModel, previousModel, currentP
   const keyAdverse = adverse.slice(0, 5);
   const keyFavourable = favourable.slice(0, 5);
   const keyIds = new Set([...keyAdverse, ...keyFavourable].map((row) => row.id));
+  const other = explainedMoved.filter((row) => !keyIds.has(row.id));
+  const displayedIds = new Set([...keyAdverse, ...keyFavourable, ...other].map((row) => row.id));
   const totalMovementPence = previousAvailable
     ? (pence(currentModel?.summary?.finalForecast) ?? 0) - (pence(previousModel?.summary?.finalForecast) ?? 0)
     : null;
+  const automaticallyAttributedPence = rows.reduce((sum, row) => sum + (pence(row.automaticallyAttributed) || 0), 0);
+  const qsExplainedPence = rows.reduce((sum, row) => sum + (pence(row.qsExplained) || 0), 0);
+  const awaitingExplanationPence = rows.reduce((sum, row) => sum + (pence(row.awaitingExplanation) || 0), 0);
+  const explanationReconciliationPence = automaticallyAttributedPence + qsExplainedPence + awaitingExplanationPence;
   return {
     available: previousAvailable, previousPeriodKey: previousPeriod?.periodKey || null,
+    previousPeriodId: previousPeriod?.id || null,
+    previousSnapshotId: previousPeriod?.snapshot?.id || null,
     rows, totalMovement: money(totalMovementPence), totalMovementLabel: formatSignedMovement(money(totalMovementPence)),
     sections: {
       adverse: keyAdverse, favourable: keyFavourable,
-      other: explainedMoved.filter((row) => !keyIds.has(row.id)),
-      unexplained: moved.filter((row) => row.unexplained),
+      other,
+      unexplained: rows.filter((row) => pence(row.awaitingExplanation) !== 0 && !displayedIds.has(row.id)),
     },
     reconciles: totalMovementPence == null ? null : rows.reduce((sum, row) => sum + (pence(row.movement) || 0), 0) === totalMovementPence,
+    automaticallyAttributed: money(automaticallyAttributedPence),
+    qsExplained: money(qsExplainedPence),
+    awaitingExplanation: money(awaitingExplanationPence),
+    awaitingExplanationMagnitude: money(rows.reduce((sum, row) =>
+      sum + (pence(row.awaitingExplanationMagnitude) || 0), 0)),
+    explanationReconciles: totalMovementPence == null ? null : explanationReconciliationPence === totalMovementPence,
   };
 }
 

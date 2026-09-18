@@ -66,6 +66,8 @@ export function mapLocalCommentary(value) {
     commercialOpportunities: String(source.commercialOpportunities || base.commercialOpportunities),
     financialRisks: String(source.financialRisks || base.financialRisks),
     actionsBeforeNextCvr: String(source.actionsBeforeNextCvr || base.actionsBeforeNextCvr),
+    movementExplanations: Array.isArray(source.movementExplanations)
+      ? source.movementExplanations.map((item) => ({ ...item })) : [],
   };
 }
 

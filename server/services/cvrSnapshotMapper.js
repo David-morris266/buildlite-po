@@ -21,6 +21,8 @@ function commentaryOf(raw) {
     ),
     financialRisks: String(value.financialRisks || base.financialRisks),
     actionsBeforeNextCvr: String(value.actionsBeforeNextCvr || base.actionsBeforeNextCvr),
+    movementExplanations: Array.isArray(value.movementExplanations)
+      ? value.movementExplanations.map((item) => ({ ...item })) : [],
   };
 }
 

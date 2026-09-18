@@ -22,7 +22,7 @@ describe('CVR snapshot mapper (BL-031E.4)', () => {
       periodId: 'period-1',
       periodKey: 'P01',
       schemaVersion: 1,
-      commentary: { keyCommercialIssues: 'Freeze note' },
+      commentary: { keyCommercialIssues: 'Freeze note', movementExplanations: [{ costCodeKey: '4120', component: 'systemForecast', reason: 'Frozen explanation' }] },
       sourceReadiness: { ledgerReady: true, certificatesReady: false },
       createdAt: '2026-04-01T12:00:00.000Z',
       createdBy: 'QS',
@@ -50,6 +50,7 @@ describe('CVR snapshot mapper (BL-031E.4)', () => {
     expect(mapped.createdAt).toBe('2026-04-01T12:00:00.000Z');
     expect(mapped.createdBy).toBe('QS');
     expect(mapped.commentary.keyCommercialIssues).toBe('Freeze note');
+    expect(mapped.commentary.movementExplanations[0].reason).toBe('Frozen explanation');
     expect(mapped.sourceReadiness.ledgerReady).toBe(true);
     expect(mapped.sourceReadiness.certificatesReady).toBe(false);
     expect(mapped.totals.committed).toBe(2364873);
@@ -111,6 +112,11 @@ describe('CVR snapshot mapper (BL-031E.4)', () => {
   });
 
   it('maps snapshot rows including reason aliases and adjustment history', () => {
+    const frozenVariationItem = {
+      variationAccountItemId: 'va-1', reference: 'VA-0001', itemVersion: 1,
+      qsForecast: 7000, effectiveVaExposure: 7000,
+      authorityAlreadyInCurrentContract: 7000, vaExposureUplift: 0,
+    };
     const mapped = normalizeCvrSnapshotRow(
       buildServerCvrSnapshotRowFixture({
         costCodeKey: '5231',
@@ -127,6 +133,7 @@ describe('CVR snapshot mapper (BL-031E.4)', () => {
         costToComplete: 50650,
         outstandingCertified: 2150,
         variance: -50750,
+        variationExposureItems: [frozenVariationItem],
       })
     );
 
@@ -143,6 +150,8 @@ describe('CVR snapshot mapper (BL-031E.4)', () => {
     expect(mapped.displayMetadata.adjustmentHistory[0].reason).toBe(
       'BL-031D UAT test adjustment'
     );
+    expect(mapped.variationExposureItems).toEqual([frozenVariationItem]);
+    expect(mapped.variationExposureItems).not.toBe(frozenVariationItem);
     expect(JSON.stringify(mapped)).not.toMatch(/cost_code_key|manual_accrual|adjustment_reason/);
   });
 

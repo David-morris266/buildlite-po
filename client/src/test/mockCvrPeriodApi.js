@@ -32,6 +32,7 @@ const store = {
   budgetImportCallCount: 0,
   lastAddMemberPayload: null,
   lastBudgetImportPayload: null,
+  lastPatchInputPayload: null,
   addMemberShouldReject: false,
   addMemberRejectError: null,
   budgetImportShouldReject: false,
@@ -90,6 +91,7 @@ export function resetCvrPeriodApiStore() {
   store.budgetImportCallCount = 0;
   store.lastAddMemberPayload = null;
   store.lastBudgetImportPayload = null;
+  store.lastPatchInputPayload = null;
   store.addMemberShouldReject = false;
   store.addMemberRejectError = null;
   store.budgetImportShouldReject = false;
@@ -192,6 +194,10 @@ export function getLastCreatePayload() {
   return store.lastCreatePayload ? clone(store.lastCreatePayload) : null;
 }
 
+export function getLastCvrPatchInputPayload() {
+  return store.lastPatchInputPayload ? clone(store.lastPatchInputPayload) : null;
+}
+
 function newMockId() {
   store.seq += 1;
   return `11111111-2222-4333-8444-${String(store.seq).padStart(12, '0')}`;
@@ -254,6 +260,7 @@ export function buildServerCvrPeriodFixture(overrides = {}) {
     auditHistory: overrides.auditHistory || [],
     variationExposure: overrides.variationExposure || null,
     budgetSource: overrides.budgetSource || null,
+    budgetSourceMode: overrides.budgetSourceMode || 'legacy_cvr',
     snapshot: overrides.snapshot === undefined ? null : overrides.snapshot,
     snapshotDeferred: overrides.snapshot
       ? false
@@ -779,6 +786,7 @@ export async function upsertCvrPeriodInputs(developmentId, periodId, payload = {
 
 export async function patchCvrPeriodInput(developmentId, periodId, inputId, payload = {}) {
   store.patchInputCallCount += 1;
+  store.lastPatchInputPayload = clone({ developmentId, periodId, inputId, payload });
   assertMutationAllowed();
   const period = findPeriod(developmentId, periodId);
   if (!period) throw new CvrPeriodApiError('CVR period not found.', { status: 404 });

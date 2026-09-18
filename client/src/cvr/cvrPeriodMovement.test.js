@@ -102,6 +102,33 @@ describe('CVR period movement comparison', () => {
     expect(report.sections.favourable).toEqual([]);
   });
 
+  it('reconciles mixed adverse and favourable rows through signed management states', () => {
+    const prior = [row('a', 100), row('b', 100)];
+    const current = [
+      row('a', 125, { systemForecast: 120, commercialAdjustment: 5, adjustmentReason: 'Known adjustment' }),
+      row('b', 90, { systemForecast: 90 }),
+    ];
+    const docs = current.map((item) => evidence(item.costCodeKey));
+    const previousPeriod = { ...hierarchy(docs), id: 'previous', snapshot: { id: 'snapshot', commercialHierarchy: hierarchy(docs).snapshot.commercialHierarchy } };
+    const explanation = {
+      costCodeKey: 'b', component: 'systemForecast', unexplainedAmount: -10,
+      fingerprint: 'previous|snapshot|b|systemForecast|-1000', reason: 'QS explained saving',
+    };
+    const currentPeriod = { ...hierarchy(docs, 'live'), commercialCommentary: { movementExplanations: [explanation] } };
+    const report = buildCvrPeriodComparison({
+      currentModel: model(current), previousModel: model(prior, { historic: true, snapshot: {} }),
+      currentPeriod, previousPeriod,
+    });
+    expect(report).toMatchObject({
+      totalMovement: 15,
+      automaticallyAttributed: 5,
+      qsExplained: -10,
+      awaitingExplanation: 20,
+      explanationReconciles: true,
+    });
+    expect(report.automaticallyAttributed + report.qsExplained + report.awaitingExplanation).toBe(report.totalMovement);
+  });
+
   it('formats signed movement without floating-point drift', () => {
     expect(formatSignedMovement(0.1 + 0.2)).toBe('+£0.30');
     expect(formatSignedMovement(-2)).toBe('−£2.00');

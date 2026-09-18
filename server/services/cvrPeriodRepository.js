@@ -25,6 +25,7 @@ const {
   validateCreatePeriodBody,
   validatePatchPeriodBody,
 } = require("./cvrPeriodValidation");
+const { stampMovementExplanations } = require('./cvrMovementExplanations');
 
 function isUniqueViolation(err) {
   return err && err.code === "23505";
@@ -300,7 +301,7 @@ function notDraftMutationResult(status) {
   };
 }
 
-async function patchCvrPeriod(clientId, developmentId, periodId, body = {}, { actor } = {}) {
+async function patchCvrPeriod(clientId, developmentId, periodId, body = {}, { actor, auth } = {}) {
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
   if (!isValidUuid(periodId)) {
@@ -339,8 +340,20 @@ async function patchCvrPeriod(clientId, developmentId, periodId, body = {}, { ac
       validated.value.reportingMonth !== undefined
         ? validated.value.reportingMonth
         : row.reporting_month;
-    const nextCommentary = validated.value.commentary
-      ? JSON.stringify(validated.value.commentary)
+    const priorMovementExplanations = Array.isArray(row.commentary?.movementExplanations)
+      ? row.commentary.movementExplanations : [];
+    const authoritativeCommentary = validated.value.commentary
+      ? {
+          ...validated.value.commentary,
+          movementExplanations: stampMovementExplanations(
+            validated.value.commentary.movementExplanations,
+            priorMovementExplanations,
+            { actor, auth }
+          ),
+        }
+      : null;
+    const nextCommentary = authoritativeCommentary
+      ? JSON.stringify(authoritativeCommentary)
       : JSON.stringify(row.commentary || {});
 
     const updated = await runQuery(

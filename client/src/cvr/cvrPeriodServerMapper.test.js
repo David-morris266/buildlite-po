@@ -16,7 +16,7 @@ describe('CVR period/input mappers (BL-031B)', () => {
       periodLabel: 'February',
       status: 'submitted',
       version: 3,
-      commentary: { keyCommercialIssues: 'Delay on plot 2' },
+      commentary: { keyCommercialIssues: 'Delay on plot 2', movementExplanations: [{ costCodeKey: '4120', component: 'systemForecast', reason: 'Scope changed' }] },
       submittedAt: '2026-02-01T12:00:00.000Z',
       submittedBy: 'QS',
     });
@@ -28,6 +28,7 @@ describe('CVR period/input mappers (BL-031B)', () => {
     expect(mapped.status).toBe('submitted');
     expect(mapped.version).toBe(3);
     expect(mapped.commercialCommentary.keyCommercialIssues).toBe('Delay on plot 2');
+    expect(mapped.commercialCommentary.movementExplanations[0].reason).toBe('Scope changed');
     expect(mapped.submittedBy).toBe('QS');
     expect(JSON.stringify(mapped)).not.toMatch(/period_key|submitted_at/);
 
