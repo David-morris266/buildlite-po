@@ -157,6 +157,108 @@ describe('CVRWorkspace input hydration (BL-031B)', () => {
     rect.mockRestore();
   });
 
+  it('transitions an open Storyboard between adjacent and focused-sheet modes on live resize', async () => {
+    let measuredWidth = 1400;
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(() => ({
+      width: measuredWidth, height: 600, top: 0, right: measuredWidth, bottom: 600,
+      left: 0, x: 0, y: 0, toJSON: () => ({}),
+    }));
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({ id: PERIOD_ID, developmentId: DEV.id }));
+    seedMockCvrInputs(PERIOD_ID, [buildServerCvrInputFixture({
+      periodId: PERIOD_ID,
+      costCodeKey: '6170',
+      costCodeLabel: '6170 — Sales Office Set-up',
+      commercialAdjustment: 115062.5,
+      adjustmentReason: 'Selling Costs forecast adopted — 2027-02',
+      displayMetadata: { sellingCostsAdoption: {
+        adoptedAdjustment: 115062.5,
+        adoptedAt: '2026-09-20T18:48:21.413Z',
+        adoptedBy: 'David Morris',
+        reportingMonth: '2027-02',
+        superseded: false,
+      } },
+      adjustmentHistory: [{
+        id: 'adj-selling-costs-6170', source: 'selling_costs_adoption',
+        newAdjustment: 115062.5,
+        newReason: 'Selling Costs forecast adopted — 2027-02',
+        date: '2026-09-20T18:48:21.413Z', user: 'David Morris',
+      }],
+    })]);
+    await act(async () => { root.render(<CVRWorkspace development={DEV} periodKey="P01" />); });
+    await flush(); await flush();
+
+    const rowButton = [...container.querySelectorAll('.dev-cvr__row-link')]
+      .find((button) => button.textContent === '6170');
+    act(() => rowButton.click());
+    await flush();
+    let workbench = container.querySelector('.dev-cvr__workbench');
+    let storyboard = workbench.querySelector('.dev-cvr-storyboard--side');
+    expect(storyboard).not.toBeNull();
+    expect(storyboard.getAttribute('role')).toBe('region');
+    expect(storyboard.textContent).toContain('Selling Costs forecast adopted');
+    expect(document.body.querySelectorAll('[aria-label*="Cost Code Storyboard for 6170"]')).toHaveLength(1);
+
+    measuredWidth = 1359;
+    await act(async () => window.dispatchEvent(new Event('resize')));
+    await flush();
+    workbench = container.querySelector('.dev-cvr__workbench');
+    storyboard = document.body.querySelector('.dev-cvr-storyboard--sheet');
+    expect(workbench.classList.contains('dev-cvr__workbench--side-by-side')).toBe(false);
+    expect(storyboard).not.toBeNull();
+    expect(storyboard.getAttribute('role')).toBe('dialog');
+    expect(storyboard.textContent).toContain('Selling Costs forecast adopted');
+    expect(document.documentElement.style.overflow).toBe('hidden');
+    expect(document.body.style.overflow).toBe('hidden');
+    expect(document.body.querySelectorAll('[aria-label*="Cost Code Storyboard for 6170"]')).toHaveLength(1);
+
+    measuredWidth = 1400;
+    await act(async () => window.dispatchEvent(new Event('resize')));
+    await flush();
+    workbench = container.querySelector('.dev-cvr__workbench');
+    storyboard = workbench.querySelector('.dev-cvr-storyboard--side');
+    expect(workbench.classList.contains('dev-cvr__workbench--side-by-side')).toBe(true);
+    expect(storyboard).not.toBeNull();
+    expect(storyboard.textContent).toContain('Selling Costs forecast adopted');
+    expect(document.documentElement.style.overflow).toBe('');
+    expect(document.body.style.overflow).toBe('');
+    expect(document.body.querySelectorAll('[aria-label*="Cost Code Storyboard for 6170"]')).toHaveLength(1);
+
+    act(() => [...storyboard.querySelectorAll('button')].find((button) => button.textContent === 'Close').click());
+    await flush();
+    expect(document.body.querySelector('[aria-label*="Cost Code Storyboard for 6170"]')).toBeNull();
+    expect(document.activeElement).toBe(rowButton);
+    rect.mockRestore();
+  });
+
+  it('hydrates workflow-owned adjustment provenance into the production Storyboard row', async () => {
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({ id: PERIOD_ID, developmentId: DEV.id }));
+    const reason = 'Prelims forecast adopted — 2027-02';
+    seedMockCvrInputs(PERIOD_ID, [buildServerCvrInputFixture({
+      periodId: PERIOD_ID,
+      costCodeKey: '2100',
+      costCodeLabel: '2100 — Site Manager',
+      commercialAdjustment: 57000,
+      adjustmentReason: reason,
+      displayMetadata: { prelimsAdoption: {
+        adoptedAdjustment: 57000, adoptedAt: '2026-09-19T13:32:00.000Z',
+        adoptedBy: 'David Morris', reportingMonth: '2027-02', superseded: false,
+      } },
+      adjustmentHistory: [{
+        id: 'adj-prelims-1', source: 'prelims_adoption', newAdjustment: 57000,
+        newReason: reason, date: '2026-09-19T13:32:00.000Z', user: 'David Morris',
+      }],
+    })]);
+    await act(async () => { root.render(<CVRWorkspace development={DEV} periodKey="P01" />); });
+    await flush(); await flush();
+    const rowButton = [...container.querySelectorAll('.dev-cvr__row-link')].find((button) => button.textContent === '2100');
+    act(() => rowButton.click());
+    const storyboard = document.body.querySelector('[aria-label*="Cost Code Storyboard for 2100"]') || container.querySelector('[aria-label*="Cost Code Storyboard for 2100"]');
+    expect(storyboard.textContent).toContain('+£57,000.00');
+    expect(storyboard.textContent).toContain('Site Prelims forecast adopted');
+    expect(storyboard.textContent).toContain('February 2027');
+    expect(storyboard.querySelector('.dev-cvr-drawer__save-adjustment')).toBeNull();
+  });
+
   it('keeps the focused-sheet fallback below the 1360px side-by-side capability threshold', async () => {
     const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
       width: 1359, height: 600, top: 0, right: 1359, bottom: 600, left: 0, x: 0, y: 0,

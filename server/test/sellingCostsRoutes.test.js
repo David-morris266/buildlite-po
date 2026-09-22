@@ -241,14 +241,14 @@ if (!isDbConfigured()) {
 
     const res = await request(app).get(`/api/developments/${developmentId}/selling-costs`);
     assert.equal(res.status, 200);
-    assert.equal(res.body.assumptionSource, "default");
+    assert.equal(res.body.assumptionSource, "buildlite");
     assert.equal(res.body.assumptionPercent, 2);
     assert.equal(res.body.forecastRevenue, KNOWN_FORECAST_REVENUE);
     assert.equal(res.body.forecastSellingCosts, KNOWN_DEFAULT_PROPOSAL);
     assert.equal(res.body.settings.exists, false);
     assert.equal(res.body.settings.version, 0);
-    assert.equal(res.body.destination.status, "ready");
-    assert.equal(res.body.destination.costCodeKey, "5400");
+    assert.equal(res.body.destination.status, "unconfigured");
+    assert.equal(res.body.destination.costCodeKey, null);
 
     const rows = await pool.query(
       `SELECT COUNT(*)::int AS n FROM development_selling_costs_settings WHERE development_id = $1`,
@@ -265,14 +265,14 @@ if (!isDbConfigured()) {
       .put(`/api/developments/${developmentId}/selling-costs`)
       .send({ version: 0, assumptionPercent: 1.75, actor: "qs-tester" });
     assert.equal(created.status, 201);
-    assert.equal(created.body.assumptionSource, "user");
+    assert.equal(created.body.assumptionSource, "development");
     assert.equal(created.body.assumptionPercent, 1.75);
     assert.equal(created.body.forecastSellingCosts, 182780.64);
     assert.equal(created.body.settings.version, 1);
     assert.equal(created.body.settings.updatedBy, "qs-tester");
 
     const again = await request(app).get(`/api/developments/${developmentId}/selling-costs`);
-    assert.equal(again.body.assumptionSource, "user");
+    assert.equal(again.body.assumptionSource, "development");
     assert.equal(again.body.assumptionPercent, 1.75);
   });
 
@@ -302,25 +302,19 @@ if (!isDbConfigured()) {
     assert.equal(stale.body.proposal.settings.version, 1);
   });
 
-  test("rejects 5405 as Simple destination; accepts configured 5400", async () => {
+  test("does not reserve BuildLite numeric codes as customer Selling Costs authority", async () => {
     const active = await getActiveClient();
     const developmentId = await createDevelopment(active);
     await insertCostCode(active.id, "5405", "Sales Incentives");
     await insertCostCode(active.id, "5400", "Selling Costs — General Allowance");
     await classifySelling(active.id, "5400");
 
-    const forbidden = await request(app)
+    const customerCode = await request(app)
       .put(`/api/developments/${developmentId}/selling-costs`)
       .send({ version: 0, assumptionPercent: 2, destinationCostCodeKey: "5405" });
-    assert.equal(forbidden.status, 400);
-    assert.match(String(forbidden.body.message || ""), /Sales Incentives|5405/i);
-
-    const ok = await request(app)
-      .put(`/api/developments/${developmentId}/selling-costs`)
-      .send({ version: 0, assumptionPercent: 2, destinationCostCodeKey: "5400" });
-    assert.equal(ok.status, 201);
-    assert.equal(ok.body.destination.costCodeKey, "5400");
-    assert.equal(ok.body.destination.status, "ready");
+    assert.equal(customerCode.status, 201);
+    assert.equal(customerCode.body.destination.costCodeKey, "5405");
+    assert.equal(customerCode.body.destination.status, "ready");
   });
 
   test("Revenue unavailable when settings missing; no CVR side effects on save", async () => {

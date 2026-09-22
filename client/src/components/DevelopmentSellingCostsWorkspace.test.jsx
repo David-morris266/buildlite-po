@@ -123,6 +123,27 @@ describe('DevelopmentSellingCostsWorkspace', () => {
     expect(document.body.textContent).not.toMatch(/Detailed itemised Selling Costs are not available/i);
   });
 
+  it('shows one clear active Detailed method without Simple explanatory copy or accidental save', async () => {
+    getSellingCostsProposal.mockResolvedValue({
+      ...defaultProposal,
+      mode: 'detailed',
+      readyLineCount: 0,
+      unreadyLineCount: 0,
+      lines: [],
+      costCodeAggregation: [],
+    });
+    await renderWorkspace();
+    const detailed = [...document.querySelectorAll('[aria-label="Selling Costs method"] button')]
+      .find(button => button.textContent === 'Detailed');
+    expect(detailed?.getAttribute('aria-pressed')).toBe('true');
+    expect(detailed?.disabled).toBe(true);
+    expect(document.body.textContent).toContain('Itemised forecast using the company Selling Costs template');
+    expect(document.body.textContent.match(/Itemised forecast using the company Selling Costs template/g)).toHaveLength(1);
+    expect(document.body.textContent).not.toContain('Simple forecast based on one percentage');
+    detailed.click();
+    expect(putSellingCostsAssumption).not.toHaveBeenCalled();
+  });
+
   it('saves edited percentage and shows saved state', async () => {
     await renderWorkspace();
 
@@ -165,6 +186,38 @@ describe('DevelopmentSellingCostsWorkspace', () => {
     expect(document.querySelector('[data-testid="selling-costs-revenue-warning"]')?.textContent).toMatch(
       /Forecast Revenue is unavailable/i
     );
+  });
+
+  it('separates inherited company mapping provenance from Cost Code identity', async () => {
+    getSellingCostsProposal.mockResolvedValue({
+      ...defaultProposal,
+      destination: {
+        status: 'ready', source: 'company', costCodeKey: '6210',
+        label: '6210 — Sales Running Costs - Sales Office Cleaning',
+      },
+    });
+    await renderWorkspace();
+    const destination = document.querySelector('[data-testid="selling-costs-destination"]');
+    expect(destination.querySelector('.dev-selling-costs__destination-identity')?.textContent)
+      .toBe('6210 — Sales Running Costs - Sales Office Cleaning');
+    expect(destination.querySelector('.dev-selling-costs__destination-provenance')?.textContent)
+      .toBe('Company mapping');
+  });
+
+  it('separates Development override provenance from Cost Code identity', async () => {
+    getSellingCostsProposal.mockResolvedValue({
+      ...defaultProposal,
+      destination: {
+        status: 'ready', source: 'development', costCodeKey: '6170',
+        label: '6170 — Sales Office Set-up',
+      },
+    });
+    await renderWorkspace();
+    const destination = document.querySelector('[data-testid="selling-costs-destination"]');
+    expect(destination.querySelector('.dev-selling-costs__destination-identity')?.textContent)
+      .toBe('6170 — Sales Office Set-up');
+    expect(destination.querySelector('.dev-selling-costs__destination-provenance')?.textContent)
+      .toBe('Development override');
   });
 
   it('surfaces stale version conflict from API', async () => {

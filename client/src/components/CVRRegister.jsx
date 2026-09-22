@@ -191,6 +191,7 @@ export default function CVRRegister({
           <thead>
             <tr>
               <th>Period</th>
+              <th>Reporting Period</th>
               <th>Status</th>
               <th style={{ textAlign: 'right' }}>Forecast</th>
               <th style={{ textAlign: 'right' }}>Variance</th>
@@ -203,7 +204,7 @@ export default function CVRRegister({
           <tbody>
             {!register.ready ? (
               <tr>
-                <td colSpan={8} className="po-empty-state__message">
+                <td colSpan={9} className="po-empty-state__message">
                   {cvrError ? 'Unable to load CVR data' : 'Loading CVR data…'}
                 </td>
               </tr>
@@ -213,6 +214,7 @@ export default function CVRRegister({
                   <td>
                     <strong>{row.periodKey}</strong>
                   </td>
+                  <td>{row.reportingPeriodLabel}</td>
                   <td>
                     <StatusBadge status={row.status} />
                     {row.historicNote ? (
@@ -237,7 +239,7 @@ export default function CVRRegister({
               ))
             ) : (
               <tr>
-                <td colSpan={8} className="po-empty-state__message">
+                <td colSpan={9} className="po-empty-state__message">
                   No CVR periods yet. Create your first period to begin monthly reporting.
                 </td>
               </tr>

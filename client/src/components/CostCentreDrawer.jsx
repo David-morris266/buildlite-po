@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { formatCvrMoney } from '../cvr/cvrHelpers';
-import { formatPoDate } from './poDrawerHelpers';
+import { formatPoDate, formatPoDateTime } from './poDrawerHelpers';
 import { getAdjustmentState, enrichCvrForecastRow } from '../cvr/cvrForecastEngine';
 import { CVR_HISTORIC_DRAWER_NOTE } from '../cvr/cvrHistoricConstants';
+import { resolveCommercialAdjustmentOwnership } from '../cvr/cvrCommercialAdjustmentOwnership';
 
 function parseMoney(value) {
   const text = String(value ?? '').trim();
@@ -16,6 +17,16 @@ function moneyChanged(left, right) {
   const a = parseMoney(left);
   const b = parseMoney(right);
   return a == null || b == null ? a !== b : Math.abs(a - b) > 0.005;
+}
+
+function formatSignedMoney(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || Math.abs(amount) <= 0.005) return formatCvrMoney(0);
+  return amount > 0 ? `+${formatCvrMoney(amount)}` : `-${formatCvrMoney(Math.abs(amount))}`;
+}
+
+function displayAdjustmentHistoryReason(value) {
+  return String(value || '').replace(/â€“|â€”/g, '—');
 }
 
 function StoryboardShell({ open, sideBySide, title, onClose, children }) {
@@ -66,10 +77,52 @@ function Section({ title, children, emphasis = false }) {
   return <section className={`dev-cvr-storyboard__section${emphasis ? ' dev-cvr-storyboard__section--emphasis' : ''}`}><h3>{title}</h3>{children}</section>;
 }
 
-function EvidenceTables({ packages, ledgerRows, certificates, ledgerReady, ledgerError, movement }) {
+function reportingPeriodLabel(value) {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(value || ''));
+  if (!match) return value || '\u2014';
+  return new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+    .format(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1)));
+}
+
+function detailedLineBasis(line, forecastRevenue) {
+  if (line.driver === 'PERCENT_REVENUE') return `${Number(line.percent || 0).toFixed(2)}% of ${formatCvrMoney(forecastRevenue || 0)}`;
+  if (line.driver === 'LUMP_SUM') return 'Lump sum';
+  if (line.driver === 'QUANTITY_RATE') {
+    const quantity = line.resolvedQuantity ?? line.quantity;
+    const source = line.quantitySource === 'PRIVATE_SALE_PLOTS' ? 'private-sale plots' : line.quantitySource === 'TOTAL_PLOTS' ? 'total plots' : String(line.customUnitLabel || line.unitCode || 'units').toLowerCase();
+    const unit = String(line.customUnitLabel || line.unitCode || 'unit').toLowerCase().replace(/s$/, '');
+    return `${quantity ?? '\u2014'} ${source} \u00d7 ${formatCvrMoney(line.rate || 0)} / ${unit}`;
+  }
+  return line.driver || 'Basis not captured';
+}
+
+function SellingCostsEvidence({ metadata }) {
+  const adoption = metadata?.sellingCostsAdoption;
+  const detailed = adoption?.detailedEvidence;
+  if (!detailed || !Array.isArray(detailed.lines)) return null;
+  const forecastRevenue = detailed.forecastRevenue ?? adoption.forecastRevenueAtAdoption;
+  return <section className="dev-cvr-storyboard__workflow-evidence" aria-label="Selling Costs Detailed adoption evidence">
+    <h4>Selling Costs &mdash; Detailed</h4>
+    <dl><div><dt>Adopted forecast</dt><dd>{formatCvrMoney(detailed.aggregate ?? adoption.adoptedTargetFinal ?? adoption.adoptedAdjustment)}</dd></div></dl>
+    <ul>{detailed.lines.map((line) => <li key={line.id || line.name}>
+      <div><strong>{line.name}</strong><strong>{formatCvrMoney(line.forecast)}</strong></div>
+      <span>{detailedLineBasis(line, forecastRevenue)}</span>
+      <span>{line.assumptionOverridden ? 'Development calculation override' : 'Company assumption'}</span>
+      {line.destinationOverridden ? <span>Development Cost Code override</span> : null}
+      {line.quantityEvidence?.message ? <span>{line.quantityEvidence.message}</span> : null}
+    </li>)}</ul>
+    <dl>
+      {forecastRevenue != null ? <div><dt>Forecast Revenue used</dt><dd>{formatCvrMoney(forecastRevenue)}</dd></div> : null}
+      {(detailed.reportingMonth || adoption.reportingMonth) ? <div><dt>CVR reporting period</dt><dd>{reportingPeriodLabel(detailed.reportingMonth || adoption.reportingMonth)}</dd></div> : null}
+    </dl>
+  </section>;
+}
+
+function EvidenceTables({ packages, ledgerRows, certificates, ledgerReady, ledgerError, movement, displayMetadata }) {
   const packageTotal = packages.reduce((sum, item) => sum + (Number(item.committedValue) || 0), 0);
   const ledgerTotal = ledgerRows.reduce((sum, item) => sum + (Number(item.netAmount) || 0), 0);
   return <details className="dev-cvr-storyboard__disclosure"><summary>Supporting evidence</summary><div className="dev-cvr-storyboard__disclosure-body">
+    <SellingCostsEvidence metadata={displayMetadata} />
     {movement?.hierarchyChanged ? <p><strong>Hierarchy changed:</strong> {movement.previousHierarchy?.label || '—'} → {movement.currentHierarchy?.label || '—'}</p> : null}
     <h4>Packages / commitments</h4>
     {packages.length ? <div className="po-table-wrap"><table className="po-data-table dev-cvr-drawer__table"><thead><tr><th>Supplier</th><th>POs</th><th className="dev-cvr__money-col">Committed</th><th className="dev-cvr__money-col">Certified</th></tr></thead><tbody>{packages.map((item) => <tr key={item.id}><td>{item.label}</td><td>{item.poNumbers?.join(', ') || '—'}</td><td className="dev-cvr__money-col">{formatCvrMoney(item.committedValue)}</td><td className="dev-cvr__money-col">{formatCvrMoney(item.certifiedValue)}</td></tr>)}</tbody><tfoot><tr><td colSpan={2}><strong>Total</strong></td><td className="dev-cvr__money-col"><strong>{formatCvrMoney(packageTotal)}</strong></td><td /></tr></tfoot></table></div> : <p>No packages for this Cost Code.</p>}
@@ -83,7 +136,8 @@ function EvidenceTables({ packages, ledgerRows, certificates, ledgerReady, ledge
 export default function CostCentreDrawer({
   open, row, movement, packages = [], ledgerRows = [], certificates = [], ledgerReady = true,
   ledgerError = false, readOnly = false, historic = false, onClose, onSaveNotes,
-  onSaveCommercialAdjustment, onOpenVariationAccount, storyboard = false, sideBySide = false,
+  onSaveCommercialAdjustment, onOpenVariationAccount, onOpenAdjustmentWorkflow,
+  storyboard = false, sideBySide = false,
 }) {
   const title = row?.costCodeLabel || 'Cost Code';
   const [adjustment, setAdjustment] = useState('');
@@ -93,6 +147,7 @@ export default function CostCentreDrawer({
   const [saveError, setSaveError] = useState('');
   const [saveErrorScope, setSaveErrorScope] = useState('');
   const [saveSuccess, setSaveSuccess] = useState('');
+  const [manualReplacement, setManualReplacement] = useState(false);
   const isHistoric = Boolean(historic || row?.historic);
   const displayRow = useMemo(() => row ? (isHistoric ? row : enrichCvrForecastRow(row)) : null, [row, isHistoric]);
   const rowId = row?.id;
@@ -107,6 +162,7 @@ export default function CostCentreDrawer({
     setReason(rowReason || '');
     setAccrual(rowAccrual == null ? '' : String(rowAccrual));
     setNotes(rowNotes || '');
+    setManualReplacement(false);
     setSaveError(''); setSaveErrorScope('');
   }, [rowId, rowAdjustment, rowReason, rowAccrual, rowNotes]);
 
@@ -117,9 +173,11 @@ export default function CostCentreDrawer({
   if (!row || !displayRow) return null;
   const adjustmentValue = parseMoney(adjustment);
   const reasonRequired = adjustmentValue != null && Math.abs(adjustmentValue) > 0.005;
-  const reasonMissing = reasonRequired && !reason.trim();
+  const reasonMissing = (reasonRequired || manualReplacement) && !reason.trim();
   const adjustmentDirty = moneyChanged(adjustment, displayRow.commercialAdjustment) || reason.trim() !== String(displayRow.commercialReason || '').trim();
   const accrualDirty = moneyChanged(accrual, displayRow.manualAccrual);
+  const adjustmentOwnership = resolveCommercialAdjustmentOwnership(row);
+  const workflowOwned = adjustmentOwnership.kind === 'workflow' && !manualReplacement;
 
   async function saveAdjustment() {
     if (readOnly || !adjustmentDirty || reasonMissing || adjustmentValue == null) return;
@@ -161,7 +219,7 @@ export default function CostCentreDrawer({
       </Section>
 
       <Section title="Commercial Adjustment">
-        {readOnly || isHistoric ? <p>This period is read-only. Commercial Adjustment cannot be changed.{displayRow.commercialReason ? ` Reason: ${displayRow.commercialReason}` : ''}</p> : <><div className="dev-cvr-drawer__adjustment-fields"><label className="dev-form__field"><span className="dev-form__label">Adjustment</span><input className={`input dev-cvr-drawer__adjustment-input dev-cvr__adjustment--${getAdjustmentState(adjustmentValue || 0)}`} value={adjustment} inputMode="decimal" aria-describedby="commercial-adjustment-help" onChange={(event) => { setAdjustment(event.target.value); setSaveError(''); setSaveSuccess(''); }} /><small id="commercial-adjustment-help">Positive or negative. Zero for no adjustment.</small></label><label className="dev-form__field dev-cvr-drawer__reason-field"><span className="dev-form__label">Reason {reasonRequired ? <small>Required</small> : null}</span><input className="input dev-cvr-drawer__reason-input" value={reason} aria-required={reasonRequired} aria-invalid={reasonMissing} onChange={(event) => { setReason(event.target.value); setSaveError(''); setSaveSuccess(''); }} /></label></div>{reasonMissing ? <p className="po-list-feedback po-list-feedback--warning">Commercial Reason is required when the adjustment is not zero.</p> : null}{saveErrorScope === 'adjustment' ? <p className="po-list-feedback po-list-feedback--error" role="alert">{saveError}</p> : null}{saveSuccess === 'Commercial adjustment saved.' ? <p className="po-list-feedback po-list-feedback--success" role="status">{saveSuccess}</p> : null}<div className="dev-cvr-storyboard__actions"><button type="button" className="po-btn-primary dev-cvr-drawer__save-adjustment" disabled={!adjustmentDirty || reasonMissing || adjustmentValue == null} title={adjustmentDirty ? 'Save commercial adjustment' : 'No unsaved commercial adjustment changes'} onClick={saveAdjustment}>Save commercial adjustment</button></div></>}
+        {readOnly || isHistoric ? <p>This period is read-only. Commercial Adjustment cannot be changed.{displayRow.commercialReason ? ` Reason: ${displayRow.commercialReason}` : ''}</p> : workflowOwned ? <div className="dev-cvr-storyboard__workflow-adjustment"><strong className={`dev-cvr__adjustment--${getAdjustmentState(displayRow.commercialAdjustment)}`}>{formatSignedMoney(displayRow.commercialAdjustment)}</strong><dl className="dev-cvr-storyboard__forecast"><div><dt>Source</dt><dd>{adjustmentOwnership.sourceLabel}</dd></div><div><dt>Reason</dt><dd>{adjustmentOwnership.reasonLabel}</dd></div>{adjustmentOwnership.changedAt ? <div><dt>Changed</dt><dd>{formatPoDateTime(adjustmentOwnership.changedAt)}</dd></div> : null}{adjustmentOwnership.changedBy ? <div><dt>By</dt><dd>{adjustmentOwnership.changedBy}</dd></div> : null}{adjustmentOwnership.reportingMonth ? <div><dt>CVR Reporting Period</dt><dd>{adjustmentOwnership.reportingPeriodLabel}</dd></div> : null}</dl><p>Managed through {adjustmentOwnership.sourceLabel}.</p><div className="dev-cvr-storyboard__actions"><button type="button" className="po-list-btn-secondary" onClick={() => onOpenAdjustmentWorkflow?.(adjustmentOwnership)}>{adjustmentOwnership.actionLabel}</button><button type="button" className="po-list-btn-secondary" onClick={() => { setManualReplacement(true); setReason(''); setSaveError(''); setSaveSuccess(''); }}>Replace with manual adjustment</button></div></div> : <>{manualReplacement ? <p className="po-list-feedback po-list-feedback--warning">This manual adjustment will supersede the currently adopted {adjustmentOwnership.sourceLabel} position for this Cost Code. The original adoption evidence will remain in History &amp; notes.</p> : null}<div className="dev-cvr-drawer__adjustment-fields"><label className="dev-form__field"><span className="dev-form__label">Adjustment</span><input className={`input dev-cvr-drawer__adjustment-input dev-cvr__adjustment--${getAdjustmentState(adjustmentValue || 0)}`} value={adjustment} inputMode="decimal" aria-describedby="commercial-adjustment-help" onChange={(event) => { setAdjustment(event.target.value); setSaveError(''); setSaveSuccess(''); }} /><small id="commercial-adjustment-help">Positive or negative. Zero for no adjustment.</small></label><label className="dev-form__field dev-cvr-drawer__reason-field"><span className="dev-form__label">Reason {(reasonRequired || manualReplacement) ? <small>Required</small> : null}</span><input className="input dev-cvr-drawer__reason-input" value={reason} aria-required={reasonRequired || manualReplacement} aria-invalid={reasonMissing} onChange={(event) => { setReason(event.target.value); setSaveError(''); setSaveSuccess(''); }} /></label></div>{reasonMissing ? <p className="po-list-feedback po-list-feedback--warning">Commercial Reason is required for this adjustment.</p> : null}{saveErrorScope === 'adjustment' ? <p className="po-list-feedback po-list-feedback--error" role="alert">{saveError}</p> : null}{saveSuccess === 'Commercial adjustment saved.' ? <p className="po-list-feedback po-list-feedback--success" role="status">{saveSuccess}</p> : null}<div className="dev-cvr-storyboard__actions"><button type="button" className="po-btn-primary dev-cvr-drawer__save-adjustment" disabled={!adjustmentDirty || reasonMissing || adjustmentValue == null} title={adjustmentDirty ? 'Save commercial adjustment' : 'No unsaved commercial adjustment changes'} onClick={saveAdjustment}>Save commercial adjustment</button></div></>}
       </Section>
 
       <Section title="Manual Accrual">
@@ -170,8 +228,8 @@ export default function CostCentreDrawer({
 
       {displayRow.variationExposureItems?.length ? <Section title="Variation Account">{displayRow.variationExposureItems.map((item) => <article key={item.variationAccountItemId} className="dev-cvr-storyboard__va"><div><strong>{item.reference || 'Unreferenced item'}</strong><span>{formatCvrMoney(item.vaExposureUplift)} CVR uplift</span></div>{item.exceptions?.length ? <p className="po-list-feedback po-list-feedback--warning">{item.exceptions.join(', ')}</p> : null}{item.variationAccountItemId && item.packageId ? <button type="button" className="cvr-summary__link-btn" onClick={() => onOpenVariationAccount?.({ id: item.variationAccountItemId, packageId: item.packageId, reference: item.reference })}>Open Variation Account item</button> : null}<details><summary>Authority detail</summary><dl className="dev-cvr-storyboard__forecast"><div><dt>QS Forecast</dt><dd>{formatCvrMoney(item.qsForecast)}</dd></div><div><dt>Recognised Authority</dt><dd>{formatCvrMoney(item.effectiveRecognisedAuthority)}</dd></div><div><dt>Commercial Event authority</dt><dd>{formatCvrMoney(item.authorityComposition?.effectiveCommercialEvent)}</dd></div><div><dt>Issued Variation Order authority</dt><dd>{formatCvrMoney(item.authorityComposition?.effectiveVariationOrder)}</dd></div><div><dt>Payment Authority</dt><dd>{formatCvrMoney(item.authorityComposition?.effectivePaymentAuthority)}</dd></div><div><dt>Remaining Exposure</dt><dd>{formatCvrMoney(item.remainingForecastExposure)}</dd></div></dl></details></article>)}</Section> : null}
 
-      {!isHistoric ? <EvidenceTables packages={packages} ledgerRows={ledgerRows} certificates={certificates} ledgerReady={ledgerReady} ledgerError={ledgerError} movement={movement} /> : null}
-      <details className="dev-cvr-storyboard__disclosure"><summary>History &amp; notes</summary><div className="dev-cvr-storyboard__disclosure-body">{row.adjustmentHistory?.length ? <ul className="dev-cvr-drawer__history">{row.adjustmentHistory.map((entry) => <li key={entry.id}><strong>{formatCvrMoney(entry.previousAdjustment)} → {formatCvrMoney(entry.newAdjustment)}</strong><span>{entry.reason || '—'}</span><span>{entry.user || '—'} · {formatPoDate(entry.date)}</span></li>)}</ul> : <p>No Commercial Adjustments recorded yet.</p>}<label className="dev-form__field"><span className="dev-form__label">Notes</span><textarea className="input dev-cvr-drawer__notes" rows={3} value={notes} readOnly={readOnly || isHistoric} onChange={(event) => setNotes(event.target.value)} onBlur={() => void saveNotes()} /></label>{saveErrorScope === 'notes' ? <p className="po-list-feedback po-list-feedback--error" role="alert">{saveError}</p> : null}</div></details>
+      {!isHistoric ? <EvidenceTables packages={packages} ledgerRows={ledgerRows} certificates={certificates} ledgerReady={ledgerReady} ledgerError={ledgerError} movement={movement} displayMetadata={displayRow.displayMetadata} /> : null}
+      <details className="dev-cvr-storyboard__disclosure"><summary>History &amp; notes</summary><div className="dev-cvr-storyboard__disclosure-body">{row.adjustmentHistory?.length ? <ul className="dev-cvr-drawer__history">{row.adjustmentHistory.map((entry) => <li key={entry.id}><strong>{formatCvrMoney(entry.previousAdjustment)} → {formatCvrMoney(entry.newAdjustment)}</strong><span>{displayAdjustmentHistoryReason(entry.reason || entry.newReason) || '—'}</span><span>{entry.user || '—'} · {formatPoDate(entry.date)}</span></li>)}</ul> : <p>No Commercial Adjustments recorded yet.</p>}<label className="dev-form__field"><span className="dev-form__label">Notes</span><textarea className="input dev-cvr-drawer__notes" rows={3} value={notes} readOnly={readOnly || isHistoric} onChange={(event) => setNotes(event.target.value)} onBlur={() => void saveNotes()} /></label>{saveErrorScope === 'notes' ? <p className="po-list-feedback po-list-feedback--error" role="alert">{saveError}</p> : null}</div></details>
     </div>
   </Shell>;
 }

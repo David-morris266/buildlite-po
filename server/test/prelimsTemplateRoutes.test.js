@@ -10,6 +10,7 @@ const request = require("supertest");
 const createApp = require("../app");
 const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
+const { PERMISSIONS } = require('../auth/permissions');
 const {
   getBuildLiteStandardPrelimsTemplate,
 } = require("../services/buildliteStandardPrelimsTemplate");
@@ -17,7 +18,20 @@ const { calculateFinalForecast, calculateSystemForecast } = require(
   "../services/cvrCloseFormulas"
 );
 
-const app = createApp();
+let activeClientId = null;
+const app = createApp({
+  testPrincipal: (req) => ({
+    userId: '00000000-0000-0000-0000-000000000021',
+    membershipId: '00000000-0000-0000-0000-000000000022',
+    providerUserId: 'prelims-template-route-test',
+    displayName: 'Authenticated Prelims Director',
+    clientId: activeClientId,
+    roleKey: 'commercial_director',
+    roleName: 'Commercial Director',
+    permissions: Object.values(PERMISSIONS),
+    memberships: [],
+  }),
+});
 const MIGRATION_015 = path.join(
   __dirname,
   "..",
@@ -70,6 +84,7 @@ if (!isDbConfigured()) {
     assert.notEqual(db.rows[0].db, "buildlite_clone");
     await pool.query(fs.readFileSync(MIGRATION_015, "utf8"));
     await pool.query(fs.readFileSync(MIGRATION_016, "utf8"));
+    activeClientId = (await getActiveClient()).id;
   });
 
   test.after(async () => {

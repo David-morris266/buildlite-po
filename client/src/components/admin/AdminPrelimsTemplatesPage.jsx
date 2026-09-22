@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { listCostCodeClassifications } from '../../api/costCodeClassifications';
+import { loadCommercialStructure } from '../../admin/commercialStructureService';
 import {
   PrelimsTemplateApiError,
   createPrelimsTemplate,
@@ -10,16 +11,29 @@ import {
   updatePrelimsTemplateLine,
 } from '../../api/prelimsTemplates';
 import { listCostCodesForTemplateMapping } from '../../admin/prelimsTemplateCostCodes';
+import { TIME_BASIS_LABELS } from '../../prelims/prelimsConstants';
 import {
   classifyTemplateMapping,
-  filterMappingOptions,
+  filterTemplateLinesByMapping,
   mappingOptionLabel,
   sharedCostCodeCounts,
+  templateMappingSummary,
 } from '../../admin/prelimsTemplateMapping';
 import AdminPageShell from './AdminPageShell';
+import CommercialHeadCostCodePicker from '../CommercialHeadCostCodePicker';
 import { AdminButton, AdminDataTable, AdminStatusBadge } from './adminUi';
 
 const TIME_BASES = ['SITE_START', 'FIRST_COMPLETION', 'FINAL_COMPLETION'];
+
+function driverLabel(driver) {
+  if (driver === 'TIME') return 'Time based';
+  if (driver === 'LUMP_SUM') return 'Lump sum';
+  return driver || '—';
+}
+
+function timeBasisLabel(basis) {
+  return TIME_BASIS_LABELS[basis] || basis || '—';
+}
 
 function originLabel(origin) {
   if (origin === 'buildlite_standard') return 'BuildLite Standard';
@@ -81,14 +95,13 @@ function linePayload(form) {
 function TemplateLineForm({
   form,
   busy,
-  codeQuery,
-  mappingOptions,
   classificationFor,
   costCodes,
+  commercialStructure,
+  onSetUpCommercialStructure,
   onSubmit,
   onCancel,
   onUpdateForm,
-  onCodeQueryChange,
 }) {
   return (
     <form
@@ -173,32 +186,7 @@ function TemplateLineForm({
           </label>
         </>
       ) : null}
-      <label>
-        Search cost codes
-        <input
-          className="input"
-          value={codeQuery}
-          onChange={(event) => onCodeQueryChange(event.target.value)}
-          aria-label="Search cost codes"
-          placeholder="Code, description or reporting group"
-        />
-      </label>
-      <label>
-        Mapped cost code
-        <select
-          className="input"
-          value={form.costCodeKey}
-          onChange={(event) => onUpdateForm('costCodeKey', event.target.value)}
-          aria-label="Mapped cost code"
-        >
-          <option value="">Unmapped</option>
-          {mappingOptions.map((option) => (
-            <option key={option.code} value={option.code}>
-              {mappingOptionLabel(option)}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div><span>Mapped cost code</span><CommercialHeadCostCodePicker category="PRELIMINARIES" structure={commercialStructure} codes={costCodes} identity="code" valueCode={form.costCodeKey} name="Mapped cost code" contextKey={form.id || 'new-line'} onChange={(code) => onUpdateForm('costCodeKey', code || '')} onSetUpCommercialStructure={onSetUpCommercialStructure} /></div>
       {form.costCodeKey ? (
         <p className="admin-form__hint" role="status">
           {classificationFor(form.costCodeKey).message ||
@@ -225,7 +213,7 @@ function TemplateLineForm({
   );
 }
 
-export default function AdminPrelimsTemplatesPage({ onBack }) {
+export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStructure = null }) {
   const [templates, setTemplates] = useState([]);
   const [selected, setSelected] = useState(null);
   const [createName, setCreateName] = useState('BuildLite Standard Prelims');
@@ -233,9 +221,14 @@ export default function AdminPrelimsTemplatesPage({ onBack }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState(null);
-  const [codeQuery, setCodeQuery] = useState('');
   const [costCodes, setCostCodes] = useState([]);
+  const [commercialStructure, setCommercialStructure] = useState(null);
   const [classifications, setClassifications] = useState([]);
+  const [mappingFilter, setMappingFilter] = useState('all');
+  const [mappingMode, setMappingMode] = useState(false);
+  const [mappingSavingId, setMappingSavingId] = useState(null);
+  const [mappingNotice, setMappingNotice] = useState('');
+  const [mappingError, setMappingError] = useState('');
   const lineFormRef = useRef(null);
   const isAddForm = Boolean(form && !form.id);
   const editingLineId = form?.id || null;
@@ -253,9 +246,18 @@ export default function AdminPrelimsTemplatesPage({ onBack }) {
     [selected]
   );
 
-  const mappingOptions = useMemo(
-    () => filterMappingOptions(costCodes, codeQuery, form?.costCodeKey),
-    [costCodes, codeQuery, form]
+  const mappingSummary = useMemo(
+    () => templateMappingSummary(selected?.lines || []),
+    [selected]
+  );
+
+  const mappingLines = useMemo(
+    () =>
+      filterTemplateLinesByMapping(
+        (selected?.lines || []).filter((line) => line.enabled !== false),
+        mappingFilter
+      ),
+    [selected, mappingFilter]
   );
 
   async function refresh(selectId = selected?.id) {
@@ -283,6 +285,7 @@ export default function AdminPrelimsTemplatesPage({ onBack }) {
     listCostCodeClassifications()
       .then((listed) => setClassifications(listed.classifications || []))
       .catch(() => setClassifications([]));
+    loadCommercialStructure().then(setCommercialStructure).catch(() => setCommercialStructure(null));
     // Load list only on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -358,7 +361,6 @@ export default function AdminPrelimsTemplatesPage({ onBack }) {
         });
       }
       setForm(null);
-      setCodeQuery('');
       await refresh(selected.id);
     } catch (err) {
       setError(err.message || 'Could not save template line.');
@@ -404,34 +406,58 @@ export default function AdminPrelimsTemplatesPage({ onBack }) {
 
   function openEditForm(line) {
     setForm(lineToForm(line));
-    setCodeQuery('');
     scrollLineFormIntoView();
+  }
+
+  function startMapping() {
+    setMappingFilter('unmapped');
+    setForm(null);
+    setMappingNotice('');
+    setMappingError('');
+    setMappingMode(true);
+  }
+
+  async function saveMapping(line, costCodeKey) {
+    const nextCode = String(costCodeKey || '').trim();
+    if (nextCode === String(line.costCodeKey || '').trim()) return;
+    setMappingSavingId(line.id);
+    setMappingNotice('');
+    setMappingError('');
+    try {
+      await updatePrelimsTemplateLine(selected.id, line.id, {
+        ...linePayload(lineToForm(line)),
+        costCodeKey: nextCode || null,
+      });
+      await refresh(selected.id);
+      setMappingNotice(`${line.name} mapping saved.`);
+    } catch (err) {
+      setMappingError(err.message || `Could not save the mapping for ${line.name}.`);
+    } finally {
+      setMappingSavingId(null);
+    }
   }
 
   function openAddForm() {
     const nextOrder =
       Math.max(0, ...(selected?.lines || []).map((line) => line.displayOrder || 0)) + 1;
     setForm(emptyLineForm(nextOrder));
-    setCodeQuery('');
     scrollLineFormIntoView();
   }
 
   function cancelLineForm() {
     setForm(null);
-    setCodeQuery('');
   }
 
   const lineFormProps = {
     form,
     busy,
-    codeQuery,
-    mappingOptions,
     classificationFor,
     costCodes,
+    commercialStructure,
+    onSetUpCommercialStructure,
     onSubmit: handleSaveLine,
     onCancel: cancelLineForm,
     onUpdateForm: updateForm,
-    onCodeQueryChange: setCodeQuery,
   };
 
   return (
@@ -503,6 +529,8 @@ export default function AdminPrelimsTemplatesPage({ onBack }) {
                       onClick={() => {
                         setError('');
                         setForm(null);
+                        setMappingMode(false);
+                        setMappingFilter('all');
                         refresh(row.id).catch((err) => setError(err.message));
                       }}
                     >
@@ -531,11 +559,19 @@ export default function AdminPrelimsTemplatesPage({ onBack }) {
             {selected.sourceStandardVersion
               ? ` · copied from BuildLite Standard v${selected.sourceStandardVersion}`
               : ''}
-            . {selected.lines?.length || 0} lines. Company-owned copy — editing it does not change
-            BuildLite Standard. Mapping stores the canonical cost-code identity only and does not
-            rewrite Cost Code Master reporting groups. Several lines may share one customer code.
+            . {selected.lines?.length || 0} lines.
           </p>
-          <div className="admin-form__grid">
+          <p className="admin-panel__lead">
+            Map each standard Prelim once to your company Cost Codes. New developments will use
+            these mappings automatically. A development can override a mapping where a site
+            genuinely needs a different Cost Code.
+          </p>
+          <p className="admin-prelims-mapping-summary" aria-label="Prelims mapping summary">
+            {mappingSummary.total} lines &middot; {mappingSummary.enabled} enabled &middot;{' '}
+            {mappingSummary.mapped} mapped &middot; {mappingSummary.unmapped} unmapped &middot;{' '}
+            {mappingSummary.disabled} disabled
+          </p>
+          {!mappingMode ? <div className="admin-form__grid">
             <label className="dev-form__field admin-form__field--wide">
               <span className="dev-form__label">Template name</span>
               <input
@@ -545,8 +581,8 @@ export default function AdminPrelimsTemplatesPage({ onBack }) {
                 aria-label="Rename Prelims template"
               />
             </label>
-          </div>
-          <div className="dev-prelims__actions">
+          </div> : null}
+          {!mappingMode ? <div className="dev-prelims__actions">
             <AdminButton disabled={busy} onClick={() => handleSaveHeader()}>
               Save name
             </AdminButton>
@@ -566,17 +602,112 @@ export default function AdminPrelimsTemplatesPage({ onBack }) {
             <AdminButton disabled={busy} variant="secondary" onClick={openAddForm}>
               Add template line
             </AdminButton>
-          </div>
+            <AdminButton disabled={busy} variant="primary" onClick={startMapping}>
+              Map Cost Codes
+            </AdminButton>
+          </div> : null}
 
-          {isAddForm ? (
+          {mappingMode ? (
+            <section className="admin-prelims-mapping-workspace" aria-label="Map Prelims Cost Codes">
+              <div className="admin-prelims-mapping-workspace__header">
+                <div>
+                  <h3>Map Cost Codes</h3>
+                  <p>
+                    Choose the company Cost Code for each active Prelim. Each selection saves
+                    immediately.
+                  </p>
+                </div>
+                <AdminButton
+                  variant="secondary"
+                  onClick={() => {
+                    setMappingMode(false);
+                    setMappingFilter('all');
+                  }}
+                >
+                  Back to template
+                </AdminButton>
+              </div>
+              {mappingNotice ? (
+                <p role="status" className="admin-prelims-mapping-notice">
+                  {mappingNotice}
+                </p>
+              ) : null}
+              {mappingError ? (
+                <p role="alert" className="admin-prelims-mapping-error">
+                  {mappingError}
+                </p>
+              ) : null}
+              <div className="admin-prelims-mapping-filter" aria-label="Cost Code mapping filter">
+            <span>Show</span>
+            {[
+              ['all', 'All lines'],
+              ['unmapped', `Unmapped (${mappingSummary.unmapped})`],
+              ['mapped', `Mapped (${mappingSummary.mapped})`],
+            ].map(([value, label]) => (
+              <AdminButton
+                key={value}
+                variant={mappingFilter === value ? 'primary' : 'secondary'}
+                onClick={() => setMappingFilter(value)}
+              >
+                {label}
+              </AdminButton>
+            ))}
+              </div>
+              <AdminDataTable className="admin-prelims-mapping-table">
+                <thead>
+                  <tr>
+                    <th>Prelim</th>
+                    <th>Company Cost Code</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mappingLines.map((line) => (
+                    <tr key={line.id}>
+                      <td>
+                        <strong>{line.name}</strong>
+                        {line.description ? (
+                          <span className="admin-prelims-mapping-guidance">{line.description}</span>
+                        ) : null}
+                      </td>
+                      <td>
+                        <CommercialHeadCostCodePicker
+                          category="PRELIMINARIES"
+                          structure={commercialStructure}
+                          codes={costCodes}
+                          identity="code"
+                          onSetUpCommercialStructure={onSetUpCommercialStructure}
+                          name={line.name}
+                          valueCode={line.costCodeKey || ''}
+                          disabled={Boolean(mappingSavingId)}
+                          onChange={(code) => saveMapping(line, code)}
+                        />
+                      </td>
+                      <td>
+                        {mappingSavingId === line.id ? (
+                          <AdminStatusBadge tone="accent">Saving…</AdminStatusBadge>
+                        ) : line.costCodeKey ? (
+                          <AdminStatusBadge tone="success">Mapped</AdminStatusBadge>
+                        ) : (
+                          <AdminStatusBadge tone="neutral">Unmapped</AdminStatusBadge>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </AdminDataTable>
+            </section>
+          ) : null}
+
+          {!mappingMode && isAddForm ? (
             <div ref={lineFormRef} className="admin-prelims-line-form--add">
               <TemplateLineForm {...lineFormProps} />
             </div>
           ) : null}
 
-          {!selected.lines?.length && !form ? (
+          {!mappingMode && !selected.lines?.length && !form ? (
             <p>This blank template has no lines yet.</p>
-          ) : selected.lines?.length ? (
+          ) : !mappingMode && selected.lines?.length ? (
             <AdminDataTable>
               <thead>
                 <tr>
@@ -607,10 +738,10 @@ export default function AdminPrelimsTemplatesPage({ onBack }) {
                         <td>{line.enabled ? 'Yes' : 'Disabled'}</td>
                         <td>{line.name}</td>
                         <td className="admin-table__guidance">{line.description || '—'}</td>
-                        <td>{line.forecastDriver}</td>
+                        <td>{driverLabel(line.forecastDriver)}</td>
                         <td>
                           {line.forecastDriver === 'TIME'
-                            ? `${line.startBasis || '—'} → ${line.endBasis || '—'}`
+                            ? `${timeBasisLabel(line.startBasis)} → ${timeBasisLabel(line.endBasis)}`
                             : '—'}
                         </td>
                         <td>
@@ -641,7 +772,7 @@ export default function AdminPrelimsTemplatesPage({ onBack }) {
                               disabled={busy}
                               onClick={() => openEditForm(line)}
                             >
-                              Edit
+                              Edit line
                             </AdminButton>
                             <AdminButton
                               variant="secondary"

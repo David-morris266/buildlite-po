@@ -117,7 +117,7 @@ if (!isDbConfigured()) {
     const historic = (await pool.query("INSERT INTO cvr_periods(client_id,development_id,period_key,period_label,status,commentary,version,budget_source,submitted_at,approved_at) VALUES($1,$2,'P01','P01','locked','{}',1,'legacy_cvr',NOW(),NOW()) RETURNING *", [fixture.client.id, nextDevelopmentId])).rows[0];
     const historicRead = await periods.getCvrPeriod(fixture.client.id, nextDevelopmentId, historic.id);
     assert.deepEqual(historicRead.period.commercialHierarchy, {state:'legacy_not_captured',captured:false});
-    const next = await periods.createCvrPeriod(fixture.client.id, nextDevelopmentId, {periodKey:'P02',periodLabel:'P02',reportingMonth:'2026-10-01'}, {actor:'Hierarchy QS'});
+    const next = await periods.createCvrPeriod(fixture.client.id, nextDevelopmentId, {periodKey:'P02',periodLabel:'P02',reportingMonth:'2026-10-01'}, {actor:'Hierarchy QS',currentDate:new Date('2027-03-08T12:00:00.000Z')});
     assert.equal(next.ok, true, next.message);
     assert.equal(next.period.commercialHierarchy.state, 'live');
     assert.equal(next.period.commercialHierarchy.document.costCodes.find(row => row.costCodeKey === 'TWO').head.name, 'Renamed after Submit');

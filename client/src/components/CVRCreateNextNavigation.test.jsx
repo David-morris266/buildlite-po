@@ -146,7 +146,7 @@ describe('Create Next Period navigation (BL-031F)', () => {
     const input = dialog.querySelector('input[type="month"]');
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
     await act(async () => {
-      setter.call(input, '2026-09');
+      setter.call(input, '2026-08');
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
     });
@@ -157,7 +157,7 @@ describe('Create Next Period navigation (BL-031F)', () => {
       create.click();
     });
     await flush();
-    expect(createNextCvrPeriod).toHaveBeenCalledWith(DEV.id, { reportingMonth: '2026-09' });
+    expect(createNextCvrPeriod).toHaveBeenCalledWith(DEV.id, { reportingMonth: '2026-08' });
     expect(onBackToRegister).toHaveBeenCalledTimes(1);
   });
 
@@ -262,7 +262,7 @@ describe('Create Next Period navigation (BL-031F)', () => {
     const input = dialog.querySelector('input[type="month"]');
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
     await act(async () => {
-      setter.call(input, '2026-09');
+      setter.call(input, '2026-08');
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
     });
@@ -273,7 +273,7 @@ describe('Create Next Period navigation (BL-031F)', () => {
       create.click();
     });
     await flush();
-    expect(createNextCvrPeriod).toHaveBeenCalledWith(DEV.id, { reportingMonth: '2026-09' });
+    expect(createNextCvrPeriod).toHaveBeenCalledWith(DEV.id, { reportingMonth: '2026-08' });
     expect(onBackToRegister).toHaveBeenCalledTimes(1);
     expect(onBackToSummary).not.toHaveBeenCalled();
   });

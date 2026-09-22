@@ -24,6 +24,7 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 | `016_client_prelims_templates.sql` | BL-033D.x.1: tenant-owned company Prelims templates + lines (additive). COMPLETE. Applied on `buildlite_test` and local `buildlite_clone`. Company-template UAT **PASSED**. **BL-033D.x.2 COMPLETE** (no 018): tailoring + canonical cost-code mapping against the shared server master. Mapping UAT **PASSED** (26 lines / 2 mapped to `5231`). Does not alter CVR, snapshots, programme, classification, Cost Code Master hierarchy, or `development_prelims_items`. BuildLite Standard is a product-owned application definition, not tenant rows. Multiple template lines may map to the same customer cost code (no unique on `cost_code_key`). |
 | `017_cost_codes_tenant_master.sql` | BL-033D.x.2A.3 COMPLETE: additive Admin-master columns on existing `cost_codes`. Unique `(client_id, lower(btrim(code)))`. Applied on `buildlite_test` by tests and on local `buildlite_clone` by the controlled cutover. Test Site 1: 98 rows / 98 active / 0 collisions. Flag-ON Admin UAT **PASSED**. Repo default remains OFF. |
 | `046_tenant_commercial_structure.sql` | GP-5E.1A: tenant-owned Commercial Head / Family / Reporting Group catalogue, stable Cost Code references, exact structural adoption, immutable audit and `commercial_structure.manage`. No template auto-adoption or CVR lifecycle change. |
+| `054_cost_code_classification_authority.sql` | GP8-012A: dedicated Cost Code semantic-classification authority for Commercial Director/Admin and authenticated classification provenance. No classification backfill. |
 | `018_development_prelims_item_provenance.sql` | BL-033D.x.3 COMPLETE: nullable template provenance on `development_prelims_items` + partial unique `(development_id, source_template_id, source_template_key)`. No unique on `cost_code_key`. Applied on `buildlite_test` and local `buildlite_clone`. Test Site 1 setup UAT **PASSED**. Existing D.1 manual rows stay NULL; fourth template-instantiated row has provenance. |
 | `022_cvr_snapshot_expected_liability.sql` | BL-038E: nullable snapshot-header/row CE Expected Liability plus nullable row provenance. New locks use schema v3; pre-v3 snapshots remain NULL/unavailable rather than receiving fake £0. Applied by automated tests to `buildlite_test`; not applied to `buildlite_clone` pending controlled human UAT. |
 
@@ -136,3 +137,27 @@ Adds bounded append-only Cost Code import evidence, explicit hierarchy review di
 ### 049_summary_revenue_mode.sql
 
 Adds development-scoped Summary Revenue mode and owner-defined lines, authenticated settings provenance and a mode-aware CVR snapshot constraint. Existing settings remain Sales Register and historic snapshots are not backfilled.
+
+### 050_selling_costs_company_templates.sql
+
+Adds tenant-owned Selling Costs template/configuration headers, future-capable Detailed line definitions, stable Simple Cost Code mapping and Development override provenance. It creates no template rows, mappings or CVR facts and does not backfill the legacy 5400 recommendation.
+
+### 051_commercial_template_authority.sql
+
+Adds the dedicated `commercial_templates.manage` permission and grants it only to Commercial Director and Admin by default. It changes no template, Cost Code, development or CVR data.
+
+### 052_detailed_selling_costs_development_setup.sql
+
+Adds durable, tenant/development-scoped Detailed Selling Costs line assumptions and authenticated override provenance. It creates no assumptions, mappings, proposal values or CVR facts and enables no Detailed adoption.
+
+### 053_selling_costs_quantity_sources.sql
+
+Adds controlled Detailed Selling Costs quantity-source and unit fields to company and Development assumptions. It does not backfill Plot Master classifications, calculate quantities, or change CVR evidence.
+
+### 055_commercial_head_buildlite_category.sql
+
+Adds an optional controlled BuildLite category to tenant Commercial Heads and a dedicated category-assignment permission for Commercial Director and Admin. Existing tenant Heads are not inferred or backfilled; Cost Codes, CVRs and historic hierarchy evidence are unchanged.
+
+### 056_plot_master_tenure_review.sql
+
+Adds dedicated Plot Master authority for Admin, Commercial Director, Commercial Manager and QS, plus append-only authenticated audit for explicit plot-level controlled-tenure review. Existing Plot Master source tenure and controlled classifications are not inferred or backfilled.

@@ -73,6 +73,7 @@ function buildProposalFingerprint({
   forecastRevenue = null,
   forecastSellingCosts = null,
   destinationCostCodeKey = "",
+  detailedEvidence = null,
 } = {}) {
   const payload = {
     developmentId: String(developmentId || ""),
@@ -83,6 +84,7 @@ function buildProposalFingerprint({
     forecastRevenue: roundMoney(forecastRevenue),
     forecastSellingCosts: roundMoney(forecastSellingCosts),
     destinationCostCodeKey: String(destinationCostCodeKey || "").trim(),
+    detailedEvidence: detailedEvidence || null,
   };
   return `bl034c-${fnv1aHex(JSON.stringify(payload))}`;
 }
@@ -108,6 +110,9 @@ function normalizeSellingCostsAdoptionMetadata(raw) {
     systemForecastAtAdoption: roundMoney(raw.systemForecastAtAdoption),
     previousFinalForecast: roundMoney(raw.previousFinalForecast),
     previousAdjustment: roundMoney(raw.previousAdjustment) ?? 0,
+    originalBaselineAdjustment:
+      roundMoney(raw.originalBaselineAdjustment) ?? roundMoney(raw.previousAdjustment) ?? 0,
+    originalBaselineReason: String(raw.originalBaselineReason ?? raw.previousReason ?? ""),
     proposalFingerprint: String(raw.proposalFingerprint || ""),
     assumptionPercent: roundMoney(raw.assumptionPercent),
     forecastRevenueAtAdoption,
@@ -121,9 +126,12 @@ function normalizeSellingCostsAdoptionMetadata(raw) {
     adoptedAt: raw.adoptedAt || null,
     adoptedBy: raw.adoptedBy || null,
     superseded: Boolean(raw.superseded),
+    released: Boolean(raw.released),
     inputId: raw.inputId ? String(raw.inputId) : null,
     inputVersionAtAdoption,
     inputVersion: inputVersionAtAdoption,
+    evidenceVersion: Number.isInteger(Number(raw.evidenceVersion)) ? Number(raw.evidenceVersion) : 1,
+    detailedEvidence: raw.detailedEvidence && typeof raw.detailedEvidence === "object" ? raw.detailedEvidence : null,
   };
 }
 
@@ -134,6 +142,8 @@ function buildSellingCostsAdoptionMetadata({
   systemForecastAtAdoption,
   previousFinalForecast,
   previousAdjustment,
+  originalBaselineAdjustment,
+  originalBaselineReason,
   proposalFingerprint,
   assumptionPercent,
   forecastRevenueAtAdoption,
@@ -147,6 +157,8 @@ function buildSellingCostsAdoptionMetadata({
   inputId,
   inputVersionAtAdoption,
   inputVersion,
+  evidenceVersion = 1,
+  detailedEvidence = null,
 } = {}) {
   const revenue = roundMoney(forecastRevenueAtAdoption ?? forecastRevenueUsed);
   const versionAtAdoption = Number.isInteger(Number(inputVersionAtAdoption))
@@ -162,6 +174,9 @@ function buildSellingCostsAdoptionMetadata({
     adoptedAdjustment: roundMoney(adoptedAdjustment) ?? 0,
     systemForecastAtAdoption: roundMoney(systemForecastAtAdoption),
     previousAdjustment: roundMoney(previousAdjustment) ?? 0,
+    originalBaselineAdjustment:
+      roundMoney(originalBaselineAdjustment) ?? roundMoney(previousAdjustment) ?? 0,
+    originalBaselineReason: String(originalBaselineReason || ""),
     previousFinalForecast: roundMoney(previousFinalForecast),
     proposalFingerprint: String(proposalFingerprint || ""),
     destinationCostCodeKey: String(destinationCostCodeKey || "").trim(),
@@ -173,6 +188,9 @@ function buildSellingCostsAdoptionMetadata({
     inputId: inputId ? String(inputId) : null,
     inputVersionAtAdoption: versionAtAdoption,
     superseded: false,
+    released: false,
+    evidenceVersion,
+    detailedEvidence,
   };
 }
 
@@ -220,6 +238,14 @@ function resolveSellingCostsReviewState({
     };
   }
 
+  if (normalized.released) {
+    return {
+      primary: SELLING_COSTS_REVIEW_STATES.NOT_ADOPTED,
+      isUpToDate: false,
+      coincidentalMatch: false,
+    };
+  }
+
   const adjustmentMatches = moneyClose(currentAdjustment, normalized.adoptedAdjustment);
   if (normalized.superseded || !adjustmentMatches) {
     return {
@@ -263,6 +289,7 @@ function compareSellingCostsToCvr({
   cvrRow = null,
   overlay = null,
   existingMetadata = null,
+  detailedEvidence = null,
 } = {}) {
   const proposalAmount = roundMoney(forecastSellingCosts);
   const systemForecast = cvrRow
@@ -309,6 +336,7 @@ function compareSellingCostsToCvr({
     forecastRevenue,
     forecastSellingCosts: proposalAmount,
     destinationCostCodeKey,
+    detailedEvidence,
   });
 
   const metadata =
@@ -355,6 +383,7 @@ function compareSellingCostsToCvr({
     adoptionMetadata: metadata,
     inputId: overlay?.id || null,
     inputVersion: overlay?.version ?? null,
+    detailedEvidence,
   };
 }
 

@@ -207,7 +207,7 @@ async function classify(clientId, costCodeKey, semanticGroup = "SELLING") {
 async function saveAssumption(developmentId, percent = 1.75) {
   const res = await request(app)
     .put(`/api/developments/${developmentId}/selling-costs`)
-    .send({ version: 0, assumptionPercent: percent, actor: "qs-tester" });
+    .send({ version: 0, assumptionPercent: percent, destinationCostCodeKey: "5400", actor: "qs-tester" });
   assert.equal(res.status, 201, res.body?.message || JSON.stringify(res.body));
   return res.body;
 }
@@ -427,8 +427,10 @@ if (!isDbConfigured()) {
   test("GET review blocks inactive and missing destinations", async () => {
     const active = await getActiveClient();
     const inactiveDev = await createDevelopment(active);
-    await insertCostCode(active.id, "5400", "Selling Costs — General Allowance", { active: false });
+    await insertCostCode(active.id, "5400", "Selling Costs — General Allowance");
     await classify(active.id, "5400");
+    await saveAssumption(inactiveDev, 1.75);
+    await pool.query(`UPDATE cost_codes SET is_active=false WHERE client_id=$1 AND lower(code)='5400'`,[active.id]);
     const inactive = await request(app).get(
       `/api/developments/${inactiveDev}/selling-costs/review`
     );
@@ -440,6 +442,8 @@ if (!isDbConfigured()) {
     );
 
     const missingDev = await createDevelopment(active);
+    await pool.query(`UPDATE cost_codes SET is_active=true WHERE client_id=$1 AND lower(code)='5400'`,[active.id]);
+    await saveAssumption(missingDev, 1.75);
     await pool.query(`DELETE FROM cost_codes WHERE client_id = $1 AND lower(code) = '5400'`, [
       active.id,
     ]);

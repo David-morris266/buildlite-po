@@ -227,8 +227,8 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
   const hasSitePrelims = (collection?.items || []).length > 0;
   const setupActionLabel = hasSitePrelims ? 'Manage site Prelims' : 'Set up site Prelims';
   const setupSupportingCopy = hasSitePrelims
-    ? 'Use your company Prelims template to add or update site assumptions.'
-    : 'Use your company Prelims template to create the site forecast.';
+    ? 'Use your company Prelims template to add more assumptions to the Site Prelims proposal.'
+    : 'Use your company Prelims template to add assumptions to the Site Prelims proposal.';
 
   const formTimeSpan = useMemo(() => {
     if (form.forecastDriver !== PRELIMS_DRIVERS.TIME) {
@@ -373,7 +373,7 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
             </dd>
           </div>
           <div>
-            <dt>Proposal summary</dt>
+            <dt>Site Prelims proposal</dt>
             <dd>
               {formatResolvedProposalText(
                 summary?.development?.activeProposal,
@@ -395,7 +395,6 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
           developmentId={developmentId}
           onCancel={() => setWorkspaceView('lines')}
           onApplied={async () => {
-            setWorkspaceView('lines');
             await load();
           }}
         />

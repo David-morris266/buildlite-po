@@ -605,6 +605,10 @@ export default function CVRSummaryPage({
           <StatusBadge status={summary.status} />
           <dl className="cvr-summary__meta-grid">
             <div>
+              <dt>Reporting Period</dt>
+              <dd>{summary.header.reportingPeriodLabel}</dd>
+            </div>
+            <div>
               <dt>Created</dt>
               <dd>{summary.header.createdLabel}</dd>
             </div>

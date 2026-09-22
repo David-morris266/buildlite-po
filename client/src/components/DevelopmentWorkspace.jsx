@@ -66,6 +66,7 @@ import {
   applyDevelopmentWorkspaceTabSelection,
   DEVELOPMENT_WORKSPACE_TABS,
 } from '../developments/developmentWorkspaceTabNavigation';
+import { useOptionalUnsavedChanges } from '../navigation/UnsavedChangesContext.js';
 
 const TABS = DEVELOPMENT_WORKSPACE_TABS;
 
@@ -87,9 +88,22 @@ export default function DevelopmentWorkspace({
   onDevelopmentChanged,
   initialActiveTab = null,
   initialCvrPeriodKey = null,
+  initialPackageKey = null,
+  initialPackageTab = null,
+  initialPlotMasterView = null,
   onOpenPackage,
+  onNavigationStateChange,
+  onNavigationStateReplace,
   onNavigate,
 }) {
+  const unsavedChanges = useOptionalUnsavedChanges();
+  const requestNavigation = useCallback(
+    (navigate) => {
+      if (unsavedChanges) unsavedChanges.requestNavigation(navigate);
+      else navigate();
+    },
+    [unsavedChanges]
+  );
   const [activeTab, setActiveTab] = useState(initialActiveTab || 'overview');
   const [cvrView, setCvrView] = useState(initialCvrPeriodKey ? 'summary' : 'register');
   const [cvrPeriodKey, setCvrPeriodKey] = useState(initialCvrPeriodKey);
@@ -363,6 +377,31 @@ export default function DevelopmentWorkspace({
     ]
   );
 
+  useEffect(() => {
+    if (!initialPackageKey || packageLaunch) return;
+    const packageRow = (model?.packages || []).find(
+      (item) => item.orderKey === initialPackageKey
+    );
+    if (!packageRow) {
+      if (packagesLoadState === 'loaded') {
+        setActiveTab('packages');
+        onNavigationStateReplace?.({ workspaceTab: 'packages' });
+      }
+      return;
+    }
+    setPackageLaunch(buildPackageWorkspaceLaunchContext({
+      packageRow,
+      orderKey: initialPackageKey,
+      openedFrom: PACKAGE_OPENED_FROM.DevelopmentPackages,
+      initialTab: initialPackageTab || 'overview',
+      developmentId: development.id,
+    }));
+    setActiveTab('packages');
+  }, [
+    development.id, initialPackageKey, initialPackageTab,
+    model?.packages, packageLaunch, packagesLoadState, onNavigationStateReplace,
+  ]);
+
   const commercialEventsAuthorityEnabled = isCommercialEventServerAuthorityEnabled();
   const commercialEventsLoading =
     commercialEventsAuthorityEnabled && commercialEventsLoadState === 'loading';
@@ -485,13 +524,18 @@ export default function DevelopmentWorkspace({
   ]);
 
   useEffect(() => {
-    setActiveTab('overview');
+    setActiveTab(initialActiveTab || 'overview');
     setPackageLaunch(null);
     setPackageLaunchError('');
     setCommercialNavigationStack([]);
-  }, [development?.id]);
+  }, [development?.id, initialActiveTab]);
 
   function handleSelectWorkspaceTab(tabId) {
+    if (tabId === activeTab) return;
+    requestNavigation(() => selectWorkspaceTab(tabId));
+  }
+
+  function selectWorkspaceTab(tabId) {
     const next = applyDevelopmentWorkspaceTabSelection(tabId);
     if (!next) return;
 
@@ -499,15 +543,18 @@ export default function DevelopmentWorkspace({
     setPackageLaunchError(next.packageLaunchError);
     setCommercialNavigationStack(next.commercialNavigationStack);
     setActiveTab(next.activeTab);
+    onNavigationStateChange?.({ workspaceTab: next.activeTab });
   }
 
   function handleResolveReadiness(target) {
-    if (target?.tab === 'cvr' && target.periodKey) {
-      setCvrPeriodKey(target.periodKey);
-      setCvrView('summary');
-      handleSelectWorkspaceTab('cvr');
-    } else if (target?.tab) handleSelectWorkspaceTab(target.tab);
-    else if (target?.view) onNavigate?.({ ...target, returnDevelopment: { id: development.id, name: development.developmentName || development.jobNumber || 'Development' } });
+    requestNavigation(() => {
+      if (target?.tab === 'cvr' && target.periodKey) {
+        setCvrPeriodKey(target.periodKey);
+        setCvrView('summary');
+        selectWorkspaceTab('cvr');
+      } else if (target?.tab) selectWorkspaceTab(target.tab);
+      else if (target?.view) onNavigate?.({ ...target, returnDevelopment: { id: development.id, name: development.developmentName || development.jobNumber || 'Development' } });
+    });
   }
 
   function handleStartFirstCvr() {
@@ -596,6 +643,7 @@ export default function DevelopmentWorkspace({
     setCvrPeriodKey(null);
     setCvrFocusCostCodeKey(null);
     setCvrHierarchyFilter(null);
+    onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey: null });
   }
 
   function handleOpenPackageFromDevelopment(_orderKey, launchContext) {
@@ -611,6 +659,11 @@ export default function DevelopmentWorkspace({
     setPackageLaunchError('');
     setPackageLaunch(launchContext);
     setActiveTab('packages');
+    onNavigationStateChange?.({
+      workspaceTab: 'packages',
+      packageKey: launchContext.orderKey,
+      packageTab: launchContext.initialTab || 'overview',
+    });
   }
 
   async function handleOpenVariationAccountItem(target) {
@@ -640,6 +693,7 @@ export default function DevelopmentWorkspace({
     setDevelopmentCommercialTarget(null);
     setCommercialRegisterError('');
     setActiveTab('packages');
+    onNavigationStateChange?.({ workspaceTab: 'packages' });
   }
 
   function handlePackageWorkspaceBack() {
@@ -774,7 +828,7 @@ export default function DevelopmentWorkspace({
   if (packageLaunch) {
     if (packageLaunchErrorMessage) {
       return (
-        <WorkspaceShell>
+        <WorkspaceShell className="dev-workspace-shell">
           <PackageWorkspaceNotFound
             message={packageLaunchErrorMessage}
             onBack={handleBackToDevelopmentPackages}
@@ -795,7 +849,7 @@ export default function DevelopmentWorkspace({
         packageWorkspaceResolution.status === 'loading')
     ) {
       return (
-        <WorkspaceShell>
+        <WorkspaceShell className="dev-workspace-shell">
           <div className="po-module-card">
             <POLoading message="Loading package commercial data…" />
             <div className="po-empty-state__actions">
@@ -813,7 +867,7 @@ export default function DevelopmentWorkspace({
     }
 
     return (
-      <WorkspaceShell>
+      <WorkspaceShell className="dev-workspace-shell">
         <SubcontractPackageWorkspace
           order={activePackageWorkspaceOrder}
           initialTab={packageLaunch.initialTab}
@@ -834,6 +888,11 @@ export default function DevelopmentWorkspace({
           matricesReady={matricesReady}
           assistantDevelopmentPackages={model?.packages || []}
           onAssistantNavigate={handleAssistantNavigation}
+          onTabChange={(packageTab) => onNavigationStateChange?.({
+            workspaceTab: 'packages',
+            packageKey: packageLaunch.orderKey,
+            packageTab,
+          })}
         />
       </WorkspaceShell>
     );
@@ -845,7 +904,7 @@ export default function DevelopmentWorkspace({
     cvrView,
     periodKey: cvrPeriodKey,
     origin: navigationOrigin,
-    onBackToList,
+    onBackToList: () => requestNavigation(onBackToList),
     onSelectTab: handleSelectWorkspaceTab,
     onBackToCvrRegister: resetCvrToRegister,
     onBackToCvrSummary: () => {
@@ -856,7 +915,7 @@ export default function DevelopmentWorkspace({
   });
 
   return (
-    <WorkspaceShell>
+    <WorkspaceShell className="dev-workspace-shell">
       <div
         className={`dev-workspace${activeTab === 'cvr' ? ' dev-workspace--cvr' : ''}${
           isCvrPeriodOpen ? ' dev-workspace--cvr-worksheet' : ''
@@ -976,6 +1035,8 @@ export default function DevelopmentWorkspace({
             initialPlotId={focusPlotId}
             onFocusPlotHandled={() => setFocusPlotId(null)}
             onPlotsChanged={handlePlotsChanged}
+            initialView={initialPlotMasterView || 'list'}
+            onViewChange={(plotMasterView)=>onNavigationStateChange?.({workspaceTab:'plot-master',plotMasterView:plotMasterView==='tenure-review'?'tenure-review':null})}
           />
         ) : null}
 
@@ -1035,7 +1096,7 @@ export default function DevelopmentWorkspace({
         ) : null}
 
         {activeTab === 'selling-costs' ? (
-          <DevelopmentSellingCostsWorkspace developmentId={model.id} />
+          <DevelopmentSellingCostsWorkspace developmentId={model.id} onReviewPlotTenures={()=>{setActiveTab('plot-master');onNavigationStateChange?.({workspaceTab:'plot-master',plotMasterView:'tenure-review'});}} />
         ) : null}
 
         {activeTab === 'prelims' ? (
@@ -1057,15 +1118,18 @@ export default function DevelopmentWorkspace({
                 setCvrView('summary');
                 setCvrFocusCostCodeKey(null);
                 setCvrHierarchyFilter(null);
+                onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey: cvrPeriodKey });
               }}
               onBackToRegister={() => {
                 setCvrView('register');
                 setCvrPeriodKey(null);
                 setCvrFocusCostCodeKey(null);
                 setCvrHierarchyFilter(null);
+                onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey: null });
               }}
               onPeriodChanged={handleCvrChanged}
               onOpenVariationAccount={handleOpenVariationAccountItem}
+              onOpenAdjustmentWorkflow={({ tabId }) => handleSelectWorkspaceTab(tabId)}
               initialCostCodeKey={cvrFocusCostCodeKey}
               hierarchyFilter={cvrHierarchyFilter}
               onClearHierarchyFilter={() => setCvrHierarchyFilter(null)}
@@ -1090,6 +1154,7 @@ export default function DevelopmentWorkspace({
                 setCvrPeriodKey(null);
                 setCvrFocusCostCodeKey(null);
                 setCvrHierarchyFilter(null);
+                onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey: null });
               }}
               onOpenPackage={onOpenPackage}
               onOpenVariationAccount={handleOpenVariationAccountItem}
@@ -1110,6 +1175,7 @@ export default function DevelopmentWorkspace({
                 setCvrView('summary');
                 setCvrFocusCostCodeKey(null);
                 setCvrHierarchyFilter(null);
+                onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey });
               }}
               onChanged={handleCvrChanged}
               commercialReadiness={commercialReadiness}

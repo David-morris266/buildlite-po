@@ -64,7 +64,7 @@ function boolSelect(value, onChange) {
   );
 }
 
-export default function AdminCostCodesPage({ onBack, issueFilter = null, onClearIssueFilter }) {
+export default function AdminCostCodesPage({ onBack, issueFilter = null, onClearIssueFilter, onOpenBulkClassification = null }) {
   const serverAuthority = isAdminCostCodeServerAuthority();
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -288,6 +288,7 @@ export default function AdminCostCodesPage({ onBack, issueFilter = null, onClear
       onBack={onBack}
       actions={<><AdminButton variant="secondary" onClick={() => setHierarchySetup(true)} disabled={showError || !serverAuthority || masterUnresolved}>Set up Commercial Hierarchy</AdminButton><AdminButton variant="primary" onClick={startNew} disabled={showError}>Add Cost Code</AdminButton></>}
     >
+      {onOpenBulkClassification ? <AdminButton type="button" variant="secondary" onClick={onOpenBulkClassification}>Bulk classification</AdminButton> : null}
       {classificationError ? (
         <p className="admin-inline-warning" role="status">{classificationError}</p>
       ) : null}

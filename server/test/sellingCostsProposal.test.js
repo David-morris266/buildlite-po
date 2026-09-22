@@ -10,10 +10,7 @@ const {
 const { parseAssumptionPercent } = require("../services/sellingCostsValidation");
 const {
   DEFAULT_ASSUMPTION_PERCENT,
-  FORBIDDEN_SIMPLE_DESTINATION_CODES,
-  RECOMMENDED_SIMPLE_DESTINATION_CODE,
 } = require("../services/sellingCostsConstants");
-const { isForbiddenDestination } = require("../services/sellingCostsDestination");
 
 test("BL-034B known-answer: £10,444,608 × 2.00% = £208,892.16", () => {
   assert.equal(calculateForecastSellingCosts(10444608, 2), 208892.16);
@@ -34,10 +31,8 @@ test("BL-034B rejects negative and malformed percentages", () => {
   assert.equal(parseAssumptionPercent("1.75").value, 1.75);
 });
 
-test("BL-034B recommended destination is a hint; 5405 is forbidden", () => {
-  assert.equal(RECOMMENDED_SIMPLE_DESTINATION_CODE, "5400");
-  assert.ok(FORBIDDEN_SIMPLE_DESTINATION_CODES.includes("5405"));
-  assert.equal(isForbiddenDestination("5405"), true);
-  assert.equal(isForbiddenDestination("5400"), false);
-  assert.equal(isForbiddenDestination("6120"), false);
+test("BuildLite owns no numeric Simple Selling Costs destination", () => {
+  const constants = require("../services/sellingCostsConstants");
+  assert.equal(constants.RECOMMENDED_SIMPLE_DESTINATION_CODE, undefined);
+  assert.equal(constants.FORBIDDEN_SIMPLE_DESTINATION_CODES, undefined);
 });

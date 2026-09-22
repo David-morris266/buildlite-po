@@ -48,6 +48,7 @@ const testDevelopmentIds = [];
 const testTenantIds = [];
 const testCostCodeIds = [];
 const testPeriodIds = [];
+const testTemplateIds = [];
 
 function trackDevelopment(id) {
   if (id && !testDevelopmentIds.includes(id)) testDevelopmentIds.push(id);
@@ -107,6 +108,11 @@ async function cleanup() {
     ]);
     await pool.query(`DELETE FROM developments WHERE id = ANY($1::text[])`, [testDevelopmentIds]);
   }
+  if (testTemplateIds.length) {
+    await pool.query(`DELETE FROM client_selling_cost_templates WHERE id = ANY($1::uuid[])`, [
+      testTemplateIds,
+    ]);
+  }
   if (testCostCodeIds.length) {
     await pool.query(`DELETE FROM cost_codes WHERE id = ANY($1::uuid[])`, [testCostCodeIds]);
   }
@@ -118,6 +124,55 @@ async function cleanup() {
     await pool.query(`DELETE FROM developments WHERE client_id = ANY($1::uuid[])`, [testTenantIds]);
     await pool.query(`DELETE FROM clients WHERE id = ANY($1::uuid[])`, [testTenantIds]);
   }
+}
+
+async function configureDetailedTemplate(clientId, developmentId, lines) {
+  const template = await pool.query(
+    `
+      INSERT INTO client_selling_cost_templates (
+        client_id, name, origin, is_default, version, created_by_display_name, updated_by_display_name
+      )
+      VALUES ($1, $2, 'blank', true, 1, 'Integration test', 'Integration test')
+      RETURNING id
+    `,
+    [clientId, `Detailed adoption ${Date.now()}`]
+  );
+  const templateId = template.rows[0].id;
+  testTemplateIds.push(templateId);
+
+  for (const [index, line] of lines.entries()) {
+    await pool.query(
+      `
+        INSERT INTO client_selling_cost_template_lines (
+          client_id, template_id, template_key, name, forecast_driver,
+          default_lump_sum, cost_code_id, display_order, enabled, version
+        )
+        VALUES ($1, $2, $3, $4, 'LUMP_SUM', $5, $6, $7, $8, 1)
+      `,
+      [
+        clientId,
+        templateId,
+        line.key,
+        line.name,
+        line.amount,
+        line.costCodeId,
+        index,
+        line.enabled !== false,
+      ]
+    );
+  }
+
+  await pool.query(
+    `
+      UPDATE development_selling_costs_settings
+      SET mode = 'detailed', assumption_percent = NULL,
+          source_template_id = $3, source_template_version = 1,
+          version = version + 1, updated_at = NOW()
+      WHERE client_id = $1 AND development_id = $2
+    `,
+    [clientId, developmentId, templateId]
+  );
+  return templateId;
 }
 
 async function getActiveClient() {
@@ -204,7 +259,7 @@ async function classify(clientId, costCodeKey, semanticGroup = "SELLING") {
 async function saveAssumption(developmentId, percent = 1.75) {
   const res = await request(app)
     .put(`/api/developments/${developmentId}/selling-costs`)
-    .send({ version: 0, assumptionPercent: percent, actor: "qs-tester" });
+    .send({ version: 0, assumptionPercent: percent, destinationCostCodeKey: "5400", actor: "qs-tester" });
   assert.equal(res.status, 201, res.body?.message || JSON.stringify(res.body));
   return res.body;
 }
@@ -313,27 +368,35 @@ async function loadReview(developmentId) {
 }
 
 function intentFromReview(preview, extras = {}) {
+  const comparisons = Array.isArray(preview.comparisons) && preview.comparisons.length
+    ? preview.comparisons
+    : [preview.comparison];
   return {
     expectedPeriodKey: preview.periodKey,
+    expectedPeriodVersion: preview.periodVersion,
     expectedReportingMonth: preview.reportingMonth,
     expectedSettingsVersion: Number(preview.proposal?.settings?.version) || 0,
     proposedAdjustment: 999999,
     proposedFinal: 1,
     forecastRevenue: 1,
     assumptionPercent: 99,
-    selections: [
-      {
-        destinationCostCodeKey: preview.comparison.costCodeKey,
-        proposalFingerprint: preview.comparison.proposalFingerprint,
-        expectedInputVersion: preview.comparison.inputVersion,
-        expectedSystemForecast: preview.comparison.systemForecast,
-        expectedCurrentAdjustment: preview.comparison.currentAdjustment,
+    selections: comparisons.map((comparison) => ({
+        destinationCostCodeKey: comparison.costCodeKey,
+        proposalFingerprint: comparison.proposalFingerprint,
+        expectedInputVersion: comparison.inputVersion,
+        expectedSystemForecast: comparison.systemForecast,
+        expectedCurrentAdjustment: comparison.currentAdjustment,
         proposedAdjustment: 999999,
         proposedFinal: 1,
         forecastSellingCosts: 1,
         ...extras,
-      },
-    ],
+      })),
+    reconciliationExpectations: (preview.reconciliation || []).map((row) => ({
+      costCodeKey: row.costCodeKey,
+      expectedInputVersion: row.inputVersion,
+      expectedCurrentAdjustment: row.currentAdjustment,
+      action: row.action,
+    })),
   };
 }
 
@@ -342,6 +405,7 @@ function exactClientIntentFromReview(preview) {
   const comparison = preview?.comparison || {};
   return {
     expectedPeriodKey: preview.periodKey,
+    expectedPeriodVersion: preview.periodVersion,
     expectedReportingMonth: preview.reportingMonth,
     expectedSettingsVersion: Number(preview.proposal?.settings?.version) || 0,
     actor: "Commercial Manager",
@@ -356,6 +420,12 @@ function exactClientIntentFromReview(preview) {
         acknowledgeProposalBelowSystem: false,
       },
     ],
+    reconciliationExpectations: (preview.reconciliation || []).map((row) => ({
+      costCodeKey: row.costCodeKey,
+      expectedInputVersion: row.inputVersion,
+      expectedCurrentAdjustment: row.currentAdjustment,
+      action: row.action,
+    })),
   };
 }
 
@@ -491,6 +561,57 @@ if (!isDbConfigured()) {
     assert.equal(refreshed.canAdopt, true);
   });
 
+  test("destination change atomically releases the prior workflow position and adopts the new one", async () => {
+    const active = await getActiveClient();
+    const { developmentId, periodId } = await seedReadySite(active);
+    const firstPreview = await loadReview(developmentId);
+    const first = await postAdopt(developmentId, intentFromReview(firstPreview));
+    assert.equal(first.status, 200, first.body?.message || JSON.stringify(first.body));
+
+    await insertCostCode(active.id, "5410", "Selling Costs — New destination");
+    await classify(active.id, "5410");
+    await addMember(active.id, periodId, "5410");
+    const settings = await request(app)
+      .put(`/api/developments/${developmentId}/selling-costs`)
+      .send({ version: 1, assumptionPercent: 1.5, destinationCostCodeKey: "5410", actor: "qs-tester" });
+    assert.equal(settings.status, 200, settings.body?.message || JSON.stringify(settings.body));
+
+    const preview = await loadReview(developmentId);
+    assert.deepEqual(
+      preview.reconciliation.map((row) => [row.costCodeKey, row.action]),
+      [["5400", "released"], ["5410", "added"]]
+    );
+    const staleIntent = intentFromReview(preview);
+    staleIntent.reconciliationExpectations[0].expectedInputVersion += 1;
+    const rejected = await postAdopt(developmentId, staleIntent);
+    assert.equal(rejected.status, 409);
+    const afterRejected = await snapshotState(developmentId, periodId);
+    assert.equal(Number(afterRejected.members.find((row) => row.cost_code_key === "5400").adj), KNOWN_PROPOSAL);
+    assert.equal(Number(afterRejected.members.find((row) => row.cost_code_key === "5410").adj), 0);
+    assert.equal(afterRejected.audits.filter((item) => item.action === "selling_costs_adopted").length, 1);
+
+    const moved = await postAdopt(developmentId, intentFromReview(preview));
+    assert.equal(moved.status, 200, moved.body?.message || JSON.stringify(moved.body));
+    assert.equal(moved.body.released.length, 1);
+    assert.equal(moved.body.released[0].costCodeKey, "5400");
+    assert.equal(moved.body.released[0].newAdjustment, 0);
+    assert.equal(moved.body.adopted.length, 1);
+    assert.equal(moved.body.adopted[0].costCodeKey, "5410");
+
+    const after = await snapshotState(developmentId, periodId);
+    const oldRow = after.members.find((row) => row.cost_code_key === "5400");
+    const newRow = after.members.find((row) => row.cost_code_key === "5410");
+    assert.equal(Number(oldRow.adj), 0);
+    assert.equal(Number(newRow.adj), 156669.12);
+    assert.equal(oldRow.display_metadata.adjustmentHistory.length, 2);
+    assert.equal(
+      oldRow.display_metadata.adjustmentHistory.at(-1).reason,
+      "Selling Costs position released — 2026-08"
+    );
+    assert.equal(oldRow.display_metadata.sellingCostsAdoption.superseded, true);
+    assert.equal(newRow.display_metadata.sellingCostsAdoption.originalBaselineAdjustment, 0);
+  });
+
   test("GET Review then exact client POST still adopts when the pool has only the adoption client left", async () => {
     const active = await getActiveClient();
     const { developmentId, periodId } = await seedReadySite(active);
@@ -617,6 +738,7 @@ if (!isDbConfigured()) {
     assert.equal(preview.reviewStatus, "blocked");
     const res = await postAdopt(developmentId, {
       expectedPeriodKey: preview.periodKey,
+      expectedPeriodVersion: preview.periodVersion,
       expectedReportingMonth: preview.reportingMonth,
       expectedSettingsVersion: preview.proposal.settings.version,
       selections: [
@@ -645,8 +767,10 @@ if (!isDbConfigured()) {
     ]);
     const preview = await request(app).get(`/api/developments/${developmentId}/selling-costs/review`);
     assert.equal(preview.status, 200);
+    const period = await pool.query(`SELECT version FROM cvr_periods WHERE id = $1`, [periodId]);
     const res = await postAdopt(developmentId, {
       expectedPeriodKey: "P04",
+      expectedPeriodVersion: Number(period.rows[0].version),
       expectedReportingMonth: "2026-08",
       expectedSettingsVersion: 1,
       selections: [
@@ -677,6 +801,23 @@ if (!isDbConfigured()) {
     const res = await postAdopt(developmentId, intentFromReview(preview));
     assert.equal(res.status, 409);
     assert.equal(res.body.code, SELLING_COSTS_ADOPTION_ERROR_CODES.PERIOD_NOT_DRAFT);
+  });
+
+  test("period version drift rejects the whole adoption", async () => {
+    const active = await getActiveClient();
+    const { developmentId, periodId } = await seedReadySite(active);
+    const preview = await loadReview(developmentId);
+    const before = await snapshotState(developmentId, periodId);
+    await pool.query(`UPDATE cvr_periods SET version = version + 1 WHERE id = $1`, [periodId]);
+
+    const res = await postAdopt(developmentId, intentFromReview(preview));
+
+    assert.equal(res.status, 409);
+    assert.equal(res.body.code, SELLING_COSTS_ADOPTION_ERROR_CODES.PERIOD_VERSION_CHANGED);
+    const after = await snapshotState(developmentId, periodId);
+    assert.deepEqual(after.members, before.members);
+    assert.deepEqual(after.history, before.history);
+    assert.deepEqual(after.audit, before.audit);
   });
 
   test("reporting month drift is rejected", async () => {
@@ -773,6 +914,7 @@ if (!isDbConfigured()) {
     assert.equal(Number(after.members[0].adj), KNOWN_PROPOSAL);
     assert.equal(after.members[0].display_metadata.adjustmentHistory.length, 2);
     assert.equal(after.members[0].display_metadata.sellingCostsAdoption.previousAdjustment, 50);
+    assert.equal(after.members[0].display_metadata.sellingCostsAdoption.originalBaselineAdjustment, 50);
     assert.equal(after.members[0].display_metadata.sellingCostsAdoption.superseded, false);
   });
 
@@ -848,6 +990,7 @@ if (!isDbConfigured()) {
     trackDevelopment(foreignDev);
     const res = await postAdopt(foreignDev, {
       expectedPeriodKey: "P04",
+      expectedPeriodVersion: 1,
       expectedReportingMonth: "2026-08",
       expectedSettingsVersion: 1,
       selections: [
@@ -865,7 +1008,7 @@ if (!isDbConfigured()) {
 
   test("drifted re-adoption does not require superseded acknowledgement", async () => {
     const active = await getActiveClient();
-    const { developmentId } = await seedReadySite(active);
+    const { developmentId, periodId } = await seedReadySite(active);
     const firstPreview = await loadReview(developmentId);
     const first = await postAdopt(developmentId, intentFromReview(firstPreview));
     assert.equal(first.status, 200);
@@ -877,5 +1020,64 @@ if (!isDbConfigured()) {
     const res = await postAdopt(developmentId, intentFromReview(drifted));
     assert.equal(res.status, 200, res.body?.message || JSON.stringify(res.body));
     assert.equal(res.body.adopted.length, 1);
+    const after = await snapshotState(developmentId, periodId);
+    assert.equal(after.members[0].display_metadata.sellingCostsAdoption.originalBaselineAdjustment, 0);
+  });
+
+  test("Hawthorn-shaped Simple to Detailed adoption releases the old set and adopts aggregated destinations atomically", async () => {
+    const active = await getActiveClient();
+    const { developmentId, periodId } = await seedReadySite(active);
+    const simplePreview = await loadReview(developmentId);
+    const simple = await postAdopt(developmentId, intentFromReview(simplePreview));
+    assert.equal(simple.status, 200, simple.body?.message || JSON.stringify(simple.body));
+
+    const destinationA = await insertCostCode(active.id, "6170", "Sales Office Set-up");
+    const destinationB = await insertCostCode(active.id, "6210", "Sales Running Costs");
+    await addMember(active.id, periodId, "6170");
+    await addMember(active.id, periodId, "6210");
+    await configureDetailedTemplate(active.id, developmentId, [
+      { key: "show-home", name: "Show Home Furnishing", amount: 20000, costCodeId: destinationA.id },
+      { key: "marketing-suite", name: "Marketing Suite Setup", amount: 15000, costCodeId: destinationA.id },
+      { key: "sales-running", name: "Sales Running Costs", amount: 217872.5, costCodeId: destinationB.id },
+      { key: "disabled", name: "Disabled line", amount: 999999, costCodeId: destinationB.id, enabled: false },
+    ]);
+
+    const detailedPreview = await loadReview(developmentId);
+    assert.equal(detailedPreview.reviewStatus, "ready");
+    assert.equal(detailedPreview.proposal.mode, "detailed");
+    assert.equal(detailedPreview.proposal.forecastSellingCosts, 252872.5);
+    assert.equal(detailedPreview.comparisons.length, 2);
+    assert.deepEqual(
+      detailedPreview.reconciliation
+        .map((row) => [row.costCodeKey, row.action])
+        .sort(([left], [right]) => left.localeCompare(right)),
+      [["5400", "released"], ["6170", "added"], ["6210", "added"]]
+    );
+    assert.equal(
+      detailedPreview.comparisons.find((row) => row.costCodeKey === "6170").constituentLines.length,
+      2
+    );
+
+    const adopted = await postAdopt(developmentId, intentFromReview(detailedPreview));
+    assert.equal(adopted.status, 200, adopted.body?.message || JSON.stringify(adopted.body));
+    assert.equal(adopted.body.released.length, 1);
+    assert.equal(adopted.body.adopted.length, 2);
+
+    const after = await snapshotState(developmentId, periodId);
+    const byCode = new Map(after.members.map((row) => [row.cost_code_key, row]));
+    assert.equal(Number(byCode.get("5400").adj), 0);
+    assert.equal(Number(byCode.get("6170").adj), 35000);
+    assert.equal(Number(byCode.get("6210").adj), 217872.5);
+    const evidence = byCode.get("6170").display_metadata.sellingCostsAdoption;
+    assert.equal(evidence.mode, "detailed");
+    assert.equal(evidence.detailedEvidence.aggregate, 35000);
+    assert.deepEqual(
+      evidence.detailedEvidence.lines.map((line) => line.name).sort(),
+      ["Marketing Suite Setup", "Show Home Furnishing"]
+    );
+    assert.equal(
+      after.audits.filter((item) => item.action === "selling_costs_adopted").length,
+      2
+    );
   });
 }

@@ -5,6 +5,8 @@
  */
 
 const { pool, query } = require("../db");
+const { PERMISSIONS } = require('../auth/permissions');
+const { assertServicePermission } = require('../auth/authorization');
 const {
   getBuildLiteStandardPrelimsTemplate,
 } = require("./buildliteStandardPrelimsTemplate");
@@ -17,10 +19,6 @@ const {
   validateTemplateLineBody,
   validateUpdateTemplateBody,
 } = require("./prelimsTemplateValidation");
-
-function provisionalActor(body = {}) {
-  return body.updatedBy || body.createdBy || body.actor || null;
-}
 
 function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -144,7 +142,8 @@ async function insertHeader(clientId, { name, origin, sourceStandardVersion, isD
   return rows[0];
 }
 
-async function createTemplate(clientId, body = {}, { actor } = {}) {
+async function createTemplate(clientId, body = {}, { actor, auth } = {}) {
+  assertServicePermission(auth, PERMISSIONS.COMMERCIAL_TEMPLATES_MANAGE);
   const validated = validateCreateTemplateBody(body);
   if (!validated.ok) {
     return { ok: false, status: 400, errors: validated.errors, message: validated.errors.join(" ") };
@@ -220,7 +219,8 @@ async function createTemplate(clientId, body = {}, { actor } = {}) {
   }
 }
 
-async function updateTemplate(clientId, templateId, body = {}, { actor } = {}) {
+async function updateTemplate(clientId, templateId, body = {}, { actor, auth } = {}) {
+  assertServicePermission(auth, PERMISSIONS.COMMERCIAL_TEMPLATES_MANAGE);
   if (!isUuid(templateId)) {
     return { ok: false, status: 400, message: "templateId must be a valid UUID." };
   }
@@ -278,7 +278,8 @@ async function updateTemplate(clientId, templateId, body = {}, { actor } = {}) {
   }
 }
 
-async function createTemplateLine(clientId, templateId, body = {}, { actor } = {}) {
+async function createTemplateLine(clientId, templateId, body = {}, { actor, auth } = {}) {
+  assertServicePermission(auth, PERMISSIONS.COMMERCIAL_TEMPLATES_MANAGE);
   if (!isUuid(templateId)) {
     return { ok: false, status: 400, message: "templateId must be a valid UUID." };
   }
@@ -344,7 +345,8 @@ async function createTemplateLine(clientId, templateId, body = {}, { actor } = {
   }
 }
 
-async function updateTemplateLine(clientId, templateId, lineId, body = {}, { actor } = {}) {
+async function updateTemplateLine(clientId, templateId, lineId, body = {}, { actor, auth } = {}) {
+  assertServicePermission(auth, PERMISSIONS.COMMERCIAL_TEMPLATES_MANAGE);
   if (!isUuid(templateId) || !isUuid(lineId)) {
     return { ok: false, status: 400, message: "templateId and lineId must be valid UUIDs." };
   }
@@ -420,7 +422,6 @@ async function updateTemplateLine(clientId, templateId, lineId, body = {}, { act
 }
 
 module.exports = {
-  provisionalActor,
   listTemplates,
   getTemplate,
   createTemplate,

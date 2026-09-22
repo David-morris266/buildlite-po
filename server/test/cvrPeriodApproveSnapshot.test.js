@@ -19,6 +19,7 @@ const {
   CVR_CLOSE_NOT_READY_CODE,
 } = require("../services/cvrPeriodConstants");
 const { approveCvrPeriod, getCvrPeriod } = require("../services/cvrPeriodRepository");
+const { PERMISSIONS } = require("../auth/permissions");
 
 const app = createApp();
 const MIGRATION_004 = path.join(__dirname, "..", "migrations", "004_developments.sql");
@@ -341,9 +342,18 @@ async function createPeriod(developmentId, body = {}) {
         SELECT 1 FROM cvr_periods p
         WHERE p.client_id=d.client_id AND p.development_id=$1 AND p.period_key='P00'
       )`, [developmentId]);
+  const existing = await pool.query(
+    `SELECT COUNT(*)::int AS count
+     FROM cvr_periods
+     WHERE development_id=$1 AND period_key <> 'P00'`,
+    [developmentId]
+  );
+  const reportingMonth = new Date(Date.UTC(2026, 5 + Number(existing.rows[0].count || 0), 1))
+    .toISOString()
+    .slice(0, 7);
   const res = await request(app)
     .post(`/api/developments/${encodeURIComponent(developmentId)}/cvr/periods`)
-    .send(body);
+    .send({ reportingMonth, ...body });
   assert.equal(res.status, 201);
   return res.body;
 }
@@ -495,8 +505,21 @@ async function seedDefaultRevenueSettings(developmentId) {
   return result.rows[0];
 }
 
-async function seedPlotMaster(development, plots) {
-  const res = await request(app)
+async function seedPlotMaster(development, plots, clientId) {
+  const tenantApp = createApp({
+    testPrincipal: {
+      userId: "00000000-0000-0000-0000-000000000001",
+      providerUserId: "approve-snapshot-test-user",
+      displayName: "Director",
+      clientId,
+      membershipId: "00000000-0000-0000-0000-000000000002",
+      roleKey: "commercial_director",
+      roleName: "Commercial Director",
+      permissions: [...new Set(Object.values(PERMISSIONS))],
+      memberships: [],
+    },
+  });
+  const res = await request(tenantApp)
     .put(`/api/developments/${encodeURIComponent(development.id)}`)
     .send({
       version: development.version,
@@ -548,7 +571,7 @@ async function setupBase({
   if (seedRevenue) await seedDefaultRevenueSettings(development.id);
   let liveDevelopment = development;
   if (Array.isArray(plots)) {
-    liveDevelopment = await seedPlotMaster(development, plots);
+    liveDevelopment = await seedPlotMaster(development, plots, client.id);
   }
   return { client, development: liveDevelopment, pkg, period, po, supplierId: sid };
 }
@@ -1511,7 +1534,7 @@ if (!isDbConfigured()) {
 
     const next = await request(app)
       .post(periodUrl(world.development.id))
-      .send({ actor: "QS", reportingMonth: "2027-01" });
+      .send({ actor: "QS", reportingMonth: "2026-07" });
     assert.equal(next.status, 201, next.body?.message || JSON.stringify(next.body));
     assert.equal(next.body.periodKey, "P02");
     assert.equal(next.body.status, "draft");

@@ -68,14 +68,18 @@ function validatePutAssumptionBody(body = {}) {
     errors.push("Detailed Selling Costs mode is not available yet.");
   }
 
-  const percentParsed = parseAssumptionPercent(
-    body.assumptionPercent ?? body.assumption_percent ?? DEFAULT_ASSUMPTION_PERCENT
-  );
-  if (!percentParsed.ok) {
-    errors.push(percentParsed.error);
-  }
+  const clearAssumption=body.useCompanyAssumption===true;
+  const assumptionProvided=clearAssumption||Object.prototype.hasOwnProperty.call(body,'assumptionPercent')||Object.prototype.hasOwnProperty.call(body,'assumption_percent');
+  const percentParsed=clearAssumption?{ok:true,value:null}:assumptionProvided?parseAssumptionPercent(body.assumptionPercent ?? body.assumption_percent):{ok:true,value:undefined};
+  if(!percentParsed.ok)errors.push(percentParsed.error);
 
   let destinationKey = undefined;
+  let destinationId = undefined;
+  if(body.useCompanyDestination===true){destinationId=null;destinationKey=null;}
+  else if(Object.prototype.hasOwnProperty.call(body,'destinationCostCodeId')){
+    const raw=body.destinationCostCodeId;destinationId=raw==null||raw===''?null:String(raw).trim();
+    if(destinationId&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(destinationId))errors.push('destinationCostCodeId must be a valid UUID.');
+  }
   if (
     Object.prototype.hasOwnProperty.call(body, "destinationCostCodeKey") ||
     Object.prototype.hasOwnProperty.call(body, "destination_cost_code_key")
@@ -104,8 +108,10 @@ function validatePutAssumptionBody(body = {}) {
     value: {
       mode: SELLING_COSTS_MODES.SIMPLE,
       assumptionPercent: percentParsed.value,
+      assumptionProvided,
       destinationCostCodeKey: destinationKey,
-      destinationProvided: destinationKey !== undefined,
+      destinationCostCodeId: destinationId,
+      destinationProvided: destinationKey !== undefined || destinationId !== undefined,
     },
   };
 }

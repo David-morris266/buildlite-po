@@ -47,6 +47,12 @@ function evaluateDevelopmentCommercialReadiness(facts = {}) {
   else if (!revenue.plotCount || revenue.sparse) items.push(item('revenue', STATES.ATTENTION, 'Revenue', 'Revenue is available but the current Plot Master or pricing position is commercially sparse.', { tab: 'revenue' }, { count: revenue.plotCount || 0 }));
   else items.push(item('revenue', STATES.READY, 'Revenue', 'Revenue sources are configured.', { tab: 'revenue' }, { count: revenue.plotCount }));
 
+  const plotTenure=facts.plotTenure;
+  if(!plotTenure?.available)items.push(item('plot_tenure',STATES.ATTENTION,'Plot Master tenure classifications','Plot Master tenure readiness could not be checked.',{tab:'plot-master',plotMasterView:'tenure-review'},{sourceAvailable:false}));
+  else if(plotTenure.missing)items.push(item('plot_tenure',STATES.ATTENTION,'Plot Master tenure classifications','Plot Master is missing or empty.',{tab:'plot-master'}));
+  else if(plotTenure.needsAttention)items.push(item('plot_tenure',STATES.ATTENTION,'Plot Master tenure classifications',`${plotTenure.reviewed} of ${plotTenure.total} reviewed · ${plotTenure.needsAttention} need attention.`,{tab:'plot-master',plotMasterView:'tenure-review'},{count:plotTenure.total}));
+  else items.push(item('plot_tenure',STATES.READY,'Plot Master tenure classifications',`${plotTenure.total} of ${plotTenure.total} reviewed.`,{tab:'plot-master',plotMasterView:'tenure-review'},{count:plotTenure.total}));
+
   const va = facts.variationExposure;
   if (!va?.available) items.push(sourceUnavailable('variation_exposure', 'Variation exposure', { tab: 'commercial' }));
   else if (va.blockers?.length) items.push(item('variation_exposure', STATES.BLOCKER, 'Variation exposure', `${va.blockers.length} variation ${va.blockers.length === 1 ? 'item requires' : 'items require'} attention before Submit.`, { tab: 'commercial' }, { blocksCompletion: true, blockers: va.blockers }));
@@ -125,12 +131,13 @@ async function loadDevelopmentCommercialReadiness(clientId, developmentId, query
     const reasons = (candidate.blockers || []).map(blocker => blocker.message || reasonMessages[blocker.reason] || 'Revenue information requires review.').filter(Boolean);
     return { ready: Boolean(candidate.ready), reason: reasons.join(' ') || null, plotCount: candidate.plots?.length || 0, plotMasterMissing: candidate.blockers?.some(blocker => blocker.source === 'plotMaster'), sparse: false };
   });
+  const plotTenure=await run(async()=>{const plots=development.payload?.plotMaster?.plots;if(!Array.isArray(plots)||!plots.length)return {missing:true,total:0,reviewed:0,needsAttention:0};const valid=new Set(['OPEN_MARKET','AFFORDABLE_RENT','SHARED_OWNERSHIP','FIRST_HOMES','ADDITIONALITY','DISCOUNT_MARKET_SALE','OTHER']);const reviewed=plots.filter(plot=>valid.has(String(plot.tenureCode||'').trim().toUpperCase())).length;return {missing:false,total:plots.length,reviewed,needsAttention:plots.length-reviewed};});
   const variationExposure = await run(async () => {
     const live = await buildLiveVariationExposure({ query }, clientId, developmentId);
     return { blockers: live.blockers || [], itemCount: live.document?.items?.length || 0 };
   });
 
-  return { ok: true, status: 200, readiness: evaluateDevelopmentCommercialReadiness({ costCodes, periods, budget, purchaseOrders, packages, certificates, commercialEvents, ledger, prelims, sellingCosts, revenue, variationExposure }) };
+  return { ok: true, status: 200, readiness: evaluateDevelopmentCommercialReadiness({ costCodes, periods, budget, purchaseOrders, packages, certificates, commercialEvents, ledger, prelims, sellingCosts, revenue, plotTenure, variationExposure }) };
 }
 
 module.exports = { STATES, evaluateDevelopmentCommercialReadiness, loadDevelopmentCommercialReadiness };

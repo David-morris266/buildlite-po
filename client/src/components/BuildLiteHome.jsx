@@ -11,7 +11,7 @@ export default function BuildLiteHome({ onNavigate }) {
   const canCreatePo = useBuildLitePermission('po.create');
   const canViewApproval = useBuildLitePermission('payment_approval_run.view');
   const canRelease = useBuildLitePermission('payment_release.execute');
-  const canAdmin = ['tenant.configure', 'users.manage', 'roles.manage', 'terms.publish']
+  const canAdmin = ['tenant.configure', 'users.manage', 'roles.manage', 'terms.publish', 'commercial_templates.manage', 'cost_code_classifications.manage', 'commercial_head_categories.manage']
     .some(permission => principal?.permissions?.includes(permission));
   const tenant = principal?.activeTenant?.name || principal?.activeTenant?.code || 'your organisation';
   return <section className="buildlite-home">

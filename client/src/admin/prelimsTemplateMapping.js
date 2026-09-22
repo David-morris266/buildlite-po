@@ -24,6 +24,32 @@ export function sharedCostCodeCounts(lines = []) {
   return counts;
 }
 
+export function templateMappingSummary(lines = []) {
+  const enabled = lines.filter((line) => line?.enabled !== false);
+  const mapped = enabled.filter((line) => String(line?.costCodeKey || '').trim()).length;
+  return {
+    total: lines.length,
+    enabled: enabled.length,
+    mapped,
+    unmapped: enabled.length - mapped,
+    disabled: lines.length - enabled.length,
+  };
+}
+
+export function filterTemplateLinesByMapping(lines = [], filter = 'all') {
+  if (filter === 'mapped') {
+    return lines.filter(
+      (line) => line?.enabled !== false && Boolean(String(line?.costCodeKey || '').trim())
+    );
+  }
+  if (filter === 'unmapped') {
+    return lines.filter(
+      (line) => line?.enabled !== false && !String(line?.costCodeKey || '').trim()
+    );
+  }
+  return lines;
+}
+
 export function mappingOptionPrimaryLabel(option) {
   const code = option?.code || option?.value || '';
   const description = option?.description || option?.element || '';

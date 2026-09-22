@@ -59,6 +59,7 @@ export const ADMIN_VIEWS = [
   'commercial-structure',
   'commercial-behaviour',
   'cost-codes',
+  'cost-code-classification',
   'reporting-preview',
   'validation-dashboard',
   'setup-data-import',
@@ -68,6 +69,7 @@ export const ADMIN_VIEWS = [
   'users',
   'approval-settings',
   'prelims-templates',
+  'selling-costs-templates',
   'subcontract-terms',
   'developer-tools',
 ];
@@ -83,6 +85,7 @@ export function getAdminViewTitle(view) {
     'commercial-structure': 'Commercial Cost Structure',
     'commercial-behaviour': 'Commercial Behaviour',
     'cost-codes': 'Cost Codes',
+    'cost-code-classification': 'Bulk Cost Code classification',
     'reporting-preview': 'Reporting Preview',
     'validation-dashboard': 'Validation Dashboard',
     'setup-data-import': 'Setup & Data Import',
@@ -92,6 +95,7 @@ export function getAdminViewTitle(view) {
     users: 'Users',
     'approval-settings': 'Approval Settings',
     'prelims-templates': 'Prelims Templates',
+    'selling-costs-templates': 'Selling Costs Templates',
     'subcontract-terms': 'Subcontract Terms',
     'developer-tools': 'Developer Tools',
   };

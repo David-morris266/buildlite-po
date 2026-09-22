@@ -8,6 +8,7 @@ import {
   VERSION_CONFLICT_MESSAGE,
 } from './developmentStore';
 import { normalizePlotCommercialFields } from './plotCommercial';
+import { normalizePlotTenureCode } from './plotTenureAuthority';
 
 export const PLOT_DEFAULT_STATUS = 'Active';
 
@@ -73,7 +74,9 @@ function normalizePlotInput(input, existing = null) {
     niaFt2: commercial.niaFt2,
     niaM2: commercial.niaM2,
     phase: String(input.phase || '').trim(),
-    tenure: String(input.tenure || '').trim(),
+    tenure: String(input.tenure ?? ''),
+    tenureCode: normalizePlotTenureCode(input.tenureCode ?? existing?.tenureCode),
+    tenureSuggestion: normalizePlotTenureCode(input.tenureSuggestion ?? existing?.tenureSuggestion),
     status: String(input.status || existing?.status || PLOT_DEFAULT_STATUS).trim(),
     sellingPrice: commercial.sellingPrice,
     forecastSellingPrice: commercial.forecastSellingPrice,
@@ -223,6 +226,8 @@ export async function replacePlotMaster(developmentId, plots) {
       niaM2: plot.niaM2,
       phase: plot.phase,
       tenure: plot.tenure,
+      tenureCode: plot.tenureCode,
+      tenureSuggestion: plot.tenureSuggestion,
       status: plot.status,
       sellingPrice: plot.sellingPrice,
       forecastSellingPrice: plot.forecastSellingPrice,

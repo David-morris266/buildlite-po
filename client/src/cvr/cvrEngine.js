@@ -323,6 +323,7 @@ export function buildCvrRows(developmentId, options = {}) {
         variationExposureItems: variationExposureByCostCode.get(key)?.items || [],
         commercialAdjustment: manual?.commercialAdjustment ?? 0,
         commercialReason: manual?.commercialReason || '',
+        displayMetadata: manual?.displayMetadata || {},
         adjustmentHistory: manual?.adjustmentHistory || [],
         commercialNotes: manual?.commercialNotes || '',
         manualAccrual: manual?.manualAccrual ?? 0,

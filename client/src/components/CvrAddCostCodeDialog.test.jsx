@@ -95,9 +95,9 @@ describe('CvrAddCostCodeDialog', () => {
       container.querySelector('input[aria-label="CVR add cost code search"]').focus();
     });
     await flush();
-    expect(container.querySelector('[data-cost-code="5400"]')).toBeTruthy();
-    expect(container.querySelector('[data-cost-code="5231"]')).toBeTruthy();
-    expect(container.querySelector('[data-cost-code="1110"]')).toBeNull();
+    expect(document.querySelector('[data-cost-code="5400"]')).toBeTruthy();
+    expect(document.querySelector('[data-cost-code="5231"]')).toBeTruthy();
+    expect(document.querySelector('[data-cost-code="1110"]')).toBeNull();
   });
 
   it('searches by code then posts only the selected key', async () => {
@@ -106,10 +106,10 @@ describe('CvrAddCostCodeDialog', () => {
       setSearch('5400');
     });
     await flush();
-    expect(container.querySelector('[data-cost-code="5400"]')).toBeTruthy();
-    expect(container.querySelector('[data-cost-code="5231"]')).toBeNull();
+    expect(document.querySelector('[data-cost-code="5400"]')).toBeTruthy();
+    expect(document.querySelector('[data-cost-code="5231"]')).toBeNull();
     await act(async () => {
-      container
+      document
         .querySelector('[data-cost-code="5400"]')
         .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     });
@@ -131,8 +131,8 @@ describe('CvrAddCostCodeDialog', () => {
       setSearch('Selling Costs');
     });
     await flush();
-    expect(container.querySelector('[data-cost-code="5400"]')).toBeTruthy();
-    expect(container.querySelector('[data-cost-code="5231"]')).toBeNull();
+    expect(document.querySelector('[data-cost-code="5400"]')).toBeTruthy();
+    expect(document.querySelector('[data-cost-code="5231"]')).toBeNull();
   });
 
   it('shows a 409 duplicate error from the server', async () => {
@@ -148,7 +148,7 @@ describe('CvrAddCostCodeDialog', () => {
     });
     await flush();
     await act(async () => {
-      container
+      document
         .querySelector('[data-cost-code="5400"]')
         .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     });

@@ -210,6 +210,11 @@ export default function PlotScheduleImportWizard({
   const lead = developmentName
     ? `Import the plot schedule for ${developmentName}.`
     : 'Import your plot schedule spreadsheet.';
+  const tenureReviewSummary = useMemo(() => {
+    const result = validateAndBuildPlotImport(sheetRows, headerRowIndex, fieldByColumn);
+    if (!result.plots?.length) return null;
+    return { plots: result.plots.length, values: new Set(result.plots.map(plot => String(plot.tenure || '').trim().toLowerCase())).size };
+  }, [sheetRows, headerRowIndex, fieldByColumn]);
 
   return (
     <div className="po-import-wizard dev-plot-import">
@@ -376,7 +381,7 @@ export default function PlotScheduleImportWizard({
                       <td>{formatPlotBedrooms(row.bedrooms)}</td>
                       <td>{formatPlotGia(row.gia)}</td>
                       <td>{row.phase || '—'}</td>
-                      <td>{row.tenure || '—'}</td>
+                      <td>{row.tenure || '—'}<small className="dev-selling-costs__destination-provenance">{row.tenureCode === 'UNREVIEWED' ? 'Controlled classification: review required' : `Controlled classification: ${row.tenureCode.replaceAll('_', ' ')}`}</small></td>
                     </tr>
                   ))
                 ) : (
@@ -484,7 +489,7 @@ export default function PlotScheduleImportWizard({
             </dl>
 
             {importResult.ready ? (
-              <p className="po-import-step__ok">Ready to import</p>
+              <><p className="po-import-step__ok">Ready to import</p>{tenureReviewSummary?<p role="status">{tenureReviewSummary.plots} plots · {tenureReviewSummary.values} tenure values found · Tenure review required after import.</p>:null}</>
             ) : (
               <p className="dev-plot-import__blocked" role="status">
                 Import blocked — fix the errors below before continuing.

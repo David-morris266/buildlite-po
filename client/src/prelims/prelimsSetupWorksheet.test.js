@@ -5,13 +5,19 @@ import { describe, expect, it } from 'vitest';
 import {
   applyPayloadFromDrafts,
   computeOverlap,
+  displayPrelimIdentity,
   draftAfterDriverChange,
   draftsFromPreview,
   durationLabel,
   effectiveDriver,
   isLineReady,
   livePreviewCalculation,
+  mergeDraftsAfterIncrementalAdd,
+  mappingProvenance,
+  normalizeSetupDraft,
   readyStateLabel,
+  setupDraftsAreDirty,
+  setupProgress,
   setupStateChips,
 } from './prelimsSetupWorksheet';
 
@@ -92,6 +98,35 @@ function preview(overrides = {}) {
 }
 
 describe('Prelims setup worksheet helpers', () => {
+  it('clarifies the standard Site Administration line in presentation only', () => {
+    expect(
+      displayPrelimIdentity({
+        templateKey: 'bl.prelims.v1.site_admin',
+        name: 'Site Administration',
+        guidance: 'Stored guidance',
+      })
+    ).toEqual({
+      name: 'Site Administrator / Site Office Support',
+      guidance:
+        'Site-based administrator, document controller or coordinator supporting the development. Excludes head-office/corporate administration.',
+    });
+  });
+
+  it('distinguishes company mappings, development overrides, and unmapped company lines', () => {
+    expect(mappingProvenance({ costCodeKey: '5210' }, { costCodeKey: '5210' })).toMatchObject({
+      state: 'company_mapping',
+      label: 'Company mapping',
+    });
+    expect(mappingProvenance({ costCodeKey: '5210' }, { costCodeKey: '5231' })).toMatchObject({
+      state: 'development_override',
+      label: 'Development override',
+    });
+    expect(mappingProvenance({ costCodeKey: null }, { costCodeKey: '5231' })).toMatchObject({
+      state: 'company_unmapped',
+      label: 'Company template unmapped',
+    });
+  });
+
   it('defaults overlap lines unticked and unmapped/disabled not ready', () => {
     const next = preview();
     const drafts = draftsFromPreview(next);
@@ -249,5 +284,57 @@ describe('Prelims setup worksheet helpers', () => {
         overlapInfo: { overlap: false, existingNames: [], siblingNames: [] },
       }).map((row) => row.text)
     ).toEqual(['PRELIMS']);
+  });
+
+  it('normalizes only meaningful setup fields and detects genuine dirty drafts', () => {
+    const baseline = draftsFromPreview(preview());
+    const equivalent = baseline.map((row) => ({ ...row }));
+    equivalent[0].startOffsetMonths = '0';
+    equivalent[0].monthlyRate = '';
+    expect(normalizeSetupDraft(equivalent[0])).toEqual(normalizeSetupDraft(baseline[0]));
+    expect(setupDraftsAreDirty(equivalent, baseline)).toBe(false);
+    equivalent[0].monthlyRate = '5500';
+    expect(setupDraftsAreDirty(equivalent, baseline)).toBe(true);
+  });
+
+  it('reports selected readiness and forecast from the existing line calculation', () => {
+    const next = preview();
+    const drafts = draftsFromPreview(next);
+    drafts[0].monthlyRate = '1000';
+    drafts[2].selected = true;
+    drafts[2].costCodeKey = 'UAT-CC-001';
+    expect(setupProgress(next, drafts)).toEqual({
+      selected: 2,
+      ready: 1,
+      needsAttention: 1,
+      readyForecast: 38000,
+      unresolved: 1,
+    });
+  });
+
+  it('resets newly applied rows while retaining every meaningful unadded edit', () => {
+    const before = preview();
+    const drafts = draftsFromPreview(before);
+    drafts[0].monthlyRate = '5500';
+    drafts[2] = {
+      ...drafts[2],
+      selected: true,
+      costCodeKey: 'UAT-CC-001',
+      forecastDriver: 'TIME',
+      monthlyRate: '900',
+      startBasis: 'FIXED_DATE',
+      startFixedDate: '2027-01-01',
+      endBasis: 'FINAL_COMPLETION',
+      endOffsetMonths: 2,
+    };
+    const after = preview({
+      siteManager: { alreadyApplied: true, selectable: false, defaultSelected: false },
+    });
+    const merged = mergeDraftsAfterIncrementalAdd(after, drafts);
+    expect(merged.find((row) => row.templateLineId === 'sm')).toEqual(
+      draftsFromPreview(after).find((row) => row.templateLineId === 'sm')
+    );
+    expect(merged.find((row) => row.templateLineId === 'custom')).toEqual(drafts[2]);
+    expect(setupDraftsAreDirty(merged, draftsFromPreview(after))).toBe(true);
   });
 });

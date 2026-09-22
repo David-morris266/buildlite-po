@@ -3,12 +3,14 @@ import DeveloperTools from '../DeveloperTools';
 import SetupAssistant from '../../setup/SetupAssistant';
 import { ADMIN_LANDING_VIEW } from '../../admin/adminNavigation';
 import { isAdminView } from '../../admin/masterDataService';
+import { useBuildLitePrincipal } from '../../auth/BuildLiteAuthProvider';
 import { AdministrationWorkspace } from '../layout/WorkspaceShell';
 import AdministrationLanding from './AdministrationLanding';
 import AdminCompanyPage from './AdminCompanyPage';
 import AdminCommercialStructurePage from './AdminCommercialStructurePage';
 import AdminCommercialBehaviourPage from './AdminCommercialBehaviourPage';
 import AdminCostCodesPage from './AdminCostCodesPage';
+import AdminCostCodeBulkClassification from './AdminCostCodeBulkClassification';
 import AdminReportingPreviewPage from './AdminReportingPreviewPage';
 import AdminValidationDashboardPage from './AdminValidationDashboardPage';
 import AdminSuppliersPage from './AdminSuppliersPage';
@@ -16,10 +18,14 @@ import AdminClientsPage from './AdminClientsPage';
 import AdminUsersPage from './AdminUsersPage';
 import AdminApprovalSettingsPage from './AdminApprovalSettingsPage';
 import AdminPrelimsTemplatesPage from './AdminPrelimsTemplatesPage';
+import AdminSellingCostsTemplatesPage from './AdminSellingCostsTemplatesPage';
 import AdminSetupDataImportPage from './AdminSetupDataImportPage';
 import AdminSubcontractTermsPage from './AdminSubcontractTermsPage';
 
 const showDeveloperTools = !import.meta.env.PROD;
+const COMMERCIAL_TEMPLATES_PERMISSION = 'commercial_templates.manage';
+const CLASSIFICATION_PERMISSION = 'cost_code_classifications.manage';
+const COMMERCIAL_TEMPLATE_VIEWS = new Set(['prelims-templates', 'selling-costs-templates']);
 
 export default function AdministrationModule({
   onLaunchPO,
@@ -28,15 +34,23 @@ export default function AdministrationModule({
   initialView = null,
   returnDevelopment = null,
   onReturnToDevelopment,
+  onViewChange = null,
+  onViewReplace = null,
 }) {
+  const principal = useBuildLitePrincipal();
+  const canManageCommercialTemplates = principal?.permissions?.includes(COMMERCIAL_TEMPLATES_PERMISSION) === true;
+  const canManageClassifications = principal?.permissions?.includes(CLASSIFICATION_PERMISSION) === true;
   const [view, setView] = useState('landing');
   const [viewContext, setViewContext] = useState(null);
   const [setupStep, setSetupStep] = useState(null);
+  const [accessError, setAccessError] = useState('');
   const goToDashboard = useCallback(() => {
     setSetupStep(null);
     setViewContext(null);
+    setAccessError('');
     setView(ADMIN_LANDING_VIEW);
-  }, []);
+    onViewChange?.(ADMIN_LANDING_VIEW);
+  }, [onViewChange]);
 
   useEffect(() => {
     if (dashboardResetToken > 0) {
@@ -45,8 +59,24 @@ export default function AdministrationModule({
   }, [dashboardResetToken, goToDashboard]);
 
   useEffect(() => {
-    if (initialView && isAdminView(initialView)) setView(initialView);
-  }, [initialView]);
+    if (!initialView) return;
+    if (!isAdminView(initialView)) {
+      setView(ADMIN_LANDING_VIEW);
+      onViewReplace?.(ADMIN_LANDING_VIEW);
+      return;
+    }
+    if (COMMERCIAL_TEMPLATE_VIEWS.has(initialView) && !canManageCommercialTemplates) {
+      setAccessError('You do not have permission to manage company commercial templates.');
+      setView(ADMIN_LANDING_VIEW);
+      onViewReplace?.(ADMIN_LANDING_VIEW);
+      return;
+    }
+    if (initialView === 'cost-code-classification' && !canManageClassifications) {
+      setAccessError('You do not have permission to manage Cost Code classifications.'); setView(ADMIN_LANDING_VIEW); onViewReplace?.(ADMIN_LANDING_VIEW); return;
+    }
+    setAccessError('');
+    setView(initialView);
+  }, [canManageClassifications, canManageCommercialTemplates, initialView, onViewReplace]);
 
   const returnAction = returnDevelopment ? (
     <div className="po-module-card admin-context-return">
@@ -58,9 +88,18 @@ export default function AdministrationModule({
 
   function openView(nextView, context = null) {
     if (!isAdminView(nextView)) return;
+    if (COMMERCIAL_TEMPLATE_VIEWS.has(nextView) && !canManageCommercialTemplates) {
+      setAccessError('You do not have permission to manage company commercial templates.');
+      setView(ADMIN_LANDING_VIEW);
+      onViewReplace?.(ADMIN_LANDING_VIEW);
+      return;
+    }
+    if (nextView === 'cost-code-classification' && !canManageClassifications) return;
+    setAccessError('');
     setSetupStep(null);
     setViewContext(context);
     setView(nextView);
+    onViewChange?.(nextView);
   }
 
   if (setupStep != null) {
@@ -118,7 +157,7 @@ export default function AdministrationModule({
     return (
       <AdministrationWorkspace>
         {returnAction}
-        <AdminCostCodesPage onBack={goToDashboard} issueFilter={viewContext} onClearIssueFilter={() => setViewContext(null)} />
+        <AdminCostCodesPage onBack={goToDashboard} issueFilter={viewContext} onClearIssueFilter={() => setViewContext(null)} onOpenBulkClassification={canManageClassifications?()=>openView('cost-code-classification'):null} />
       </AdministrationWorkspace>
     );
   }
@@ -168,11 +207,24 @@ export default function AdministrationModule({
     );
   }
   if (view === 'prelims-templates') {
+    if (!canManageCommercialTemplates) {
+      return null;
+    }
     return (
       <AdministrationWorkspace>
-        <AdminPrelimsTemplatesPage onBack={goToDashboard} />
+        <AdminPrelimsTemplatesPage onBack={goToDashboard} onSetUpCommercialStructure={()=>openView('commercial-structure')} />
       </AdministrationWorkspace>
     );
+  }
+  if (view === 'cost-code-classification') {
+    if (!canManageClassifications) return null;
+    return <AdministrationWorkspace><AdminCostCodeBulkClassification onBack={()=>openView('cost-codes')} initialSemanticGroup={viewContext?.semanticGroup||''}/></AdministrationWorkspace>;
+  }
+  if (view === 'selling-costs-templates') {
+    if (!canManageCommercialTemplates) {
+      return null;
+    }
+    return <AdministrationWorkspace><AdminSellingCostsTemplatesPage onBack={goToDashboard} onSetUpCommercialStructure={()=>openView('commercial-structure')} /></AdministrationWorkspace>;
   }
   if (view === 'subcontract-terms') {
     return <AdministrationWorkspace><AdminSubcontractTermsPage onBack={goToDashboard} /></AdministrationWorkspace>;
@@ -190,6 +242,8 @@ export default function AdministrationModule({
       <AdministrationLanding
         onOpen={openView}
         showDeveloperTools={showDeveloperTools}
+        canManageCommercialTemplates={canManageCommercialTemplates}
+        accessError={accessError}
       />
     </AdministrationWorkspace>
   );

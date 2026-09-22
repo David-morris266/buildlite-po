@@ -12,8 +12,22 @@ const {
   getBuildLiteStandardPrelimsTemplate,
 } = require("../services/buildliteStandardPrelimsTemplate");
 const { putClassification } = require("../services/costCodeClassificationRepository");
+const { PERMISSIONS } = require('../auth/permissions');
 
-const app = createApp();
+let activeClientId = null;
+const app = createApp({
+  testPrincipal: () => ({
+    userId: '00000000-0000-0000-0000-000000000041',
+    membershipId: '00000000-0000-0000-0000-000000000042',
+    providerUserId: 'prelims-template-dx2-test',
+    displayName: 'Authenticated Prelims Director',
+    clientId: activeClientId,
+    roleKey: 'commercial_director',
+    roleName: 'Commercial Director',
+    permissions: Object.values(PERMISSIONS),
+    memberships: [],
+  }),
+});
 const createdTemplateIds = [];
 const classificationKeys = [];
 
@@ -44,6 +58,7 @@ if (!isDbConfigured()) {
     await prepareIntegrationTestDatabase(pool);
     const db = await pool.query("SELECT current_database() AS db");
     assert.equal(db.rows[0].db, "buildlite_test");
+    activeClientId = (await pool.query('SELECT id FROM clients WHERE is_active=true LIMIT 1')).rows[0].id;
   });
 
   test.after(async () => {

@@ -16,7 +16,12 @@ vi.mock('../developments/developmentStore', () => ({
 }));
 
 vi.mock('./DevelopmentWorkspace', () => ({
-  default: () => <div data-testid="development-workspace">Workspace</div>,
+  default: (props) => <div
+    data-testid="development-workspace"
+    data-tab={props.initialActiveTab || ''}
+    data-period={props.initialCvrPeriodKey || ''}
+    data-package={props.initialPackageKey || ''}
+  >Workspace</div>,
 }));
 
 vi.mock('./DevelopmentList', () => ({
@@ -105,5 +110,32 @@ describe('Developments workspace resolving guard', () => {
     });
 
     expect(document.querySelector('[data-testid="development-workspace"]')).not.toBeNull();
+  });
+
+  it('passes canonical CVR and package identity through workspace hydration', async () => {
+    const development = { id: 'dev-missing', developmentName: 'Test Site 1' };
+    getDevelopment.mockReturnValue(development);
+    renderDevelopments({
+      initialDevelopmentId: development.id,
+      initialWorkspaceTab: 'packages',
+      initialPackageKey: 'dev-missing:supplier-1:3640',
+      initialPackageTab: 'variations',
+    });
+
+    await act(async () => { await Promise.resolve(); });
+    const workspace = document.querySelector('[data-testid="development-workspace"]');
+    expect(workspace.dataset.tab).toBe('packages');
+    expect(workspace.dataset.package).toBe('dev-missing:supplier-1:3640');
+  });
+
+  it('returns to the Development list when browser history restores the parent route', async () => {
+    getDevelopment.mockReturnValue({ id: 'dev-missing', developmentName: 'Test Site 1' });
+    renderDevelopments({ initialDevelopmentId: 'dev-missing', initialWorkspaceTab: 'prelims' });
+    await act(async () => { await Promise.resolve(); });
+    expect(document.querySelector('[data-testid="development-workspace"]')).not.toBeNull();
+
+    renderDevelopments({ initialDevelopmentId: null, initialWorkspaceTab: null });
+    expect(document.body.textContent).toContain('Open missing');
+    expect(document.querySelector('[data-testid="development-workspace"]')).toBeNull();
   });
 });

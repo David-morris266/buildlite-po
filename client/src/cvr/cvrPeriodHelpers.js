@@ -21,6 +21,7 @@ import {
   listCvrPeriods,
 } from './cvrPeriodStore';
 import { isCvrHistoricSnapshotPeriod, isCvrLegacyLockedPeriod, sortPeriodKeys } from './cvrPeriodStatus';
+import { formatReportingPeriod } from './cvrReportingMonth';
 
 const AUDIT_ACTION_LABELS = {
   created: 'Created',
@@ -67,6 +68,7 @@ export function buildCvrPeriodRegisterRow(developmentId, period, pos = []) {
     periodKey: period.periodKey,
     status,
     statusLabel: status.label,
+    reportingPeriodLabel: formatReportingPeriod(period.reportingMonth),
     forecastLabel: forecastUnavailable ? '—' : formatCvrMoney(model.summary.finalForecast),
     varianceLabel: forecastUnavailable ? '—' : formatCvrMoney(model.summary.variance),
     createdLabel: formatPoDate(period.createdAt),
@@ -124,6 +126,7 @@ export function buildCvrPeriodHeaderMeta(period) {
   if (!period) return [];
 
   return [
+    { label: 'Reporting Period', value: formatReportingPeriod(period.reportingMonth) },
     { label: 'Period', value: period.periodKey || '—' },
     { label: 'Created', value: formatPoDate(period.createdAt) },
     { label: 'Submitted', value: period.submittedAt ? formatPoDate(period.submittedAt) : '—' },

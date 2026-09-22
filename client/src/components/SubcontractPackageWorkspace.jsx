@@ -43,6 +43,7 @@ export default function SubcontractPackageWorkspace({
   matricesReady = true,
   assistantDevelopmentPackages = null,
   onAssistantNavigate = null,
+  onTabChange = null,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab);
 
@@ -70,7 +71,8 @@ export default function SubcontractPackageWorkspace({
 
   useEffect(() => {
     if (activeTab !== 'certificates') setCertificateDetailActive(false);
-  }, [activeTab]);
+    onTabChange?.(activeTab);
+  }, [activeTab, onTabChange]);
 
   useEffect(() => {
     if (commercialEventTarget?.eventId) {

@@ -48,6 +48,13 @@ The legacy `payment_certificates` / `payment_certificate_lines` tables below are
 
 Automated server tests must use isolated `TEST_DATABASE_URL` / `buildlite_test`. Do not run them against `buildlite_clone`.
 
+### Local database environment contract
+
+- `buildlite_clone` is the active local owner/human-UAT database. It may receive reviewed schema migrations and explicit owner-authorised UAT writes; automated tests and unapproved data mutations must never target it.
+- `buildlite_test` is the disposable, guarded automated integration-test database selected through `TEST_DATABASE_URL`.
+- Timestamped `pg_dump` recovery artifacts are rollback/reference evidence only and must remain outside the repository and application runtime.
+- Production is separate customer authority and requires its own backup, staging, migration and deployment approval controls.
+
 ---
 
 ## BL-006 historical catalogue (preserved)

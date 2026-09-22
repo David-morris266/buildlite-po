@@ -39,17 +39,6 @@ async function handleJson(res) {
   return body;
 }
 
-function sessionActor() {
-  if (typeof localStorage === 'undefined') return null;
-  return localStorage.getItem('userName') || localStorage.getItem('userEmail') || null;
-}
-
-function withActor(payload = {}) {
-  const actor = sessionActor();
-  if (!actor) return payload;
-  return { ...payload, actor };
-}
-
 function classificationUrl(costCodeKey) {
   return `/api/cost-code-classifications/${encodeURIComponent(costCodeKey)}`;
 }
@@ -68,7 +57,17 @@ export async function putCostCodeClassification(costCodeKey, payload = {}) {
   const res = await fetch(buildUrl(classificationUrl(costCodeKey)), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(withActor(payload)),
+    body: JSON.stringify(payload),
   });
   return handleJson(res);
 }
+
+async function postBulk(path, payload) {
+  const res = await fetch(buildUrl(`/api/cost-code-classifications/bulk/${path}`), {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload),
+  });
+  return handleJson(res);
+}
+
+export const previewBulkCostCodeClassifications = (payload) => postBulk('preview', payload);
+export const applyBulkCostCodeClassifications = (payload) => postBulk('apply', payload);

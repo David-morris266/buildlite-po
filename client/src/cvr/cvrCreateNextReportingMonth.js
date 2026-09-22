@@ -13,7 +13,7 @@ import {
 } from './cvrPeriodStore';
 import { buildCreateNextReportingMonthPrompt } from './cvrReportingMonth';
 
-export function resolveCreateNextReportingMonthAction(developmentId) {
+export function resolveCreateNextReportingMonthAction(developmentId, { currentDate } = {}) {
   const periods = listCvrPeriods(developmentId);
   const gate = canCreateNextCvrPeriod(periods);
   if (gate.draftPeriodKey) {
@@ -34,6 +34,7 @@ export function resolveCreateNextReportingMonthAction(developmentId) {
   const prompt = buildCreateNextReportingMonthPrompt({
     periods,
     sourcePeriod,
+    currentDate,
   });
 
   return {
@@ -42,5 +43,6 @@ export function resolveCreateNextReportingMonthAction(developmentId) {
     nextPeriodKey: prompt.nextPeriodKey,
     requiresExplicitSelection: prompt.requiresExplicitSelection,
     sourcePeriodKey: sourcePeriod?.periodKey || null,
+    reportingPeriodState: prompt.reportingPeriodState,
   };
 }

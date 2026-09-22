@@ -584,6 +584,12 @@ export function toCostCodeSelectShape(record) {
 
     id: record.id,
 
+    commercialHeadId: record.commercialHeadId || null,
+
+    commercialFamilyId: record.commercialFamilyId || null,
+
+    reportingGroupId: record.reportingGroupId || null,
+
     value: record.code,
 
     code: record.code,
@@ -598,9 +604,9 @@ export function toCostCodeSelectShape(record) {
 
     label,
 
-    commercialHead: record.commercialHead,
+    commercialHead: record.commercialHead || '',
 
-    commercialFamily: record.commercialFamily,
+    commercialFamily: record.commercialFamily || '',
 
     defaultVatTreatment: record.defaultVatTreatment,
 
@@ -616,7 +622,7 @@ export function toCostCodeSelectShape(record) {
 
     reportingOrder: record.reportingOrder,
 
-    active: record.active,
+    active: record.active !== false,
 
   };
 

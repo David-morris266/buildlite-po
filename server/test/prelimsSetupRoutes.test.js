@@ -12,8 +12,22 @@ const createApp = require("../app");
 const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { putClassification } = require("../services/costCodeClassificationRepository");
+const { PERMISSIONS } = require('../auth/permissions');
 
-const app = createApp();
+let activeClientId = null;
+const app = createApp({
+  testPrincipal: {
+    userId: '00000000-0000-0000-0000-000000000031',
+    membershipId: '00000000-0000-0000-0000-000000000032',
+    providerUserId: 'prelims-setup-route-test',
+    displayName: 'Authenticated Prelims Director',
+    get clientId() { return activeClientId; },
+    roleKey: 'commercial_director',
+    roleName: 'Commercial Director',
+    permissions: Object.values(PERMISSIONS),
+    memberships: [],
+  },
+});
 const ROOT = path.join(__dirname, "..");
 const MIGRATION_004 = path.join(ROOT, "migrations", "004_developments.sql");
 const MIGRATION_009 = path.join(ROOT, "migrations", "009_cvr_and_purchase_ledger.sql");
@@ -203,6 +217,7 @@ if (!isDbConfigured()) {
     assert.equal(db.rows[0].db, "buildlite_test");
     assert.notEqual(db.rows[0].db, "buildlite_clone");
     await ensureSchema();
+    activeClientId = (await getActiveClient()).id;
   });
 
   test.after(async () => {

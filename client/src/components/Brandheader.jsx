@@ -1,12 +1,24 @@
 import CommercialAssistantIndicator from '../commercialAssistant/CommercialAssistantIndicator';
 import { useBuildLitePermission, useBuildLitePrincipal } from '../auth/BuildLiteAuthProvider';
 
+import { useOptionalUnsavedChanges } from '../navigation/UnsavedChangesContext.js';
+
 export default function BrandHeader({ activeTab, onTab }) {
+  const unsavedChanges = useOptionalUnsavedChanges();
+  const selectTab = (tab) => {
+    if (tab === activeTab) {
+      onTab(tab);
+      return;
+    }
+    const navigate = () => onTab(tab);
+    if (unsavedChanges) unsavedChanges.requestNavigation(navigate);
+    else navigate();
+  };
   const canReleasePayments = useBuildLitePermission('payment_release.execute');
   const canViewPaymentApproval = useBuildLitePermission('payment_approval_run.view');
   const canCreatePo = useBuildLitePermission('po.create');
   const principal = useBuildLitePrincipal();
-  const canAdmin = ['tenant.configure', 'users.manage', 'roles.manage', 'terms.publish']
+  const canAdmin = ['tenant.configure', 'users.manage', 'roles.manage', 'terms.publish', 'commercial_templates.manage', 'cost_code_classifications.manage', 'commercial_head_categories.manage']
     .some(permission => principal?.permissions?.includes(permission));
   return (
     <header className="brandbar">
@@ -20,52 +32,52 @@ export default function BrandHeader({ activeTab, onTab }) {
 
       <nav className="nav">
         <CommercialAssistantIndicator />
-        <button className={`tab ${activeTab === "home" ? "active" : ""}`} onClick={() => onTab("home")}>Home</button>
+        <button className={`tab ${activeTab === "home" ? "active" : ""}`} onClick={() => selectTab("home")}>Home</button>
         {canViewPaymentApproval ? <button
           className={`tab ${activeTab === "payment-approval" ? "active" : ""}`}
-          onClick={() => onTab("payment-approval")}
+          onClick={() => selectTab("payment-approval")}
         >
           Payment Approval
         </button> : null}
         {canReleasePayments ? <button
           className={`tab ${activeTab === "payment-release" ? "active" : ""}`}
-          onClick={() => onTab("payment-release")}
+          onClick={() => selectTab("payment-release")}
         >
           Accounts
         </button> : null}
         {canAdmin ? <button
           className={`tab ${activeTab === "administration" ? "active" : ""}`}
-          onClick={() => onTab("administration")}
+          onClick={() => selectTab("administration")}
         >
           Administration
         </button> : null}
         <button
           className={`tab ${activeTab === "cvrs" ? "active" : ""}`}
-          onClick={() => onTab("cvrs")}
+          onClick={() => selectTab("cvrs")}
         >
           CVRs
         </button>
         <button
           className={`tab ${activeTab === "developments" ? "active" : ""}`}
-          onClick={() => onTab("developments")}
+          onClick={() => selectTab("developments")}
         >
           Developments
         </button>
         {canCreatePo ? <button
           className={`tab ${activeTab === "form" ? "active" : ""}`}
-          onClick={() => onTab("form")}
+          onClick={() => selectTab("form")}
         >
           New Purchase Order
         </button> : null}
         <button
           className={`tab ${activeTab === "list" ? "active" : ""}`}
-          onClick={() => onTab("list")}
+          onClick={() => selectTab("list")}
         >
           Purchase Orders
         </button>
         <button
           className={`tab ${activeTab === "archive" ? "active" : ""}`}
-          onClick={() => onTab("archive")}
+          onClick={() => selectTab("archive")}
         >
           Archive
         </button>

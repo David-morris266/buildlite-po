@@ -4,6 +4,7 @@
 
 import { normaliseCostCodeKey, findMatchingCostCodeKey } from './cvrCalculations';
 import { validateCommercialAdjustment } from './cvrForecastEngine';
+import { appendManualAdjustmentHistory } from './cvrCommercialAdjustmentOwnership';
 import {
   migrateCostCentreHierarchy,
   resolveHierarchyForNewCostCentre,
@@ -539,18 +540,18 @@ export function updateCostCentre(
 
     const previousAdjustment = parseBudgetValue(current.commercialAdjustment) ?? 0;
     const nextAdjustment = validation.commercialAdjustment;
-    if (Math.abs(nextAdjustment - previousAdjustment) > 0.005) {
-      next.adjustmentHistory = [
-        ...(Array.isArray(current.adjustmentHistory) ? current.adjustmentHistory : []),
-        {
+    const previousReason = String(current.commercialReason || '').trim();
+    const reasonChanged = validation.commercialReason !== previousReason;
+    if (Math.abs(nextAdjustment - previousAdjustment) > 0.005 || reasonChanged) {
+      next.adjustmentHistory = appendManualAdjustmentHistory(current.adjustmentHistory, {
           id: newId('adj'),
           date: now,
           user: sessionActor(),
           previousAdjustment,
           newAdjustment: nextAdjustment,
-          reason: validation.commercialReason,
-        },
-      ];
+          previousReason,
+          newReason: validation.commercialReason,
+        });
     }
 
     next.commercialAdjustment = nextAdjustment;

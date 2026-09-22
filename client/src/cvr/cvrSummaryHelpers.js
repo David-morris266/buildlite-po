@@ -30,6 +30,7 @@ import {
   previousRevenueForMovement,
 } from './cvrCommercialPosition';
 import { snapshotHasFrozenRevenue } from './cvrSnapshotMapper';
+import { formatReportingPeriod } from './cvrReportingMonth';
 import {
   buildCvrPeriodComparison,
   findPreviousLockedCvrPeriod,
@@ -770,6 +771,7 @@ export function buildCvrSummaryModel(development, options = {}) {
         periodKey,
         periodLabel: periodKey,
         status: null,
+        reportingPeriodLabel: '—',
         createdLabel: '—',
         submittedLabel: '—',
         approvedLabel: '—',
@@ -828,6 +830,7 @@ export function buildCvrSummaryModel(development, options = {}) {
         periodKey,
         periodLabel: periodKey,
         status,
+        reportingPeriodLabel: formatReportingPeriod(period?.reportingMonth),
         createdLabel: period?.createdAt ? formatPoDate(period.createdAt) : '—',
         submittedLabel: period?.submittedAt ? formatPoDate(period.submittedAt) : '—',
         approvedLabel: period?.approvedAt ? formatPoDate(period.approvedAt) : '—',
@@ -941,6 +944,7 @@ export function buildCvrSummaryModel(development, options = {}) {
       periodKey,
       periodLabel: periodKey,
       status,
+      reportingPeriodLabel: formatReportingPeriod(period.reportingMonth),
       createdLabel: formatPoDate(period.createdAt),
       submittedLabel: period.submittedAt ? formatPoDate(period.submittedAt) : '—',
       approvedLabel: period.approvedAt ? formatPoDate(period.approvedAt) : '—',

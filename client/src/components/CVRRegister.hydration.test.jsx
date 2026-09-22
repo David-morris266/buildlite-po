@@ -69,7 +69,7 @@ describe('CVRRegister hydration (BL-031B)', () => {
     setCvrPeriodListDelay(40);
     seedMockCvrPeriod(
       DEV.id,
-      buildServerCvrPeriodFixture({ id: PERIOD_ID, developmentId: DEV.id, periodKey: 'P01' })
+      buildServerCvrPeriodFixture({ id: PERIOD_ID, developmentId: DEV.id, periodKey: 'P01', reportingMonth: '2026-09-01', createdAt: '2026-10-08T12:00:00.000Z' })
     );
     seedMockCvrInputs(PERIOD_ID, [buildServerCvrInputFixture({ periodId: PERIOD_ID })]);
 
@@ -87,6 +87,8 @@ describe('CVRRegister hydration (BL-031B)', () => {
     await flush();
 
     expect(container.textContent).toContain('P01');
+    expect(container.textContent).toContain('Reporting Period');
+    expect(container.textContent).toContain('September 2026');
     expect(container.textContent).not.toContain('Loading CVR data…');
     expect(container.textContent).not.toContain('No CVR periods yet');
   });

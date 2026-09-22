@@ -11,6 +11,17 @@ vi.mock('../auth/BuildLiteAuthProvider', () => ({
 }));
 vi.mock('../commercialAssistant/CommercialAssistantIndicator', () => ({ default: () => null }));
 import BrandHeader from './Brandheader';
+import { UnsavedChangesProvider } from '../navigation/UnsavedChangesProvider.jsx';
+import { useUnsavedChanges } from '../navigation/UnsavedChangesContext.js';
+
+function DirtyHeader({ onTab }) {
+  const { registerUnsavedChanges } = useUnsavedChanges();
+  React.useEffect(
+    () => registerUnsavedChanges({ title: 'Unsaved Prelims setup', message: 'Leave?' }),
+    [registerUnsavedChanges]
+  );
+  return <BrandHeader activeTab="developments" onTab={onTab} />;
+}
 
 let container;
 let root;
@@ -40,5 +51,19 @@ describe('GP-1 top navigation', () => {
       expect(container.textContent).toContain(label);
     }
     expect(container.textContent).not.toContain('Payment Release');
+  });
+
+  it('guards global module navigation while Prelims setup is dirty', () => {
+    permissions = ['tenant.configure'];
+    const onTab = vi.fn();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => root.render(<UnsavedChangesProvider><DirtyHeader onTab={onTab} /></UnsavedChangesProvider>));
+    act(() => Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Administration').click());
+    expect(onTab).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('Unsaved Prelims setup');
+    act(() => Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Leave without saving').click());
+    expect(onTab).toHaveBeenCalledWith('administration');
   });
 });

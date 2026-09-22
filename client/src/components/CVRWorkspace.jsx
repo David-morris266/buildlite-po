@@ -161,6 +161,7 @@ export default function CVRWorkspace({
   onBackToRegister,
   onPeriodChanged,
   onOpenVariationAccount,
+  onOpenAdjustmentWorkflow,
   initialCostCodeKey = null,
   hierarchyFilter = null,
   onClearHierarchyFilter,
@@ -285,13 +286,15 @@ export default function CVRWorkspace({
     if (!node) return undefined;
     const update = () => setStoryboardSideBySide(node.getBoundingClientRect().width >= 1360);
     update();
-    if (typeof ResizeObserver === 'undefined') {
-      window.addEventListener('resize', update);
-      return () => window.removeEventListener('resize', update);
-    }
-    const observer = new ResizeObserver(update);
-    observer.observe(node);
-    return () => observer.disconnect();
+    window.addEventListener('resize', update);
+    window.visualViewport?.addEventListener('resize', update);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+    observer?.observe(node);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.visualViewport?.removeEventListener('resize', update);
+      observer?.disconnect();
+    };
   }, [workspace?.rows?.length]);
 
   const displayedRows = useMemo(() => {
@@ -842,6 +845,7 @@ export default function CVRWorkspace({
             onSaveNotes={handleSaveNotes}
             onSaveCommercialAdjustment={handleSaveCommercialAdjustment}
             onOpenVariationAccount={onOpenVariationAccount}
+            onOpenAdjustmentWorkflow={onOpenAdjustmentWorkflow}
           />
         </div>
       ) : null}

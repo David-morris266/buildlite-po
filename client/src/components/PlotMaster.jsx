@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import PlotDrawer from './PlotDrawer';
 import PlotScheduleImportWizard from './PlotScheduleImportWizard';
+import PlotTenureReviewWorkspace from './PlotTenureReviewWorkspace';
+import { normalizePlotTenureCode } from '../developments/plotTenureAuthority';
+import { refreshDevelopment } from '../developments/developmentStore';
 import { formatMoney } from './poDrawerHelpers';
 import {
   addPlot,
@@ -76,12 +79,16 @@ export default function PlotMaster({
   initialPlotId = null,
   onPlotsChanged,
   onFocusPlotHandled,
+  initialView = 'list',
+  onViewChange,
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingPlot, setEditingPlot] = useState(null);
   const [saveErrors, setSaveErrors] = useState([]);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [view, setView] = useState(initialView);
+  useEffect(()=>setView(initialView),[initialView]);
 
   const plots = useMemo(() => {
     void refreshToken;
@@ -152,8 +159,14 @@ export default function PlotMaster({
       }
       setImportOpen(false);
       onPlotsChanged?.();
+      setView('tenure-review');
+      onViewChange?.('tenure-review');
     });
   }
+
+  const reviewedTenures=plots.filter(plot=>normalizePlotTenureCode(plot.tenureCode)!=='UNREVIEWED').length;
+
+  if(view==='tenure-review')return <PlotTenureReviewWorkspace developmentId={developmentId} onBack={()=>{setView('list');onViewChange?.('list');}} onApplied={async()=>{await refreshDevelopment(developmentId);onPlotsChanged?.();}} />;
 
   if (importOpen) {
     return (
@@ -189,6 +202,8 @@ export default function PlotMaster({
           </div>
         ) : null}
       </header>
+
+      {plots.length ? <section className="po-module-card" aria-label="Plot Master tenure readiness"><strong>Tenure classifications</strong><p>{reviewedTenures} of {plots.length} reviewed{plots.length-reviewedTenures?` · ${plots.length-reviewedTenures} need attention`:''}</p><button type="button" className="btn btn--secondary" onClick={()=>{setView('tenure-review');onViewChange?.('tenure-review');}}>Review tenures</button></section> : null}
 
       {!plots.length ? (
         <div className="po-module-card po-empty-state dev-plot-master__empty">
@@ -245,7 +260,7 @@ export default function PlotMaster({
                     <PlotCommercialIndicator plot={plot} />
                   </td>
                   <td>{plot.phase || '—'}</td>
-                  <td>{plot.tenure || '—'}</td>
+                  <td>{plot.tenure || '—'}<small className="dev-selling-costs__destination-provenance">{plot.tenureCode && plot.tenureCode !== 'UNREVIEWED' ? plot.tenureCode.replaceAll('_', ' ') : 'Classification unreviewed'}</small></td>
                   <td>{plot.status || '—'}</td>
                   <td className="dev-plot-master__row-actions">
                     <button

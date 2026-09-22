@@ -105,6 +105,15 @@ async function createDevelopment(active, suffix = "adopt") {
       }),
     ]
   );
+  await pool.query(
+    `INSERT INTO cvr_periods (
+       client_id, development_id, period_key, period_label, reporting_month,
+       status, commentary, version, submitted_at, submitted_by, approved_at, approved_by,
+       budget_source
+     ) VALUES ($1, $2, 'P03', 'P03', '2026-07-01', 'locked', '{}'::jsonb, 1,
+       NOW(), 'Legacy fixture', NOW(), 'Legacy fixture', 'legacy_cvr')`,
+    [active.id, id]
+  );
   trackDevelopment(id);
   return id;
 }

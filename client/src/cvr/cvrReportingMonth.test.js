@@ -3,8 +3,12 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  REPORTING_PERIOD_STATES,
   buildCreateNextReportingMonthPrompt,
+  classifyReportingPeriod,
+  formatReportingPeriod,
   isValidReportingYearMonth,
+  previousClosedCalendarMonth,
   reportingMonthForNextCvrPeriod,
 } from './cvrReportingMonth';
 
@@ -63,5 +67,37 @@ describe('BL-033C.1 next CVR reporting month', () => {
   it('accepts an explicit month instead of inventing one', () => {
     expect(reportingMonthForNextCvrPeriod({ reportingMonth: null }, '2026-11')).toBe('2026-11');
     expect(reportingMonthForNextCvrPeriod({ reportingMonth: '2026-08' }, '2026-10')).toBe('2026-10');
+  });
+});
+
+describe('closed Reporting Period semantics', () => {
+  const now = new Date('2026-10-08T12:00:00.000Z');
+
+  it('classifies closed, current and future months deterministically', () => {
+    expect(classifyReportingPeriod('2026-09', now)).toBe(REPORTING_PERIOD_STATES.CLOSED);
+    expect(classifyReportingPeriod('2026-10', now)).toBe(REPORTING_PERIOD_STATES.CURRENT);
+    expect(classifyReportingPeriod('2026-11', now)).toBe(REPORTING_PERIOD_STATES.FUTURE);
+  });
+
+  it('suggests the previous calendar month for the first CVR', () => {
+    expect(previousClosedCalendarMonth(now)).toBe('2026-09');
+    expect(buildCreateNextReportingMonthPrompt({ currentDate: now })).toMatchObject({
+      suggestedMonth: '2026-09',
+      reportingPeriodState: 'closed',
+      requiresExplicitSelection: false,
+    });
+  });
+
+  it('preserves sequential next-period arithmetic and year rollover', () => {
+    expect(buildCreateNextReportingMonthPrompt({
+      sourcePeriod: { reportingMonth: '2026-09' },
+      currentDate: now,
+    })).toMatchObject({ suggestedMonth: '2026-10', reportingPeriodState: 'current' });
+    expect(reportingMonthForNextCvrPeriod({ reportingMonth: '2026-12' })).toBe('2027-01');
+  });
+
+  it('formats Reporting Period for people and never infers a missing historic month', () => {
+    expect(formatReportingPeriod('2026-09-01')).toBe('September 2026');
+    expect(formatReportingPeriod(null)).toBe('—');
   });
 });

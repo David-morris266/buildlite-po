@@ -57,6 +57,9 @@ function sendResult(res, result, successStatus = 200, payloadKey) {
     if (result.actualReportingMonth) {
       payload.actualReportingMonth = result.actualReportingMonth;
     }
+    if (result.reportingPeriodState) {
+      payload.reportingPeriodState = result.reportingPeriodState;
+    }
     return res.status(result.status || 400).json(payload);
   }
   if (payloadKey) {

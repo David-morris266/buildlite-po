@@ -66,6 +66,7 @@ describe('CvrReportingMonthDialog (BL-033C.1)', () => {
           open
           nextPeriodKey="P04"
           suggestedMonth="2026-09"
+          currentDate={new Date('2026-10-08T12:00:00.000Z')}
           onCancel={onCancel}
           onConfirm={onConfirm}
         />
@@ -82,14 +83,15 @@ describe('CvrReportingMonthDialog (BL-033C.1)', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
-  it('prefills a safe suggestion and submits the selected YYYY-MM', async () => {
+  it('prefills a closed suggestion and submits only a closed Reporting Period', async () => {
     const onConfirm = vi.fn();
     await act(async () => {
       root.render(
         <CvrReportingMonthDialog
           open
           nextPeriodKey="P03"
-          suggestedMonth="2027-01"
+          suggestedMonth="2026-09"
+          currentDate={new Date('2026-10-08T12:00:00.000Z')}
           onCancel={() => {}}
           onConfirm={onConfirm}
         />
@@ -100,9 +102,9 @@ describe('CvrReportingMonthDialog (BL-033C.1)', () => {
     expect(container.contains(dialog)).toBe(false);
     expect(dialog.textContent).toContain('Create P03');
     const input = dialog.querySelector('input[type="month"]');
-    expect(input?.value).toBe('2027-01');
+    expect(input?.value).toBe('2026-09');
     await act(async () => {
-      setInputValue(input, '2027-02');
+      setInputValue(input, '2026-08');
     });
     const create = [...dialog.querySelectorAll('button')].find((item) =>
       /Create P03/i.test(item.textContent || '')
@@ -111,6 +113,20 @@ describe('CvrReportingMonthDialog (BL-033C.1)', () => {
     await act(async () => {
       create.click();
     });
-    expect(onConfirm).toHaveBeenCalledWith('2027-02');
+    expect(onConfirm).toHaveBeenCalledWith('2026-08');
+  });
+
+  it('shows current/future suggestions but prevents creation', async () => {
+    await act(async () => {
+      root.render(<CvrReportingMonthDialog open nextPeriodKey="P04" suggestedMonth="2026-10" currentDate={new Date('2026-10-08T12:00:00.000Z')} onCancel={() => {}} onConfirm={() => {}} />);
+    });
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog.textContent).toMatch(/current open month/i);
+    expect([...dialog.querySelectorAll('button')].find((item) => /Create P04/i.test(item.textContent))?.disabled).toBe(true);
+
+    await act(async () => {
+      setInputValue(dialog.querySelector('input[type="month"]'), '2026-11');
+    });
+    expect(dialog.textContent).toMatch(/in the future/i);
   });
 });

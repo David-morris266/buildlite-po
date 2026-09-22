@@ -20,6 +20,10 @@ const {
   loadLiveForecastRevenue,
 } = require("./sellingCostsProposal");
 const { validatePutAssumptionBody } = require("./sellingCostsValidation");
+const { getDefaultTemplate } = require('./sellingCostsTemplateRepository');
+const { PERMISSIONS } = require('../auth/permissions');
+const { assertServicePermission } = require('../auth/authorization');
+const { composeDetailed, saveDetailed } = require('./sellingCostsDetailedRepository');
 
 function isUniqueViolation(err) {
   return err && err.code === "23505";
@@ -52,19 +56,22 @@ async function findSettingsRow(clientId, developmentId, dbClient = null) {
 }
 
 async function composeProposal(clientId, developmentId, row, dbClient = null) {
+  if (row?.mode === SELLING_COSTS_MODES.DETAILED) {
+    return composeDetailed(clientId, developmentId, dbClient);
+  }
   const settings = settingsRowToCore(row, developmentId);
-  const assumptionPercent = settings.exists
-    ? settings.assumptionPercent
-    : DEFAULT_ASSUMPTION_PERCENT;
-  const assumptionSource = settings.exists
-    ? ASSUMPTION_SOURCES.USER
-    : ASSUMPTION_SOURCES.DEFAULT;
+  const companyTemplate=await getDefaultTemplate(clientId,dbClient);
+  const hasDevelopmentPercent=settings.exists&&settings.assumptionPercentOverride!=null;
+  const assumptionPercent=hasDevelopmentPercent?settings.assumptionPercentOverride:companyTemplate?.simpleAssumptionPercent ?? DEFAULT_ASSUMPTION_PERCENT;
+  const assumptionSource=hasDevelopmentPercent?ASSUMPTION_SOURCES.DEVELOPMENT:companyTemplate?ASSUMPTION_SOURCES.COMPANY:ASSUMPTION_SOURCES.BUILDLITE;
 
   const { revenue } = await loadLiveForecastRevenue(clientId, developmentId, { dbClient });
   const money = buildMoneyProposal(revenue, assumptionPercent);
 
   const destination = await resolveSellingCostsDestination(clientId, {
+    overrideId: settings.destinationCostCodeId,
     overrideKey: settings.destinationCostCodeKey,
+    companyDestination: companyTemplate?.simpleDestination || null,
     dbClient,
   });
 
@@ -76,6 +83,7 @@ async function composeProposal(clientId, developmentId, row, dbClient = null) {
     forecastSellingCosts: money.forecastSellingCosts,
     revenue,
     destination,
+    companyTemplate,
   });
 }
 
@@ -83,11 +91,18 @@ async function getSellingCostsProposal(clientId, developmentId) {
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
   const row = await findSettingsRow(clientId, developmentId);
+  if (row?.mode === SELLING_COSTS_MODES.DETAILED) {
+    return { ok: true, proposal: await composeDetailed(clientId, developmentId) };
+  }
   const proposal = await composeProposal(clientId, developmentId, row);
   return { ok: true, proposal };
 }
 
-async function putSellingCostsAssumption(clientId, developmentId, body = {}, { actor } = {}) {
+async function putSellingCostsAssumption(clientId, developmentId, body = {}, { actor, auth } = {}) {
+  if (String(body.mode || '').toLowerCase() === SELLING_COSTS_MODES.DETAILED) {
+    return saveDetailed(clientId, developmentId, body, auth);
+  }
+  assertServicePermission(auth,PERMISSIONS.CVR_EDIT);
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
 
@@ -100,12 +115,16 @@ async function putSellingCostsAssumption(clientId, developmentId, body = {}, { a
   try {
     await dbClient.query("BEGIN");
     const existing = await findSettingsRow(clientId, developmentId, dbClient);
+    const actorUserId=auth?.userId&&(await dbClient.query('SELECT 1 FROM buildlite_users WHERE id=$1',[auth.userId])).rowCount?auth.userId:null;
+    const actorMembershipId=auth?.membershipId&&(await dbClient.query('SELECT 1 FROM client_user_memberships WHERE id=$1 AND client_id=$2',[auth.membershipId,clientId])).rowCount?auth.membershipId:null;
+    const nextAssumptionPercent=validated.value.assumptionProvided?validated.value.assumptionPercent:(existing?existing.assumption_percent:null);
 
     let nextDestinationKey;
+    let nextDestinationId;
     if (validated.value.destinationProvided) {
       const allowed = await assertDestinationAllowedForSave(
         clientId,
-        validated.value.destinationCostCodeKey,
+        validated.value.destinationCostCodeId,
         dbClient
       );
       if (!allowed.ok) {
@@ -118,10 +137,13 @@ async function putSellingCostsAssumption(clientId, developmentId, body = {}, { a
         };
       }
       nextDestinationKey = validated.value.destinationCostCodeKey;
+      nextDestinationId = validated.value.destinationCostCodeId;
     } else if (existing) {
       nextDestinationKey = existing.destination_cost_code_key || null;
+      nextDestinationId = existing.destination_cost_code_id || null;
     } else {
       nextDestinationKey = null;
+      nextDestinationId = null;
     }
 
     if (!existing) {
@@ -140,18 +162,20 @@ async function putSellingCostsAssumption(clientId, developmentId, body = {}, { a
         `
           INSERT INTO development_selling_costs_settings (
             client_id, development_id, mode, assumption_percent,
-            destination_cost_code_key, version, created_by, updated_by
+            destination_cost_code_key, destination_cost_code_id, version, created_by, updated_by,
+            updated_by_user_id,updated_by_membership_id,updated_by_provider_user_id
           )
-          VALUES ($1, $2, $3, $4, $5, 1, $6, $6)
+          VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $7, $8, $9, $10)
           RETURNING *
         `,
         [
           clientId,
           developmentId,
           SELLING_COSTS_MODES.SIMPLE,
-          validated.value.assumptionPercent,
+          nextAssumptionPercent,
           nextDestinationKey,
-          actor || null,
+          nextDestinationId,
+          actor || null,actorUserId,actorMembershipId,auth?.providerUserId||null,
         ]
       );
       await dbClient.query("COMMIT");
@@ -177,20 +201,23 @@ async function putSellingCostsAssumption(clientId, developmentId, body = {}, { a
           mode = $1,
           assumption_percent = $2,
           destination_cost_code_key = $3,
+          destination_cost_code_id = $8,
           version = version + 1,
           updated_at = NOW(),
-          updated_by = $4
+          updated_by = $4,
+          updated_by_user_id=$9,updated_by_membership_id=$10,updated_by_provider_user_id=$11
         WHERE client_id = $5 AND development_id = $6 AND version = $7
         RETURNING *
       `,
       [
         SELLING_COSTS_MODES.SIMPLE,
-        validated.value.assumptionPercent,
+        nextAssumptionPercent,
         nextDestinationKey,
         actor || null,
         clientId,
         developmentId,
         validated.expectedVersion,
+        nextDestinationId,actorUserId,actorMembershipId,auth?.providerUserId||null,
       ]
     );
 

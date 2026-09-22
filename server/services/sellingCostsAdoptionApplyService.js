@@ -7,6 +7,8 @@
 
 const crypto = require("crypto");
 const { pool } = require("../db");
+const { PERMISSIONS } = require('../auth/permissions');
+const { assertServicePermission } = require('../auth/authorization');
 const {
   CVR_PERIOD_AUDIT_ACTIONS,
   CVR_PERIOD_STATUSES,
@@ -39,10 +41,15 @@ const {
   normalizeReportingMonth,
 } = require("./sellingCostsAdoptionCompare");
 const { buildSellingCostsReviewPreview } = require("./sellingCostsReviewPreviewService");
+const {
+  buildSellingCostsReconciliation,
+  classifySellingCostsOwnership,
+} = require("./sellingCostsAdoptionReconciliation");
 
 const SELLING_COSTS_ADOPTION_ERROR_CODES = {
   PERIOD_NOT_DRAFT: "PERIOD_NOT_DRAFT",
   PERIOD_KEY_CHANGED: "PERIOD_KEY_CHANGED",
+  PERIOD_VERSION_CHANGED: "PERIOD_VERSION_CHANGED",
   REPORTING_MONTH_CHANGED: "REPORTING_MONTH_CHANGED",
   SELLING_COSTS_PROPOSAL_STALE: "SELLING_COSTS_PROPOSAL_STALE",
   SELLING_COSTS_SETTINGS_CHANGED: "SELLING_COSTS_SETTINGS_CHANGED",
@@ -201,6 +208,25 @@ function parseSelections(body = {}) {
   }
 
   return { ok: true, selections };
+}
+
+function parseReconciliationExpectations(body = {}) {
+  const rows = Array.isArray(body.reconciliationExpectations)
+    ? body.reconciliationExpectations
+    : [];
+  const byKey = new Map();
+  for (const row of rows) {
+    const costCodeKey = String(row?.costCodeKey || "").trim();
+    const version = Number(row?.expectedInputVersion);
+    if (!costCodeKey || !Number.isInteger(version) || version < 1) continue;
+    byKey.set(costCodeKeyIdentity(costCodeKey), {
+      costCodeKey,
+      expectedInputVersion: version,
+      expectedCurrentAdjustment: roundMoney(row.expectedCurrentAdjustment) ?? 0,
+      action: String(row.action || ""),
+    });
+  }
+  return byKey;
 }
 
 function appendAdjustmentHistory(displayMetadata, entry) {
@@ -393,14 +419,16 @@ async function listPeriodRowsForDevelopment(clientId, developmentId, dbClient) {
 
 /**
  * Adopt selected Selling Costs destination(s) into the current Draft CVR (atomic).
- * Simple mode currently sends one destination. The selections array is the
- * future Detailed-mode contract; Detailed mode itself is not implemented.
+ * Simple mode sends one destination; Detailed mode sends the complete
+ * server-reviewed aggregate destination set.
  */
-async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { actor } = {}) {
+async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { actor, auth } = {}) {
+  assertServicePermission(auth, PERMISSIONS.CVR_ADOPT);
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
 
   const expectedPeriodKey = String(body.expectedPeriodKey || body.periodKey || "").trim();
+  const expectedPeriodVersion = Number(body.expectedPeriodVersion);
   const expectedReportingMonth = normalizeReportingMonth(
     body.expectedReportingMonth || body.reportingMonth
   );
@@ -418,12 +446,16 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
       "expectedReportingMonth is required (YYYY-MM)."
     );
   }
+  if (!Number.isInteger(expectedPeriodVersion) || expectedPeriodVersion < 1) {
+    return fail(400, SELLING_COSTS_ADOPTION_ERROR_CODES.PERIOD_VERSION_CHANGED, "expectedPeriodVersion is required.");
+  }
 
   const settingsParsed = parseExpectedSettingsVersion(body);
   if (!settingsParsed.ok) return settingsParsed;
 
   const parsed = parseSelections(body);
   if (!parsed.ok) return parsed;
+  const reconciliationExpectations = parseReconciliationExpectations(body);
 
   const resolvedActor = actor || provisionalActor(body);
   const dbClient = await pool.connect();
@@ -450,6 +482,11 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
 
     const period = periodRowToDocument(periodRow);
     const periodId = period.id;
+
+    if (Number(period.version) !== expectedPeriodVersion) {
+      await dbClient.query("ROLLBACK");
+      return fail(409, SELLING_COSTS_ADOPTION_ERROR_CODES.PERIOD_VERSION_CHANGED, "CVR period version changed since review.", { expectedPeriodVersion, actualPeriodVersion: Number(period.version) });
+    }
 
     if (!isCvrPeriodMutable(period.status) || period.status !== CVR_PERIOD_STATUSES.draft) {
       await dbClient.query("ROLLBACK");
@@ -500,34 +537,20 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
     }
 
     const proposal = await composeProposal(clientId, developmentId, settingsRow, dbClient);
-    if (String(proposal.mode || "") === SELLING_COSTS_MODES.DETAILED) {
+    const detailed = String(proposal.mode || "") === SELLING_COSTS_MODES.DETAILED;
+    if (detailed && Number(proposal.unreadyLineCount) > 0) {
       await dbClient.query("ROLLBACK");
-      return fail(
-        400,
-        SELLING_COSTS_ADOPTION_ERROR_CODES.DETAILED_NOT_AVAILABLE,
-        "Detailed Selling Costs is not available yet."
-      );
+      return fail(400, SELLING_COSTS_ADOPTION_ERROR_CODES.CANNOT_ADOPT, "Every enabled Detailed Selling Costs line must be ready before adoption.");
     }
-
-    if (parsed.selections.length !== 1) {
+    if (!detailed && parsed.selections.length !== 1) {
       await dbClient.query("ROLLBACK");
-      return fail(
-        400,
-        SELLING_COSTS_ADOPTION_ERROR_CODES.SELECTION_REQUIRED,
-        "Simple Selling Costs currently adopts one destination cost code."
-      );
+      return fail(400, SELLING_COSTS_ADOPTION_ERROR_CODES.SELECTION_REQUIRED, "Simple Selling Costs currently adopts one destination cost code.");
     }
-
-    if (!destinationIsReady(proposal.destination) || proposal.forecastSellingCosts == null) {
-      await dbClient.query("ROLLBACK");
-      return fail(
-        400,
-        SELLING_COSTS_ADOPTION_ERROR_CODES.DESTINATION_INVALID,
-        proposal.destination?.message ||
-          "Selling Costs destination is not valid for adoption.",
-        { destination: proposal.destination }
-      );
-    }
+    const authoritativeDestinations = detailed ? (proposal.costCodeAggregation||[]).map(aggregate=>({destination:{...aggregate.costCode,costCodeKey:aggregate.costCode?.code,status:aggregate.costCode?.active===false?DESTINATION_STATUSES.INACTIVE:DESTINATION_STATUSES.READY},forecast:aggregate.forecast,aggregateFingerprint:aggregate.aggregateFingerprint,lines:aggregate.lines||[]})) : [{destination:proposal.destination,forecast:proposal.forecastSellingCosts,lines:[]}];
+    if (!authoritativeDestinations.length || authoritativeDestinations.some(item=>!destinationIsReady(item.destination)) || authoritativeDestinations.some(item=>item.forecast==null)) {await dbClient.query("ROLLBACK");return fail(400,SELLING_COSTS_ADOPTION_ERROR_CODES.DESTINATION_INVALID,"Selling Costs destinations are not valid for adoption.");}
+    const authoritativeKeys=new Set(authoritativeDestinations.map(item=>costCodeKeyIdentity(item.destination.costCodeKey)));
+    const selectedKeys=new Set(parsed.selections.map(item=>costCodeKeyIdentity(item.destinationCostCodeKey)));
+    if(authoritativeKeys.size!==selectedKeys.size||[...authoritativeKeys].some(key=>!selectedKeys.has(key))){await dbClient.query("ROLLBACK");return fail(409,SELLING_COSTS_ADOPTION_ERROR_CODES.SELLING_COSTS_PROPOSAL_STALE,"The reviewed Selling Costs destination set has changed.");}
 
     const inputRows = await listCostCodeInputRowsForUpdate(clientId, periodId, dbClient);
     const inputDocs = inputRows.map(inputRowToDocument);
@@ -549,11 +572,34 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
       );
     }
 
-    const destinationKey = proposal.destination.costCodeKey;
     const cvrRows = closeCandidate.snapshot?.rows || [];
     const plans = [];
+    const newDestinationKeys = parsed.selections.map((item) => item.destinationCostCodeKey);
+    const priorReconciliation = buildSellingCostsReconciliation({
+      inputs: inputDocs,
+      newDestinationKeys,
+    });
+
+    for (const prior of priorReconciliation) {
+      const expected = reconciliationExpectations.get(costCodeKeyIdentity(prior.costCodeKey));
+      if (
+        !expected ||
+        expected.expectedInputVersion !== prior.inputVersion ||
+        !moneyClose(expected.expectedCurrentAdjustment, prior.currentAdjustment) ||
+        expected.action !== prior.action
+      ) {
+        await dbClient.query("ROLLBACK");
+        return fail(
+          409,
+          SELLING_COSTS_ADOPTION_ERROR_CODES.CVR_INPUT_CONFLICT,
+          `Selling Costs ownership for ${prior.costCodeKey} changed since review. Refresh and review again.`,
+          { costCodeKey: prior.costCodeKey }
+        );
+      }
+    }
 
     for (const selection of parsed.selections) {
+      const authority=authoritativeDestinations.find(item=>sameCostCodeKey(item.destination.costCodeKey,selection.destinationCostCodeKey));
       const inputDoc = findByCostCodeKey(inputDocs, selection.destinationCostCodeKey);
       const overlay = inputDoc;
       const cvrRow = findByCostCodeKey(cvrRows, selection.destinationCostCodeKey);
@@ -567,19 +613,20 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
         mode: proposal.mode,
         assumptionPercent: proposal.assumptionPercent,
         forecastRevenue: proposal.forecastRevenue,
-        forecastSellingCosts: proposal.forecastSellingCosts,
-        destinationCostCodeKey: destinationKey,
+        forecastSellingCosts: authority.forecast,
+        destinationCostCodeKey: authority.destination.costCodeKey,
         cvrRow,
         overlay,
         existingMetadata,
+        detailedEvidence: detailed?{evidenceVersion:1,wholeProposalFingerprint:proposal.proposalEvidenceFingerprint,aggregateFingerprint:authority.aggregateFingerprint,template:proposal.template,settingsVersion:actualSettingsVersion,quantityEvidenceFingerprint:proposal.quantityEvidenceFingerprint,destinationCostCodeId:authority.destination.id,destinationCostCodeKey:authority.destination.costCodeKey,aggregate:authority.forecast,lines:authority.lines}:null,
       });
 
       const validated = validateSelectionAgainstComparison({
         selection,
         comparison,
         inputDoc,
-        resolvedDestinationKey: destinationKey,
-        destination: proposal.destination,
+        resolvedDestinationKey: authority.destination.costCodeKey,
+        destination: authority.destination,
       });
       if (!validated.ok) {
         await dbClient.query("ROLLBACK");
@@ -606,7 +653,69 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
 
     const adoptedAt = new Date().toISOString();
     const adoptionReason = buildAdoptionReason(actualReportingMonth);
+    const releaseReason = `Selling Costs position released — ${actualReportingMonth}`;
     const adopted = [];
+    const released = [];
+    const preserved = priorReconciliation
+      .filter((row) => row.action === "preserved_manual")
+      .map((row) => ({
+        costCodeKey: row.costCodeKey,
+        inputId: row.inputId,
+        result: "preserved_manual",
+        currentAdjustment: row.currentAdjustment,
+        inputVersion: row.inputVersion,
+      }));
+
+    for (const plan of priorReconciliation.filter((row) => row.action === "released")) {
+      const inputDoc = findByCostCodeKey(inputDocs, plan.costCodeKey);
+      const previousAdjustment = roundMoney(inputDoc.commercialAdjustment) ?? 0;
+      const previousReason = inputDoc.adjustmentReason || "";
+      let metadata = appendAdjustmentHistory(
+        inputDoc.displayMetadata || {},
+        buildHistoryEntry({
+          actor: resolvedActor,
+          previousAdjustment,
+          newAdjustment: plan.baselineAdjustment,
+          previousReason,
+          newReason: releaseReason,
+          at: adoptedAt,
+        })
+      );
+      metadata[SELLING_COSTS_ADOPTION_METADATA_KEY] = {
+        ...(metadata[SELLING_COSTS_ADOPTION_METADATA_KEY] || {}),
+        superseded: true,
+        released: true,
+        releasedAt: adoptedAt,
+        releasedBy: resolvedActor,
+        releaseReason,
+      };
+      const updated = await updateCostCodeInputCommercialFields(dbClient, {
+        clientId,
+        inputId: inputDoc.id,
+        expectedVersion: inputDoc.version,
+        commercialAdjustment: plan.baselineAdjustment,
+        adjustmentReason: plan.baselineReason,
+        displayMetadata: metadata,
+        actor: resolvedActor,
+      });
+      if (!updated.ok) {
+        await dbClient.query("ROLLBACK");
+        return fail(updated.status || 409, SELLING_COSTS_ADOPTION_ERROR_CODES.CVR_INPUT_CONFLICT,
+          updated.message || `Cost-code input version conflict for ${plan.costCodeKey}.`,
+          { costCodeKey: plan.costCodeKey, input: inputDoc });
+      }
+      released.push({
+        costCodeKey: plan.costCodeKey,
+        inputId: updated.input.id,
+        result: "released",
+        oldAdjustment: previousAdjustment,
+        newAdjustment: plan.baselineAdjustment,
+        oldReason: previousReason,
+        newReason: plan.baselineReason,
+        releaseReason,
+        inputVersion: updated.input.version,
+      });
+    }
 
     for (const plan of writes) {
       const { comparison, inputDoc, replacementAdjustment } = plan;
@@ -614,6 +723,7 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
       const previousReason = inputDoc.adjustmentReason || "";
       const previousFinal = comparison.currentFinalForecast;
       const newFinal = comparison.proposedFinalForecast;
+      const ownership = classifySellingCostsOwnership(inputDoc);
 
       let metadata = appendAdjustmentHistory(
         inputDoc.displayMetadata || {},
@@ -634,6 +744,12 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
         systemForecastAtAdoption: comparison.systemForecast,
         previousFinalForecast: previousFinal,
         previousAdjustment,
+        originalBaselineAdjustment: ownership.owned
+          ? ownership.originalBaselineAdjustment
+          : previousAdjustment,
+        originalBaselineReason: ownership.owned
+          ? ownership.originalBaselineReason
+          : previousReason,
         proposalFingerprint: comparison.proposalFingerprint,
         assumptionPercent: proposal.assumptionPercent,
         forecastRevenueAtAdoption: proposal.forecastRevenue,
@@ -645,6 +761,23 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
         adoptedBy: resolvedActor,
         inputId: inputDoc.id,
         inputVersionAtAdoption: inputDoc.version,
+        evidenceVersion: comparison.detailedEvidence ? 2 : 1,
+        detailedEvidence: comparison.detailedEvidence ? {
+          ...comparison.detailedEvidence,
+          developmentId,
+          periodId,
+          periodKey: period.periodKey,
+          periodVersion: Number(period.version),
+          reportingMonth: actualReportingMonth,
+          forecastRevenue: proposal.forecastRevenue,
+          revenueEvidence: proposal.revenue || null,
+          systemForecast: comparison.systemForecast,
+          replacementAdjustment,
+          originalBaselineAdjustment: ownership.owned ? ownership.originalBaselineAdjustment : previousAdjustment,
+          reconciliationAction: ownership.owned ? "retained" : "added",
+          actor: resolvedActor,
+          adoptedAt,
+        } : null,
       });
       metadata[SELLING_COSTS_ADOPTION_METADATA_KEY] = sellingCostsAdoption;
 
@@ -685,13 +818,16 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
       });
     }
 
-    if (writes.length) {
+    if (writes.length || released.length) {
+      const previousSet = inputDocs
+        .filter((row) => { const ownership=classifySellingCostsOwnership(row); return ownership.associated&&!ownership.metadata?.released; })
+        .map((row) => row.costCodeKey);
       await insertAudit(dbClient, {
         clientId,
         periodId,
         action: CVR_PERIOD_AUDIT_ACTIONS.sellingCostsAdopted,
         actor: resolvedActor,
-        comment: `Selling Costs adoption applied to ${writes.length} cost code(s)`,
+        comment: `Selling Costs ${proposal.mode} reconciliation: previous [${previousSet.join(", ")}], new [${newDestinationKeys.join(", ")}], added/updated ${writes.length}, released ${released.length}, preserved manual ${preserved.length}, unchanged ${unchanged.length}, proposal ${proposal.proposalEvidenceFingerprint || plans[0]?.comparison?.proposalFingerprint || "n/a"}`,
         priorStatus: period.status,
         newStatus: period.status,
       });
@@ -714,6 +850,8 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
         periodKey: period.periodKey,
         reportingMonth: actualReportingMonth,
         adopted,
+        released,
+        preserved,
         unchanged,
         review,
       },

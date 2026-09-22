@@ -153,7 +153,7 @@ function validatePatchPeriodBody(body = {}) {
     if (!value.periodLabel) errors.push("periodLabel must not be blank.");
   }
   if (body.reportingMonth !== undefined) {
-    value.reportingMonth = parseReportingMonth(body.reportingMonth, errors);
+    errors.push("Reporting Period cannot be changed after the CVR period is created.");
   }
   if (body.commentary !== undefined) {
     value.commentary = normaliseCommentary(body.commentary, errors);

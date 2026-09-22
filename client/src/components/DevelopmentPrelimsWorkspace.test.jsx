@@ -287,7 +287,7 @@ describe('DevelopmentPrelimsWorkspace (x.5 landing + add/edit)', () => {
       'Set up site Prelims'
     );
     expect(container.querySelector('[data-testid="prelims-setup-supporting"]')?.textContent).toMatch(
-      /create the site forecast/i
+      /add assumptions to the Site Prelims proposal/i
     );
     expect(container.textContent).not.toMatch(/Manage site Prelims/);
   });
@@ -299,7 +299,7 @@ describe('DevelopmentPrelimsWorkspace (x.5 landing + add/edit)', () => {
       'Manage site Prelims'
     );
     expect(container.querySelector('[data-testid="prelims-setup-supporting"]')?.textContent).toMatch(
-      /add or update site assumptions/i
+      /add more assumptions to the Site Prelims proposal/i
     );
     expect(container.textContent).not.toMatch(/Set up site Prelims/);
   });

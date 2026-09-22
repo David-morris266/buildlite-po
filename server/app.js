@@ -21,6 +21,7 @@ const cvrRoutes = require("./routes/cvrRoutes");
 const ledgerRoutes = require("./routes/ledgerRoutes");
 const revenueSettingsRoutes = require("./routes/revenueSettingsRoutes");
 const sellingCostsRoutes = require("./routes/sellingCostsRoutes");
+const sellingCostsTemplateRoutes = require("./routes/sellingCostsTemplateRoutes");
 const developmentProgrammeRoutes = require("./routes/developmentProgrammeRoutes");
 const prelimsItemRoutes = require("./routes/prelimsItemRoutes");
 const prelimsTemplateRoutes = require("./routes/prelimsTemplateRoutes");
@@ -72,6 +73,7 @@ function createApp(options = {}) {
   app.use("/api/developments/:developmentId", ledgerRoutes);
   app.use("/api/developments/:developmentId", revenueSettingsRoutes);
   app.use("/api/developments/:developmentId", sellingCostsRoutes);
+  app.use("/api/selling-costs-templates", sellingCostsTemplateRoutes);
   app.use("/api/developments/:developmentId", developmentProgrammeRoutes);
   app.use("/api/developments/:developmentId", developmentBudgetRoutes);
   app.use("/api/developments/:developmentId", prelimsItemRoutes);

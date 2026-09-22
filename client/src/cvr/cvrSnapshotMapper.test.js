@@ -155,6 +155,20 @@ describe('CVR snapshot mapper (BL-031E.4)', () => {
     expect(JSON.stringify(mapped)).not.toMatch(/cost_code_key|manual_accrual|adjustment_reason/);
   });
 
+  it('preserves frozen Detailed Selling Costs metadata on snapshot rows', () => {
+    const sellingCostsAdoption = {
+      mode: 'detailed',
+      detailedEvidence: {
+        aggregate: 35000,
+        forecastRevenue: 8341500,
+        reportingMonth: '2027-02',
+        lines: [{ id: 'home', name: 'Show Home Furnishing', driver: 'LUMP_SUM', forecast: 20000 }],
+      },
+    };
+    const mapped = normalizeCvrSnapshotRow(buildServerCvrSnapshotRowFixture({ displayMetadata: { sellingCostsAdoption } }));
+    expect(mapped.displayMetadata.sellingCostsAdoption).toEqual(sellingCostsAdoption);
+  });
+
   it('nests snapshot onto the period document and clears snapshotDeferred', () => {
     const snapshot = buildServerCvrSnapshotFixture();
     const mapped = normalizeServerCvrPeriod(

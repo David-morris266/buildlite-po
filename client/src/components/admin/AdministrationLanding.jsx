@@ -41,6 +41,9 @@ const CARD_META = {
     accent: 'commercial',
     status: 'Tailoring',
   },
+  'selling-costs-templates': {
+    icon: '£', title: 'Selling Costs Templates', description: 'Company defaults and customer Cost Code mapping.', accent: 'commercial', status: 'Setup',
+  },
   'subcontract-terms': {
     icon: '📄',
     title: 'Subcontract Terms',
@@ -113,6 +116,7 @@ const GROUPS = [
       'cost-codes',
       'commercial-behaviour',
       'prelims-templates',
+      'selling-costs-templates',
       'reporting-preview',
       'validation-dashboard',
     ],
@@ -188,7 +192,14 @@ function DashboardCard({ card, onOpen, disabled = false }) {
   );
 }
 
-export default function AdministrationLanding({ onOpen, showDeveloperTools }) {
+const COMMERCIAL_TEMPLATE_CARDS = new Set(['prelims-templates', 'selling-costs-templates']);
+
+export default function AdministrationLanding({
+  onOpen,
+  showDeveloperTools,
+  canManageCommercialTemplates = false,
+  accessError = '',
+}) {
   const groups = showDeveloperTools
     ? [
         ...GROUPS,
@@ -210,18 +221,22 @@ export default function AdministrationLanding({ onOpen, showDeveloperTools }) {
         </p>
       </header>
 
+      {accessError ? <p className="admin-inline-warning" role="alert">{accessError}</p> : null}
+
       {groups.map((group) => (
         <section key={group.id} className="admin-dashboard-group">
           <h2 className="admin-dashboard-group__title">{group.title}</h2>
           <div className="admin-module-grid">
-            {group.cardIds.map((cardId) => (
+            {group.cardIds
+              .filter((cardId) => canManageCommercialTemplates || !COMMERCIAL_TEMPLATE_CARDS.has(cardId))
+              .map((cardId) => (
               <DashboardCard
                 key={cardId}
                 card={{ id: cardId }}
                 onOpen={onOpen}
                 disabled={CARD_META[cardId]?.disabled}
               />
-            ))}
+              ))}
           </div>
         </section>
       ))}

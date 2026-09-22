@@ -26,6 +26,10 @@ const {
   validatePatchPeriodBody,
 } = require("./cvrPeriodValidation");
 const { stampMovementExplanations } = require('./cvrMovementExplanations');
+const {
+  REPORTING_PERIOD_STATES,
+  classifyReportingPeriod,
+} = require('./cvrReportingPeriod');
 
 function isUniqueViolation(err) {
   return err && err.code === "23505";
@@ -198,13 +202,32 @@ async function getCvrPeriod(clientId, developmentId, periodId, dbClient = null) 
   return { ok: true, period: await hydratePeriod(clientId, row, dbClient) };
 }
 
-async function createCvrPeriod(clientId, developmentId, body = {}, { actor } = {}) {
+async function createCvrPeriod(clientId, developmentId, body = {}, { actor, currentDate } = {}) {
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
 
   const validated = validateCreatePeriodBody(body);
   if (!validated.ok) {
     return { ok: false, status: 400, message: validated.errors.join(" ") };
+  }
+
+  const reportingPeriodState = classifyReportingPeriod(
+    validated.value.reportingMonth,
+    currentDate || new Date()
+  );
+  if (reportingPeriodState !== REPORTING_PERIOD_STATES.CLOSED) {
+    const message = reportingPeriodState === REPORTING_PERIOD_STATES.CURRENT
+      ? "The selected Reporting Period is still the current open month. Create its CVR after month end."
+      : reportingPeriodState === REPORTING_PERIOD_STATES.FUTURE
+        ? "The selected Reporting Period is in the future. Select a closed commercial month."
+        : "Reporting Period is required and must be a valid closed commercial month.";
+    return {
+      ok: false,
+      status: reportingPeriodState ? 409 : 400,
+      code: "CVR_REPORTING_PERIOD_NOT_CLOSED",
+      reportingPeriodState,
+      message,
+    };
   }
 
   const readinessResult = await require('./developmentCommercialReadiness').loadDevelopmentCommercialReadiness(clientId, developmentId);

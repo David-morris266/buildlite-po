@@ -63,6 +63,7 @@ describe('CostCentreDrawer accrual and forecast UX', () => {
           onSaveNotes={onSaveNotes}
           onSaveCommercialAdjustment={onSaveCommercialAdjustment}
           onOpenVariationAccount={props.onOpenVariationAccount}
+          onOpenAdjustmentWorkflow={props.onOpenAdjustmentWorkflow}
           storyboard
           sideBySide={props.sideBySide ?? true}
         />
@@ -134,6 +135,129 @@ describe('CostCentreDrawer accrual and forecast UX', () => {
     expect(container.textContent).toMatch(/Current Cost[^0-9]*48,200\.00/);
     const supporting = [...container.querySelectorAll('details')].find((node) => node.querySelector('summary')?.textContent === 'Supporting evidence');
     expect(supporting.textContent).toContain('Hierarchy changed: External Works / Landscaping → Plot Works / Landscaping');
+  });
+
+  function workflowOwnedRow(source = 'prelims_adoption') {
+    const prelims = source === 'prelims_adoption';
+    const reason = prelims
+      ? 'Prelims forecast adopted — 2027-02'
+      : 'Selling Costs forecast adopted — 2027-02';
+    return {
+      ...baseRow,
+      commercialAdjustment: 57000,
+      commercialReason: reason,
+      displayMetadata: {
+        [prelims ? 'prelimsAdoption' : 'sellingCostsAdoption']: {
+          adoptedAdjustment: 57000,
+          adoptedAt: '2026-09-19T13:32:00.000Z',
+          adoptedBy: 'David Morris',
+          reportingMonth: '2027-02',
+          superseded: false,
+        },
+      },
+      adjustmentHistory: [{
+        id: 'adoption-1', source, newAdjustment: 57000, newReason: reason,
+        date: '2026-09-19T13:32:00.000Z', user: 'David Morris',
+      }],
+    };
+  }
+
+  it('presents current Site Prelims ownership as formatted read-only provenance', () => {
+    const onOpenAdjustmentWorkflow = vi.fn();
+    renderDrawer({ row: workflowOwnedRow(), onOpenAdjustmentWorkflow });
+    expect(container.textContent).toContain('+£57,000.00');
+    expect(container.textContent).toContain('Source');
+    expect(container.textContent).toContain('Site Prelims');
+    expect(container.textContent).toContain('Site Prelims forecast adopted');
+    expect(container.textContent).toContain('David Morris');
+    expect(container.textContent).toContain('February 2027');
+    expect(container.textContent).not.toContain('Site Prelims forecast adopted — 2027-02');
+    expect(container.querySelector('.dev-cvr-drawer__save-adjustment')).toBeNull();
+    const view = [...container.querySelectorAll('button')].find((button) => button.textContent === 'View Site Prelims');
+    act(() => view.click());
+    expect(onOpenAdjustmentWorkflow).toHaveBeenCalledWith(expect.objectContaining({ tabId: 'prelims' }));
+  });
+
+  it('uses the same ownership and navigation contract for Selling Costs', () => {
+    const onOpenAdjustmentWorkflow = vi.fn();
+    renderDrawer({ row: workflowOwnedRow('selling_costs_adoption'), onOpenAdjustmentWorkflow });
+    expect(container.textContent).toContain('Selling Costs forecast adopted');
+    const view = [...container.querySelectorAll('button')].find((button) => button.textContent === 'View Selling Costs');
+    act(() => view.click());
+    expect(onOpenAdjustmentWorkflow).toHaveBeenCalledWith(expect.objectContaining({ tabId: 'selling-costs' }));
+  });
+
+  it('renders frozen Detailed Selling Costs constituent evidence without replacing generic evidence', () => {
+    const row = workflowOwnedRow('selling_costs_adoption');
+    row.commercialAdjustment = 35000;
+    row.displayMetadata.sellingCostsAdoption = {
+      ...row.displayMetadata.sellingCostsAdoption,
+      adoptedTargetFinal: 35000,
+      forecastRevenueAtAdoption: 8341500,
+      detailedEvidence: {
+        aggregate: 35000,
+        forecastRevenue: 8341500,
+        reportingMonth: '2027-02',
+        lines: [
+          { id: 'home', name: 'Show Home Furnishing', driver: 'LUMP_SUM', lumpSum: 20000, forecast: 20000, assumptionOverridden: true, destinationOverridden: true },
+          { id: 'suite', name: 'Sales Office / Marketing Suite Setup', driver: 'LUMP_SUM', lumpSum: 15000, forecast: 15000, assumptionOverridden: false, destinationOverridden: false },
+          { id: 'legal', name: 'Legal Fees', driver: 'QUANTITY_RATE', quantitySource: 'PRIVATE_SALE_PLOTS', resolvedQuantity: 20, rate: 500, unitCode: 'PLOTS', forecast: 10000, quantityEvidence: { message: 'From frozen Plot Master evidence' } },
+          { id: 'agents', name: 'Estate Agents', driver: 'PERCENT_REVENUE', percent: 1.5, forecast: 125122.5 },
+        ],
+      },
+    };
+    renderDrawer({ row });
+    const supporting = [...container.querySelectorAll('details')].find(node => node.querySelector('summary')?.textContent === 'Supporting evidence');
+    supporting.open = true;
+    expect(supporting.textContent).toContain('Selling Costs — Detailed');
+    expect(supporting.textContent).toContain('Adopted forecast£35,000.00');
+    expect(supporting.textContent).toContain('Show Home Furnishing£20,000.00');
+    expect(supporting.textContent).toContain('Sales Office / Marketing Suite Setup£15,000.00');
+    expect(supporting.textContent).toContain('20 private-sale plots × £500.00 / plot');
+    expect(supporting.textContent).toContain('1.50% of £8,341,500.00');
+    expect(supporting.textContent).toContain('Development Cost Code override');
+    expect(supporting.textContent).toContain('Company assumption');
+    expect(supporting.textContent).toContain('February 2027');
+    expect(supporting.textContent).toContain('Packages / commitments');
+    expect(supporting.textContent).toContain('Approved Certificates');
+    expect(supporting.textContent).toContain('Ledger Transactions');
+  });
+
+  it('renders legacy Selling Costs release dash encoding safely without changing evidence', () => {
+    renderDrawer({
+      row: {
+        ...baseRow,
+        adjustmentHistory: [{
+          id: 'release-1',
+          previousAdjustment: 115062.5,
+          newAdjustment: 0,
+          reason: 'Selling Costs position released â€“ 2027-02',
+          user: 'David Morris',
+          date: '2026-09-21T09:30:00.000Z',
+        }],
+      },
+    });
+    expect(container.textContent).toContain('Selling Costs position released — 2027-02');
+    expect(container.textContent).not.toContain('â€“');
+    expect(container.textContent).toContain('115,062.50');
+    expect(container.textContent).toContain('David Morris');
+  });
+
+  it('requires deliberate, reasoned replacement before saving a workflow-owned adjustment', async () => {
+    const onSaveCommercialAdjustment = vi.fn(async () => ({ ok: true }));
+    renderDrawer({ row: workflowOwnedRow(), onSaveCommercialAdjustment });
+    act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Replace with manual adjustment').click());
+    expect(container.textContent).toContain('will supersede the currently adopted Site Prelims position');
+    const save = container.querySelector('.dev-cvr-drawer__save-adjustment');
+    expect(save.disabled).toBe(true);
+    const reasonInput = container.querySelector('.dev-cvr-drawer__reason-input');
+    act(() => changeInput(reasonInput, 'Revised staffing risk'));
+    expect(save.disabled).toBe(false);
+    await act(async () => save.click());
+    expect(onSaveCommercialAdjustment).toHaveBeenCalledWith({
+      commercialAdjustment: '57000',
+      commercialReason: 'Revised staffing risk',
+    });
   });
 
   function accrualInput() {

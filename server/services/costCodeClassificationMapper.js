@@ -41,6 +41,16 @@ function classificationRowToDocument(row, fallbackKey = "") {
     updatedAt: toIso(row.updated_at),
     createdBy: row.created_by ?? null,
     updatedBy: row.updated_by ?? null,
+    createdByAuth: row.created_by_user_id ? {
+      userId: row.created_by_user_id, membershipId: row.created_by_membership_id,
+      providerUserId: row.created_by_provider_user_id, roleKey: row.created_by_role_key,
+      permission: row.created_by_permission_key,
+    } : null,
+    updatedByAuth: row.updated_by_user_id ? {
+      userId: row.updated_by_user_id, membershipId: row.updated_by_membership_id,
+      providerUserId: row.updated_by_provider_user_id, roleKey: row.updated_by_role_key,
+      permission: row.updated_by_permission_key,
+    } : null,
   };
 }
 

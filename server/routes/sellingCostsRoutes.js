@@ -7,16 +7,18 @@
 
 const express = require("express");
 const { isDbConfigured } = require("../db");
-const { getActiveClient } = require("../services/activeClient");
+const { getActiveClient } = require('../services/activeClient');
 const {
   getSellingCostsProposal,
   putSellingCostsAssumption,
-  provisionalActor,
 } = require("../services/sellingCostsRepository");
 const { buildSellingCostsReviewPreview } = require("../services/sellingCostsReviewPreviewService");
 const { adoptSellingCostsForecasts } = require("../services/sellingCostsAdoptionApplyService");
+const { PERMISSIONS } = require('../auth/permissions');
+const { requirePermission, actorFromAuth } = require('../auth/authorization');
 
 const router = express.Router({ mergeParams: true });
+async function tenantId(req){if(req.buildliteAuth?.clientId)return req.buildliteAuth.clientId;if(process.env.BUILDLITE_SERVER_TEST==='1'||process.env.NODE_ENV==='test')return (await getActiveClient())?.id||null;return null;}
 
 function sendResult(res, result, successStatus = 200, payloadKey) {
   if (!result.ok) {
@@ -50,15 +52,12 @@ function sendResult(res, result, successStatus = 200, payloadKey) {
   return res.status(result.status || successStatus).json(body);
 }
 
-router.get("/selling-costs/review", async (req, res) => {
+router.get("/selling-costs/review", requirePermission(PERMISSIONS.COMMERCIAL_READ), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
     }
-    const active = await getActiveClient();
-    if (!active) return res.status(404).json({ error: "No active client set" });
-
-    const result = await buildSellingCostsReviewPreview(active.id, req.params.developmentId);
+    const result = await buildSellingCostsReviewPreview(await tenantId(req), req.params.developmentId);
     sendResult(res, result);
   } catch (err) {
     console.error("[Selling Costs] REVIEW error:", err);
@@ -66,17 +65,16 @@ router.get("/selling-costs/review", async (req, res) => {
   }
 });
 
-router.post("/selling-costs/adoption", async (req, res) => {
+router.post("/selling-costs/adoption", requirePermission(PERMISSIONS.CVR_ADOPT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
     }
-    const active = await getActiveClient();
-    if (!active) return res.status(404).json({ error: "No active client set" });
-
     const body = req.body || {};
-    const result = await adoptSellingCostsForecasts(active.id, req.params.developmentId, body, {
-      actor: provisionalActor(body),
+    const authenticated = actorFromAuth(req.buildliteAuth, PERMISSIONS.CVR_ADOPT);
+    const result = await adoptSellingCostsForecasts(await tenantId(req), req.params.developmentId, body, {
+      actor: authenticated.actor,
+      auth: req.buildliteAuth,
     });
     sendResult(res, result, 200, "adoption");
   } catch (err) {
@@ -85,15 +83,12 @@ router.post("/selling-costs/adoption", async (req, res) => {
   }
 });
 
-router.get("/selling-costs", async (req, res) => {
+router.get("/selling-costs", requirePermission(PERMISSIONS.COMMERCIAL_READ), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
     }
-    const active = await getActiveClient();
-    if (!active) return res.status(404).json({ error: "No active client set" });
-
-    const result = await getSellingCostsProposal(active.id, req.params.developmentId);
+    const result = await getSellingCostsProposal(await tenantId(req), req.params.developmentId);
     sendResult(res, result);
   } catch (err) {
     console.error("[Selling Costs] GET error:", err);
@@ -101,17 +96,16 @@ router.get("/selling-costs", async (req, res) => {
   }
 });
 
-router.put("/selling-costs", async (req, res) => {
+router.put("/selling-costs", requirePermission(PERMISSIONS.CVR_EDIT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
     }
-    const active = await getActiveClient();
-    if (!active) return res.status(404).json({ error: "No active client set" });
-
     const body = req.body || {};
-    const result = await putSellingCostsAssumption(active.id, req.params.developmentId, body, {
-      actor: provisionalActor(body),
+    const authenticated = actorFromAuth(req.buildliteAuth, PERMISSIONS.CVR_EDIT);
+    const result = await putSellingCostsAssumption(await tenantId(req), req.params.developmentId, body, {
+      actor: authenticated.actor,
+      auth: req.buildliteAuth,
     });
     sendResult(res, result, result.status === 201 ? 201 : 200);
   } catch (err) {

@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+import React from 'react';
 import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -96,7 +97,7 @@ vi.mock('./DevelopmentSellingCostsWorkspace', () => ({
 vi.mock('./DevelopmentPrelimsWorkspace', () => ({
   default: () => <div data-testid="prelims-panel">Prelims panel</div>,
 }));
-vi.mock('./CVRRegister', () => ({ default: () => <div data-testid="cvr-panel">CVR panel</div> }));
+vi.mock('./CVRRegister', () => ({ default: ({ onOpenPeriod }) => <div data-testid="cvr-panel">CVR panel<button onClick={() => onOpenPeriod?.('P04')}>Open P04</button></div> }));
 vi.mock('./CVRSummaryPage', () => ({ default: () => null }));
 vi.mock('./CVRWorkspace', () => ({ default: () => null }));
 vi.mock('./SubcontractPackageWorkspace', () => ({
@@ -106,10 +107,21 @@ vi.mock('./PackageWorkspaceNotFound', () => ({
   default: () => <div>Package unavailable</div>,
 }));
 vi.mock('./layout/ApplicationPageHeader', () => ({
-  default: () => <div>Header</div>,
+  default: ({ onBack }) => <button type="button" onClick={onBack}>Header back</button>,
 }));
 
 import DevelopmentWorkspace from './DevelopmentWorkspace';
+import { UnsavedChangesProvider } from '../navigation/UnsavedChangesProvider.jsx';
+import { useUnsavedChanges } from '../navigation/UnsavedChangesContext.js';
+
+function DirtyRegistration({ dirty }) {
+  const { registerUnsavedChanges } = useUnsavedChanges();
+  React.useEffect(() => {
+    if (!dirty) return undefined;
+    return registerUnsavedChanges({ title: 'Unsaved Prelims setup', message: 'Leave?' });
+  }, [dirty, registerUnsavedChanges]);
+  return null;
+}
 
 const sampleDevelopment = {
   id: 'dev-1',
@@ -128,7 +140,10 @@ const sampleModel = {
   packages: [
     {
       orderKey: 'order-key-1',
+      packageId: 'package-1',
       developmentId: 'dev-1',
+      supplierId: 'supplier-1',
+      costCode: '3640',
       supplierLabel: 'Sparktastic',
       projectLabel: 'Drylining',
     },
@@ -174,14 +189,17 @@ describe('DevelopmentWorkspace stability guards', () => {
     vi.clearAllMocks();
   });
 
-  function renderWorkspace(props = {}) {
+  function renderWorkspace(props = {}, { dirty = false } = {}) {
     act(() => {
       root.render(
-        <DevelopmentWorkspace
-          development={sampleDevelopment}
-          onBackToList={vi.fn()}
-          {...props}
-        />
+        <UnsavedChangesProvider>
+          <DirtyRegistration dirty={dirty} />
+          <DevelopmentWorkspace
+            development={sampleDevelopment}
+            onBackToList={vi.fn()}
+            {...props}
+          />
+        </UnsavedChangesProvider>
       );
     });
   }
@@ -215,11 +233,13 @@ describe('DevelopmentWorkspace stability guards', () => {
 
     clickTab('Revenue');
 
+    expect(container.querySelector('.dev-workspace-shell')).not.toBeNull();
     expect(document.querySelector('[data-testid="revenue-panel"]')).not.toBeNull();
   });
 
   it('switches to Selling Costs when selecting the Selling Costs tab', async () => {
-    renderWorkspace();
+    const onNavigationStateChange = vi.fn();
+    renderWorkspace({ onNavigationStateChange });
 
     await act(async () => {
       await Promise.resolve();
@@ -228,6 +248,49 @@ describe('DevelopmentWorkspace stability guards', () => {
     clickTab('Selling Costs');
 
     expect(document.querySelector('[data-testid="selling-costs-panel"]')).not.toBeNull();
+    expect(onNavigationStateChange).toHaveBeenCalledWith({ workspaceTab: 'selling-costs' });
+  });
+
+  it('restores package workspace identity and reports CVR period navigation', async () => {
+    const onNavigationStateChange = vi.fn();
+    renderWorkspace({
+      initialActiveTab: 'packages',
+      initialPackageKey: 'order-key-1',
+      initialPackageTab: 'variations',
+      onNavigationStateChange,
+    });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(document.querySelector('[data-testid="package-workspace"]')).not.toBeNull();
+
+    renderWorkspace({ onNavigationStateChange });
+    await act(async () => { await Promise.resolve(); });
+    clickTab('CVR');
+    act(() => [...document.querySelectorAll('button')].find(button => button.textContent === 'Open P04').click());
+    expect(onNavigationStateChange).toHaveBeenCalledWith({ workspaceTab: 'cvr', periodKey: 'P04' });
+  });
+
+  it('guards Development tab navigation while Prelims setup is dirty', async () => {
+    renderWorkspace({}, { dirty: true });
+    await act(async () => { await Promise.resolve(); });
+    clickTab('Prelims');
+    expect(document.querySelector('[data-testid="prelims-panel"]')).toBeNull();
+    expect(document.body.textContent).toContain('Unsaved Prelims setup');
+    act(() => Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Stay').click());
+    expect(document.body.textContent).toContain('Overview panel');
+    clickTab('Prelims');
+    act(() => Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Leave without saving').click());
+    expect(document.querySelector('[data-testid="prelims-panel"]')).not.toBeNull();
+  });
+
+  it('guards Back to Developments while Prelims setup is dirty', async () => {
+    const onBackToList = vi.fn();
+    renderWorkspace({ onBackToList }, { dirty: true });
+    await act(async () => { await Promise.resolve(); });
+    act(() => Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Header back').click());
+    expect(onBackToList).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('Unsaved Prelims setup');
+    act(() => Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Leave without saving').click());
+    expect(onBackToList).toHaveBeenCalledTimes(1);
   });
 
   it('opens the Development Budget from the development workspace tabs', async () => {

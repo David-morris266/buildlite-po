@@ -16,6 +16,7 @@ const createPrelimsTemplateLine = vi.hoisted(() => vi.fn());
 const updatePrelimsTemplateLine = vi.hoisted(() => vi.fn());
 const listCostCodesForTemplateMapping = vi.hoisted(() => vi.fn());
 const listCostCodeClassifications = vi.hoisted(() => vi.fn());
+const loadCommercialStructure = vi.hoisted(() => vi.fn());
 
 vi.mock('../../api/prelimsTemplates', () => ({
   listPrelimsTemplates,
@@ -39,6 +40,7 @@ vi.mock('../../admin/prelimsTemplateCostCodes', () => ({
 vi.mock('../../api/costCodeClassifications', () => ({
   listCostCodeClassifications,
 }));
+vi.mock('../../admin/commercialStructureService', () => ({ loadCommercialStructure }));
 
 import AdminPrelimsTemplatesPage from './AdminPrelimsTemplatesPage';
 
@@ -138,6 +140,7 @@ describe('Admin Prelims Templates', () => {
         description: 'Cleaning',
         element: 'Cleaning',
         reportingGroup: 'Plot & Housebuild Costs - 52',
+        commercialHeadId: 'prelims',
       },
       {
         code: 'P100-SM',
@@ -145,6 +148,7 @@ describe('Admin Prelims Templates', () => {
         description: 'Site manager',
         element: 'Site manager',
         reportingGroup: 'Prelims',
+        commercialHeadId: 'prelims',
       },
       {
         code: '5206',
@@ -152,6 +156,7 @@ describe('Admin Prelims Templates', () => {
         description: 'Brickwork',
         element: 'Brickwork',
         reportingGroup: 'Plot & Housebuild Costs',
+        commercialHeadId: 'build',
       },
     ]);
     listCostCodeClassifications.mockResolvedValue({
@@ -160,6 +165,7 @@ describe('Admin Prelims Templates', () => {
         { costCodeKey: '5206', semanticGroup: 'BUILD' },
       ],
     });
+    loadCommercialStructure.mockResolvedValue({heads:[{id:'prelims',name:'Preliminaries',buildliteCategory:'PRELIMINARIES',active:true},{id:'build',name:'House Build',buildliteCategory:'HOUSE_BUILD',active:true}],families:[],reportingGroups:[]});
   });
 
   afterEach(() => {
@@ -191,6 +197,95 @@ describe('Admin Prelims Templates', () => {
     expect(container.textContent).toContain('duration of the job');
     expect(container.textContent).toContain('Unmapped');
     expect(container.textContent).toContain('PRELIMS');
+    expect(container.textContent).toContain('2 lines · 2 enabled · 1 mapped · 1 unmapped · 0 disabled');
+    expect(container.textContent).toContain('Map Cost Codes');
+    expect(container.textContent).toContain('Time based');
+    expect(container.textContent).toContain('Site start → Final completion');
+  });
+
+  it('uses a focused mapping workspace and saves through the existing optimistic line authority', async () => {
+    await act(async () => {
+      root.render(<AdminPrelimsTemplatesPage onBack={() => {}} />);
+    });
+    await flush();
+    await clickNamed(container, 'Housebuilding Prelims');
+    await flush();
+    await clickNamed(container, 'Map Cost Codes');
+    await flush();
+
+    const workspace = container.querySelector('[aria-label="Map Prelims Cost Codes"]');
+    expect(workspace).toBeTruthy();
+    expect(workspace.textContent).toContain('Site Manager');
+    expect(container.textContent).not.toContain('Ongoing Site Cleaning');
+    expect(container.textContent).toContain('Unmapped (1)');
+    expect(workspace.querySelector('[aria-label="Edit template line"]')).toBeNull();
+    expect(workspace.textContent).not.toContain('Forecast driver');
+    expect(workspace.textContent).not.toContain('TIME start');
+    expect(workspace.textContent).not.toContain('Disable');
+
+    getPrelimsTemplate.mockResolvedValue({
+      ...HOUSEBUILDING,
+      lines: [
+        { ...HOUSEBUILDING.lines[0], version: 2, costCodeKey: '5231' },
+        HOUSEBUILDING.lines[1],
+      ],
+    });
+    const search = workspace.querySelector('[aria-label="Site Manager cost code search"]');
+    await act(async () => {
+      search.focus();
+      setFieldValue(search, '5231');
+    });
+    await act(async () => {
+      document.body
+        .querySelector('[aria-label="Site Manager cost code options"] [data-cost-code="5231"]')
+        .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    });
+    await flush();
+    expect(updatePrelimsTemplateLine.mock.calls[0][2]).toMatchObject({
+      version: 1,
+      costCodeKey: '5231',
+      forecastDriver: 'TIME',
+      startBasis: 'SITE_START',
+      endBasis: 'FINAL_COMPLETION',
+    });
+    expect(container.textContent).toContain('Site Manager mapping saved.');
+
+    await clickNamed(container, 'Mapped (2)');
+    expect(container.querySelector('[aria-label="Ongoing Site Cleaning cost code search"]').value).toBe('5231 — Cleaning');
+    expect(container.textContent).toContain('Mapped');
+
+    await clickNamed(container, 'Back to template');
+    expect(container.querySelector('[aria-label="Map Prelims Cost Codes"]')).toBeNull();
+    expect(container.textContent).toContain('Edit line');
+  });
+
+  it('keeps disabled template lines out of the routine mapping workspace', async () => {
+    getPrelimsTemplate.mockResolvedValue({
+      ...HOUSEBUILDING,
+      lines: [
+        ...HOUSEBUILDING.lines,
+        {
+          ...HOUSEBUILDING.lines[0],
+          id: 'line-disabled',
+          name: 'Disabled welfare',
+          enabled: false,
+          costCodeKey: null,
+        },
+      ],
+    });
+    await act(async () => {
+      root.render(<AdminPrelimsTemplatesPage onBack={() => {}} />);
+    });
+    await flush();
+    await clickNamed(container, 'Housebuilding Prelims');
+    await flush();
+    expect(container.textContent).toContain('3 lines · 2 enabled · 1 mapped · 1 unmapped · 1 disabled');
+    await clickNamed(container, 'Map Cost Codes');
+    await flush();
+    await clickNamed(container, 'All lines');
+    expect(container.querySelector('[aria-label="Map Prelims Cost Codes"]').textContent).not.toContain(
+      'Disabled welfare'
+    );
   });
 
   it('creates from BuildLite Standard using the typed name', async () => {
@@ -269,16 +364,15 @@ describe('Admin Prelims Templates', () => {
     expect(startOptions).toEqual(['SITE_START', 'FIRST_COMPLETION', 'FINAL_COMPLETION']);
     expect(startOptions).not.toContain('FIXED_DATE');
 
-    const select = container.querySelector('[aria-label="Mapped cost code"]');
-    const option5231 = Array.from(select.options).find((option) => option.value === '5231');
-    expect(option5231.value).toBe('5231');
+    const search = container.querySelector('[aria-label="Mapped cost code cost code search"]');
+    await act(async () => search.focus());
+    const option5231 = document.body.querySelector('[aria-label="Mapped cost code cost code options"] [data-cost-code="5231"]');
     expect(option5231.textContent).toContain('Cleaning');
-    expect(option5231.value).not.toContain('Cleaning');
 
     const name = container.querySelector('[aria-label="Template line name"]');
     await act(async () => {
       setFieldValue(name, 'Custom welfare');
-      setFieldValue(select, 'P100-SM');
+      document.body.querySelector('[aria-label="Mapped cost code cost code options"] [data-cost-code="P100-SM"]').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     });
     await clickNamed(container, 'Add line');
     await flush();
@@ -394,7 +488,7 @@ describe('Admin Prelims Templates', () => {
     expect(ongoingCleaningIndex).toBeGreaterThan(siteManagerIndex);
 
     const editButtons = Array.from(container.querySelectorAll('button')).filter((btn) =>
-      btn.textContent.trim() === 'Edit'
+      btn.textContent.trim() === 'Edit line'
     );
     await act(async () => {
       editButtons[0].click();

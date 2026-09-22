@@ -45,6 +45,136 @@ export function draftsFromPreview(preview) {
   }));
 }
 
+export function normalizeSetupDraft(draft = {}) {
+  const driver =
+    draft.forecastDriver === PRELIMS_DRIVERS.LUMP_SUM
+      ? PRELIMS_DRIVERS.LUMP_SUM
+      : PRELIMS_DRIVERS.TIME;
+  return {
+    templateLineId: String(draft.templateLineId || ''),
+    selected: Boolean(draft.selected),
+    costCodeKey: String(draft.costCodeKey || '').trim(),
+    forecastDriver: driver,
+    monthlyRate: driver === PRELIMS_DRIVERS.TIME ? parseAssumption(draft.monthlyRate) : null,
+    lumpSumAmount:
+      driver === PRELIMS_DRIVERS.LUMP_SUM ? parseAssumption(draft.lumpSumAmount) : null,
+    startBasis:
+      driver === PRELIMS_DRIVERS.TIME
+        ? draft.startBasis || TIME_BASES.SITE_START
+        : null,
+    startOffsetMonths:
+      driver === PRELIMS_DRIVERS.TIME ? coerceOffsetMonths(draft.startOffsetMonths) : 0,
+    startFixedDate:
+      driver === PRELIMS_DRIVERS.TIME && draft.startBasis === TIME_BASES.FIXED_DATE
+        ? String(draft.startFixedDate || '').trim()
+        : '',
+    endBasis:
+      driver === PRELIMS_DRIVERS.TIME
+        ? draft.endBasis || TIME_BASES.FINAL_COMPLETION
+        : null,
+    endOffsetMonths:
+      driver === PRELIMS_DRIVERS.TIME ? coerceOffsetMonths(draft.endOffsetMonths) : 0,
+    endFixedDate:
+      driver === PRELIMS_DRIVERS.TIME && draft.endBasis === TIME_BASES.FIXED_DATE
+        ? String(draft.endFixedDate || '').trim()
+        : '',
+  };
+}
+
+export function setupDraftsAreDirty(drafts = [], baselineDrafts = []) {
+  const baseline = new Map(
+    baselineDrafts.map((draft) => [draft.templateLineId, normalizeSetupDraft(draft)])
+  );
+  return drafts.some((draft) => {
+    const normalized = normalizeSetupDraft(draft);
+    return JSON.stringify(normalized) !== JSON.stringify(baseline.get(draft.templateLineId) || null);
+  });
+}
+
+export function mergeDraftsAfterIncrementalAdd(preview, currentDrafts = []) {
+  const currentById = new Map(currentDrafts.map((draft) => [draft.templateLineId, draft]));
+  return draftsFromPreview(preview).map((fresh) => {
+    const line = (preview?.lines || []).find(
+      (candidate) => candidate.templateLineId === fresh.templateLineId
+    );
+    if (line?.alreadyApplied) return fresh;
+    return currentById.get(fresh.templateLineId) || fresh;
+  });
+}
+
+export function setupProgress(preview, drafts = []) {
+  const byId = new Map((preview?.lines || []).map((line) => [line.templateLineId, line]));
+  return drafts.reduce(
+    (summary, draft) => {
+      if (!draft.selected || byId.get(draft.templateLineId)?.alreadyApplied) return summary;
+      summary.selected += 1;
+      const line = byId.get(draft.templateLineId);
+      const ready = isLineReady(line, draft, preview?.programme);
+      if (ready) {
+        summary.ready += 1;
+        const live = livePreviewCalculation(
+          line,
+          draft,
+          preview?.programme,
+          preview?.reportingMonth
+        );
+        if (live.calc.state === 'resolved' && live.calc.totalForecast != null) {
+          summary.readyForecast = roundMoney(summary.readyForecast + live.calc.totalForecast);
+        } else {
+          summary.unresolved += 1;
+        }
+      } else {
+        summary.needsAttention += 1;
+        const live = line
+          ? livePreviewCalculation(line, draft, preview?.programme, preview?.reportingMonth)
+          : null;
+        if (live?.calc?.state !== 'resolved') summary.unresolved += 1;
+      }
+      return summary;
+    },
+    { selected: 0, ready: 0, needsAttention: 0, readyForecast: 0, unresolved: 0 }
+  );
+}
+
+export function mappingProvenance(line, draft = {}) {
+  const companyCode = String(line?.costCodeKey || '').trim();
+  const developmentCode = String(draft?.costCodeKey || '').trim();
+  if (!companyCode) {
+    return {
+      state: 'company_unmapped',
+      label: 'Company template unmapped',
+      detail:
+        'Choose a site-specific exception here, or complete the reusable company mapping in Administration.',
+    };
+  }
+  if (developmentCode !== companyCode) {
+    return {
+      state: 'development_override',
+      label: 'Development override',
+      detail: 'This site has selected a different Cost Code from the company template.',
+    };
+  }
+  return {
+    state: 'company_mapping',
+    label: 'Company mapping',
+    detail: 'Inherited from the selected company template.',
+  };
+}
+
+export function displayPrelimIdentity(line = {}) {
+  if (line.templateKey === 'bl.prelims.v1.site_admin') {
+    return {
+      name: 'Site Administrator / Site Office Support',
+      guidance:
+        'Site-based administrator, document controller or coordinator supporting the development. Excludes head-office/corporate administration.',
+    };
+  }
+  return {
+    name: line.name || '',
+    guidance: line.guidance || '',
+  };
+}
+
 /** Apply a development-owned driver change; clears incompatible money/timing fields. */
 export function draftAfterDriverChange(draft, nextDriver, line = {}) {
   const driver =

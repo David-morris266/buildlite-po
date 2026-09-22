@@ -11,6 +11,7 @@ import {
   getWorksheetSummaries,
   isAcceptedExcelFile,
 } from '../payments/excelImport';
+import { classifyImportedTenure } from './plotTenureAuthority';
 
 export const PLOT_IMPORT_FIELDS = {
   plotNumber: { label: 'Plot Number', required: true },
@@ -126,7 +127,9 @@ function buildPlotRowFromSheetRow(row, fieldByColumn) {
     bedrooms: parseIntegerCell(get('bedrooms')),
     gia: parseAreaCell(get('gia')),
     phase: String(get('phase') || '').trim(),
-    tenure: String(get('tenure') || '').trim(),
+    tenure: String(get('tenure') ?? ''),
+    tenureCode: 'UNREVIEWED',
+    tenureSuggestion: classifyImportedTenure(get('tenure')),
     status: String(get('status') || '').trim(),
   };
 }

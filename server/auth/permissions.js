@@ -16,7 +16,13 @@ const PERMISSIONS = Object.freeze({
   PAYMENT_RELEASE_EXECUTE: 'payment_release.execute',
   DEVELOPMENT_BUDGET_POST: 'development_budget.post',
   COMMERCIAL_STRUCTURE_MANAGE: 'commercial_structure.manage',
+  COMMERCIAL_HEAD_CATEGORIES_MANAGE: 'commercial_head_categories.manage',
+  COMMERCIAL_TEMPLATES_MANAGE: 'commercial_templates.manage',
+  COST_CODE_CLASSIFICATIONS_MANAGE: 'cost_code_classifications.manage',
+  PLOT_MASTER_MANAGE: 'plot_master.manage',
   REVENUE_MANAGE: 'revenue.manage',
+  CVR_EDIT: 'cvr.edit',
+  CVR_ADOPT: 'cvr.adopt',
 });
 
 module.exports = { PERMISSIONS };

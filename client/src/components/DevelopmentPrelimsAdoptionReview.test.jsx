@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const previewDevelopmentPrelimsAdoption = vi.hoisted(() => vi.fn());
 const adoptDevelopmentPrelimsIntoCvr = vi.hoisted(() => vi.fn());
 const addServerCvrCostCodeMember = vi.hoisted(() => vi.fn());
+const refreshCvrInputsForPeriod = vi.hoisted(() => vi.fn());
 const PrelimsApiError = vi.hoisted(() => {
   return class DevelopmentPrelimsApiError extends Error {
     constructor(message, { status = 0, body = null } = {}) {
@@ -28,6 +29,10 @@ vi.mock('../api/developmentPrelimsItems', () => ({
 
 vi.mock('../cvr/cvrPeriodServerMutations', () => ({
   addServerCvrCostCodeMember,
+}));
+
+vi.mock('../cvr/cvrPeriodServerCache', () => ({
+  refreshCvrInputsForPeriod,
 }));
 
 import DevelopmentPrelimsAdoptionReview from './DevelopmentPrelimsAdoptionReview';
@@ -130,6 +135,7 @@ describe('DevelopmentPrelimsAdoptionReview (x.4C.2)', () => {
     previewDevelopmentPrelimsAdoption.mockReset();
     adoptDevelopmentPrelimsIntoCvr.mockReset();
     addServerCvrCostCodeMember.mockReset();
+    refreshCvrInputsForPeriod.mockReset();
     previewDevelopmentPrelimsAdoption.mockResolvedValue(previewDoc());
     addServerCvrCostCodeMember.mockResolvedValue({
       ok: true,
@@ -147,6 +153,7 @@ describe('DevelopmentPrelimsAdoptionReview (x.4C.2)', () => {
       adopted: [{ costCodeKey: '5231', newAdjustment: 7720 }],
       unchanged: [],
     });
+    refreshCvrInputsForPeriod.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -291,6 +298,8 @@ describe('DevelopmentPrelimsAdoptionReview (x.4C.2)', () => {
     await flush();
 
     expect(adoptDevelopmentPrelimsIntoCvr).toHaveBeenCalledTimes(1);
+    expect(refreshCvrInputsForPeriod).toHaveBeenCalledTimes(1);
+    expect(refreshCvrInputsForPeriod).toHaveBeenCalledWith('dev-1', 'period-p04');
     const [devId, periodId, payload] = adoptDevelopmentPrelimsIntoCvr.mock.calls[0];
     expect(devId).toBe('dev-1');
     expect(periodId).toBe('period-p04');
@@ -378,6 +387,7 @@ describe('DevelopmentPrelimsAdoptionReview (x.4C.2)', () => {
     await flush();
 
     expect(adoptDevelopmentPrelimsIntoCvr).toHaveBeenCalledTimes(1);
+    expect(refreshCvrInputsForPeriod).not.toHaveBeenCalled();
     expect(container.querySelector('[data-testid="review-error"]')?.textContent).toMatch(
       /changed after this review/i
     );
@@ -435,6 +445,24 @@ describe('DevelopmentPrelimsAdoptionReview (x.4C.2)', () => {
     await flush();
   });
 
+  it('cancelling confirmation leaves the valid CVR input cache untouched', async () => {
+    await act(async () => {
+      root.render(<DevelopmentPrelimsAdoptionReview developmentId="dev-1" onBack={() => {}} />);
+    });
+    await flush();
+    await act(async () => {
+      container.querySelector('[data-testid="select-cost-code-5231"]').click();
+      container.querySelector('[data-testid="adopt-selected"]').click();
+    });
+    await act(async () => {
+      container.querySelector('[data-testid="adoption-cancel"]').click();
+    });
+
+    expect(container.querySelector('[data-testid="adoption-confirm-dialog"]')).toBeNull();
+    expect(adoptDevelopmentPrelimsIntoCvr).not.toHaveBeenCalled();
+    expect(refreshCvrInputsForPeriod).not.toHaveBeenCalled();
+  });
+
   it('shows API failure visibly without assuming success', async () => {
     adoptDevelopmentPrelimsIntoCvr.mockRejectedValueOnce(
       new PrelimsApiError('Server exploded', { status: 500, body: { message: 'Server exploded' } })
@@ -456,6 +484,33 @@ describe('DevelopmentPrelimsAdoptionReview (x.4C.2)', () => {
       /Server exploded/
     );
     expect(container.querySelector('[data-testid="review-success"]')).toBeNull();
+    expect(refreshCvrInputsForPeriod).not.toHaveBeenCalled();
+  });
+
+  it('keeps adoption represented as committed when the authoritative CVR refresh fails', async () => {
+    refreshCvrInputsForPeriod.mockRejectedValueOnce(new Error('refresh unavailable'));
+
+    await act(async () => {
+      root.render(<DevelopmentPrelimsAdoptionReview developmentId="dev-1" onBack={() => {}} />);
+    });
+    await flush();
+    await act(async () => {
+      container.querySelector('[data-testid="select-cost-code-5231"]').click();
+      container.querySelector('[data-testid="adopt-selected"]').click();
+    });
+    await act(async () => {
+      container.querySelector('[data-testid="ack-unresolved"] input').click();
+      container.querySelector('[data-testid="adoption-confirm"]').click();
+    });
+    await flush();
+
+    expect(adoptDevelopmentPrelimsIntoCvr).toHaveBeenCalledTimes(1);
+    expect(refreshCvrInputsForPeriod).toHaveBeenCalledWith('dev-1', 'period-p04');
+    expect(container.querySelector('[data-testid="review-success"]')?.textContent).toMatch(
+      /adopted into P04.*could not refresh the CVR display.*committed position/i
+    );
+    expect(container.querySelector('[data-testid="adoption-confirm-error"]')).toBeNull();
+    expect(container.querySelector('[data-testid="adoption-confirm-dialog"]')).toBeNull();
   });
 
   it('Back to Prelims still works', async () => {

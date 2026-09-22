@@ -14,6 +14,7 @@ import {
   membershipAddUserMessage,
 } from '../cvr/cvrPeriodAuthorityWrites';
 import { addServerCvrCostCodeMember } from '../cvr/cvrPeriodServerMutations';
+import { refreshCvrInputsForPeriod } from '../cvr/cvrPeriodServerCache';
 import {
   PRELIMS_ADOPTION_DRIFT_STATES,
   PRELIMS_ADOPTION_FLAG_KEYS,
@@ -675,11 +676,17 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
       const adoptedCount = Array.isArray(result?.adopted) ? result.adopted.length : selectedRows.length;
       setConfirmOpen(false);
       clearSelection();
-      setSuccess(
-        `${adoptedCount} Prelims cost code${adoptedCount === 1 ? '' : 's'} adopted into ${
-          preview.periodKey || 'CVR'
-        }.`
-      );
+      const committedMessage = `${adoptedCount} Prelims cost code${
+        adoptedCount === 1 ? '' : 's'
+      } adopted into ${preview.periodKey || 'CVR'}.`;
+      try {
+        await refreshCvrInputsForPeriod(developmentId, preview.periodId);
+        setSuccess(committedMessage);
+      } catch {
+        setSuccess(
+          `${committedMessage} BuildLite could not refresh the CVR display. Reload the CVR to see the committed position.`
+        );
+      }
       setReloadToken((token) => token + 1);
     } catch (err) {
       const code = err?.body?.code || null;

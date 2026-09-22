@@ -64,6 +64,18 @@ export async function getDevelopmentCommercialReadiness(id) {
   return handleJson(res);
 }
 
+export async function getPlotTenureReview(id) {
+  const res = await fetch(buildUrl(`/api/developments/${encodeURIComponent(id)}/plot-tenure-review`));
+  return handleJson(res);
+}
+
+export async function applyPlotTenureReview(id, payload) {
+  const res = await fetch(buildUrl(`/api/developments/${encodeURIComponent(id)}/plot-tenure-review/apply`), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  });
+  return handleJson(res);
+}
+
 export async function createDevelopment(payload = {}) {
   const actor = sessionActor();
   const res = await fetch(buildUrl('/api/developments'), {

@@ -6,10 +6,12 @@ import {
   classifyTemplateMapping,
   filterCostCodeSearchOptions,
   filterMappingOptions,
+  filterTemplateLinesByMapping,
   mappingOptionLabel,
   mappingOptionPrimaryLabel,
   mappingOptionSecondaryLabel,
   sharedCostCodeCounts,
+  templateMappingSummary,
 } from './prelimsTemplateMapping';
 
 describe('prelims template mapping helpers', () => {
@@ -33,6 +35,27 @@ describe('prelims template mapping helpers', () => {
         { costCodeKey: null },
       ])
     ).toEqual({ 5231: 2, 2300: 1 });
+  });
+
+  it('counts active mapping completeness without disabled lines inflating unmapped work', () => {
+    const lines = [
+      { id: 'mapped', enabled: true, costCodeKey: '5210' },
+      { id: 'unmapped', enabled: true, costCodeKey: null },
+      { id: 'disabled', enabled: false, costCodeKey: null },
+    ];
+    expect(templateMappingSummary(lines)).toEqual({
+      total: 3,
+      enabled: 2,
+      mapped: 1,
+      unmapped: 1,
+      disabled: 1,
+    });
+    expect(filterTemplateLinesByMapping(lines, 'unmapped').map((line) => line.id)).toEqual([
+      'unmapped',
+    ]);
+    expect(filterTemplateLinesByMapping(lines, 'mapped').map((line) => line.id)).toEqual([
+      'mapped',
+    ]);
   });
 
   it('builds display labels without using them as option identity', () => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import POForm from './components/POForm';
 import POList from './components/POList';
 import POArchive from './components/POArchive';
@@ -13,30 +13,49 @@ import { CommercialAssistantProvider } from './commercialAssistant/CommercialAss
 import CommercialAssistantDrawer from './commercialAssistant/CommercialAssistantDrawer';
 import { CommercialWorkspace } from './components/layout/WorkspaceShell';
 import { NavigationProvider } from './navigation/NavigationContext';
+import { UnsavedChangesProvider } from './navigation/UnsavedChangesProvider.jsx';
+import { useOptionalUnsavedChanges } from './navigation/UnsavedChangesContext.js';
 import SetupAssistant, { dismissSetupAssistant } from './setup/SetupAssistant';
 import { buildPoFormSeedFromSetup, loadSetupDraft } from './setup/setupDraft';
 import { useBuildLitePrincipal } from './auth/BuildLiteAuthProvider';
 import { shouldEnterSetup } from './navigation/startupDestination';
+import { parseSubcontractOrderKey } from './payments/packageKeyMigration';
+import {
+  homeApplicationRoute,
+  parseApplicationRoute,
+  writeApplicationRoute,
+} from './navigation/applicationRoute';
 import './styles/brand.css';
 import './styles/po-module.css';
 
 const HOME_VIEW = 'home';
 
-function requestedEntryView() {
-  const params = new URLSearchParams(window.location.search);
-  return params.get('setup') === '1' ? 'setup' : HOME_VIEW;
-}
-
-export default function App() {
+function ApplicationContent() {
   const principal = useBuildLitePrincipal();
-  const [tab, setTab] = useState(HOME_VIEW);
+  const unsavedChanges = useOptionalUnsavedChanges();
+  const [initialRoute] = useState(() => parseApplicationRoute());
+  const currentRouteRef = useRef(initialRoute);
+  const [tab, setTab] = useState(
+    initialRoute.view === 'setup' ? HOME_VIEW : initialRoute.view
+  );
   const [setupDismissed, setSetupDismissed] = useState(false);
   const [setupLaunchSeed, setSetupLaunchSeed] = useState(null);
   const [listFocusPo, setListFocusPo] = useState(null);
-  const [cvrNav, setCvrNav] = useState({ developmentId: null, periodKey: null });
+  const [cvrNav, setCvrNav] = useState({
+    developmentId: initialRoute.developmentId,
+    periodKey: initialRoute.periodKey,
+    workspaceTab: initialRoute.workspaceTab,
+    packageKey: initialRoute.packageKey,
+    packageTab: initialRoute.packageTab,
+    plotMasterView: initialRoute.plotMasterView,
+  });
   const [cvrRefresh, setCvrRefresh] = useState(0);
   const [adminDashboardReset, setAdminDashboardReset] = useState(0);
-  const [adminLaunch, setAdminLaunch] = useState(null);
+  const [adminLaunch, setAdminLaunch] = useState(
+    initialRoute.administrationSection
+      ? { section: initialRoute.administrationSection, returnDevelopment: null }
+      : null
+  );
   const [navigationOrigin, setNavigationOrigin] = useState(null);
 
   useEffect(() => {
@@ -44,8 +63,70 @@ export default function App() {
     if (!localStorage.getItem('userName')) localStorage.setItem('userName', 'Commercial Manager');
   }, []);
 
+  const applyCanonicalRoute = useCallback((route) => {
+    const next = route || homeApplicationRoute();
+    currentRouteRef.current = next;
+    setTab(next.view === 'setup' ? HOME_VIEW : next.view);
+    setAdminLaunch(next.view === 'administration' && next.administrationSection
+      ? {
+          section: next.administrationSection,
+          returnDevelopment: next.returnDevelopment || null,
+        }
+      : null);
+    setCvrNav({
+      developmentId: next.developmentId,
+      periodKey: next.periodKey,
+      workspaceTab: next.workspaceTab,
+      packageKey: next.packageKey,
+      packageTab: next.packageTab,
+      plotMasterView: next.plotMasterView,
+    });
+  }, []);
+
+  useEffect(() => {
+    const restoreFromHistory = () => {
+      const requestedRoute = parseApplicationRoute();
+      if (!unsavedChanges?.isNavigationBlocked?.()) {
+        applyCanonicalRoute(requestedRoute);
+        return;
+      }
+      writeApplicationRoute(currentRouteRef.current, { replace: true });
+      unsavedChanges.requestNavigation(() => {
+        writeApplicationRoute(requestedRoute);
+        applyCanonicalRoute(requestedRoute);
+      });
+    };
+    window.addEventListener('popstate', restoreFromHistory);
+    return () => window.removeEventListener('popstate', restoreFromHistory);
+  }, [applyCanonicalRoute, unsavedChanges]);
+
+  const navigateCanonical = useCallback((route, options) => {
+    writeApplicationRoute(route, options);
+    applyCanonicalRoute(route);
+  }, [applyCanonicalRoute]);
+
+  const writeDevelopmentRoute = useCallback((next, options) => {
+    const route = {
+      ...homeApplicationRoute(),
+      view: 'developments',
+      ...next,
+    };
+    currentRouteRef.current = route;
+    writeApplicationRoute(route, options);
+  }, []);
+
+  const writeAdministrationRoute = useCallback((administrationSection, options) => {
+    const route = {
+      ...homeApplicationRoute(),
+      view: 'administration',
+      administrationSection,
+    };
+    currentRouteRef.current = route;
+    writeApplicationRoute(route, options);
+  }, []);
+
   const showSetup = shouldEnterSetup({
-    routeView: requestedEntryView(),
+    routeView: parseApplicationRoute().view,
     tenantReadiness: principal?.tenantReadiness,
     setupDismissed,
   });
@@ -53,26 +134,42 @@ export default function App() {
   const exitSetup = () => {
     dismissSetupAssistant();
     setSetupDismissed(true);
-    setTab(HOME_VIEW);
+    navigateCanonical(homeApplicationRoute());
   };
 
   const handleLaunchPO = (seed = null) => {
     dismissSetupAssistant();
     setSetupDismissed(true);
     setSetupLaunchSeed(seed || buildPoFormSeedFromSetup(loadSetupDraft()));
-    setTab('form');
+    navigateCanonical({ ...homeApplicationRoute(), view: 'form' });
   };
 
   const handleOpenAdministration = () => {
     dismissSetupAssistant();
     setSetupDismissed(true);
-    setTab('administration');
+    navigateCanonical({ ...homeApplicationRoute(), view: 'administration' });
   };
 
   const handleOpenDevelopments = () => {
     dismissSetupAssistant();
     setSetupDismissed(true);
-    setTab('developments');
+    navigateCanonical({ ...homeApplicationRoute(), view: 'developments' });
+  };
+
+  const handleOpenPackage = (orderKey) => {
+    const identity = parseSubcontractOrderKey(orderKey);
+    if (!identity?.developmentId) {
+      handleOpenDevelopments();
+      return;
+    }
+    navigateCanonical({
+      ...homeApplicationRoute(),
+      view: 'developments',
+      developmentId: identity.developmentId,
+      workspaceTab: 'packages',
+      packageKey: orderKey,
+      packageTab: 'overview',
+    });
   };
 
   const handleTab = (nextTab) => {
@@ -81,7 +178,7 @@ export default function App() {
     }
     if (tab === 'form' && nextTab !== 'form') setSetupLaunchSeed(null);
     if (nextTab === 'administration') setAdminLaunch(null);
-    setTab(nextTab);
+    navigateCanonical({ ...homeApplicationRoute(), view: nextTab });
   };
 
   const handleHomeNavigate = ({ view, section = null, returnDevelopment = null }) => {
@@ -92,7 +189,12 @@ export default function App() {
     };
     if (view === 'administration') {
       setAdminLaunch({ section: section || 'landing', returnDevelopment });
-      setTab('administration');
+      navigateCanonical({
+        ...homeApplicationRoute(),
+        view: 'administration',
+        administrationSection: section || 'landing',
+        returnDevelopment,
+      });
       return;
     }
     handleTab(tabByView[view] || HOME_VIEW);
@@ -101,7 +203,7 @@ export default function App() {
   const handleViewPurchaseOrders = (poNumber) => {
     setListFocusPo(poNumber || null);
     setSetupLaunchSeed(null);
-    setTab('list');
+    navigateCanonical({ ...homeApplicationRoute(), view: 'list' });
   };
 
   if (showSetup) {
@@ -117,45 +219,68 @@ export default function App() {
       {tab === 'home' ? <CommercialWorkspace><BuildLiteHome onNavigate={handleHomeNavigate} /></CommercialWorkspace> : null}
       {tab === 'administration' ? <AdministrationModule dashboardResetToken={adminDashboardReset}
         initialView={adminLaunch?.section} returnDevelopment={adminLaunch?.returnDevelopment}
+        onViewChange={(administrationSection) => writeAdministrationRoute(administrationSection)}
+        onViewReplace={(administrationSection) => writeAdministrationRoute(administrationSection, { replace: true })}
         onReturnToDevelopment={(target) => {
           setAdminLaunch(null);
           setCvrNav({ developmentId: target.id, periodKey: null, workspaceTab: 'overview' });
-          setTab('developments');
+          navigateCanonical({
+            ...homeApplicationRoute(), view: 'developments', developmentId: target.id,
+            workspaceTab: 'overview',
+          });
         }} onLaunchPO={handleLaunchPO} onOpenDevelopments={handleOpenDevelopments} /> : null}
       {tab === 'cvrs' ? <CommercialWorkspace><CVRPortfolio refreshToken={cvrRefresh}
         onOpenDevelopmentCvr={(developmentId) => {
           setNavigationOrigin({ label: 'CVR Portfolio', returnTab: 'cvrs' });
           setCvrNav({ developmentId, periodKey: null, workspaceTab: 'cvr' });
-          setTab('developments');
+          navigateCanonical({
+            ...homeApplicationRoute(), view: 'developments', developmentId,
+            workspaceTab: 'cvr',
+          });
         }}
         onOpenDevelopmentPeriod={(developmentId, periodKey) => {
           setNavigationOrigin({ label: 'CVR Portfolio', returnTab: 'cvrs' });
           setCvrNav({ developmentId, periodKey, workspaceTab: 'cvr' });
-          setTab('developments');
+          navigateCanonical({
+            ...homeApplicationRoute(), view: 'developments', developmentId,
+            periodKey, workspaceTab: 'cvr',
+          });
         }} /></CommercialWorkspace> : null}
       {tab === 'developments' ? <Developments
         initialDevelopmentId={cvrNav.developmentId}
-        initialWorkspaceTab={cvrNav.workspaceTab || (cvrNav.developmentId ? 'cvr' : null)}
+          initialWorkspaceTab={cvrNav.workspaceTab || (cvrNav.developmentId ? 'cvr' : null)}
+          initialPlotMasterView={cvrNav.plotMasterView}
         initialCvrPeriodKey={cvrNav.periodKey}
+        initialPackageKey={cvrNav.packageKey}
+        initialPackageTab={cvrNav.packageTab}
         navigationOrigin={navigationOrigin ? {
           label: navigationOrigin.label,
-          onReturn: () => { setTab(navigationOrigin.returnTab || 'cvrs'); setNavigationOrigin(null); },
+          onReturn: () => {
+            navigateCanonical({ ...homeApplicationRoute(), view: navigationOrigin.returnTab || 'cvrs' });
+            setNavigationOrigin(null);
+          },
         } : null}
         onInitialDevelopmentHandled={() => {
-          setCvrNav({ developmentId: null, periodKey: null, workspaceTab: null });
           setNavigationOrigin(null);
           setCvrRefresh((value) => value + 1);
-        }} onNavigate={handleHomeNavigate} /> : null}
+        }}
+        onRouteChange={(next) => writeDevelopmentRoute(next)}
+        onRouteReplace={(next) => writeDevelopmentRoute(next, { replace: true })}
+        onNavigate={handleHomeNavigate} /> : null}
       {tab === 'form' ? <CommercialWorkspace><POForm setupLaunchSeed={setupLaunchSeed}
         onClearSetupLaunchSeed={() => setSetupLaunchSeed(null)} onViewPurchaseOrders={handleViewPurchaseOrders}
         onReviewAndApprove={handleViewPurchaseOrders} onCreateAnotherPO={() => setSetupLaunchSeed(null)}
-        onCreateDevelopment={handleOpenDevelopments} onBack={() => setTab('list')} /></CommercialWorkspace> : null}
+        onCreateDevelopment={handleOpenDevelopments} onBack={() => navigateCanonical({ ...homeApplicationRoute(), view: 'list' })} /></CommercialWorkspace> : null}
       {tab === 'list' ? <CommercialWorkspace><POList focusPoNumber={listFocusPo}
-        onFocusHandled={() => setListFocusPo(null)} onCreateFirstPO={() => setTab('form')}
-        onCreateDevelopment={handleOpenDevelopments} onOpenPackage={handleOpenDevelopments} /></CommercialWorkspace> : null}
-      {tab === 'archive' ? <CommercialWorkspace><POArchive onOpenPackage={handleOpenDevelopments} /></CommercialWorkspace> : null}
+        onFocusHandled={() => setListFocusPo(null)} onCreateFirstPO={() => navigateCanonical({ ...homeApplicationRoute(), view: 'form' })}
+        onCreateDevelopment={handleOpenDevelopments} onOpenPackage={handleOpenPackage} /></CommercialWorkspace> : null}
+      {tab === 'archive' ? <CommercialWorkspace><POArchive onOpenPackage={handleOpenPackage} /></CommercialWorkspace> : null}
       {tab === 'payment-approval' ? <CommercialWorkspace><PaymentApprovalRun /></CommercialWorkspace> : null}
       {tab === 'payment-release' ? <CommercialWorkspace><PaymentReleaseWorklist /></CommercialWorkspace> : null}
     </main>
   </div></CommercialAssistantProvider></NavigationProvider>;
+}
+
+export default function App() {
+  return <UnsavedChangesProvider><ApplicationContent /></UnsavedChangesProvider>;
 }

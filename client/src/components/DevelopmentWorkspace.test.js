@@ -11,6 +11,10 @@ const workspaceSource = readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), 'DevelopmentWorkspace.jsx'),
   'utf8'
 );
+const workspaceStyles = readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), '../styles/po-module.css'),
+  'utf8'
+);
 
 function resolveWorkspaceShell(activeTab) {
   return activeTab === 'cvr' || activeTab === 'ledger' || activeTab === 'revenue'
@@ -48,5 +52,17 @@ describe('DevelopmentWorkspace package-open render path', () => {
     expect(workspaceSource).toContain('function handleSelectWorkspaceTab(tabId)');
     expect(workspaceSource).toContain('onClick={() => handleSelectWorkspaceTab(tab.id)}');
     expect(workspaceSource).toContain('onSelectTab: handleSelectWorkspaceTab');
+  });
+
+  it('releases the Development workspace transform after the shared entrance animation', () => {
+    expect(workspaceSource).toContain('<WorkspaceShell className="dev-workspace-shell">');
+    expect(workspaceStyles).toMatch(
+      /\.bl-workspace\s*\{[^}]*animation:\s*po-fade-up 0\.55s cubic-bezier\(0\.22, 1, 0\.36, 1\) both;/s
+    );
+    expect(workspaceStyles).toMatch(
+      /\.dev-workspace-shell\s*\{\s*animation-fill-mode:\s*backwards;\s*\}/s
+    );
+    const scopedRule = workspaceStyles.match(/\.dev-workspace-shell\s*\{([^}]*)\}/s)?.[1] || '';
+    expect(scopedRule).not.toMatch(/overflow|(?:min-|max-)?height|z-index|contain|background|transform/);
   });
 });

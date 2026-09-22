@@ -21,6 +21,9 @@ const {
   listMatricesForDevelopmentOr404,
 } = require("../services/orderMatrixRepository");
 const { loadDevelopmentCommercialReadiness } = require('../services/developmentCommercialReadiness');
+const { requirePermission, assertPermission } = require('../auth/authorization');
+const { PERMISSIONS } = require('../auth/permissions');
+const plotTenureReview = require('../services/plotTenureReview');
 
 const router = express.Router();
 
@@ -104,6 +107,16 @@ router.get('/:id/commercial-readiness', async (req, res) => {
   }
 });
 
+router.get('/:id/plot-tenure-review', requirePermission(PERMISSIONS.COMMERCIAL_READ), async (req,res)=>{
+  try { const result=await plotTenureReview.loadReview(req.buildliteAuth.clientId,req.params.id); res.status(result.status).json(result.ok?result.review:{message:result.message}); }
+  catch(error){ console.error('[Plot tenure review] load error:',error); res.status(500).json({message:'Failed to load Plot Master tenure review.'}); }
+});
+
+router.post('/:id/plot-tenure-review/apply', requirePermission(PERMISSIONS.PLOT_MASTER_MANAGE), async (req,res)=>{
+  try { const result=await plotTenureReview.applyReview(req.buildliteAuth.clientId,req.params.id,req.body||{},req.buildliteAuth); res.status(result.status).json(result.ok?result:{message:result.message,review:result.review}); }
+  catch(error){ console.error('[Plot tenure review] apply error:',error); res.status(500).json({message:'Failed to apply Plot Master tenure review.'}); }
+});
+
 router.get("/:id", async (req, res) => {
   try {
     if (!isDbConfigured()) {
@@ -175,6 +188,10 @@ router.put("/:id", async (req, res) => {
 
     const routeId = String(req.params.id || "").trim();
     const body = req.body || {};
+    if(body.plotMaster!==undefined){
+      try{assertPermission(req.buildliteAuth,PERMISSIONS.PLOT_MASTER_MANAGE);}catch(error){return res.status(error.status||403).json({message:error.message});}
+      if(String(req.buildliteAuth.clientId)!==String(active.id))return res.status(403).json({message:'Plot Master tenant boundary mismatch.'});
+    }
 
     if (body.id != null && String(body.id).trim() !== routeId) {
       return res.status(400).json({ message: "id in body must match route id." });
@@ -203,7 +220,7 @@ router.put("/:id", async (req, res) => {
       routeId,
       patch,
       body.version,
-      { actor: provisionalActor(body) }
+      { actor: body.plotMaster!==undefined ? req.buildliteAuth.displayName : provisionalActor(body) }
     );
 
     if (!result.ok) {

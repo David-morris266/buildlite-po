@@ -7,21 +7,29 @@ import {
 } from '../api/developmentPrelimsItems';
 import { listPrelimsTemplates } from '../api/prelimsTemplates';
 import { listCostCodesForTemplateMapping } from '../admin/prelimsTemplateCostCodes';
+import { loadCommercialStructure } from '../admin/commercialStructureService';
+import { mappingOptionPrimaryLabel } from '../admin/prelimsTemplateMapping';
 import { formatCvrMoney } from '../cvr/cvrHelpers';
 import { PRELIMS_DRIVERS, PRELIMS_UNRESOLVED_LABELS } from '../prelims/prelimsConstants';
 import {
   applyPayloadFromDrafts,
   classificationForDraft,
   computeOverlap,
+  displayPrelimIdentity,
   draftAfterDriverChange,
   draftsFromPreview,
   effectiveDriver,
   isLineReady,
   livePreviewCalculation,
+  mergeDraftsAfterIncrementalAdd,
+  mappingProvenance,
   readyStateLabel,
+  setupDraftsAreDirty,
+  setupProgress,
   setupStateChips,
 } from '../prelims/prelimsSetupWorksheet';
-import PrelimsCostCodePicker from './PrelimsCostCodePicker';
+import { useUnsavedChanges } from '../navigation/UnsavedChangesContext.js';
+import CommercialHeadCostCodePicker from './CommercialHeadCostCodePicker';
 import PrelimsTimeSpanFields from './PrelimsTimeSpanFields';
 
 function moneyLabel(value) {
@@ -34,15 +42,20 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
   const [templateId, setTemplateId] = useState('');
   const [preview, setPreview] = useState(null);
   const [drafts, setDrafts] = useState([]);
+  const [baselineDrafts, setBaselineDrafts] = useState([]);
   const [classifications, setClassifications] = useState({});
   const [costCodes, setCostCodes] = useState([]);
+  const [commercialStructure, setCommercialStructure] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [editingMappings, setEditingMappings] = useState(() => new Set());
+  const [mappingEditOriginals, setMappingEditOriginals] = useState({});
   const creatingRef = useRef(false);
+  const { registerUnsavedChanges, requestNavigation } = useUnsavedChanges();
 
   const loadPreview = useCallback(
-    async (nextTemplateId) => {
+    async (nextTemplateId, { preserveDrafts = null } = {}) => {
       setLoading(true);
       setError('');
       try {
@@ -51,11 +64,18 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
         });
         setPreview(next);
         setTemplateId(next.template.id);
-        setDrafts(draftsFromPreview(next));
+        const freshDrafts = draftsFromPreview(next);
+        setBaselineDrafts(freshDrafts);
+        setDrafts(
+          preserveDrafts
+            ? mergeDraftsAfterIncrementalAdd(next, preserveDrafts)
+            : freshDrafts
+        );
       } catch (err) {
         setError(err.message || 'Could not load the Prelims setup worksheet.');
         setPreview(null);
         setDrafts([]);
+        setBaselineDrafts([]);
       } finally {
         setLoading(false);
       }
@@ -99,6 +119,12 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    loadCommercialStructure().then((value) => { if (!cancelled) setCommercialStructure(value); }).catch(() => { if (!cancelled) setCommercialStructure(null); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     const keys = [...new Set(drafts.map((draft) => String(draft.costCodeKey || '').trim()).filter(Boolean))];
     if (!keys.length) return undefined;
     let cancelled = false;
@@ -137,6 +163,31 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
     ).length;
   }, [preview, draftById]);
 
+  const progress = useMemo(() => setupProgress(preview, drafts), [preview, drafts]);
+  const dirty = useMemo(
+    () => setupDraftsAreDirty(drafts, baselineDrafts),
+    [drafts, baselineDrafts]
+  );
+
+  useEffect(() => {
+    if (!dirty) return undefined;
+    return registerUnsavedChanges({
+      title: 'Unsaved Prelims setup',
+      message:
+        "You have setup changes that haven't been added to Site Prelims. Leaving now will discard them.",
+    });
+  }, [dirty, registerUnsavedChanges]);
+
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [dirty]);
+
   const canonicalCostCodeOptions = useMemo(
     () =>
       (costCodes || [])
@@ -165,11 +216,47 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
     );
   }
 
+  function setMappingEditing(templateLineId, editing) {
+    setEditingMappings((current) => {
+      const next = new Set(current);
+      if (editing) next.add(templateLineId);
+      else next.delete(templateLineId);
+      return next;
+    });
+  }
+
+  function beginMappingEdit(line, draft) {
+    setMappingEditOriginals((current) => ({
+      ...current,
+      [line.templateLineId]: draft.costCodeKey || '',
+    }));
+    setMappingEditing(line.templateLineId, true);
+  }
+
+  function cancelMappingEdit(line) {
+    updateDraft(
+      line.templateLineId,
+      'costCodeKey',
+      mappingEditOriginals[line.templateLineId] ?? line.costCodeKey ?? ''
+    );
+    setMappingEditing(line.templateLineId, false);
+  }
+
+  function revertToCompanyMapping(line) {
+    updateDraft(line.templateLineId, 'costCodeKey', line.costCodeKey || '');
+    setMappingEditing(line.templateLineId, false);
+  }
+
+  function costCodeLabel(code) {
+    const option = canonicalCostCodeOptions.find((row) => row.code === code);
+    return option ? mappingOptionPrimaryLabel(option) : code;
+  }
+
   async function handleCreate() {
     if (!preview || creatingRef.current || saving) return;
     const payload = applyPayloadFromDrafts(preview, drafts);
     if (!payload.lines.length) {
-      setError('Select ready lines and enter a cost code plus site assumption before creating.');
+      setError('Select ready lines and enter a cost code plus site assumption before adding.');
       return;
     }
     creatingRef.current = true;
@@ -177,12 +264,13 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
     setError('');
     try {
       const result = await applyDevelopmentPrelimsSetup(developmentId, payload);
-      if (typeof onApplied === 'function') onApplied(result);
+      await loadPreview(templateId, { preserveDrafts: drafts });
+      if (typeof onApplied === 'function') await onApplied(result);
     } catch (err) {
       const message =
         err instanceof DevelopmentPrelimsApiError && err.status === 409
           ? 'The company template changed. Reload the worksheet and try again.'
-          : err.message || 'Could not create selected Prelims lines.';
+          : err.message || 'Could not add selected Prelims lines.';
       setError(message);
     } finally {
       creatingRef.current = false;
@@ -196,7 +284,7 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
         <p className="dev-workspace__section-lead">
           Create a company Prelims template in Administration before setting up this site.
         </p>
-        <button className="btn" type="button" onClick={onCancel}>
+        <button className="btn" type="button" onClick={() => requestNavigation(onCancel)}>
           Cancel
         </button>
       </section>
@@ -208,9 +296,10 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
       <header className="dev-prelims-setup__intro">
         <h3>Prelims setup worksheet</h3>
         <p>
-          Enter site-specific assumptions against the company template, then create the selected
-          ready lines in one action. Nothing is written until you create. Preview-only cost-code
-          mapping does not change the company template.
+          Enter site-specific assumptions against the company template, then add selected ready
+          lines to Site Prelims. Adds these assumptions to the Development Prelims proposal. This
+          does not change the CVR. Preview-only cost-code mapping does not change the company
+          template.
         </p>
       </header>
 
@@ -220,7 +309,10 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
           <select
             className="input"
             value={templateId}
-            onChange={(event) => loadPreview(event.target.value)}
+            onChange={(event) => {
+              const nextTemplateId = event.target.value;
+              requestNavigation(() => loadPreview(nextTemplateId));
+            }}
             aria-label="Company Prelims template"
             disabled={loading || saving}
           >
@@ -248,6 +340,14 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
       ) : null}
 
       {loading ? <p className="dev-workspace__section-lead">Loading setup worksheet…</p> : null}
+
+      {preview ? (
+        <p className="dev-prelims-setup__progress" role="status">
+          {progress.selected} selected · {progress.ready} ready · {progress.needsAttention} needs
+          attention · {moneyLabel(progress.readyForecast)} ready forecast
+          {progress.unresolved ? ` · ${progress.unresolved} unresolved` : ''}
+        </p>
+      ) : null}
 
       {preview ? (
         <div className="dev-prelims-setup__table-wrap">
@@ -306,11 +406,15 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
                   timeUnresolvedLabel,
                 }).filter((chip) => chip.tone !== 'quiet');
                 const isTime = driver === PRELIMS_DRIVERS.TIME;
+                const provenance = mappingProvenance(line, draft);
+                const identity = displayPrelimIdentity(line);
+                const editingMapping = editingMappings.has(line.templateLineId);
+                const searchFirst = provenance.state === 'company_unmapped';
                 const showDetail = isTime || stateChips.length > 0;
                 return (
                   <Fragment key={line.templateLineId}>
                     <tr className={`dev-prelims-setup__primary ${rowClass}`.trim()}>
-                      <td>
+                      <td data-label="Select">
                         <input
                           type="checkbox"
                           checked={Boolean(draft.selected) && line.selectable}
@@ -321,13 +425,13 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
                           aria-label={`Select ${line.name}`}
                         />
                       </td>
-                      <td>
-                        <strong>{line.name}</strong>
-                        {line.guidance ? (
-                          <span className="dev-prelims-setup__guidance">{line.guidance}</span>
+                      <td data-label="Prelim">
+                        <strong>{identity.name}</strong>
+                        {identity.guidance ? (
+                          <span className="dev-prelims-setup__guidance">{identity.guidance}</span>
                         ) : null}
                       </td>
-                      <td>
+                      <td data-label="Driver">
                         <select
                           className="input"
                           value={driver}
@@ -337,20 +441,75 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
                           }
                           aria-label={`${line.name} forecast driver`}
                         >
-                          <option value={PRELIMS_DRIVERS.TIME}>TIME</option>
-                          <option value={PRELIMS_DRIVERS.LUMP_SUM}>LUMP_SUM</option>
+                          <option value={PRELIMS_DRIVERS.TIME}>Time based</option>
+                          <option value={PRELIMS_DRIVERS.LUMP_SUM}>Lump sum</option>
                         </select>
                       </td>
-                      <td>
-                        <PrelimsCostCodePicker
-                          name={line.name}
-                          options={canonicalCostCodeOptions}
-                          value={draft.costCodeKey}
-                          disabled={!line.selectable || saving}
-                          onChange={(code) => updateDraft(line.templateLineId, 'costCodeKey', code)}
-                        />
+                      <td data-label="Cost code">
+                        {searchFirst || editingMapping ? (
+                          <CommercialHeadCostCodePicker
+                            category="PRELIMINARIES"
+                            structure={commercialStructure}
+                            codes={canonicalCostCodeOptions}
+                            identity="code"
+                            name={identity.name}
+                            valueCode={draft.costCodeKey}
+                            disabled={!line.selectable || saving}
+                            onChange={(code) =>
+                              updateDraft(line.templateLineId, 'costCodeKey', code)
+                            }
+                          />
+                        ) : (
+                          <p className="dev-prelims-setup__mapping-value">
+                            {costCodeLabel(draft.costCodeKey)}
+                          </p>
+                        )}
+                        <span
+                          className={`dev-prelims-setup__mapping-source dev-prelims-setup__mapping-source--${provenance.state}`}
+                        >
+                          <strong>{provenance.label}</strong>
+                          <span>{provenance.detail}</span>
+                          {provenance.state === 'company_unmapped' ? (
+                            <span>
+                              Add your ready lines to Site Prelims before leaving to complete
+                              reusable company mapping in Administration.
+                            </span>
+                          ) : null}
+                        </span>
+                        {!searchFirst ? (
+                          <div className="dev-prelims-setup__mapping-actions">
+                            {editingMapping ? (
+                              <button
+                                className="btn"
+                                type="button"
+                                onClick={() => cancelMappingEdit(line)}
+                              >
+                                Cancel
+                              </button>
+                            ) : (
+                              <button
+                                className="btn"
+                                type="button"
+                                onClick={() => beginMappingEdit(line, draft)}
+                              >
+                                {provenance.state === 'development_override'
+                                  ? 'Change'
+                                  : 'Change for this development'}
+                              </button>
+                            )}
+                            {provenance.state === 'development_override' ? (
+                              <button
+                                className="btn"
+                                type="button"
+                                onClick={() => revertToCompanyMapping(line)}
+                              >
+                                Revert to company mapping
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </td>
-                      <td>
+                      <td data-label="Assumption">
                         {isTime ? (
                           <input
                             className="input"
@@ -381,7 +540,7 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
                           />
                         )}
                       </td>
-                      <td>
+                      <td data-label="Forecast">
                         {forecastUnresolved
                           ? hasAssumptionDisplay(line, draft)
                             ? live.calc.reasonLabel ||
@@ -390,7 +549,7 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
                             : '—'
                           : moneyLabel(live.calc.totalForecast)}
                       </td>
-                      <td>{readyStateLabel(line, draft, overlapInfo.overlap)}</td>
+                      <td data-label="Ready">{readyStateLabel(line, draft, overlapInfo.overlap)}</td>
                     </tr>
                     {showDetail ? (
                       <tr
@@ -449,9 +608,16 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
           onClick={handleCreate}
           disabled={saving || loading || readyCount === 0}
         >
-          {saving ? 'Creating…' : `Create selected lines (${readyCount})`}
+          {saving
+            ? 'Adding…'
+            : `Add ${readyCount} ready ${readyCount === 1 ? 'line' : 'lines'} to Site Prelims`}
         </button>
-        <button className="btn" type="button" onClick={onCancel} disabled={saving}>
+        <button
+          className="btn"
+          type="button"
+          onClick={() => requestNavigation(onCancel)}
+          disabled={saving}
+        >
           Cancel
         </button>
       </div>

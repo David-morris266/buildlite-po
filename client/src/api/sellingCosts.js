@@ -40,17 +40,6 @@ async function handleJson(res) {
   return body;
 }
 
-function sessionActor() {
-  if (typeof localStorage === 'undefined') return null;
-  return localStorage.getItem('userName') || localStorage.getItem('userEmail') || null;
-}
-
-function withActor(payload = {}) {
-  const actor = sessionActor();
-  if (!actor) return payload;
-  return { ...payload, actor };
-}
-
 function sellingCostsUrl(developmentId) {
   return `/api/developments/${encodeURIComponent(developmentId)}/selling-costs`;
 }
@@ -64,7 +53,7 @@ export async function putSellingCostsAssumption(developmentId, payload = {}) {
   const res = await fetch(buildUrl(sellingCostsUrl(developmentId)), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(withActor(payload)),
+    body: JSON.stringify(payload),
   });
   return handleJson(res);
 }
@@ -82,7 +71,7 @@ export async function adoptSellingCostsIntoCvr(developmentId, payload = {}) {
   const res = await fetch(buildUrl(`${sellingCostsUrl(developmentId)}/adoption`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(withActor(payload)),
+    body: JSON.stringify(payload),
   });
   return handleJson(res);
 }

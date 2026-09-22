@@ -7,6 +7,7 @@ const {
   isValidDevelopmentId,
   isValidDevelopmentStatus,
 } = require("./developmentConstants");
+const { PLOT_TENURE_CODES } = require('./plotTenureAuthority');
 
 function asTrimmedString(value) {
   if (value == null) return "";
@@ -47,6 +48,8 @@ function validateDevelopmentDocument(document, { requireId = false } = {}) {
 
   const dateError = validateDateOrder(document?.startDate, document?.targetCompletion);
   if (dateError) errors.push(dateError);
+  const plots=document?.plotMaster?.plots;
+  if(Array.isArray(plots))for(const plot of plots){if(plot.tenureCode!=null&&!PLOT_TENURE_CODES.has(String(plot.tenureCode).trim().toUpperCase()))errors.push(`Plot ${plot.plotNumber||plot.id||'?'} has an invalid controlled tenure classification.`);}
 
   const normalized = {
     ...document,

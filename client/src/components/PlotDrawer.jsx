@@ -14,6 +14,7 @@ import {
   getRevenueStrategy,
 } from '../revenue/revenueStrategy';
 import { getPlots } from '../developments/plotMaster';
+import { PLOT_TENURE_OPTIONS, normalizePlotTenureCode } from '../developments/plotTenureAuthority';
 
 const EMPTY_FORM = {
   plotNumber: '',
@@ -24,6 +25,7 @@ const EMPTY_FORM = {
   niaFt2: '',
   phase: '',
   tenure: '',
+  tenureCode: 'UNREVIEWED',
   sellingPrice: '',
   revenueCategory: '',
   revenueStatus: 'Available',
@@ -62,6 +64,7 @@ export default function PlotDrawer({
         niaFt2: plot.niaFt2 ?? plot.gia ?? '',
         phase: plot.phase || '',
         tenure: plot.tenure || '',
+        tenureCode: normalizePlotTenureCode(plot.tenureCode),
         sellingPrice: plot.sellingPrice ?? '',
         revenueCategory: plot.revenueCategory || getDefaultRevenueCategory(),
         revenueStatus: plot.revenueStatus || 'Available',
@@ -264,6 +267,13 @@ export default function PlotDrawer({
                 value={form.tenure}
                 onChange={(event) => updateField('tenure', event.target.value)}
               />
+            </label>
+            <label className="dev-form__field">
+              <span className="dev-form__label">Controlled tenure classification</span>
+              <select className="input" value={form.tenureCode} disabled aria-describedby="plot-tenure-authority-help">
+                {PLOT_TENURE_OPTIONS.map((option)=><option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <small id="plot-tenure-authority-help">Use Plot Master Tenure review to change controlled tenure with authenticated evidence.</small>
             </label>
           </div>
         </section>

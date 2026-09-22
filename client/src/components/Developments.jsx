@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import DevelopmentList from './DevelopmentList';
 import DevelopmentForm from './DevelopmentForm';
 import DevelopmentWorkspace from './DevelopmentWorkspace';
@@ -13,19 +13,27 @@ export default function Developments({
   initialDevelopmentId = null,
   initialWorkspaceTab = null,
   initialCvrPeriodKey = null,
+  initialPackageKey = null,
+  initialPackageTab = null,
+  initialPlotMasterView = null,
   navigationOrigin = null,
   onInitialDevelopmentHandled = null,
   onOpenPackage = null,
   onNavigate = null,
+  onRouteChange = null,
+  onRouteReplace = null,
 }) {
   const [view, setView] = useState('list');
   const [activeDevelopmentId, setActiveDevelopmentId] = useState(null);
   const [workspaceTab, setWorkspaceTab] = useState(null);
   const [cvrPeriodKey, setCvrPeriodKey] = useState(null);
+  const [packageKey, setPackageKey] = useState(null);
+  const [packageTab, setPackageTab] = useState(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [workspaceResolveError, setWorkspaceResolveError] = useState('');
+  const hydratedRouteRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,13 +56,32 @@ export default function Developments({
   }, [refreshToken]);
 
   useEffect(() => {
-    if (!initialDevelopmentId) return;
+    const routeKey = JSON.stringify([
+      initialDevelopmentId, initialWorkspaceTab, initialCvrPeriodKey,
+      initialPackageKey, initialPackageTab,
+    ]);
+    if (hydratedRouteRef.current === routeKey) return;
+    hydratedRouteRef.current = routeKey;
+    if (!initialDevelopmentId) {
+      setActiveDevelopmentId(null);
+      setWorkspaceTab(null);
+      setCvrPeriodKey(null);
+      setPackageKey(null);
+      setPackageTab(null);
+      setView('list');
+      return;
+    }
     setActiveDevelopmentId(initialDevelopmentId);
     setWorkspaceTab(initialWorkspaceTab);
     setCvrPeriodKey(initialCvrPeriodKey);
+    setPackageKey(initialPackageKey);
+    setPackageTab(initialPackageTab);
     setView('workspace');
     onInitialDevelopmentHandled?.();
-  }, [initialDevelopmentId, initialWorkspaceTab, initialCvrPeriodKey, onInitialDevelopmentHandled]);
+  }, [
+    initialDevelopmentId, initialWorkspaceTab, initialCvrPeriodKey,
+    initialPackageKey, initialPackageTab, onInitialDevelopmentHandled,
+  ]);
 
   const activeDevelopment = useMemo(() => {
     void refreshToken;
@@ -90,17 +117,28 @@ export default function Developments({
     };
   }, [view, activeDevelopmentId, activeDevelopment]);
 
+  useEffect(() => {
+    if (!workspaceResolveError) return;
+    onRouteReplace?.({ developmentId: null, workspaceTab: null });
+  }, [workspaceResolveError, onRouteReplace]);
+
   function openWorkspace(developmentId) {
     setWorkspaceResolveError('');
     setActiveDevelopmentId(developmentId);
     setView('workspace');
+    onRouteChange?.({ developmentId, workspaceTab: 'overview' });
   }
 
   function returnToList() {
     setView('list');
     setActiveDevelopmentId(null);
+    setWorkspaceTab(null);
+    setCvrPeriodKey(null);
+    setPackageKey(null);
+    setPackageTab(null);
     setWorkspaceResolveError('');
     setRefreshToken((value) => value + 1);
+    onRouteChange?.({ developmentId: null, workspaceTab: null });
   }
 
   async function handleDevelopmentChanged() {
@@ -187,12 +225,23 @@ export default function Developments({
         navigationOrigin={navigationOrigin}
         initialActiveTab={workspaceTab}
         initialCvrPeriodKey={cvrPeriodKey}
+        initialPackageKey={packageKey}
+        initialPackageTab={packageTab}
+        initialPlotMasterView={initialPlotMasterView}
         onBackToList={returnToList}
         onPlotsChanged={() => setRefreshToken((value) => value + 1)}
         onLedgerChanged={() => setRefreshToken((value) => value + 1)}
         onCvrChanged={() => setRefreshToken((value) => value + 1)}
         onDevelopmentChanged={handleDevelopmentChanged}
         onOpenPackage={onOpenPackage}
+        onNavigationStateChange={(next) => onRouteChange?.({
+          developmentId: activeDevelopmentId,
+          ...next,
+        })}
+        onNavigationStateReplace={(next) => onRouteReplace?.({
+          developmentId: activeDevelopmentId,
+          ...next,
+        })}
         onNavigate={onNavigate}
       />
     );
