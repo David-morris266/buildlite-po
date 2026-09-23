@@ -49,6 +49,34 @@ describe('canonical application routes', () => {
     })).toMatchObject({ packageKey: 'dev-1::supplier-1::X-10/1', packageTab: 'overview' });
   });
 
+  it('round-trips stable CVR subviews and defaults older period URLs to Summary', () => {
+    const location = { pathname: '/', search: '?view=developments&development=dev-1&workspace=cvr&period=P04&cvrView=movements', hash: '' };
+    expect(parseApplicationRoute(location)).toMatchObject({ periodKey: 'P04', cvrSubview: 'movements' });
+    expect(serializeApplicationRoute(parseApplicationRoute(location), location)).toContain('cvrView=movements');
+    expect(parseApplicationRoute({ search: '?view=developments&development=dev-1&workspace=cvr&period=P04' }).cvrSubview).toBe('summary');
+  });
+
+  it('round-trips intentional Worksheet hierarchy context but omits it elsewhere', () => {
+    const url = serializeApplicationRoute({
+      view: 'developments', developmentId: 'dev-1', workspaceTab: 'cvr', periodKey: 'P04',
+      cvrSubview: 'worksheet', cvrHierarchyFilterKey: 'head:11111111-1111-1111-1111-111111111111',
+    }, { pathname: '/', hash: '' });
+    expect(url).toContain('cvrFilter=head%3A11111111-1111-1111-1111-111111111111');
+    expect(parseApplicationRoute({ search: url.slice(1) })).toMatchObject({
+      cvrSubview: 'worksheet', cvrHierarchyFilterKey: 'head:11111111-1111-1111-1111-111111111111',
+    });
+    expect(serializeApplicationRoute({
+      view: 'developments', developmentId: 'dev-1', workspaceTab: 'cvr', periodKey: 'P04',
+      cvrSubview: 'summary', cvrHierarchyFilterKey: 'head:ignored',
+    }, { pathname: '/', hash: '' })).not.toContain('cvrFilter');
+  });
+
+  it('fails an invalid CVR subview safely to Summary', () => {
+    const route = parseApplicationRoute({ search: '?view=developments&development=dev-1&workspace=cvr&period=P04&cvrView=secret' });
+    expect(route.cvrSubview).toBe('summary');
+    expect(serializeApplicationRoute(route, { pathname: '/', hash: '' })).not.toContain('cvrView');
+  });
+
   it('round-trips the stable Plot Master tenure-review workspace without pending decisions',()=>{
     const url=serializeApplicationRoute({view:'developments',developmentId:'dev-hawthorn',workspaceTab:'plot-master',plotMasterView:'tenure-review',decisions:[{plotId:'secret'}]},{pathname:'/',hash:''});
     expect(url).toBe('/?view=developments&development=dev-hawthorn&workspace=plot-master&plotView=tenure-review');

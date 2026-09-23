@@ -26,12 +26,14 @@ describe('BL-033C CVR, snapshot, and classification non-interference', () => {
     const forecast = readFileSync(join(dir, 'cvrForecastEngine.js'), 'utf8');
     const mapper = readFileSync(join(dir, 'cvrSnapshotMapper.js'), 'utf8');
     const helpers = readFileSync(join(dir, 'cvrSummaryHelpers.js'), 'utf8');
-    const interference =
+    const formulaInterference =
       /semanticGroup|forecastDriver|costCodeClassification|development_programme|siteStart|durationMonths|prelimsEngine|adoptedEngineFinal/;
-    expect(engine).not.toMatch(interference);
-    expect(forecast).not.toMatch(interference);
-    expect(mapper).not.toMatch(interference);
-    expect(helpers).not.toMatch(interference);
+    const presentationInterference =
+      /semanticGroup|forecastDriver|costCodeClassification|development_programme|durationMonths|prelimsEngine|adoptedEngineFinal/;
+    expect(engine).not.toMatch(formulaInterference);
+    expect(forecast).not.toMatch(formulaInterference);
+    expect(mapper).not.toMatch(formulaInterference);
+    expect(helpers).not.toMatch(presentationInterference);
     expect(forecast).not.toMatch(/max\(systemForecast/);
   });
 

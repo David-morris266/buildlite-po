@@ -75,10 +75,25 @@ describe('CVR Summary Cost Code interaction', () => {
 
   async function render(props = {}) {
     await act(async () => {
-      root.render(<CVRSummaryPage development={{ id: 'hawthorn', developmentName: 'Hawthorn Gardens UAT', jobNumber: 'HG01' }} periodKey="P04" certificatesReady onContinueToCvr={props.onContinueToCvr} onOpenWorksheetForCostCode={props.onOpenWorksheetForCostCode} onOpenVariationAccount={props.onOpenVariationAccount} refreshToken={props.refreshToken || 0} />);
+      root.render(<CVRSummaryPage development={{ id: 'hawthorn', developmentName: 'Hawthorn Gardens UAT', jobNumber: 'HG01' }} periodKey="P04" activeSubview={props.activeSubview || 'movements'} onSelectSubview={props.onSelectSubview} certificatesReady onContinueToCvr={props.onContinueToCvr} onOpenWorksheetForCostCode={props.onOpenWorksheetForCostCode} onOpenVariationAccount={props.onOpenVariationAccount} refreshToken={props.refreshToken || 0} />);
       await Promise.resolve();
     });
   }
+
+  it('keeps the Summary landing focused and routes review work to dedicated views', async () => {
+    const onSelectSubview = vi.fn();
+    await render({ activeSubview: 'summary', onSelectSubview });
+
+    expect(container.textContent).toContain('Commercial Cost Summary');
+    expect(container.querySelector('[aria-label="CVR review shortcuts"]')).not.toBeNull();
+    expect(container.textContent).not.toContain('Movement explanations');
+    expect(container.textContent).not.toContain('Financial Position');
+    expect(container.textContent).not.toContain('Commercial Commentary');
+
+    act(() => [...container.querySelectorAll('[aria-label="CVR review shortcuts"] button')]
+      .find((button) => button.textContent.startsWith('Movements')).click());
+    expect(onSelectSubview).toHaveBeenCalledWith('movements');
+  });
 
   it('opens compact read-only movement inspection and hands editing to the Worksheet', async () => {
     const onContinueToCvr = vi.fn();
@@ -106,7 +121,7 @@ describe('CVR Summary Cost Code interaction', () => {
     expect(detail.textContent).not.toContain('Manual Accrual');
     expect(detail.querySelector('textarea')).toBeNull();
     expect(container.querySelector('[aria-label="CVR Movement Report"]')).not.toBeNull();
-    expect(container.textContent).toContain('Commercial Cost Summary');
+    expect(container.textContent).not.toContain('Commercial Cost Summary');
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(onContinueToCvr).not.toHaveBeenCalled();
     act(() => [...detail.querySelectorAll('button')].find((button) => button.textContent === 'Open Variation Account item').click());
@@ -114,7 +129,7 @@ describe('CVR Summary Cost Code interaction', () => {
 
     act(() => [...detail.querySelectorAll('button')].find((button) => button.textContent === 'Open in CVR Worksheet').click());
     expect(onOpenWorksheetForCostCode).toHaveBeenCalledWith('3640');
-    expect(onContinueToCvr).toHaveBeenCalledOnce();
+    expect(onContinueToCvr).not.toHaveBeenCalled();
 
     act(() => [...detail.querySelectorAll('button')].find((button) => button.textContent === 'Close').click());
     await act(async () => { await Promise.resolve(); });

@@ -68,15 +68,15 @@ describe('CVRTable Storyboard selection contract', () => {
     });
 
     const text = container.textContent;
-    expect(text).not.toMatch(/Accrual/);
-    expect(text).not.toMatch(/Current Cost/);
+    expect(text).toContain('Current Cost');
+    expect(text).toContain('Actual ledger cost plus Manual Accrual');
     expect(text).not.toContain('View detail');
     const headers = Array.from(container.querySelectorAll('thead th')).map(
       (header) => header.textContent.trim()
     );
     expect(headers).toEqual([
-      'Cost Code', 'Description', 'Current Budget', 'Previous CVR', 'Current CVR',
-      'Movement', 'Variance to Budget',
+      'Cost Code', 'Description', 'Budget', 'Current Cost', 'CTC', 'Uncommitted',
+      'Change Exposure', 'Current CVR', 'Movement', 'Variance',
     ]);
     const action = container.querySelector('.dev-cvr__row-link');
     act(() => action.click());

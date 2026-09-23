@@ -88,6 +88,8 @@ export default function DevelopmentWorkspace({
   onDevelopmentChanged,
   initialActiveTab = null,
   initialCvrPeriodKey = null,
+  initialCvrSubview = null,
+  initialCvrHierarchyFilterKey = null,
   initialPackageKey = null,
   initialPackageTab = null,
   initialPlotMasterView = null,
@@ -105,10 +107,11 @@ export default function DevelopmentWorkspace({
     [unsavedChanges]
   );
   const [activeTab, setActiveTab] = useState(initialActiveTab || 'overview');
-  const [cvrView, setCvrView] = useState(initialCvrPeriodKey ? 'summary' : 'register');
+  const [cvrView, setCvrView] = useState(initialCvrPeriodKey ? (initialCvrSubview || 'summary') : 'register');
   const [cvrPeriodKey, setCvrPeriodKey] = useState(initialCvrPeriodKey);
   const [cvrFocusCostCodeKey, setCvrFocusCostCodeKey] = useState(null);
   const [cvrHierarchyFilter, setCvrHierarchyFilter] = useState(null);
+  const [cvrHierarchyFilterKey, setCvrHierarchyFilterKey] = useState(initialCvrHierarchyFilterKey);
   const [plotRefresh, setPlotRefresh] = useState(0);
   const [ledgerRefresh, setLedgerRefresh] = useState(0);
   const [cvrRefresh, setCvrRefresh] = useState(0);
@@ -177,9 +180,10 @@ export default function DevelopmentWorkspace({
     if (initialActiveTab) setActiveTab(initialActiveTab);
     if (initialCvrPeriodKey) {
       setCvrPeriodKey(initialCvrPeriodKey);
-      setCvrView('summary');
+      setCvrView(initialCvrSubview || 'summary');
+      setCvrHierarchyFilterKey(initialCvrHierarchyFilterKey);
     }
-  }, [initialActiveTab, initialCvrPeriodKey]);
+  }, [initialActiveTab, initialCvrPeriodKey, initialCvrSubview, initialCvrHierarchyFilterKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -643,7 +647,41 @@ export default function DevelopmentWorkspace({
     setCvrPeriodKey(null);
     setCvrFocusCostCodeKey(null);
     setCvrHierarchyFilter(null);
-    onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey: null });
+    setCvrHierarchyFilterKey(null);
+    onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey: null, cvrSubview: null });
+  }
+
+  function selectCvrSubview(nextSubview, { replace = false } = {}) {
+    if (!cvrPeriodKey) return;
+    const primaryWorksheetNavigation = nextSubview === 'worksheet';
+    if (primaryWorksheetNavigation) {
+      setCvrHierarchyFilter(null);
+      setCvrHierarchyFilterKey(null);
+    }
+    if (nextSubview === cvrView && !primaryWorksheetNavigation) return;
+    setCvrView(nextSubview);
+    const write = replace ? onNavigationStateReplace : onNavigationStateChange;
+    write?.({ workspaceTab: 'cvr', periodKey: cvrPeriodKey, cvrSubview: nextSubview, cvrHierarchyFilterKey: null });
+  }
+
+  function openFilteredWorksheet(filter) {
+    const routeKey = String(filter?.routeKey || '').trim();
+    if (!routeKey) return;
+    setCvrHierarchyFilter(filter);
+    setCvrHierarchyFilterKey(routeKey);
+    setCvrFocusCostCodeKey(null);
+    setCvrView('worksheet');
+    onNavigationStateChange?.({
+      workspaceTab: 'cvr', periodKey: cvrPeriodKey, cvrSubview: 'worksheet', cvrHierarchyFilterKey: routeKey,
+    });
+  }
+
+  function openWorksheetCostCode(costCodeKey) {
+    setCvrHierarchyFilter(null);
+    setCvrHierarchyFilterKey(null);
+    setCvrFocusCostCodeKey(costCodeKey);
+    setCvrView('worksheet');
+    onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey: cvrPeriodKey, cvrSubview: 'worksheet', cvrHierarchyFilterKey: null });
   }
 
   function handleOpenPackageFromDevelopment(_orderKey, launchContext) {
@@ -717,7 +755,7 @@ export default function DevelopmentWorkspace({
     handleBackToDevelopmentPackages();
   }
 
-  function handleOpenPackageFromCommercialRegister(event) {
+  function handleOpenPackageFromCommercialRegister(event, variationAccountContext = null) {
     if (!event) return;
 
     const result = buildDevelopmentCommercialEventPackageLaunch({
@@ -738,7 +776,7 @@ export default function DevelopmentWorkspace({
 
     setCommercialRegisterError('');
     setPackageLaunchError('');
-    setPackageLaunch(result.launch);
+    setPackageLaunch(variationAccountContext ? {...result.launch,...variationAccountContext} : result.launch);
   }
 
   function handleNavigateToLinkedFromCommercialRegister(sourceEvent) {
@@ -908,7 +946,7 @@ export default function DevelopmentWorkspace({
     onSelectTab: handleSelectWorkspaceTab,
     onBackToCvrRegister: resetCvrToRegister,
     onBackToCvrSummary: () => {
-      setCvrView('summary');
+      selectCvrSubview('summary');
       setCvrFocusCostCodeKey(null);
       setCvrHierarchyFilter(null);
     },
@@ -1084,7 +1122,7 @@ export default function DevelopmentWorkspace({
         ) : null}
 
         {activeTab === 'budget' ? (
-          <DevelopmentBudgetWorkspace developmentId={model.id} />
+          <DevelopmentBudgetWorkspace developmentId={model.id} siteStartDate={startDate} />
         ) : null}
 
         {activeTab === 'revenue' ? (
@@ -1114,27 +1152,33 @@ export default function DevelopmentWorkspace({
               certificatesLoading={certificatesLoading}
               certificatesReady={certificatesReady}
               certificatesError={certificatesErrorMessage}
+              activeSubview={cvrView}
+              onSelectSubview={selectCvrSubview}
               onBackToSummary={() => {
-                setCvrView('summary');
+                selectCvrSubview('summary');
                 setCvrFocusCostCodeKey(null);
                 setCvrHierarchyFilter(null);
-                onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey: cvrPeriodKey });
               }}
               onBackToRegister={() => {
                 setCvrView('register');
                 setCvrPeriodKey(null);
                 setCvrFocusCostCodeKey(null);
                 setCvrHierarchyFilter(null);
-                onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey: null });
+                onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey: null, cvrSubview: null });
               }}
               onPeriodChanged={handleCvrChanged}
               onOpenVariationAccount={handleOpenVariationAccountItem}
               onOpenAdjustmentWorkflow={({ tabId }) => handleSelectWorkspaceTab(tabId)}
               initialCostCodeKey={cvrFocusCostCodeKey}
               hierarchyFilter={cvrHierarchyFilter}
-              onClearHierarchyFilter={() => setCvrHierarchyFilter(null)}
+              hierarchyFilterKey={cvrHierarchyFilterKey}
+              onClearHierarchyFilter={() => {
+                setCvrHierarchyFilter(null);
+                setCvrHierarchyFilterKey(null);
+                onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey: cvrPeriodKey, cvrSubview: 'worksheet', cvrHierarchyFilterKey: null });
+              }}
             />
-          ) : cvrView === 'summary' && cvrPeriodKey ? (
+          ) : cvrView !== 'register' && cvrPeriodKey ? (
             <CVRSummaryPage
               development={development}
               periodKey={cvrPeriodKey}
@@ -1143,18 +1187,16 @@ export default function DevelopmentWorkspace({
               certificatesLoading={certificatesLoading}
               certificatesReady={certificatesReady}
               certificatesError={certificatesErrorMessage}
-              onContinueToCvr={() => setCvrView('worksheet')}
-              onOpenWorksheetForHierarchy={setCvrHierarchyFilter}
-              onOpenWorksheetForCostCode={(costCodeKey) => {
-                setCvrHierarchyFilter(null);
-                setCvrFocusCostCodeKey(costCodeKey);
-              }}
+              activeSubview={cvrView}
+              onSelectSubview={selectCvrSubview}
+              onOpenWorksheetForHierarchy={openFilteredWorksheet}
+              onOpenWorksheetForCostCode={openWorksheetCostCode}
               onBackToRegister={() => {
                 setCvrView('register');
                 setCvrPeriodKey(null);
                 setCvrFocusCostCodeKey(null);
                 setCvrHierarchyFilter(null);
-                onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey: null });
+                onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey: null, cvrSubview: null });
               }}
               onOpenPackage={onOpenPackage}
               onOpenVariationAccount={handleOpenVariationAccountItem}
@@ -1175,7 +1217,7 @@ export default function DevelopmentWorkspace({
                 setCvrView('summary');
                 setCvrFocusCostCodeKey(null);
                 setCvrHierarchyFilter(null);
-                onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey });
+                onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey, cvrSubview: 'summary' });
               }}
               onChanged={handleCvrChanged}
               commercialReadiness={commercialReadiness}

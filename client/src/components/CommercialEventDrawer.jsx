@@ -59,6 +59,7 @@ import {
 import CommercialEventExpectedLiabilityPanel from './CommercialEventExpectedLiabilityPanel';
 import VariationOrderDrawer from './VariationOrderDrawer';
 import { createVariationOrderFromCommercialEvent, listVariationOrders } from '../api/variationOrders';
+import { createVariationAccountForecastFromCommercialEvent, listVariationAccount } from '../api/variationAccounts';
 import { canCreateVariationOrder, formatVariationOrderReference, variationOrderStatusLabel } from '../variationOrders/variationOrderPresentation';
 import {
   getCommercialEventRecoveryPresentation,
@@ -93,6 +94,17 @@ function RecoveryStatusBadge({ recoveryStatusKey }) {
   return (
     <span className="po-status-badge po-status-badge--muted">{status.label}</span>
   );
+}
+
+function lockedEventMessage(event) {
+  if (event?.status === COMMERCIAL_EVENT_STATUSES.submitted.key) {
+    return 'Submitted event details are locked. Continue the event through the available workflow actions.';
+  }
+  if (event?.status === COMMERCIAL_EVENT_STATUSES.approved.key) {
+    return 'Approved events are immutable. Create a reversing or correcting event to adjust committed value.';
+  }
+  const status=getCommercialEventStatusMeta(event?.status).label;
+  return `${status} event details are locked.`;
 }
 
 function DrawerSection({ title, children, defaultOpen = true, tone = 'default' }) {
@@ -215,6 +227,12 @@ export default function CommercialEventDrawer({
   const [variationOrder, setVariationOrder] = useState(null);
   const [variationOrderOpen, setVariationOrderOpen] = useState(false);
   const [variationOrderBusy, setVariationOrderBusy] = useState(false);
+  const [variationAccountItem, setVariationAccountItem] = useState(null);
+  const [variationAccountOpen, setVariationAccountOpen] = useState(false);
+  const [variationAccountForecast, setVariationAccountForecast] = useState('');
+  const [variationAccountReason, setVariationAccountReason] = useState('');
+  const [variationAccountBusy, setVariationAccountBusy] = useState(false);
+  const [variationAccountError, setVariationAccountError] = useState('');
 
   const isCreate = mode === 'create';
 
@@ -316,6 +334,36 @@ export default function CommercialEventDrawer({
       .catch(() => { if (!cancelled) setVariationOrder(null); });
     return () => { cancelled = true; };
   }, [open, drawerEvent?.id, drawerEvent?.packageUuid]);
+
+  useEffect(() => {
+    let cancelled=false;
+    setVariationAccountOpen(false);
+    setVariationAccountForecast('');
+    setVariationAccountReason('');
+    setVariationAccountError('');
+    if(!open||!drawerEvent?.id||!drawerEvent?.packageUuid){setVariationAccountItem(null);return undefined;}
+    listVariationAccount(drawerEvent.packageUuid)
+      .then(items=>{if(!cancelled)setVariationAccountItem((items||[]).find(item=>item.sourceCommercialEventId===drawerEvent.id)||null);})
+      .catch(()=>{if(!cancelled)setVariationAccountItem(null);});
+    return()=>{cancelled=true;};
+  },[open,drawerEvent?.id,drawerEvent?.packageUuid]);
+
+  async function handleCreateVariationAccountForecast() {
+    setVariationAccountBusy(true);
+    setVariationAccountError('');
+    try {
+      const item=await createVariationAccountForecastFromCommercialEvent(drawerEvent.id,{qsForecast:variationAccountForecast,reason:variationAccountReason});
+      setVariationAccountItem(item);
+      setVariationAccountOpen(false);
+      onSaved?.(liveEvent);
+    } catch(error) {
+      setVariationAccountError(error.message||'Unable to create Variation Account forecast.');
+    } finally { setVariationAccountBusy(false); }
+  }
+
+  function handleOpenVariationAccount() {
+    onOpenPackage?.({initialTab:'variation-account',variationAccountTarget:{itemId:variationAccountItem.id,reference:variationAccountItem.reference}});
+  }
 
   async function handleCreateVariationOrder() {
     setVariationOrderBusy(true);
@@ -566,8 +614,8 @@ export default function CommercialEventDrawer({
       wide
       ariaLabel={drawerTitle}
     >
-      <div className="po-ce-drawer">
-        <header className="po-ce-drawer__header">
+      <div className="po-ce-drawer-shell" data-testid="commercial-event-drawer-shell">
+        <header className="po-ce-drawer__header po-ce-drawer__header--fixed">
           <div>
             <p className="po-ce-drawer__eyebrow">Commercial Events</p>
             <h2 className="po-ce-drawer__title">{drawerTitle}</h2>
@@ -585,6 +633,8 @@ export default function CommercialEventDrawer({
           </button>
         </header>
 
+        <div className="po-drawer-body po-ce-drawer" data-testid="commercial-event-drawer-body">
+
         {liveEvent &&
         !createContraStep &&
         !dismissStep &&
@@ -594,7 +644,7 @@ export default function CommercialEventDrawer({
               <button
                 type="button"
                 className="po-ce-drawer__nav-action"
-                onClick={onOpenPackage}
+                onClick={() => onOpenPackage()}
               >
                 {openPackageLabel}
               </button>
@@ -808,8 +858,7 @@ export default function CommercialEventDrawer({
 
         {liveEvent && !editable && !isRecoveryEvent ? (
           <section className="po-ce-drawer__readonly-banner">
-            Approved events are immutable. Create a reversing or correcting event
-            to adjust committed value.
+            {lockedEventMessage(liveEvent)}
           </section>
         ) : null}
 
@@ -1172,6 +1221,36 @@ export default function CommercialEventDrawer({
               onApply={handleExpectedLiabilityApply}
             />
 
+            {liveEvent.status==='submitted' && !isRecoveryEvent && liveEvent.eventType!==COMMERCIAL_EVENT_TYPES.budgetTransfer.key ? (
+              <DrawerSection title="Variation Account forecast" tone="workflow">
+                {variationAccountItem ? (
+                  <div className="po-ce-drawer__linked-summary" role="status">
+                    <p><strong>{variationAccountItem.reference}</strong> — QS Forecast £{formatMoney(variationAccountItem.qsForecast)}</p>
+                    <p className="po-ce-drawer__helper">This Commercial Event is retained as the underlying change identity.</p>
+                    {onOpenPackage ? <button type="button" className="po-btn-primary" onClick={handleOpenVariationAccount}>Open Variation Account</button> : null}
+                  </div>
+                ) : variationAccountOpen ? (
+                  <div className="po-ce-drawer__grid">
+                    <div className="po-ce-drawer__field po-ce-drawer__field--wide">
+                      <span>Commercial Event</span>
+                      <strong>{liveEvent.eventNumber} — {liveEvent.description}</strong>
+                    </div>
+                    <div className="po-ce-drawer__field"><span>Expected Liability</span><strong>£{formatMoney(liveEvent.effectiveExpectedLiability ?? liveEvent.expectedLiability ?? 0)}</strong></div>
+                    <div className="po-ce-drawer__field"><span>Submitted value</span><strong>£{formatMoney(liveEvent.value)}</strong></div>
+                    <label className="po-ce-drawer__field"><span>QS Forecast</span><input type="number" step="0.01" value={variationAccountForecast} onChange={e=>setVariationAccountForecast(e.target.value)} /></label>
+                    <label className="po-ce-drawer__field po-ce-drawer__field--wide"><span>Reason</span><textarea rows={2} value={variationAccountReason} onChange={e=>setVariationAccountReason(e.target.value)} /></label>
+                    {variationAccountError ? <p className="po-list-feedback po-list-feedback--error" role="alert">{variationAccountError}</p> : null}
+                    <div className="po-ce-drawer__actions">
+                      <button type="button" className="po-list-btn-secondary" onClick={()=>setVariationAccountOpen(false)}>Cancel</button>
+                      <button type="button" className="po-btn-primary" disabled={variationAccountBusy||!variationAccountReason.trim()||variationAccountForecast===''} onClick={handleCreateVariationAccountForecast}>{variationAccountBusy?'Creating…':'Create VA forecast'}</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div><p className="po-ce-drawer__helper">Establish a QS forecast for this same underlying change without creating another Commercial Event or contractual authority.</p><button type="button" className="po-btn-primary" onClick={()=>setVariationAccountOpen(true)}>Forecast in Variation Account</button></div>
+                )}
+              </DrawerSection>
+            ) : null}
+
             {variationOrder || canCreateVariationOrder(liveEvent) ? (
               <DrawerSection title="Variation Order" tone="workflow">
                 {variationOrder ? (
@@ -1227,6 +1306,7 @@ export default function CommercialEventDrawer({
             ) : null}
           </>
         ) : null}
+        </div>
       </div>
       <VariationOrderDrawer open={variationOrderOpen} variationOrder={variationOrder} onClose={() => setVariationOrderOpen(false)} onChanged={setVariationOrder} />
     </PODrawerShell>

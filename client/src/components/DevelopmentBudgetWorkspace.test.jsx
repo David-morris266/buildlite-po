@@ -3,8 +3,8 @@ import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), codes: vi.fn(), permission: true, parse: vi.fn() }));
-vi.mock('../api/developmentBudget', () => ({ getDevelopmentBudget: mocks.get, postDevelopmentBudgetEvent: mocks.post }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), confirm: vi.fn(), codes: vi.fn(), permission: true, parse: vi.fn() }));
+vi.mock('../api/developmentBudget', () => ({ getDevelopmentBudget: mocks.get, postDevelopmentBudgetEvent: mocks.post, confirmSiteStartBudget: mocks.confirm }));
 vi.mock('../api/costCodes', () => ({ listServerCostCodes: mocks.codes }));
 vi.mock('../auth/BuildLiteAuthProvider', () => ({ useBuildLitePermission: () => mocks.permission }));
 vi.mock('../developmentBudget/developmentBudgetImport', async importOriginal => ({ ...(await importOriginal()), parseDevelopmentBudgetFile: mocks.parse }));
@@ -22,7 +22,7 @@ const historyAuthority = { ...established, events: [
 
 describe('DevelopmentBudgetWorkspace', () => {
   let host, root;
-  beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); mocks.permission = true; mocks.get.mockResolvedValue(empty); mocks.codes.mockResolvedValue({ costCodes: codes }); mocks.post.mockResolvedValue({ ok: true }); mocks.parse.mockResolvedValue({ fileName: 'budget.csv', rows: [['Cost Code', 'Budget'], ['A', '100.01']], headerRowIndex: 0, headers: ['Cost Code', 'Budget'], fieldByColumn: ['costCode', 'amount'] }); });
+  beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); mocks.permission = true; mocks.get.mockResolvedValue(empty); mocks.codes.mockResolvedValue({ costCodes: codes }); mocks.post.mockResolvedValue({ ok: true }); mocks.confirm.mockResolvedValue({ ok: true }); mocks.parse.mockResolvedValue({ fileName: 'budget.csv', rows: [['Cost Code', 'Budget'], ['A', '100.01']], headerRowIndex: 0, headers: ['Cost Code', 'Budget'], fieldByColumn: ['costCode', 'amount'] }); });
   afterEach(() => { act(() => root.unmount()); host.remove(); vi.clearAllMocks(); });
   async function render() { await act(async () => { root.render(<DevelopmentBudgetWorkspace developmentId="dev-1" />); await Promise.resolve(); }); }
   const button = label => [...host.querySelectorAll('button')].find(item => item.textContent.includes(label));
@@ -99,6 +99,20 @@ describe('DevelopmentBudgetWorkspace', () => {
     expect(host.querySelector('select').value).toBe('addition');
     expect([...host.querySelectorAll('select')].slice(1).every(select => select.value === '')).toBe(true);
     expect([...host.querySelectorAll('input[type="text"]')].every(input => input.value === '')).toBe(true);
+  });
+
+  it('requires explicit Site Start Budget confirmation and then shows confirmed authority', async () => {
+    const confirmed = { ...established, siteStartBudget: { confirmed: true, totalBudget: 100, reference: 'BOARD-SSB', approvedEffectiveDate: '2026-01-15' } };
+    mocks.get.mockResolvedValueOnce({ ...established, siteStartBudget: { confirmed: false } }).mockResolvedValue(confirmed);
+    await act(async () => { root.render(<DevelopmentBudgetWorkspace developmentId="dev-1" siteStartDate="2026-01-10" />); await Promise.resolve(); });
+    expect(host.textContent).toContain('Site Start Budget unavailable');
+    act(() => button('Confirm as Site Start Budget').click());
+    const section = [...host.querySelectorAll('section')].find(item => item.querySelector('h2')?.textContent === 'Site Start Budget');
+    const inputs = [...section.querySelectorAll('input')];
+    await act(async () => { setValue(inputs[0], '2026-01-15'); setValue(inputs[1], 'BOARD-SSB'); setValue(inputs[2], 'Approved at site commencement'); });
+    await act(async () => { button('Confirm Site Start Budget').click(); await Promise.resolve(); await Promise.resolve(); });
+    expect(mocks.confirm).toHaveBeenCalledWith('dev-1', { approvedEffectiveDate: '2026-01-15', reference: 'BOARD-SSB', approvalReason: 'Approved at site commencement' });
+    expect(host.textContent).toContain('BOARD-SSB');
   });
 
   it('cancel and reopen clears transfer-specific and entered movement state', async () => {

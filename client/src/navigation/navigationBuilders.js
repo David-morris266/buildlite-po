@@ -92,9 +92,15 @@ export function buildDevelopmentWorkspaceNavigation({
     } else if (cvrView === 'summary' && periodKey) {
       breadcrumbs.push(createBreadcrumb(periodKey, onBackToCvrRegister));
       breadcrumbs.push(createBreadcrumb('Summary'));
-    } else if (cvrView === 'worksheet' && periodKey) {
+    } else if (periodKey) {
+      const subviewLabels = {
+        worksheet: 'Worksheet',
+        movements: 'Movements',
+        exceptions: 'Exceptions',
+        commentary: 'Commentary',
+      };
       breadcrumbs.push(createBreadcrumb(periodKey, onBackToCvrSummary));
-      breadcrumbs.push(createBreadcrumb('Worksheet'));
+      breadcrumbs.push(createBreadcrumb(subviewLabels[cvrView] || 'Summary'));
     }
   }
 

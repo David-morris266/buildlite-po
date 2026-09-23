@@ -315,16 +315,20 @@ describe('cvrPeriodServerCache (BL-031B)', () => {
 
     const previousRow = enrichCvrRow({ ...stale6170, committed: 0, actualCost: 0 });
     const currentRow = enrichCvrRow({ ...refreshed, committed: 0, actualCost: 0 });
-    expect(currentRow).toMatchObject({ systemForecast: 0, finalForecast: 115062.5 });
+    expect(currentRow).toMatchObject({
+      uncommittedForecast: 0,
+      systemForecast: 400,
+      finalForecast: 115462.5,
+    });
     const movement = buildCvrPeriodComparison({
-      currentModel: { rows: [currentRow], summary: { finalForecast: 115062.5 }, ready: true },
-      previousModel: { rows: [previousRow], summary: { finalForecast: 0 }, historic: true, snapshot: {} },
+      currentModel: { rows: [currentRow], summary: { finalForecast: 115462.5 }, ready: true },
+      previousModel: { rows: [previousRow], summary: { finalForecast: 400 }, historic: true, snapshot: {} },
       currentPeriod: { id: PERIOD_A, periodKey: 'P04' },
       previousPeriod: { id: 'period-p03', periodKey: 'P03', snapshot: {} },
     });
     expect(movement.rows[0]).toMatchObject({
       costCodeKey: '6170',
-      currentForecast: 115062.5,
+      currentForecast: 115462.5,
       movement: 115062.5,
     });
     expect(getCachedCvrInputs(PERIOD_B)).toEqual(expect.arrayContaining([

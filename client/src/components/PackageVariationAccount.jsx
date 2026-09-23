@@ -5,19 +5,26 @@ import { refreshCertificatesForPackage } from '../payments/paymentCertificateSer
 import {
   allocateVariationAuthority,
   listEligibleVariationAuthority,
+  listVariationChangeIdentities,
   listVariationAccount,
   reviseVariationForecast,
   reverseVariationAuthority,
+  updateVariationChangeIdentity,
 } from '../api/variationAccounts';
 
 const gbp = value => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(Number(value || 0));
 const blank = { source: '', amount: '', overlapMode: 'additional', predecessorAllocationId: '', substitutedAmount: '', reason: '' };
+const loadChangeIdentities = async id => {
+  try { return await listVariationChangeIdentities(id) || []; }
+  catch { return []; }
+};
 
 export default function PackageVariationAccount({ packageId, focusItemId = null }) {
   const canAllocate = useBuildLitePermission('variation_account.authority_allocate');
   const canReviseForecast = useBuildLitePermission('variation_account.forecast_edit');
   const [items, setItems] = useState([]);
   const [sources, setSources] = useState({});
+  const [changeSources, setChangeSources] = useState({});
   const [forms, setForms] = useState({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -28,6 +35,10 @@ export default function PackageVariationAccount({ packageId, focusItemId = null 
     setItems(next);
     const pairs = await Promise.all(next.map(async item => [item.id, await listEligibleVariationAuthority(item.id)]));
     setSources(Object.fromEntries(pairs));
+    if (canReviseForecast) {
+      const changes = await Promise.all(next.map(async item => [item.id, await loadChangeIdentities(item.id)]));
+      setChangeSources(Object.fromEntries(changes));
+    }
   };
   useEffect(() => { load().catch(e => setError(e.message)); }, [packageId]);
   const form = id => forms[id] || blank;
@@ -70,10 +81,11 @@ export default function PackageVariationAccount({ packageId, focusItemId = null 
     if (!focusItemId || !items.some(item => item.id === focusItemId)) return;
     document.getElementById(`variation-account-item-${focusItemId}`)?.scrollIntoView?.({ block: 'start' });
   }, [focusItemId, items]);
-  return <section className="po-module-card"><h3 className="po-matrix-section__title">Variation Account</h3><p className="po-cert-detail__matrix-lead">Package-level commercial assessment and exposure register. Commercial Event (CE) and Issued Variation Order (VO) authority are reconciled explicitly to prevent double counting.</p>{error ? <div role="alert" className="po-list-feedback po-list-feedback--error">{error}</div> : null}{items.length ? items.map(item => <AuthorityItem key={item.id} item={item} sources={sources[item.id] || []} form={form(item.id)} set={(key, value) => set(item.id, key, value)} allocate={() => allocate(item)} reverse={allocation => { const reason = window.prompt('Reason for authority reversal'); if (reason) run(() => reverseVariationAuthority(item.id, allocation.id, reason), { source: 'variation_account_authority_reversal', variationAccountItemId: item.id, allocationId: allocation.id }); }} canAllocate={canAllocate} canReviseForecast={canReviseForecast} forecastEditor={forecastEditor?.itemId === item.id ? forecastEditor : null} setForecastEditor={setForecastEditor} beginForecastRevision={() => beginForecastRevision(item)} saveForecastRevision={() => saveForecastRevision(item)} busy={busy} />) : <p>No Variation Account items on this package.</p>}</section>;
+  const changeIdentity = item => { const reason = window.prompt('Reason for changing the underlying change identity'); if (!reason) return; return run(() => updateVariationChangeIdentity(item.id, { version: item.version, sourceCommercialEventId: form(item.id).changeIdentity || null, reason }), { source: 'variation_account_change_identity', variationAccountItemId: item.id }); };
+  return <section className="po-module-card"><h3 className="po-matrix-section__title">Variation Account</h3><p className="po-cert-detail__matrix-lead">Package-level commercial assessment and exposure register. Commercial Event (CE) and Issued Variation Order (VO) authority are reconciled explicitly to prevent double counting.</p>{error ? <div role="alert" className="po-list-feedback po-list-feedback--error">{error}</div> : null}{items.length ? items.map(item => <AuthorityItem key={item.id} item={item} sources={sources[item.id] || []} changeSources={changeSources[item.id] || []} form={form(item.id)} set={(key, value) => set(item.id, key, value)} allocate={() => allocate(item)} saveChangeIdentity={() => changeIdentity(item)} reverse={allocation => { const reason = window.prompt('Reason for authority reversal'); if (reason) run(() => reverseVariationAuthority(item.id, allocation.id, reason), { source: 'variation_account_authority_reversal', variationAccountItemId: item.id, allocationId: allocation.id }); }} canAllocate={canAllocate} canReviseForecast={canReviseForecast} forecastEditor={forecastEditor?.itemId === item.id ? forecastEditor : null} setForecastEditor={setForecastEditor} beginForecastRevision={() => beginForecastRevision(item)} saveForecastRevision={() => saveForecastRevision(item)} busy={busy} />) : <p>No Variation Account items on this package.</p>}</section>;
 }
 
-function AuthorityItem({ item, sources, form, set, allocate, reverse, canAllocate, canReviseForecast, forecastEditor, setForecastEditor, beginForecastRevision, saveForecastRevision, busy }) {
+function AuthorityItem({ item, sources, changeSources, form, set, allocate, saveChangeIdentity, reverse, canAllocate, canReviseForecast, forecastEditor, setForecastEditor, beginForecastRevision, saveForecastRevision, busy }) {
   const p = item.authority || {}, allocations = p.allocations || [];
   const blurOnWheel = event => event.currentTarget.blur();
   const selectPredecessor = event => {
@@ -90,6 +102,7 @@ function AuthorityItem({ item, sources, form, set, allocate, reverse, canAllocat
       <button type="button" disabled={busy || forecastEditor.amount === '' || !forecastEditor.reason.trim()} onClick={saveForecastRevision}>Save revised forecast</button>
       <button type="button" disabled={busy} onClick={() => setForecastEditor(null)}>Cancel</button>
     </div> : <button type="button" disabled={busy} onClick={beginForecastRevision}>Revise Forecast</button> : null}
+    {canReviseForecast && item.status === 'active' ? <div className="po-cert-application__form"><label><span>Underlying change</span><select className="input" value={form.changeIdentity ?? item.sourceCommercialEventId ?? ''} onChange={event => set('changeIdentity', event.target.value)}><option value="">Independent change exposure</option>{changeSources.map(source => <option key={source.id} value={source.id}>{source.reference} — {source.description}</option>)}</select></label><button type="button" disabled={busy || (form.changeIdentity ?? item.sourceCommercialEventId ?? '') === (item.sourceCommercialEventId ?? '')} onClick={saveChangeIdentity}>Save change identity</button></div> : null}
     {p.exception ? <div role="alert" className="po-list-feedback po-list-feedback--error">{p.exception}</div> : null}
     {allocations.length ? <ul>{allocations.map(a => <li key={a.id}>{a.sourceType === 'commercial_event' ? 'Commercial Event (CE)' : 'Issued Variation Order (VO)'} {a.sourceReference}: allocated {gbp(a.allocatedAmount)}, effective {gbp(a.effectiveAmount)} {canAllocate && a.allocationKind === 'authority' ? <button type="button" disabled={busy} onClick={() => reverse(a)}>Reverse</button> : null}</li>)}</ul> : <p>No authority linked.</p>}
     {canAllocate ? <div className="po-cert-application__form">

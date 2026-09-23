@@ -308,7 +308,13 @@ describe('BL-031D CVR authority writes', () => {
         expectedLiability: 0,
         vaExposureUplift: 0,
       })
-    ).toMatchObject({ systemForecast: 46000, commercialAdjustment: 9000, finalForecast: 55000 });
+    ).toMatchObject({
+      recognisedObligation: 46000,
+      uncommittedForecast: 8000,
+      systemForecast: 54000,
+      commercialAdjustment: 9000,
+      finalForecast: 63000,
+    });
 
     setCvrMutationReject(
       new CvrPeriodApiError('Cost-code input version conflict.', {

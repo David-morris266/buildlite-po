@@ -374,19 +374,33 @@ describe('buildCommercialCostMovementSummary', () => {
   });
 
   it('reconciles the six-column matrix and uses cost movement signs consistently', () => {
-    const currentRows = [{ costCodeKey: '4120', currentBudget: 130, finalForecast: 120, variance: 10 }];
+    const currentRows = [{ costCodeKey: '4120', currentBudget: 130, finalForecast: 120, variance: 10, currentCost: 60, costToComplete: 60, uncommittedForecast: 20, changeExposure: 5 }];
     const previousRows = [{ costCodeKey: '4120', currentBudget: 120, finalForecast: 100, variance: 20 }];
     const hierarchy = period([allocated('4120', 'house-build', 'House Build')]);
     const summary = buildCommercialCostMovementSummary({
       currentRows, previousRows, currentPeriod: hierarchy, previousPeriod: hierarchy,
-      currentTotals: { currentBudget: 130, finalForecast: 120, variance: 10 },
+      currentTotals: { currentBudget: 130, finalForecast: 120, variance: 10, costToComplete: 60, uncommittedForecast: 20, changeExposure: 5 },
       movementReport: { available: true, totalMovement: 20, rows: [] },
+      giaSummary: { giaComplete: true, activePlotCount: 2, activePlotGiaFt2: 10 },
     });
 
     expect(summary.items).toHaveLength(1);
-    expect(summary.items[0]).toMatchObject({ head: 'House Build', budget: 130, previousForecast: 100, currentForecast: 120, movement: 20, movementState: 'adverse', variance: 10 });
-    expect(summary.totals).toMatchObject({ budget: 130, previousForecast: 100, currentForecast: 120, movement: 20, variance: 10, reconciles: true });
+    expect(summary.items[0]).toMatchObject({ head: 'House Build', budget: 130, previousForecast: 100, currentForecast: 120, costPerFt2: 12, costToComplete: 60, uncommittedForecast: 20, changeExposure: 5, movement: 20, movementState: 'adverse', variance: 10 });
+    expect(summary.totals).toMatchObject({ budget: 130, previousForecast: 100, currentForecast: 120, costPerFt2: 12, costToComplete: 60, uncommittedForecast: 20, changeExposure: 5, movement: 20, variance: 10, reconciles: true });
     expect(summary.totals.previousForecast + summary.totals.movement).toBe(summary.totals.currentForecast);
+  });
+
+  it('aggregates captured Site Start Budget without substituting Current Budget', () => {
+    const currentPeriod = period([allocated('4120', 'house-build', 'House Build')]);
+    currentPeriod.budgetSource = { document: { siteStartBudget: { totalPence: 10000, positions: [{ costCode: '4120', amountPence: 10000 }] } } };
+    const summary = buildCommercialCostMovementSummary({
+      currentRows: [{ costCodeKey: '4120', currentBudget: 130, finalForecast: 120, variance: 10 }],
+      currentPeriod, currentTotals: { currentBudget: 130, finalForecast: 120, variance: 10 }, movementReport: { available: false, rows: [] },
+    });
+    expect(summary.items[0]).toMatchObject({ siteStartBudget: 100, siteStartBudgetLabel: '£100.00' });
+    expect(summary.totals).toMatchObject({ siteStartBudget: 100, siteStartBudgetLabel: '£100.00', budget: 130 });
+    const unavailable = buildCommercialCostMovementSummary({ currentRows: [{ costCodeKey: '4120', currentBudget: 130, finalForecast: 120, variance: 10 }], currentPeriod: period([allocated('4120', 'house-build', 'House Build')]), currentTotals: { currentBudget: 130, finalForecast: 120, variance: 10 }, movementReport: { available: false, rows: [] } });
+    expect(unavailable.totals.siteStartBudget).toBeNull();
   });
 
   it('shows a hierarchy transfer as equal movement out and in without recasting either period', () => {
@@ -499,8 +513,8 @@ describe('buildCvrSummaryModel', () => {
   it('exposes hero KPI emphasis for executive metrics', () => {
     seedBudgetRows();
     const model = buildCvrSummaryModel(development, { pos: [], periodKey: 'P01' });
-    const varianceKpi = model.kpis.find((item) => item.key === 'forecastVariance');
-    expect(varianceKpi?.emphasis).toBe('hero');
+    const allInKpi = model.kpis.find((item) => item.key === 'allInCostPerFt2');
+    expect(allInKpi?.emphasis).toBe('hero');
   });
 
   it('shows movement when locked period totals differ', () => {

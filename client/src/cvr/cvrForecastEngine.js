@@ -11,36 +11,39 @@ import {
   getVarianceState,
 } from './cvrCalculations.js';
 
-function moneyValueExists(value) {
-  if (value == null || value === '') return false;
-  const money = roundMoney(value);
-  return money != null && Math.abs(money) > 0.005;
+/**
+ * Baseline retention model:
+ * recognised obligation = max(commitment, certified, current cost)
+ * uncommitted forecast = max(current budget - recognised obligation, 0)
+ * system forecast = recognised obligation + uncommitted forecast
+ */
+export function calculateRecognisedObligation({ committed, certified, currentCost }) {
+  return Math.max(
+    0,
+    roundMoney(committed) ?? 0,
+    roundMoney(certified) ?? 0,
+    roundMoney(currentCost) ?? 0,
+  );
 }
 
-/**
- * System Forecast hierarchy (Doc 40):
- * 1. Approved Commitments exist → Total Approved Commitments
- * 2. Else Current Budget exists → Current Budget
- * 3. Else Actual Cost exists → Actual Cost
- * 4. Else → 0
- */
-export function calculateSystemForecast({ committed, actualCost, currentBudget }) {
-  const committedValue = roundMoney(committed);
+export function calculateUncommittedForecast(currentBudget, recognisedObligation = 0) {
+  const budget = roundMoney(currentBudget) ?? 0;
+  const obligation = roundMoney(recognisedObligation) ?? 0;
+  return roundMoney(Math.max(budget - obligation, 0));
+}
 
-  if (committedValue != null && committedValue > 0) {
-    return committedValue;
-  }
-
-  if (moneyValueExists(currentBudget)) {
-    return roundMoney(currentBudget);
-  }
-
-  const actual = roundMoney(actualCost);
-  if (moneyValueExists(actualCost) && actual != null && actual > 0) {
-    return actual;
-  }
-
-  return 0;
+export function calculateSystemForecast({
+  currentBudget,
+  recognisedObligation = null,
+  committed,
+  certified,
+  currentCost,
+  actualCost,
+}) {
+  const obligation = recognisedObligation == null
+    ? calculateRecognisedObligation({ committed, certified, currentCost: currentCost ?? actualCost })
+    : roundMoney(recognisedObligation) ?? 0;
+  return roundMoney(obligation + calculateUncommittedForecast(currentBudget, obligation));
 }
 
 export function calculateFinalForecast(
@@ -48,9 +51,12 @@ export function calculateFinalForecast(
   commercialAdjustment = 0,
   expectedLiability = 0,
   vaExposureUplift = 0,
+  recognisedObligation = null,
+  changeExposure = null,
 ) {
   const toPence = (value) => Math.round((Number(value) || 0) * 100);
-  const additions = toPence(expectedLiability) + toPence(commercialAdjustment) + toPence(vaExposureUplift);
+  const exposure = changeExposure == null ? toPence(expectedLiability) + toPence(vaExposureUplift) : toPence(changeExposure);
+  const additions = exposure + toPence(commercialAdjustment);
 
   if (systemForecast == null || systemForecast === '') {
     const forecast = additions / 100;
@@ -63,7 +69,16 @@ export function calculateFinalForecast(
     return forecast === 0 ? null : forecast;
   }
 
-  return (toPence(system) + additions) / 100;
+  const provisional = (toPence(system) + additions) / 100;
+  if (recognisedObligation == null) return provisional;
+
+  // The floor constrains favourable Commercial Adjustment only. Signed CE/VA
+  // credits remain authoritative and therefore participate in the floor.
+  const exposureFloor = (
+    toPence(recognisedObligation) +
+    exposure
+  ) / 100;
+  return Math.max(provisional, exposureFloor);
 }
 
 export function getAdjustmentState(commercialAdjustment) {
@@ -122,23 +137,34 @@ export function applyCostCentreSaveToCvrRow(row, savedCentre = {}) {
 }
 
 export function enrichCvrForecastRow(row) {
-  const systemForecast = calculateSystemForecast({
+  const manualAccrual = roundMoney(row.manualAccrual) ?? 0;
+  const currentCost = calculateIncurredCost(row.actualCost, manualAccrual);
+  const recognisedObligation = calculateRecognisedObligation({
     committed: row.committed,
-    actualCost: row.actualCost,
+    certified: row.certified,
+    currentCost,
+  });
+  const uncommittedForecast = calculateUncommittedForecast(
+    row.currentBudget,
+    recognisedObligation,
+  );
+  const systemForecast = calculateSystemForecast({
     currentBudget: row.currentBudget,
+    recognisedObligation,
   });
 
   const commercialAdjustment = roundMoney(row.commercialAdjustment) ?? 0;
   const expectedLiability = roundMoney(row.expectedLiability) ?? 0;
   const vaExposureUplift = roundMoney(row.vaExposureUplift) ?? 0;
-  const manualAccrual = roundMoney(row.manualAccrual) ?? 0;
+  const changeExposure = row.changeExposure == null ? roundMoney(expectedLiability + vaExposureUplift) ?? 0 : roundMoney(row.changeExposure) ?? 0;
   const finalForecast = calculateFinalForecast(
     systemForecast,
     commercialAdjustment,
     expectedLiability,
     vaExposureUplift,
+    recognisedObligation,
+    changeExposure,
   );
-  const currentCost = calculateIncurredCost(row.actualCost, manualAccrual);
   const costToComplete = calculateCostToComplete(finalForecast, row.actualCost, manualAccrual);
   const variance = calculateVariance(row.currentBudget, finalForecast);
 
@@ -146,9 +172,12 @@ export function enrichCvrForecastRow(row) {
     ...row,
     manualAccrual,
     currentCost,
+    recognisedObligation,
+    uncommittedForecast,
     systemForecast,
     expectedLiability,
     vaExposureUplift,
+    changeExposure,
     commercialAdjustment,
     commercialReason: String(row.commercialReason || ''),
     finalForecast,

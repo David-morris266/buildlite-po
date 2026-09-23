@@ -40,6 +40,11 @@ function evaluateDevelopmentCommercialReadiness(facts = {}) {
         : 'Establish the approved Development Budget before creating the first CVR.';
     items.push(item('development_budget', state, 'Development Budget', reason, { tab: 'budget' }, { exists: Boolean(budget.exists), integrityValid: Boolean(budget.integrityValid) }));
   } else items.push(item('development_budget', STATES.READY, 'Development Budget', 'Authoritative Development Budget is established and verified.', { tab: 'budget' }));
+  if (budget?.available && budget.exists) {
+    items.push(budget.siteStartBudgetConfirmed
+      ? item('site_start_budget', STATES.READY, 'Site Start Budget', 'Approved Site Start Budget baseline is explicitly confirmed.', { tab: 'budget' })
+      : item('site_start_budget', STATES.ATTENTION, 'Site Start Budget', 'Confirm the approved Opening Budget applicable at site commencement.', { tab: 'budget' }));
+  }
 
   const revenue = facts.revenue;
   if (!revenue?.available) items.push(sourceUnavailable('revenue', 'Revenue', { tab: 'revenue' }));
@@ -111,7 +116,8 @@ async function loadDevelopmentCommercialReadiness(clientId, developmentId, query
   const periods = await run(async () => ({ rows: (await query('SELECT period_key,status,budget_source FROM cvr_periods WHERE client_id=$1 AND development_id=$2 ORDER BY created_at', [clientId, developmentId])).rows.map(row => ({ periodKey: row.period_key, status: row.status, budgetSource: row.budget_source })) }));
   const budget = await run(async () => {
     const rows = (await query('SELECT event_type,source_snapshot,source_snapshot_sha256,source_snapshot_hash_scheme FROM development_budget_events WHERE client_id=$1 AND development_id=$2 ORDER BY sequence_number', [clientId, developmentId])).rows;
-    return { exists: rows.some(row => row.event_type === 'opening_budget'), integrityValid: rows.length > 0 && rows.every(row => verifyJsonIntegrity(row.source_snapshot, row.source_snapshot_sha256, row.source_snapshot_hash_scheme).valid) };
+    const milestone = (await query("SELECT 1 FROM development_budget_milestones WHERE client_id=$1 AND development_id=$2 AND milestone_type='site_start_budget'", [clientId, developmentId])).rowCount > 0;
+    return { exists: rows.some(row => row.event_type === 'opening_budget'), integrityValid: rows.length > 0 && rows.every(row => verifyJsonIntegrity(row.source_snapshot, row.source_snapshot_sha256, row.source_snapshot_hash_scheme).valid), siteStartBudgetConfirmed: milestone };
   });
   const count = (sql, params = [clientId, developmentId]) => run(async () => ({ count: Number((await query(sql, params)).rows[0].count) }));
   const purchaseOrders = await count(`SELECT COUNT(*)::int count FROM purchase_orders WHERE client_id=$1 AND (payload->>'developmentId'=$2 OR payload->>'jobNumber'=$3)`, [clientId, developmentId, development.job_number]);

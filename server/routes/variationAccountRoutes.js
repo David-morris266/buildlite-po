@@ -16,6 +16,10 @@ router.post('/',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_CREATE),async(re
   try { respond(res,await repository.createItem(clientId(req),req.body.packageId,req.body,req.buildliteAuth)); }
   catch(error){res.status(error.status||500).json({message:error.message||'Failed to create Variation Account item.'});}
 });
+router.post('/from-commercial-event/:commercialEventId',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_CREATE),async(req,res)=>{
+  try { respond(res,await repository.createFromSubmittedCommercialEvent(clientId(req),req.params.commercialEventId,req.body||{},req.buildliteAuth)); }
+  catch(error){res.status(error.status||500).json({message:error.message||'Failed to create Variation Account forecast.'});}
+});
 router.get('/:id',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_VIEW),async(req,res)=>{
   try { const item=await repository.getItem(clientId(req),req.params.id,req.buildliteAuth);if(!item)return res.status(404).json({message:'Variation Account item not found.'});res.json({item}); }
   catch(error){res.status(error.status||500).json({message:error.message||'Failed to load Variation Account item.'});}
@@ -23,6 +27,14 @@ router.get('/:id',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_VIEW),async(re
 router.patch('/:id/forecast',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_FORECAST_EDIT),async(req,res)=>{
   try { respond(res,await repository.updateForecast(clientId(req),req.params.id,req.body,req.buildliteAuth)); }
   catch(error){res.status(error.status||500).json({message:error.message||'Failed to update QS Forecast.'});}
+});
+router.patch('/:id/change-identity',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_FORECAST_EDIT),async(req,res)=>{
+  try { respond(res,await repository.updateChangeIdentity(clientId(req),req.params.id,req.body,req.buildliteAuth)); }
+  catch(error){res.status(error.status||500).json({message:error.message||'Failed to update change identity.'});}
+});
+router.get('/:id/change-identities',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_FORECAST_EDIT),async(req,res)=>{
+  try { respond(res,await repository.listChangeIdentitySources(clientId(req),req.params.id,req.buildliteAuth)); }
+  catch(error){res.status(error.status||500).json({message:error.message||'Failed to load change identities.'});}
 });
 router.post('/:id/contractor-positions',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_FORECAST_EDIT),async(req,res)=>{
   try { respond(res,await repository.recordContractorPosition(clientId(req),req.params.id,req.body,req.buildliteAuth)); }

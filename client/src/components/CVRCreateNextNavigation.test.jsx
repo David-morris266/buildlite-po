@@ -228,7 +228,7 @@ describe('Create Next Period navigation (BL-031F)', () => {
     const labels = Array.from(container.querySelectorAll('button')).map(button => button.textContent.trim());
     expect(labels).not.toContain('Approve & Lock');
     expect(labels).toContain('Reject');
-    expect(labels).toContain('Open CVR Read Only');
+    expect(labels).not.toContain('Open CVR Read Only');
   });
 
   it('Worksheet success returns to the CVR Register after a reporting month is chosen', async () => {

@@ -37,6 +37,7 @@ import {
 import { enrichCvrForecastRow, getAdjustmentState } from './cvrForecastEngine';
 import { listCommercialEventsByDevelopment } from '../commercialEvents/commercialEventStore';
 import { effectiveExpectedLiability } from '../commercialEvents/commercialEventExpectedLiability';
+import { buildChangeExposureByCostCode } from './cvrChangeExposure';
 import {
   isCvrHistoricSnapshotPeriod,
   isCvrLegacyLockedPeriod,
@@ -245,6 +246,10 @@ export function buildCvrRows(developmentId, options = {}) {
   const actuals = buildActualsByCostCode(developmentId);
   const expectedLiabilities = buildExpectedLiabilityByCostCode(developmentId);
   const exposureDocument = options.period?.variationExposure?.document || options.period?.snapshot?.variationExposure?.document;
+  const changeExposure = buildChangeExposureByCostCode(
+    listCommercialEventsByDevelopment(developmentId),
+    exposureDocument?.items || []
+  );
   const variationExposureByCostCode = new Map();
   const budgetDocument = options.period?.budgetSource?.document || options.period?.snapshot?.budgetSource?.document;
   const usesDevelopmentBudget = Boolean(budgetDocument);
@@ -266,6 +271,7 @@ export function buildCvrRows(developmentId, options = {}) {
     expectedLiabilities,
   ]);
   for (const key of variationExposureByCostCode.keys()) allKeys.add(key);
+  for (const key of changeExposure.totals.keys()) allKeys.add(key);
   for (const key of authorityBudgetByCostCode.keys()) allKeys.add(key);
   const manualByKey = new Map();
 
@@ -320,6 +326,8 @@ export function buildCvrRows(developmentId, options = {}) {
         expectedLiabilityProvenance: expectedLiabilities.provenance.get(key) || [],
         commercialEventEvidence: expectedLiabilities.evidence.get(key) || [],
         vaExposureUplift: (variationExposureByCostCode.get(key)?.pence || 0) / 100,
+        changeExposure: changeExposure.totals.get(key) ?? 0,
+        changeExposureEvidence: changeExposure.evidence.get(key) || [],
         variationExposureItems: variationExposureByCostCode.get(key)?.items || [],
         commercialAdjustment: manual?.commercialAdjustment ?? 0,
         commercialReason: manual?.commercialReason || '',
@@ -367,6 +375,9 @@ function emptyCvrSummary() {
     commercialAdjustment: null,
     manualAccrual: null,
     currentCost: null,
+    recognisedObligation: null,
+    uncommittedForecast: null,
+    changeExposure: null,
     finalForecast: null,
     forecastFinalCost: null,
     variance: null,
@@ -389,6 +400,9 @@ function summaryFromTotals(totals, ledgerReady = true) {
     commercialAdjustment: totals.commercialAdjustment,
     manualAccrual: totals.manualAccrual,
     currentCost: ledgerReady ? totals.currentCost : null,
+    recognisedObligation: totals.recognisedObligation,
+    uncommittedForecast: totals.uncommittedForecast,
+    changeExposure: totals.changeExposure,
     finalForecast: totals.finalForecast,
     forecastFinalCost: totals.finalForecast,
     variance: totals.variance,
@@ -420,6 +434,9 @@ function snapshotRowToCvrRow(row) {
     certified: row.certified,
     actualCost: row.actualCost,
     currentCost: row.currentCost,
+    recognisedObligation: row.recognisedObligation,
+    uncommittedForecast: row.uncommittedForecast,
+    changeExposure: row.changeExposure,
     systemForecast: row.systemForecast,
     expectedLiability:
       row.expectedLiabilityCaptured === false ? null : row.expectedLiability,
@@ -455,6 +472,9 @@ function historicTotalsFromSnapshot(snapshot, rows) {
     actualCost: header.actualCost ?? fromRows.actualCost,
     manualAccrual: header.manualAccrual ?? fromRows.manualAccrual,
     currentCost: header.currentCost ?? fromRows.currentCost,
+    recognisedObligation: fromRows.recognisedObligation,
+    uncommittedForecast: fromRows.uncommittedForecast,
+    changeExposure: fromRows.changeExposure,
     systemForecast: header.systemForecast ?? fromRows.systemForecast,
     expectedLiability:
       header.expectedLiabilityCaptured === false

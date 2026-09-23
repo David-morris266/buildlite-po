@@ -44,6 +44,8 @@ function ApplicationContent() {
   const [cvrNav, setCvrNav] = useState({
     developmentId: initialRoute.developmentId,
     periodKey: initialRoute.periodKey,
+    cvrSubview: initialRoute.cvrSubview,
+    cvrHierarchyFilterKey: initialRoute.cvrHierarchyFilterKey,
     workspaceTab: initialRoute.workspaceTab,
     packageKey: initialRoute.packageKey,
     packageTab: initialRoute.packageTab,
@@ -76,6 +78,8 @@ function ApplicationContent() {
     setCvrNav({
       developmentId: next.developmentId,
       periodKey: next.periodKey,
+      cvrSubview: next.cvrSubview,
+      cvrHierarchyFilterKey: next.cvrHierarchyFilterKey,
       workspaceTab: next.workspaceTab,
       packageKey: next.packageKey,
       packageTab: next.packageTab,
@@ -251,6 +255,8 @@ function ApplicationContent() {
           initialWorkspaceTab={cvrNav.workspaceTab || (cvrNav.developmentId ? 'cvr' : null)}
           initialPlotMasterView={cvrNav.plotMasterView}
         initialCvrPeriodKey={cvrNav.periodKey}
+        initialCvrSubview={cvrNav.cvrSubview}
+        initialCvrHierarchyFilterKey={cvrNav.cvrHierarchyFilterKey}
         initialPackageKey={cvrNav.packageKey}
         initialPackageTab={cvrNav.packageTab}
         navigationOrigin={navigationOrigin ? {

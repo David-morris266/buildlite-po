@@ -1,3 +1,8 @@
+import {
+  calculateRecognisedObligation,
+  calculateUncommittedForecast,
+} from './cvrForecastEngine';
+
 /**
  * BL-031E.4 — Map server CVR snapshot documents into nested client camelCase.
  *
@@ -88,6 +93,19 @@ export function normalizeCvrSnapshotTotals(source = {}) {
     actualCost: moneyFrom(totalsSource, 'actualCost', 'actual_cost', 0),
     manualAccrual: moneyFrom(totalsSource, 'manualAccrual', 'manual_accrual', 0),
     currentCost: moneyFrom(totalsSource, 'currentCost', 'current_cost', 0),
+    recognisedObligation: moneyFrom(
+      totalsSource,
+      'recognisedObligation',
+      'recognised_obligation',
+      0
+    ),
+    uncommittedForecast: moneyFrom(
+      totalsSource,
+      'uncommittedForecast',
+      'uncommitted_forecast',
+      0
+    ),
+    changeExposure: nullableMoneyFrom(totalsSource, 'changeExposure', 'change_exposure'),
     systemForecast: moneyFrom(totalsSource, 'systemForecast', 'system_forecast', 0),
     expectedLiability: nullableMoneyFrom(
       totalsSource,
@@ -157,6 +175,14 @@ export function normalizeCvrSnapshotRow(document) {
   const notes =
     textFrom(document, 'notes', 'notes') ||
     textFrom(document, 'commercialNotes', 'commercial_notes');
+  const currentBudget = nullableMoneyFrom(document, 'currentBudget', 'current_budget');
+  const currentCost = moneyFrom(document, 'currentCost', 'current_cost', 0);
+  const recognisedObligation = calculateRecognisedObligation({
+    committed: moneyFrom(document, 'committed', 'committed', 0),
+    certified: moneyFrom(document, 'certified', 'certified', 0),
+    currentCost,
+  });
+  const frozenChangeExposure = metadata.changeExposure || null;
 
   return {
     id: firstDefined(document.id, null),
@@ -174,7 +200,7 @@ export function normalizeCvrSnapshotRow(document) {
     trade: textFrom(document, 'trade', 'trade'),
     active: document.active !== false,
     originalBudget: nullableMoneyFrom(document, 'originalBudget', 'original_budget'),
-    currentBudget: nullableMoneyFrom(document, 'currentBudget', 'current_budget'),
+    currentBudget,
     commercialAdjustment: moneyFrom(
       document,
       'commercialAdjustment',
@@ -189,7 +215,12 @@ export function normalizeCvrSnapshotRow(document) {
     committed: moneyFrom(document, 'committed', 'committed', 0),
     certified: moneyFrom(document, 'certified', 'certified', 0),
     actualCost: moneyFrom(document, 'actualCost', 'actual_cost', 0),
-    currentCost: moneyFrom(document, 'currentCost', 'current_cost', 0),
+    currentCost,
+    recognisedObligation,
+    uncommittedForecast: calculateUncommittedForecast(currentBudget, recognisedObligation),
+    changeExposure: frozenChangeExposure == null ? null : Number(frozenChangeExposure.amount || 0),
+    changeExposureCaptured: frozenChangeExposure != null,
+    changeExposureEvidence: Array.isArray(frozenChangeExposure?.evidence) ? frozenChangeExposure.evidence : [],
     systemForecast: moneyFrom(document, 'systemForecast', 'system_forecast', 0),
     expectedLiability: nullableMoneyFrom(document, 'expectedLiability', 'expected_liability'),
     expectedLiabilityCaptured:

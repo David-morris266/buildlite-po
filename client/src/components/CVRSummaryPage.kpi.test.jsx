@@ -3,6 +3,9 @@
 import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { cwd } from 'node:process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CommercialCostSummaryTable, CvrMovementReport, RevenueMovementTable, SummaryKpiRibbon } from './CVRSummaryPage';
 
@@ -12,7 +15,7 @@ const ITEMS = [
   { key: 'forecastProfit', label: 'Gross Profit', value: '£300,000.00', modifier: 'saving', emphasis: 'hero' },
   { key: 'forecastMargin', label: 'Gross Margin', value: '30.0%', modifier: 'saving', emphasis: 'hero' },
   { key: 'costToComplete', label: 'Cost To Complete', value: '£250,000.00', modifier: 'ctc', emphasis: 'hero' },
-  { key: 'forecastVariance', label: 'Forecast Variance', value: '−£25,000.00', modifier: 'overspend', emphasis: 'hero' },
+  { key: 'allInCostPerFt2', label: 'All-in £/ft²', value: '£28.00', modifier: 'neutral', emphasis: 'hero' },
   { key: 'securedRevenue', label: 'Secured Revenue', value: '£600,000.00', modifier: 'neutral', emphasis: 'supporting' },
   { key: 'remainingForecast', label: 'Remaining Forecast', value: '£400,000.00', modifier: 'neutral', emphasis: 'supporting' },
 ];
@@ -41,37 +44,40 @@ function labels(selector) {
 describe('CVR Summary KPI ribbon', () => {
   it('renders all KPIs in deliberate core and revenue-context order', () => {
     render();
-    expect(container.querySelectorAll('.cvr-summary__kpi')).toHaveLength(8);
+    expect(container.querySelectorAll('.cvr-summary__kpi')).toHaveLength(6);
     expect(labels('.cvr-summary__kpi-grid--core')).toEqual([
-      'Forecast Cost', 'Gross Profit', 'Gross Margin', 'Cost To Complete', 'Forecast Variance',
+      'Forecast Revenue', 'Forecast Cost', 'Gross Profit', 'Gross Margin', 'Cost To Complete', 'All-in £/ft²',
     ]);
-    expect(labels('.cvr-summary__kpi-grid--revenue')).toEqual([
-      'Forecast Revenue', 'Secured Revenue', 'Remaining Forecast',
-    ]);
-    for (const item of ITEMS) expect(container.textContent).toContain(item.value);
+    for (const item of ITEMS.slice(0, 6)) expect(container.textContent).toContain(item.value);
     expect(container.querySelector('.cvr-summary__kpi-hero')).toBeNull();
     expect(container.querySelector('.cvr-summary__kpi-future')).toBeNull();
   });
 
-  it('keeps unavailable revenue placeholders and hints visible', () => {
-    render(ITEMS.map((item) => ['forecastRevenue', 'securedRevenue', 'remainingForecast'].includes(item.key)
+  it('keeps unavailable headline placeholders and hints visible', () => {
+    render(ITEMS.map((item) => item.key === 'forecastRevenue'
       ? { ...item, value: '—', hint: 'Revenue unavailable' }
       : item));
-    const revenue = container.querySelector('.cvr-summary__kpi-grid--revenue');
-    expect([...revenue.querySelectorAll('.cvr-summary__kpi-value')].map((node) => node.textContent)).toEqual(['—', '—', '—']);
-    expect(revenue.querySelectorAll('.cvr-summary__kpi-hint')).toHaveLength(3);
-    expect(revenue.textContent).toContain('Revenue unavailable');
+    const core = container.querySelector('.cvr-summary__kpi-grid--core');
+    expect(core.textContent).toContain('Revenue unavailable');
   });
 });
 
 describe('Commercial Cost Summary authority presentation', () => {
+  it('keeps naturally wrapped Commercial Head links left aligned', () => {
+    const styles = readFileSync(join(cwd(), 'src/styles/po-module.css'), 'utf8');
+    const rule = styles.match(/\.cvr-summary__family-link\s*{([^}]*)}/)?.[1] || '';
+    expect(rule).toContain('text-align: left');
+    expect(rule).toContain('white-space: normal');
+    expect(rule).not.toContain('text-overflow');
+  });
+
   it('renders explicit hierarchy buckets and passes the stable membership descriptor', () => {
     const onOpen = vi.fn();
     const filter = { kind: 'hierarchy_resolution', resolutionStates: ['unresolved_legacy'], label: 'Legacy hierarchy unresolved', costCodeKeys: ['1110'] };
     const summary = {
       available: true,
-      items: [{ headKey: 'resolution:unresolved_legacy', head: filter.label, filter, budgetLabel: '£10.00', previousForecastLabel: '£11.00', currentForecastLabel: '£12.00', movementLabel: '+£1.00', movementState: 'adverse', varianceLabel: '−£2.00', varianceState: 'negative' }],
-      totals: { budgetLabel: '£10.00', previousForecastLabel: '£11.00', currentForecastLabel: '£12.00', movementLabel: '+£1.00', movementState: 'adverse', varianceLabel: '−£2.00', varianceState: 'negative' },
+      items: [{ headKey: 'resolution:unresolved_legacy', head: filter.label, filter, currentForecastLabel: '£12.00', costPerFt2Label: '£1.20', costToCompleteLabel: '£7.00', uncommittedForecastLabel: '£2.00', changeExposureLabel: '£1.00', movementLabel: '+£1.00', movementState: 'adverse', varianceLabel: '−£2.00', varianceState: 'negative' }],
+      totals: { currentForecastLabel: '£12.00', costPerFt2Label: '£1.20', costToCompleteLabel: '£7.00', uncommittedForecastLabel: '£2.00', changeExposureLabel: '£1.00', movementLabel: '+£1.00', movementState: 'adverse', varianceLabel: '−£2.00', varianceState: 'negative' },
     };
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -80,18 +86,12 @@ describe('Commercial Cost Summary authority presentation', () => {
     expect(container.textContent).toContain('Legacy hierarchy unresolved');
     expect(container.textContent).not.toContain('Other');
     expect([...container.querySelectorAll('thead th')].map((node) => node.textContent)).toEqual([
-      'Commercial Head', 'Current Budget', 'Previous CVR', 'Current CVR', 'Movement', 'Variance to Budget',
+      'Commercial Head', 'Site Start', 'Current CVR', '£/ft²', 'Cost to Complete', 'Uncommitted', 'Change Exposure', 'Movement', 'Variance',
     ]);
-    expect(container.querySelectorAll('thead th.cvr-summary__numeric')).toHaveLength(5);
-    expect(container.querySelectorAll('tbody td.cvr-summary__numeric')).toHaveLength(5);
-    expect(container.querySelectorAll('tfoot td.cvr-summary__numeric')).toHaveLength(5);
-    expect(container.querySelectorAll('col.cvr-summary__cost-head-column')).toHaveLength(1);
-    expect(container.querySelectorAll('col.cvr-summary__cost-value-column')).toHaveLength(3);
-    expect(container.querySelectorAll('col.cvr-summary__cost-movement-column')).toHaveLength(1);
-    expect(container.querySelectorAll('col.cvr-summary__cost-variance-column')).toHaveLength(1);
+    expect(container.querySelectorAll('thead th.cvr-summary__numeric')).toHaveLength(8);
     expect(container.textContent).toContain('Select a Commercial Head or hierarchy status');
     act(() => container.querySelector('button').click());
-    expect(onOpen).toHaveBeenCalledWith(filter);
+    expect(onOpen).toHaveBeenCalledWith({ ...filter, routeKey: 'resolution:unresolved_legacy' });
   });
 });
 

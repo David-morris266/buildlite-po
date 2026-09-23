@@ -40,7 +40,33 @@ async function getAuthority(clientId,developmentId,auth,dbClient=null){
   const perCostCode=[...positions.values()].sort((a,b)=>a.costCode.localeCompare(b.costCode)).map(p=>({costCodeId:p.costCodeId,costCode:p.costCode,description:p.description,originalBudget:pounds(p.originalPence),currentBudget:pounds(p.currentPence)}));
   const totalOriginalPence=perCostCode.reduce((s,p)=>s+moneyToPence(p.originalBudget.toFixed(2)),0),totalCurrentPence=perCostCode.reduce((s,p)=>s+moneyToPence(p.currentBudget.toFixed(2)),0);
   const sourceDocument={calculationVersion:CALCULATION_VERSION,clientId,developmentId,events:events.map(e=>({id:e.id,sequenceNumber:e.sequenceNumber,eventType:e.eventType,sourceSnapshotSha256:e.sourceSnapshotSha256})),positions:perCostCode.map(p=>({costCodeId:p.costCodeId,costCode:p.costCode,originalPence:moneyToPence(p.originalBudget.toFixed(2)),currentPence:moneyToPence(p.currentBudget.toFixed(2))}))};
-  return {ok:true,status:200,authority:{exists:events.length>0,calculationVersion:CALCULATION_VERSION,dataVersion:events.at(-1)?.sequenceNumber||0,development:{id:dev.id,name:dev.development_name,version:dev.version},totalOriginalBudget:pounds(totalOriginalPence),totalCurrentBudget:pounds(totalCurrentPence),perCostCode,events,sourceDocument,canonicalDigest:hashCanonicalJson(sourceDocument),canonicalHashScheme:CANONICAL_JSON_SHA256_V1}};
+  const milestone=(await db.query("SELECT * FROM development_budget_milestones WHERE client_id=$1 AND development_id=$2 AND milestone_type='site_start_budget'",[clientId,developmentId])).rows[0]||null;
+  const siteStartBudget=milestone?{
+    confirmed:true,id:milestone.id,openingBudgetEventId:milestone.opening_budget_event_id,
+    approvedEffectiveDate:canonicalDatabaseDate(milestone.approved_effective_date),reference:milestone.reference,
+    approvalReason:milestone.approval_reason,evidenceSnapshot:milestone.evidence_snapshot,
+    evidenceSha256:milestone.evidence_sha256,evidenceHashScheme:milestone.evidence_hash_scheme,
+    createdBy:{userId:milestone.created_by_user_id,membershipId:milestone.created_by_membership_id,providerUserId:milestone.created_by_provider_user_id,displayName:milestone.created_by_display_name,roleKey:milestone.created_role_key,permission:milestone.created_permission_key},
+    createdAt:new Date(milestone.created_at).toISOString(),totalBudget:pounds(Number(milestone.evidence_snapshot?.totalPence||0)),
+    positions:(milestone.evidence_snapshot?.positions||[]).map(p=>({...p,amount:pounds(Number(p.amountPence||0))})),
+  }:{confirmed:false};
+  return {ok:true,status:200,authority:{exists:events.length>0,calculationVersion:CALCULATION_VERSION,dataVersion:events.at(-1)?.sequenceNumber||0,development:{id:dev.id,name:dev.development_name,version:dev.version},totalOriginalBudget:pounds(totalOriginalPence),totalCurrentBudget:pounds(totalCurrentPence),perCostCode,events,siteStartBudget,sourceDocument,canonicalDigest:hashCanonicalJson(sourceDocument),canonicalHashScheme:CANONICAL_JSON_SHA256_V1}};
+}
+
+async function confirmSiteStartBudget(clientId,developmentId,body={},auth={}){
+  assertServicePermission(auth,PERMISSIONS.DEVELOPMENT_BUDGET_POST);
+  const approvedEffectiveDate=text(body.approvedEffectiveDate),reference=text(body.reference),approvalReason=text(body.approvalReason);
+  if(canonicalDatabaseDate(approvedEffectiveDate)!==approvedEffectiveDate)return fail(400,'approvedEffectiveDate is required in YYYY-MM-DD format.');
+  if(!reference)return fail(400,'reference is required.');if(!approvalReason)return fail(400,'approvalReason is required.');
+  const db=await pool.connect();try{await db.query('BEGIN');await db.query('SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))',[clientId,developmentId]);
+    const opening=(await db.query("SELECT * FROM development_budget_events WHERE client_id=$1 AND development_id=$2 AND event_type='opening_budget' FOR UPDATE",[clientId,developmentId])).rows[0];
+    if(!opening){await db.query('ROLLBACK');return fail(409,'An Opening Budget must exist before Site Start Budget can be confirmed.');}
+    const positions=(await db.query(`SELECT l.cost_code_id "costCodeId",c.code "costCode",c.description,l.signed_amount FROM development_budget_event_lines l JOIN cost_codes c ON c.id=l.cost_code_id WHERE l.event_id=$1 ORDER BY c.code`,[opening.id])).rows.map(r=>({costCodeId:r.costCodeId,costCode:r.costCode,description:r.description||'',amountPence:moneyToPence(Number(r.signed_amount).toFixed(2))}));
+    const evidence={schemaVersion:'site_start_budget_milestone_v1',clientId,developmentId,milestoneType:'site_start_budget',openingBudgetEventId:opening.id,openingBudgetSourceSha256:opening.source_snapshot_sha256,approvedEffectiveDate,reference,approvalReason,positions,totalPence:positions.reduce((s,p)=>s+p.amountPence,0)};
+    const digest=hashCanonicalJson(evidence);
+    const inserted=(await db.query(`INSERT INTO development_budget_milestones(client_id,development_id,milestone_type,opening_budget_event_id,approved_effective_date,reference,approval_reason,evidence_snapshot,evidence_hash_scheme,evidence_sha256,created_by_user_id,created_by_membership_id,created_by_provider_user_id,created_by_display_name,created_role_key,created_permission_key) VALUES($1,$2,'site_start_budget',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,[clientId,developmentId,opening.id,approvedEffectiveDate,reference,approvalReason,JSON.stringify(evidence),CANONICAL_JSON_SHA256_V1,digest,...actor(auth)])).rows[0];
+    await db.query('COMMIT');const loaded=await getAuthority(clientId,developmentId,{...auth,permissions:[...(auth.permissions||[]),PERMISSIONS.COMMERCIAL_READ]});return {ok:true,status:201,milestoneId:inserted.id,authority:loaded.authority};
+  }catch(error){await db.query('ROLLBACK');if(error.code==='23505')return fail(409,'Site Start Budget has already been confirmed for this Development.');throw error;}finally{db.release();}
 }
 
 async function postEvent(clientId,developmentId,body={},auth={}){
@@ -63,4 +89,4 @@ async function postEvent(clientId,developmentId,body={},auth={}){
     await db.query('COMMIT');const loaded=await getAuthority(clientId,developmentId,{...auth,permissions:[...(auth.permissions||[]),PERMISSIONS.COMMERCIAL_READ]});return {ok:true,status:201,replayed:false,event:loaded.authority.events.find(e=>e.id===inserted.id),authority:loaded.authority};
   }catch(error){await db.query('ROLLBACK');if(error.code==='23505')return fail(409,'Conflicting Development Budget event.');throw error;}finally{db.release();}
 }
-module.exports={CALCULATION_VERSION,moneyToPence,canonicalDatabaseDate,getAuthority,postEvent};
+module.exports={CALCULATION_VERSION,moneyToPence,canonicalDatabaseDate,getAuthority,postEvent,confirmSiteStartBudget};

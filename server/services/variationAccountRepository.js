@@ -24,6 +24,7 @@ function mapItem(row) {
     contractorValue:row.current_contractor_value == null ? null : Number(row.current_contractor_value),
     qsForecast:row.current_qs_forecast == null ? null : Number(row.current_qs_forecast),
     forecastStatus:row.forecast_status || (row.current_qs_forecast == null ? 'pending' : 'assessed'),
+    sourceCommercialEventId:row.source_commercial_event_id || null,
     status:row.status, version:Number(row.version),
     createdAt:row.created_at, updatedAt:row.updated_at,
     createdBy:{ userId:row.created_by_user_id, membershipId:row.created_by_membership_id,
@@ -88,12 +89,14 @@ async function createItem(clientId, packageId, body, auth) {
     await db.query('BEGIN');
     const pkg=(await db.query('SELECT id,development_id,cost_code FROM packages WHERE client_id=$1 AND id=$2',[clientId,packageId])).rows[0];
     if(!pkg){await db.query('ROLLBACK');return fail(404,'Package not found.');}
+    const sourceCommercialEventId=text(body.sourceCommercialEventId)||null;
+    if(sourceCommercialEventId){const source=(await db.query(`SELECT id FROM commercial_events WHERE client_id=$1 AND package_id=$2 AND id=$3 AND status IN('draft','submitted','approved','includedInCertificate','closed') AND COALESCE(relationship_type,'')<>'recovery'`,[clientId,packageId,sourceCommercialEventId])).rows[0];if(!source){await db.query('ROLLBACK');return fail(409,'Commercial Event change identity is not valid for this tenant/package.');}const existing=(await db.query('SELECT 1 FROM package_variation_account_items WHERE client_id=$1 AND source_commercial_event_id=$2',[clientId,sourceCommercialEventId])).rows[0];if(existing){await db.query('ROLLBACK');return fail(409,'Commercial Event change identity is already retained by another Variation Account item.');}}
     const reference=await allocateReference(db,clientId,packageId);
     const values={forecast:money(forecast),contractor:contractor==null?null:money(contractor),contractorReference:text(body.contractorReference)||null};
     const item=(await db.query(`INSERT INTO package_variation_account_items
-      (client_id,development_id,package_id,cost_code,variation_reference,contractor_reference,description,current_contractor_value,current_qs_forecast,created_by_user_id,created_by_membership_id,created_by_provider_user_id,created_by_display_name)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
-      [clientId,pkg.development_id,packageId,pkg.cost_code,reference,values.contractorReference,description,values.contractor,values.forecast,auth.userId,auth.membershipId,auth.providerUserId,auth.displayName])).rows[0];
+      (client_id,development_id,package_id,cost_code,variation_reference,contractor_reference,description,current_contractor_value,current_qs_forecast,source_commercial_event_id,created_by_user_id,created_by_membership_id,created_by_provider_user_id,created_by_display_name)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+      [clientId,pkg.development_id,packageId,pkg.cost_code,reference,values.contractorReference,description,values.contractor,values.forecast,sourceCommercialEventId,auth.userId,auth.membershipId,auth.providerUserId,auth.displayName])).rows[0];
     await db.query(`INSERT INTO package_variation_account_forecast_history
       (client_id,variation_account_item_id,prior_qs_forecast,new_qs_forecast,reason,item_version,actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name)
       VALUES($1,$2,NULL,$3,$4,1,$5,$6,$7,$8)`,[clientId,item.id,values.forecast,text(body.reason)||'Initial QS forecast',auth.userId,auth.membershipId,auth.providerUserId,auth.displayName]);
@@ -106,6 +109,66 @@ async function createItem(clientId, packageId, body, auth) {
     await db.query('COMMIT');
     return {ok:true,status:201,item:await getItem(clientId,item.id,readerAuth(auth))};
   } catch(error) { await db.query('ROLLBACK'); throw error; } finally { db.release(); }
+}
+
+async function createFromSubmittedCommercialEvent(clientId, commercialEventId, body, auth) {
+  requireActor(auth, PERMISSIONS.VARIATION_ACCOUNT_CREATE);
+  const forecast=Number(body.qsForecast),reason=text(body.reason);
+  if(!Number.isFinite(forecast)||!reason)return fail(400,'A valid signed QS Forecast and reason are required.');
+  const db=await pool.connect();
+  try {
+    await db.query('BEGIN');
+    const event=(await db.query(`SELECT * FROM commercial_events WHERE client_id=$1 AND id=$2 FOR UPDATE`,[clientId,commercialEventId])).rows[0];
+    if(!event){await db.query('ROLLBACK');return fail(404,'Commercial Event not found.');}
+    const eligible=event.status==='submitted' && event.event_type!=='budgetTransfer' && event.financial_treatment!=='recoverableDeduction' && (event.relationship_type||'')!=='recovery';
+    if(!eligible){await db.query('ROLLBACK');return fail(409,'Only an eligible Submitted contract-value Commercial Event can be forecast in the Variation Account.');}
+    if(!event.package_id||!text(event.cost_code)){await db.query('ROLLBACK');return fail(409,'Commercial Event package and Cost Code authority is incomplete.');}
+    const pkg=(await db.query('SELECT id,development_id,cost_code FROM packages WHERE client_id=$1 AND id=$2 FOR UPDATE',[clientId,event.package_id])).rows[0];
+    if(!pkg||text(pkg.cost_code)!==text(event.cost_code)){await db.query('ROLLBACK');return fail(409,'Commercial Event package or Cost Code authority has changed.');}
+    const existing=(await db.query('SELECT id FROM package_variation_account_items WHERE client_id=$1 AND source_commercial_event_id=$2',[clientId,event.id])).rows[0];
+    if(existing){await db.query('ROLLBACK');return fail(409,'This Commercial Event already has a Variation Account forecast.');}
+    const reference=await allocateReference(db,clientId,pkg.id),value=money(forecast);
+    const item=(await db.query(`INSERT INTO package_variation_account_items
+      (client_id,development_id,package_id,cost_code,variation_reference,description,current_qs_forecast,source_commercial_event_id,created_by_user_id,created_by_membership_id,created_by_provider_user_id,created_by_display_name)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      [clientId,pkg.development_id,pkg.id,event.cost_code,reference,event.description,value,event.id,auth.userId,auth.membershipId,auth.providerUserId,auth.displayName])).rows[0];
+    await db.query(`INSERT INTO package_variation_account_forecast_history
+      (client_id,variation_account_item_id,prior_qs_forecast,new_qs_forecast,reason,item_version,actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name)
+      VALUES($1,$2,NULL,$3,$4,1,$5,$6,$7,$8)`,[clientId,item.id,value,reason,auth.userId,auth.membershipId,auth.providerUserId,auth.displayName]);
+    await db.query(`INSERT INTO package_variation_account_change_identity_audit
+      (client_id,variation_account_item_id,prior_commercial_event_id,new_commercial_event_id,reason,item_version,actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name)
+      VALUES($1,$2,NULL,$3,$4,1,$5,$6,$7,$8)`,[clientId,item.id,event.id,reason,auth.userId,auth.membershipId,auth.providerUserId,auth.displayName]);
+    await db.query(`INSERT INTO package_variation_account_lifecycle_audit
+      (client_id,variation_account_item_id,action,prior_status,new_status,reason,item_version,actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name)
+      VALUES($1,$2,'created',NULL,'active',$3,1,$4,$5,$6,$7)`,[clientId,item.id,`Created from Submitted Commercial Event ${event.event_number}: ${reason}`,auth.userId,auth.membershipId,auth.providerUserId,auth.displayName]);
+    await db.query('COMMIT');
+    return {ok:true,status:201,item:await getItem(clientId,item.id,readerAuth(auth))};
+  } catch(error) {
+    await db.query('ROLLBACK');
+    if(error?.code==='23505'&&String(error.constraint||'').includes('source_commercial_event'))return fail(409,'This Commercial Event already has a Variation Account forecast.');
+    throw error;
+  } finally { db.release(); }
+}
+
+async function updateChangeIdentity(clientId,id,body,auth){
+  requireActor(auth,PERMISSIONS.VARIATION_ACCOUNT_FORECAST_EDIT);
+  const sourceId=text(body.sourceCommercialEventId)||null,reason=text(body.reason);
+  if(!reason)return fail(400,'A change identity reason is required.');
+  const db=await pool.connect();try{await db.query('BEGIN');const lock=await lockedItem(db,clientId,id,body.version);if(lock.error){await db.query('ROLLBACK');return lock.error;}
+    if(sourceId){const ce=(await db.query(`SELECT id FROM commercial_events WHERE client_id=$1 AND package_id=$2 AND id=$3 AND COALESCE(relationship_type,'')<>'recovery'`,[clientId,lock.row.package_id,sourceId])).rows[0];if(!ce){await db.query('ROLLBACK');return fail(409,'Commercial Event change identity is not valid for this tenant/package.');}const existing=(await db.query('SELECT 1 FROM package_variation_account_items WHERE client_id=$1 AND source_commercial_event_id=$2 AND id<>$3',[clientId,sourceId,id])).rows[0];if(existing){await db.query('ROLLBACK');return fail(409,'Commercial Event change identity is already retained by another Variation Account item.');}}
+    if((lock.row.source_commercial_event_id||null)===(sourceId||null)){await db.query('ROLLBACK');return fail(400,'Change identity is unchanged.');}
+    await db.query('UPDATE package_variation_account_items SET source_commercial_event_id=$3,version=$4,updated_at=NOW() WHERE client_id=$1 AND id=$2',[clientId,id,sourceId,lock.next]);
+    await db.query(`INSERT INTO package_variation_account_change_identity_audit(client_id,variation_account_item_id,prior_commercial_event_id,new_commercial_event_id,reason,item_version,actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,[clientId,id,lock.row.source_commercial_event_id,sourceId,reason,lock.next,auth.userId,auth.membershipId,auth.providerUserId,auth.displayName]);
+    await db.query('COMMIT');return {ok:true,status:200,item:await getItem(clientId,id,readerAuth(auth))};
+  }catch(error){await db.query('ROLLBACK');throw error;}finally{db.release();}
+}
+
+async function listChangeIdentitySources(clientId,id,auth){
+  requireActor(auth,PERMISSIONS.VARIATION_ACCOUNT_FORECAST_EDIT);
+  const item=(await query('SELECT package_id FROM package_variation_account_items WHERE client_id=$1 AND id=$2',[clientId,id])).rows[0];
+  if(!item)return fail(404,'Variation Account item not found.');
+  const rows=(await query(`SELECT id,event_number,description,status,value FROM commercial_events WHERE client_id=$1 AND package_id=$2 AND status='submitted' AND COALESCE(relationship_type,'')<>'recovery' ORDER BY event_number`,[clientId,item.package_id])).rows;
+  return {ok:true,status:200,sources:rows.map(row=>({id:row.id,reference:row.event_number,description:row.description,status:row.status,submittedValue:Number(row.value||0)}))};
 }
 
 async function lockedItem(db,clientId,id,version) {
@@ -142,4 +205,4 @@ async function transitionItem(clientId,id,action,body,auth) {
   }catch(error){await db.query('ROLLBACK');throw error;}finally{db.release();}
 }
 
-module.exports={listItems,getItem,createItem,updateForecast,recordContractorPosition,transitionItem,mapItem};
+module.exports={listItems,getItem,createItem,createFromSubmittedCommercialEvent,updateForecast,updateChangeIdentity,listChangeIdentitySources,recordContractorPosition,transitionItem,mapItem};

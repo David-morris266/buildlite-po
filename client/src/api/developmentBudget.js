@@ -25,3 +25,9 @@ export async function postDevelopmentBudgetEvent(developmentId, payload) {
     body: JSON.stringify(payload),
   }));
 }
+
+export async function confirmSiteStartBudget(developmentId, payload) {
+  return json(await fetch(`${API_BASE}/api/developments/${encodeURIComponent(developmentId)}/budget-authority/site-start-budget`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  }));
+}

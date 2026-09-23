@@ -66,6 +66,14 @@ async function prepareIntegrationTestDatabase(pool) {
   if (!hasPlotMasterAuthority.rowCount) {
     await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '056_plot_master_tenure_review.sql'), 'utf8'));
   }
+  const hasChangeExposureIdentity = await pool.query("SELECT 1 FROM information_schema.columns WHERE table_name='package_variation_account_items' AND column_name='source_commercial_event_id'");
+  if (!hasChangeExposureIdentity.rowCount) {
+    await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '057_change_exposure_identity.sql'), 'utf8'));
+  }
+  const hasSiteStartBudget = await pool.query("SELECT 1 FROM information_schema.tables WHERE table_name='development_budget_milestones'");
+  if (!hasSiteStartBudget.rowCount) {
+    await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '058_site_start_budget_milestone.sql'), 'utf8'));
+  }
   await ensureActiveTestClient(pool);
 }
 

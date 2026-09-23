@@ -9,6 +9,14 @@ async function liveDocument(db, clientId, developmentId) {
   return JSON.parse(JSON.stringify({ schemaVersion: 'cvr_development_budget_source_v1', calculationVersion: a.calculationVersion,
     dataVersion: a.dataVersion, canonicalAuthorityDigest: a.canonicalDigest,
     originalBudgetPence: Math.round(a.totalOriginalBudget * 100), currentBudgetPence: Math.round(a.totalCurrentBudget * 100),
+    siteStartBudget: a.siteStartBudget?.confirmed ? {
+      milestoneId: a.siteStartBudget.id, openingBudgetEventId: a.siteStartBudget.openingBudgetEventId,
+      approvedEffectiveDate: a.siteStartBudget.approvedEffectiveDate, reference: a.siteStartBudget.reference,
+      approvalReason: a.siteStartBudget.approvalReason, evidenceSha256: a.siteStartBudget.evidenceSha256,
+      evidenceHashScheme: a.siteStartBudget.evidenceHashScheme,
+      totalPence: Math.round(a.siteStartBudget.totalBudget * 100),
+      positions: a.siteStartBudget.positions.map((p) => ({ costCodeId: p.costCodeId, costCode: p.costCode, description: p.description || '', amountPence: p.amountPence })),
+    } : null,
     positions: a.perCostCode.map((p) => ({ costCodeId: p.costCodeId, costCode: p.costCode, description: p.description || '', originalPence: Math.round(p.originalBudget * 100), currentPence: Math.round(p.currentBudget * 100) })) }));
 }
 async function appendSubmission(db, { clientId, developmentId, periodId, actor }) {

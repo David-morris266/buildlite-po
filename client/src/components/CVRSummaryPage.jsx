@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, memo } from 'react';
 import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import CvrReportingMonthDialog from './CvrReportingMonthDialog';
+import CvrPeriodSubviewNav from './CvrPeriodSubviewNav';
 import { listPOs } from '../api';
 import { subscribeCommercialChanged } from '../commercial/commercialEvents';
 import { buildCvrSummaryModel } from '../cvr/cvrSummaryHelpers';
@@ -41,14 +42,8 @@ function StatusBadge({ status }) {
   );
 }
 
-const CORE_KPI_ORDER = [
-  'forecastCost',
-  'forecastProfit',
-  'forecastMargin',
-  'costToComplete',
-  'forecastVariance',
-];
-const REVENUE_KPI_ORDER = ['forecastRevenue', 'securedRevenue', 'remainingForecast'];
+const CORE_KPI_ORDER = ['forecastRevenue', 'forecastCost', 'forecastProfit', 'forecastMargin', 'costToComplete', 'allInCostPerFt2'];
+const REVENUE_KPI_ORDER = [];
 
 function orderedKpis(items, keys) {
   const byKey = new Map(items.map((item) => [item.key, item]));
@@ -125,10 +120,9 @@ export function CommercialCostSummaryTable({ summary, onOpen }) {
   return (
     <div className="po-table-wrap">
       <table className="po-data-table cvr-summary__table cvr-summary__cost-summary-table">
-        <colgroup><col className="cvr-summary__cost-head-column" /><col className="cvr-summary__cost-value-column" /><col className="cvr-summary__cost-value-column" /><col className="cvr-summary__cost-value-column" /><col className="cvr-summary__cost-movement-column" /><col className="cvr-summary__cost-variance-column" /></colgroup>
-        <thead><tr><th>Commercial Head</th><th className="cvr-summary__numeric">Current Budget</th><th className="cvr-summary__numeric">Previous CVR</th><th className="cvr-summary__numeric">Current CVR</th><th className="cvr-summary__numeric">Movement</th><th className="cvr-summary__numeric">Variance to Budget</th></tr></thead>
-        <tbody>{summary.items.map((item) => <tr key={item.headKey}><td><button type="button" className="cvr-summary__family-link" onClick={() => onOpen?.(item.filter)}>{item.head}</button>{item.hierarchyChanged ? <small className="cvr-summary__hierarchy-change">Hierarchy changed</small> : null}</td><td className="cvr-summary__numeric">{item.budgetLabel}</td><td className="cvr-summary__numeric">{item.previousForecastLabel}</td><td className="cvr-summary__numeric">{item.currentForecastLabel}</td><td className={`cvr-summary__numeric cvr-movement--${item.movementState}`}><strong>{item.movementLabel}</strong></td><td className={`cvr-summary__numeric dev-cvr__variance dev-cvr__variance--${item.varianceState}`}>{item.varianceLabel}</td></tr>)}</tbody>
-        <tfoot><tr className="cvr-summary__cost-summary-total"><td><strong>Total</strong></td><td className="cvr-summary__numeric"><strong>{summary.totals.budgetLabel}</strong></td><td className="cvr-summary__numeric"><strong>{summary.totals.previousForecastLabel}</strong></td><td className="cvr-summary__numeric"><strong>{summary.totals.currentForecastLabel}</strong></td><td className={`cvr-summary__numeric cvr-movement--${summary.totals.movementState}`}><strong>{summary.totals.movementLabel}</strong></td><td className={`cvr-summary__numeric dev-cvr__variance dev-cvr__variance--${summary.totals.varianceState}`}><strong>{summary.totals.varianceLabel}</strong></td></tr></tfoot>
+        <thead><tr><th>Commercial Head</th><th className="cvr-summary__numeric">Site Start</th><th className="cvr-summary__numeric">Current CVR</th><th className="cvr-summary__numeric">£/ft²</th><th className="cvr-summary__numeric">Cost to Complete</th><th className="cvr-summary__numeric">Uncommitted</th><th className="cvr-summary__numeric">Change Exposure</th><th className="cvr-summary__numeric">Movement</th><th className="cvr-summary__numeric">Variance</th></tr></thead>
+        <tbody>{summary.items.map((item) => <tr key={item.headKey}><td><button type="button" className="cvr-summary__family-link" onClick={() => onOpen?.({ ...item.filter, routeKey: item.headKey })}>{item.head}</button>{item.hierarchyChanged ? <small className="cvr-summary__hierarchy-change">Hierarchy changed</small> : null}</td><td className="cvr-summary__numeric">{item.siteStartBudgetLabel}</td><td className="cvr-summary__numeric">{item.currentForecastLabel}</td><td className="cvr-summary__numeric">{item.costPerFt2Label}</td><td className="cvr-summary__numeric">{item.costToCompleteLabel}</td><td className="cvr-summary__numeric">{item.uncommittedForecastLabel}</td><td className="cvr-summary__numeric">{item.changeExposureLabel}</td><td className={`cvr-summary__numeric cvr-movement--${item.movementState}`}><strong>{item.movementLabel}</strong></td><td className={`cvr-summary__numeric dev-cvr__variance dev-cvr__variance--${item.varianceState}`}>{item.varianceLabel}</td></tr>)}</tbody>
+        <tfoot><tr className="cvr-summary__cost-summary-total"><td><strong>Total</strong></td><td className="cvr-summary__numeric"><strong>{summary.totals.siteStartBudgetLabel}</strong></td><td className="cvr-summary__numeric"><strong>{summary.totals.currentForecastLabel}</strong></td><td className="cvr-summary__numeric"><strong>{summary.totals.costPerFt2Label}</strong></td><td className="cvr-summary__numeric"><strong>{summary.totals.costToCompleteLabel}</strong></td><td className="cvr-summary__numeric"><strong>{summary.totals.uncommittedForecastLabel}</strong></td><td className="cvr-summary__numeric"><strong>{summary.totals.changeExposureLabel}</strong></td><td className={`cvr-summary__numeric cvr-movement--${summary.totals.movementState}`}><strong>{summary.totals.movementLabel}</strong></td><td className={`cvr-summary__numeric dev-cvr__variance dev-cvr__variance--${summary.totals.varianceState}`}><strong>{summary.totals.varianceLabel}</strong></td></tr></tfoot>
       </table>
       <p className="cvr-summary__hint">Select a Commercial Head or hierarchy status to view its Cost Codes in the CVR Worksheet.</p>
     </div>
@@ -274,7 +268,8 @@ export default function CVRSummaryPage({
   periodKey,
   refreshToken = 0,
   pageNavigation = null,
-  onContinueToCvr,
+  activeSubview = 'summary',
+  onSelectSubview,
   onOpenWorksheetForHierarchy,
   onOpenWorksheetForCostCode,
   onBackToRegister,
@@ -505,12 +500,10 @@ export default function CVRSummaryPage({
 
   function openCostCodeRow(row) {
     onOpenWorksheetForCostCode?.(row.costCodeKey);
-    onContinueToCvr?.();
   }
 
   function openWorksheetForHierarchy(filter) {
     onOpenWorksheetForHierarchy?.(filter);
-    onContinueToCvr?.();
   }
 
   function openMovementRow(row, trigger) {
@@ -539,6 +532,14 @@ export default function CVRSummaryPage({
     : { ready: true, loadState: 'local', error: null };
   const cvrError = cvrReadiness.loadState === 'error' || summary.loadState === 'error';
   const ledgerError = ledgerReadiness.loadState === 'error';
+  const exceptionRows = summary.commercialExceptions.filter((item) => !item.unavailable);
+  const exceptionCount = exceptionRows.filter((item) => Number(item.count || 0) > 0).length;
+  const commentaryCounts = {
+    issues: String(commentary.keyCommercialIssues || '').trim() ? 1 : 0,
+    opportunities: String(commentary.commercialOpportunities || '').trim() ? 1 : 0,
+    risks: String(commentary.financialRisks || '').trim() ? 1 : 0,
+    actions: String(commentary.actionsBeforeNextCvr || '').trim() ? 1 : 0,
+  };
 
   if (summary.unavailable && !summary.historicUnavailable) {
     return (
@@ -569,11 +570,6 @@ export default function CVRSummaryPage({
         onBack={onBackToRegister}
         actions={(
           <>
-            {summary.workflow.showContinue ? (
-              <button type="button" className="po-btn-primary" onClick={onContinueToCvr}>
-                {summary.workflow.continueLabel}
-              </button>
-            ) : null}
             {summary.workflow.showSubmit ? (
               <button type="button" className="po-list-btn-secondary pilot-lifecycle-action" onClick={handleSubmit}>
                 Submit for Approval
@@ -636,6 +632,8 @@ export default function CVRSummaryPage({
         </div>
       </ApplicationPageHeader>
 
+      <CvrPeriodSubviewNav activeSubview={activeSubview} onSelect={onSelectSubview} />
+
       {summary.period?.status === 'submitted' && summary.period?.variationExposure?.stale ? (
         <div className="po-list-feedback po-list-feedback--error" role="alert">
           Variation Account exposure changed after this CVR was submitted. Reject to Draft, review the updated position and resubmit before Lock.
@@ -674,16 +672,26 @@ export default function CVRSummaryPage({
         <p role="status">Loading ledger data…</p>
       ) : null}
 
-      {!summary.historicUnavailable ? <MemoSummaryKpiRibbon items={summary.kpis} /> : null}
+      {!summary.historicUnavailable && activeSubview === 'summary' ? <MemoSummaryKpiRibbon items={summary.kpis} /> : null}
 
       {!summary.historicUnavailable ? (
       <div className="cvr-summary__grid">
+        {activeSubview === 'summary' ? <>
         <SummaryPanel
           title="Commercial Cost Summary"
           className="cvr-summary__panel--wide cvr-summary__panel--centrepiece"
         >
           <CommercialCostSummaryTable summary={summary.commercialCostSummary} onOpen={openWorksheetForHierarchy} />
-          <h3 className="cvr-summary__subheading">Revenue and margin movement</h3>
+        </SummaryPanel>
+        <section className="cvr-summary__review-strip po-module-card" aria-label="CVR review shortcuts">
+          <button type="button" onClick={() => onSelectSubview?.('movements')}><span>Movements</span><strong>{summary.movementReport.awaitingExplanationLabel || formatSignedMovement(summary.movementReport.awaitingExplanation)} awaiting explanation</strong><small>View</small></button>
+          <button type="button" onClick={() => onSelectSubview?.('exceptions')}><span>Exceptions</span><strong>{exceptionCount} active controls</strong><small>View</small></button>
+          <button type="button" onClick={() => onSelectSubview?.('commentary')}><span>Commentary</span><strong>{commentaryCounts.issues} issue {'\u00B7'} {commentaryCounts.opportunities} opportunities {'\u00B7'} {commentaryCounts.risks} risks {'\u00B7'} {commentaryCounts.actions} actions</strong><small>View / Edit</small></button>
+        </section>
+        </> : null}
+
+        {activeSubview === 'movements' ? <>
+        <SummaryPanel title="Revenue and margin movement" className="cvr-summary__panel--wide">
           <RevenueMovementTable executive={summary.movementReport.executive} />
         </SummaryPanel>
         <SummaryPanel title="Movement explanations" className="cvr-summary__panel--wide cvr-summary__panel--centrepiece">
@@ -696,9 +704,11 @@ export default function CVRSummaryPage({
               onSaveExplanation={handleSaveMovementExplanation}
             />
           </div>
-          {selectedRow && selectedMovement ? <CvrMovementInspection row={selectedMovement} onClose={closeSummaryCostCodeDetail} onOpenWorksheet={(costCodeKey) => { onOpenWorksheetForCostCode?.(costCodeKey); onContinueToCvr?.(); }} onOpenVariationAccount={onOpenVariationAccount} /> : null}
+          {selectedRow && selectedMovement ? <CvrMovementInspection row={selectedMovement} onClose={closeSummaryCostCodeDetail} onOpenWorksheet={onOpenWorksheetForCostCode} onOpenVariationAccount={onOpenVariationAccount} /> : null}
         </SummaryPanel>
+        </> : null}
 
+        {activeSubview === 'exceptions' ? <>
         <SummaryPanel title="Financial Position" className="cvr-summary__panel--wide cvr-summary__panel--supporting">
           <div className="cvr-summary__metric-grid cvr-summary__metric-grid--compact">
             {summary.financialPosition.map((item) => (
@@ -718,7 +728,7 @@ export default function CVRSummaryPage({
 
         <SummaryPanel title="Commercial Exceptions" className="cvr-summary__panel--featured">
           <ul className="cvr-summary__exception-list">
-            {summary.commercialExceptions.map((item) => (
+            {summary.commercialExceptions.filter((item) => !item.unavailable).map((item) => (
               <li key={item.key} className="cvr-summary__exception-item">
                 <div className="cvr-summary__exception-head">
                   <strong>{item.label}</strong>
@@ -790,84 +800,9 @@ export default function CVRSummaryPage({
             <EmptyState message="No cost code variances recorded for this period." />
           )}
         </SummaryPanel>
+        </> : null}
 
-        <SummaryPanel title="Development Summary" className="cvr-summary__panel--compact">
-          <dl className="cvr-summary__facts-grid cvr-summary__facts-grid--compact">
-            <div>
-              <dt>Plots</dt>
-              <dd>
-                {summary.developmentSummary.activePlots || '—'} active /{' '}
-                {summary.developmentSummary.totalPlots || '—'} total
-              </dd>
-            </div>
-            <div>
-              <dt>Plots Sold</dt>
-              <dd>{summary.developmentSummary.plotsSoldLabel}</dd>
-            </div>
-            <div>
-              <dt>Configurations</dt>
-              <dd>{summary.developmentSummary.configurationLabel}</dd>
-            </div>
-            <div>
-              <dt>Purchase Orders</dt>
-              <dd>{summary.developmentSummary.purchaseOrderCount || '—'}</dd>
-            </div>
-            <div>
-              <dt>Certificates</dt>
-              <dd>{summary.developmentSummary.certificateCount || '—'}</dd>
-            </div>
-          </dl>
-          {summary.developmentSummary.emptySalesHint ? (
-            <p className="cvr-summary__hint">{summary.developmentSummary.emptySalesHint}</p>
-          ) : null}
-        </SummaryPanel>
-
-        {summary.historicRevenuePlots?.available ? (
-          <SummaryPanel
-            title="Historic plot revenue"
-            className="cvr-summary__panel--wide cvr-summary__panel--supporting"
-          >
-            {summary.historicRevenuePlots.rows.length ? (
-              <div className="po-table-wrap">
-                <table className="po-data-table cvr-summary__table">
-                  <thead>
-                    <tr>
-                      <th>Plot</th>
-                      <th>House Type</th>
-                      <th>Tenure / category</th>
-                      <th>Status</th>
-                      <th style={{ textAlign: 'right' }}>Forecast Revenue</th>
-                      <th style={{ textAlign: 'right' }}>Secured Revenue</th>
-                      <th style={{ textAlign: 'right' }}>Remaining Forecast</th>
-                      <th style={{ textAlign: 'right' }}>Selling Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summary.historicRevenuePlots.rows.map((row) => (
-                      <tr key={row.plotId || row.plotNumber}>
-                        <td>{row.plotNumber || '—'}</td>
-                        <td>{row.houseType || '—'}</td>
-                        <td>{row.category || '—'}</td>
-                        <td>{row.revenueStatus || '—'}</td>
-                        <td style={{ textAlign: 'right' }}>{row.forecastRevenueLabel}</td>
-                        <td style={{ textAlign: 'right' }}>{row.securedRevenueLabel}</td>
-                        <td style={{ textAlign: 'right' }}>{row.remainingForecastRevenueLabel}</td>
-                        <td style={{ textAlign: 'right' }}>{row.sellingPriceLabel}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <EmptyState message={summary.historicRevenuePlots.emptyMessage} />
-            )}
-            <p className="cvr-summary__hint">
-              Frozen plot revenue from this CVR snapshot. Read-only historic evidence.
-            </p>
-          </SummaryPanel>
-        ) : null}
-
-        <SummaryPanel title="Commercial Commentary" className="cvr-summary__panel--wide">
+        {activeSubview === 'commentary' ? <SummaryPanel title="Commercial Commentary" className="cvr-summary__panel--wide">
           <div className="cvr-summary__commentary-grid">
             {[
               ['keyCommercialIssues', 'Key Commercial Issues'],
@@ -895,24 +830,8 @@ export default function CVRSummaryPage({
               </label>
             ))}
           </div>
-        </SummaryPanel>
+        </SummaryPanel> : null}
 
-        <SummaryPanel title="Recent Commercial Activity" className="cvr-summary__panel--wide">
-          {summary.recentActivity.length ? (
-            <ul className="cvr-summary__activity-list">
-              {summary.recentActivity.map((item) => (
-                <li key={item.id}>
-                  <strong>{item.label}</strong>
-                  <span>{item.dateTimeLabel}</span>
-                  <span>{item.actor}</span>
-                  {item.description ? <p>{item.description}</p> : null}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <EmptyState message="No commercial activity recorded yet for this period." />
-          )}
-        </SummaryPanel>
       </div>
       ) : null}
 

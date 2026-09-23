@@ -45,6 +45,7 @@ vi.mock('../developments/developmentHelpers', () => ({
 vi.mock('../api/developmentBudget', () => ({
   getDevelopmentBudget,
   postDevelopmentBudgetEvent: vi.fn(),
+  confirmSiteStartBudget: vi.fn(),
 }));
 
 vi.mock('../api/costCodes', () => ({
@@ -266,7 +267,7 @@ describe('DevelopmentWorkspace stability guards', () => {
     await act(async () => { await Promise.resolve(); });
     clickTab('CVR');
     act(() => [...document.querySelectorAll('button')].find(button => button.textContent === 'Open P04').click());
-    expect(onNavigationStateChange).toHaveBeenCalledWith({ workspaceTab: 'cvr', periodKey: 'P04' });
+    expect(onNavigationStateChange).toHaveBeenCalledWith({ workspaceTab: 'cvr', periodKey: 'P04', cvrSubview: 'summary' });
   });
 
   it('guards Development tab navigation while Prelims setup is dirty', async () => {

@@ -31,6 +31,7 @@ import {
 } from './cvrCommercialPosition';
 import { snapshotHasFrozenRevenue } from './cvrSnapshotMapper';
 import { formatReportingPeriod } from './cvrReportingMonth';
+import { buildActiveDevelopmentGiaSummary, calculateCostPerFt2 } from './cvrGiaSummary';
 import {
   buildCvrPeriodComparison,
   findPreviousLockedCvrPeriod,
@@ -135,8 +136,11 @@ function movementBucketMap(rows, period) {
 
 export function buildCommercialCostMovementSummary({
   currentRows = [], previousRows = [], currentPeriod = {}, previousPeriod = null,
-  currentTotals = {}, movementReport = null,
+  currentTotals = {}, movementReport = null, giaSummary = null,
 } = {}) {
+  const budgetAuthority = String(currentPeriod?.status || '').toLowerCase() === 'locked' ? currentPeriod?.snapshot?.budgetSource : currentPeriod?.budgetSource;
+  const siteStartDocument = budgetAuthority?.document?.siteStartBudget || null;
+  const siteStartByCode = new Map((siteStartDocument?.positions || []).map(position => [String(position.costCode || '').trim().toLowerCase(), Number(position.amountPence || 0) / 100]));
   const current = movementBucketMap(currentRows, currentPeriod);
   const previous = movementReport?.available ? movementBucketMap(previousRows, previousPeriod) : new Map();
   const keys = [...new Set([...current.keys(), ...previous.keys()])];
@@ -148,6 +152,11 @@ export function buildCommercialCostMovementSummary({
     const currentForecast = now?.forecast ?? 0;
     const previousForecast = movementReport?.available ? prior?.forecast ?? 0 : null;
     const movement = previousForecast == null ? null : roundMoney(currentForecast - previousForecast);
+    const costToComplete = sumNullable((now?.bucket.rows || []).map(({ row }) => row.costToComplete)) ?? 0;
+    const uncommittedForecast = sumNullable((now?.bucket.rows || []).map(({ row }) => row.uncommittedForecast)) ?? 0;
+    const changeExposure = sumNullable((now?.bucket.rows || []).map(({ row }) => row.changeExposure)) ?? 0;
+    const siteStartBudget = siteStartDocument ? roundMoney((now?.bucket.rows || []).reduce((sum, { row }) => sum + (siteStartByCode.get(String(row.costCodeKey || '').trim().toLowerCase()) || 0), 0)) : null;
+    const costPerFt2 = calculateCostPerFt2(currentForecast, giaSummary);
     const costCodeKeys = [...new Set([...(now?.bucket.filter.costCodeKeys || []), ...(prior?.bucket.filter.costCodeKeys || [])])];
     const bucketHeadId = bucket.headId || null;
     const hierarchyChanged = changedRows.some((row) => {
@@ -158,10 +167,13 @@ export function buildCommercialCostMovementSummary({
     return {
       head: bucket.label, headKey: key, headId: bucket.headId, kind: bucket.kind,
       resolutionStates: bucket.resolutionStates, families: bucket.families, reportingGroups: bucket.reportingGroups,
-      budget: now?.budget ?? 0, previousForecast, currentForecast, movement,
+      budget: now?.budget ?? 0, siteStartBudget, previousForecast, currentForecast, movement,
       finalForecast: currentForecast, variance: now?.variance ?? 0,
-      budgetLabel: formatCvrMoney(now?.budget ?? 0), previousForecastLabel: formatCvrMoney(previousForecast),
+      costToComplete, uncommittedForecast, changeExposure, costPerFt2,
+      budgetLabel: formatCvrMoney(now?.budget ?? 0), siteStartBudgetLabel: siteStartBudget == null ? '—' : formatCvrMoney(siteStartBudget), previousForecastLabel: formatCvrMoney(previousForecast),
       currentForecastLabel: formatCvrMoney(currentForecast), movementLabel: formatSignedMovement(movement),
+      costToCompleteLabel: formatCvrMoney(costToComplete), uncommittedForecastLabel: formatCvrMoney(uncommittedForecast),
+      changeExposureLabel: formatCvrMoney(changeExposure), costPerFt2Label: costPerFt2 == null ? 'Unavailable' : `£${costPerFt2.toFixed(2)}`,
       finalForecastLabel: formatCvrMoney(currentForecast), varianceLabel: formatCvrMoney(now?.variance ?? 0),
       varianceState: getVarianceState(now?.variance ?? 0), movementState: movement > 0 ? 'adverse' : movement < 0 ? 'favourable' : 'neutral',
       hierarchyChanged, costCodeKeys,
@@ -170,15 +182,25 @@ export function buildCommercialCostMovementSummary({
   });
   const totals = {
     budget: currentTotals.currentBudget,
+    siteStartBudget: siteStartDocument ? Number(siteStartDocument.totalPence || 0) / 100 : null,
     previousForecast: movementReport?.available ? roundMoney(previousRows.reduce((sum, row) => sum + (Number(row.finalForecast) || 0), 0)) : null,
     currentForecast: currentTotals.finalForecast,
     movement: movementReport?.totalMovement ?? null,
     variance: currentTotals.variance,
+    costToComplete: currentTotals.costToComplete,
+    uncommittedForecast: currentTotals.uncommittedForecast,
+    changeExposure: currentTotals.changeExposure,
+    costPerFt2: calculateCostPerFt2(currentTotals.finalForecast, giaSummary),
   };
   Object.assign(totals, {
     budgetLabel: formatCvrMoney(totals.budget), previousForecastLabel: formatCvrMoney(totals.previousForecast),
+    siteStartBudgetLabel: totals.siteStartBudget == null ? '—' : formatCvrMoney(totals.siteStartBudget),
     currentForecastLabel: formatCvrMoney(totals.currentForecast), movementLabel: formatSignedMovement(totals.movement),
     varianceLabel: formatCvrMoney(totals.variance), varianceState: getVarianceState(totals.variance),
+    costToCompleteLabel: formatCvrMoney(totals.costToComplete),
+    uncommittedForecastLabel: formatCvrMoney(totals.uncommittedForecast),
+    changeExposureLabel: formatCvrMoney(totals.changeExposure),
+    costPerFt2Label: totals.costPerFt2 == null ? 'Unavailable' : `£${totals.costPerFt2.toFixed(2)}`,
     movementState: totals.movement > 0 ? 'adverse' : totals.movement < 0 ? 'favourable' : 'neutral',
     reconciles: roundMoney(items.reduce((sum, item) => sum + item.currentForecast, 0)) === roundMoney(totals.currentForecast)
       && (totals.previousForecast == null || roundMoney(items.reduce((sum, item) => sum + (item.previousForecast || 0), 0)) === roundMoney(totals.previousForecast))
@@ -248,10 +270,10 @@ function profitModifier(value) {
   return 'neutral';
 }
 
-function buildExecutiveKpis(summary, previousSummary, commercial, previousCommercial) {
+function buildExecutiveKpis(summary, previousSummary, commercial, previousCommercial, giaSummary) {
   const forecastCost = summary.finalForecast;
   const costToComplete = summary.costToComplete;
-  const forecastVariance = summary.variance;
+  const allInCostPerFt2 = calculateCostPerFt2(summary.finalForecast, giaSummary);
   const revenueHint = commercial.revenueAvailable ? null : commercial.hint;
   const profitHint = commercial.grossProfitAvailable ? null : commercial.profitHint;
   const marginHint = commercial.grossMarginAvailable ? null : commercial.profitHint;
@@ -312,17 +334,13 @@ function buildExecutiveKpis(summary, previousSummary, commercial, previousCommer
       emphasis: 'hero',
     },
     {
-      key: 'forecastVariance',
-      label: 'Forecast Variance',
-      value: formatCvrMoney(forecastVariance),
-      movement: formatPeriodMovement(forecastVariance, previousSummary?.variance),
-      modifier:
-        forecastVariance > 0.005
-          ? 'saving'
-          : forecastVariance < -0.005
-            ? 'overspend'
-            : 'neutral',
+      key: 'allInCostPerFt2',
+      label: 'All-in £/ft²',
+      value: allInCostPerFt2 == null ? 'Unavailable — complete active Plot Master GIA' : `£${allInCostPerFt2.toFixed(2)}`,
+      movement: null,
+      modifier: allInCostPerFt2 == null ? 'pending' : 'neutral',
       emphasis: 'hero',
+      hint: allInCostPerFt2 == null ? 'Complete active Plot Master GIA is required.' : `${giaSummary.activePlotGiaFt2.toLocaleString()} ft² across ${giaSummary.activePlotCount} active plots`,
     },
     {
       key: 'securedRevenue',
@@ -857,6 +875,11 @@ export function buildCvrSummaryModel(development, options = {}) {
 
   const rows = model.rows.map(formatCvrRow);
   const summary = model.summary;
+  const giaSummary = buildActiveDevelopmentGiaSummary({
+    development,
+    historic,
+    snapshot: period?.snapshot || null,
+  });
   const previousLocked = findPreviousLockedCvrPeriod(developmentId, periodKey);
   const previousModel = previousLocked
     ? buildCvrModel(developmentId, { pos, periodKey: previousLocked.periodKey })
@@ -953,7 +976,8 @@ export function buildCvrSummaryModel(development, options = {}) {
       commercialManager: period.submittedBy || period.createdBy || '—',
     },
     workflow: buildWorkflowActions(period, developmentId),
-    kpis: buildExecutiveKpis(summary, previousSummary, commercial, previousCommercial),
+    kpis: buildExecutiveKpis(summary, previousSummary, commercial, previousCommercial, giaSummary),
+    giaSummary,
     financialPosition: buildFinancialPosition(summary, { historic }),
     developmentSummary: buildDevelopmentSummaryPanel(development, historic ? [] : pos, commercial),
     topVariances: buildTopCostVariances(rows),
@@ -966,6 +990,7 @@ export function buildCvrSummaryModel(development, options = {}) {
       previousPeriod: previousLocked,
       currentTotals: model.totals,
       movementReport,
+      giaSummary,
     }),
     recentActivity: buildRecentCommercialActivity(period, rows),
     commentary: getCvrPeriodCommentary(developmentId, periodKey),

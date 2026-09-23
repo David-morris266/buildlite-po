@@ -5,6 +5,10 @@
 
 const { toIso, toNumberOrNull } = require("./cvrPeriodMapper");
 const { emptyCommentary } = require("./cvrPeriodConstants");
+const {
+  calculateRecognisedObligation,
+  calculateUncommittedForecast,
+} = require("./cvrCloseFormulas");
 
 function toNumber(value, fallback = 0) {
   const n = toNumberOrNull(value);
@@ -36,6 +40,13 @@ function snapshotRowToDocument(row) {
     row.display_metadata && typeof row.display_metadata === "object"
       ? row.display_metadata
       : {};
+  const frozenChangeExposure = metadata.changeExposure || null;
+  const currentCost = toNumber(row.current_cost, 0);
+  const recognisedObligation = calculateRecognisedObligation({
+    committed: toNumber(row.committed, 0),
+    certified: toNumber(row.certified, 0),
+    currentCost,
+  });
   return {
     id: row.id,
     snapshotId: row.snapshot_id,
@@ -55,10 +66,18 @@ function snapshotRowToDocument(row) {
     committed: toNumber(row.committed, 0),
     certified: toNumber(row.certified, 0),
     actualCost: toNumber(row.actual_cost, 0),
-    currentCost: toNumber(row.current_cost, 0),
+    currentCost,
+    recognisedObligation,
+    uncommittedForecast: calculateUncommittedForecast(
+      toNumberOrNull(row.current_budget),
+      recognisedObligation
+    ),
     systemForecast: toNumber(row.system_forecast, 0),
     expectedLiability: toNumberOrNull(row.expected_liability),
     expectedLiabilityCaptured: row.expected_liability != null,
+    changeExposure: frozenChangeExposure == null ? null : toNumber(frozenChangeExposure.amount, 0),
+    changeExposureCaptured: frozenChangeExposure != null,
+    changeExposureEvidence: Array.isArray(frozenChangeExposure?.evidence) ? frozenChangeExposure.evidence : [],
     expectedLiabilityProvenance: Array.isArray(row.expected_liability_provenance)
       ? row.expected_liability_provenance
       : null,
@@ -119,6 +138,10 @@ function snapshotHeaderToDocument(header, rows = [], plots = []) {
     const entry = variationByCostCode.get(String(row.costCodeKey || '').replace(/\s+/g, '').toLowerCase());
     return { ...row, vaExposureUplift: (entry?.pence || 0) / 100, variationExposureItems: entry?.items || [] };
   });
+  const sumRows = (field) => mappedRows.reduce(
+    (sum, row) => Math.round((sum + Number(row[field] || 0)) * 100) / 100,
+    0
+  );
   return {
     id: header.id,
     clientId: header.client_id,
@@ -134,6 +157,9 @@ function snapshotHeaderToDocument(header, rows = [], plots = []) {
     actualCost: toNumber(header.actual_cost, 0),
     manualAccrual: toNumber(header.manual_accrual, 0),
     currentCost: toNumber(header.current_cost, 0),
+    recognisedObligation: sumRows("recognisedObligation"),
+    uncommittedForecast: sumRows("uncommittedForecast"),
+    changeExposure: sumRows("changeExposure"),
     systemForecast: toNumber(header.system_forecast, 0),
     expectedLiability: toNumberOrNull(header.expected_liability),
     expectedLiabilityCaptured: header.expected_liability != null,

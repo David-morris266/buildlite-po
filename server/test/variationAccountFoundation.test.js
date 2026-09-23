@@ -53,16 +53,17 @@ test.before(async()=>{
 
 test.after(async()=>{
   if(!isDbConfigured()||!createdClients.length)return;
-  for(const table of ['package_variation_account_forecast_history','package_variation_account_contractor_positions','package_variation_account_lifecycle_audit','package_variation_account_payment_discovered_links','package_variation_account_items','authorization_action_audit'])await pool.query(`ALTER TABLE ${table} DISABLE TRIGGER USER`);
+  for(const table of ['package_variation_account_forecast_history','package_variation_account_contractor_positions','package_variation_account_lifecycle_audit','package_variation_account_change_identity_audit','package_variation_account_payment_discovered_links','package_variation_account_items','authorization_action_audit'])await pool.query(`ALTER TABLE ${table} DISABLE TRIGGER USER`);
   await pool.query('DELETE FROM package_variation_account_payment_discovered_links WHERE client_id=ANY($1::uuid[])',[createdClients]);
   await pool.query('DELETE FROM package_variation_account_forecast_history WHERE client_id=ANY($1::uuid[])',[createdClients]);
   await pool.query('DELETE FROM package_variation_account_contractor_positions WHERE client_id=ANY($1::uuid[])',[createdClients]);
   await pool.query('DELETE FROM package_variation_account_lifecycle_audit WHERE client_id=ANY($1::uuid[])',[createdClients]);
+  await pool.query('DELETE FROM package_variation_account_change_identity_audit WHERE client_id=ANY($1::uuid[])',[createdClients]);
   await pool.query('DELETE FROM package_variation_account_items WHERE client_id=ANY($1::uuid[])',[createdClients]);
   await pool.query('DELETE FROM authorization_action_audit WHERE client_id=ANY($1::uuid[])',[createdClients]);
   await pool.query('DELETE FROM clients WHERE id=ANY($1::uuid[])',[createdClients]);
   await pool.query('DELETE FROM buildlite_users WHERE id=ANY($1::uuid[])',[createdUsers]);
-  for(const table of ['package_variation_account_forecast_history','package_variation_account_contractor_positions','package_variation_account_lifecycle_audit','package_variation_account_payment_discovered_links','package_variation_account_items','authorization_action_audit'])await pool.query(`ALTER TABLE ${table} ENABLE TRIGGER USER`);
+  for(const table of ['package_variation_account_forecast_history','package_variation_account_contractor_positions','package_variation_account_lifecycle_audit','package_variation_account_change_identity_audit','package_variation_account_payment_discovered_links','package_variation_account_items','authorization_action_audit'])await pool.query(`ALTER TABLE ${table} ENABLE TRIGGER USER`);
 });
 
 test('Migration 033 applies with zero invented account/link rows and correct lean role grants',async t=>{
@@ -142,4 +143,54 @@ test('authenticated tenant route creates and reads only its package Variation Ac
   assert.equal(listed.status,200,listed.text);assert.ok(listed.body.items.some(item=>item.id===created.body.item.id));
   const cross=await request(app).get(`/api/variation-account?packageId=${b.pkg.id}`).set('X-BuildLite-Client-Id',a.client.id);
   assert.equal(cross.status,200);assert.deepEqual(cross.body.items,[]);
+});
+
+test('Submitted CE creates one identity-retaining VA forecast without changing CE or contractual authority',async t=>{
+  if(!isDbConfigured())return t.skip();
+  const ceId=`ce-va-${randomUUID()}`;
+  await pool.query(`INSERT INTO commercial_events(id,client_id,development_id,package_id,order_key,event_number,event_type,category,subcategory,responsibility,description,value,financial_treatment,status,cost_code)
+    VALUES($1,$2,$3,$4,$5,$6,'variation','commercial','','commercial','Additional muck-away risk',20000,'contractAmendment','submitted',$7)`,[ceId,a.client.id,a.development,a.pkg.id,a.pkg.order_key,`CE-${randomUUID().slice(0,6)}`,a.pkg.cost_code]);
+  const before=(await pool.query('SELECT status,value,version FROM commercial_events WHERE id=$1',[ceId])).rows[0];
+  const app=createApp({authAdapter:createTestAuthAdapter(qsAuth)});
+  const created=await request(app).post(`/api/variation-account/from-commercial-event/${ceId}`).set('X-BuildLite-Client-Id',a.client.id).send({qsForecast:5000,reason:'QS forecast from Submitted CE'});
+  assert.equal(created.status,201,created.text);
+  assert.equal(created.body.item.description,'Additional muck-away risk');
+  assert.equal(created.body.item.packageId,a.pkg.id);
+  assert.equal(created.body.item.costCode,a.pkg.cost_code);
+  assert.equal(created.body.item.qsForecast,5000);
+  assert.equal(created.body.item.sourceCommercialEventId,ceId);
+  assert.equal(created.body.item.forecastHistory[0].reason,'QS forecast from Submitted CE');
+  assert.equal(created.body.item.forecastHistory[0].actor.membershipId,qsAuth.membershipId);
+  assert.deepEqual((await pool.query('SELECT status,value,version FROM commercial_events WHERE id=$1',[ceId])).rows[0],before);
+  assert.equal(Number((await pool.query('SELECT count(*) n FROM package_variation_account_change_identity_audit WHERE variation_account_item_id=$1',[created.body.item.id])).rows[0].n),1);
+  assert.equal(Number((await pool.query('SELECT count(*) n FROM variation_orders WHERE client_id=$1 AND package_id=$2',[a.client.id,a.pkg.id])).rows[0].n),0);
+  const duplicate=await request(app).post(`/api/variation-account/from-commercial-event/${ceId}`).set('X-BuildLite-Client-Id',a.client.id).send({qsForecast:7500,reason:'Duplicate click'});
+  assert.equal(duplicate.status,409);
+  const concurrentCe=`ce-va-${randomUUID()}`;
+  await pool.query(`INSERT INTO commercial_events(id,client_id,development_id,package_id,order_key,event_number,event_type,category,subcategory,responsibility,description,value,financial_treatment,status,cost_code)
+    VALUES($1,$2,$3,$4,$5,$6,'variation','commercial','','commercial','Concurrent change',1000,'contractAmendment','submitted',$7)`,[concurrentCe,a.client.id,a.development,a.pkg.id,a.pkg.order_key,`CE-${randomUUID().slice(0,6)}`,a.pkg.cost_code]);
+  const concurrent=await Promise.all([
+    repository.createFromSubmittedCommercialEvent(a.client.id,concurrentCe,{qsForecast:500,reason:'First click'},qsAuth),
+    repository.createFromSubmittedCommercialEvent(a.client.id,concurrentCe,{qsForecast:500,reason:'Second click'},qsAuth),
+  ]);
+  assert.equal(concurrent.filter(result=>result.ok).length,1);
+  assert.equal(concurrent.filter(result=>result.status===409).length,1);
+});
+
+test('CE to VA command rejects missing reason, ineligible state, recovery and tenant mismatch',async t=>{
+  if(!isDbConfigured())return t.skip();
+  const app=createApp({authAdapter:createTestAuthAdapter(qsAuth)});
+  const insert=async({status='draft',eventType='variation',treatment='contractAmendment',relationship=null,client=a})=>{
+    const id=`ce-va-${randomUUID()}`;
+    await pool.query(`INSERT INTO commercial_events(id,client_id,development_id,package_id,order_key,event_number,event_type,category,subcategory,responsibility,description,value,financial_treatment,status,cost_code,relationship_type)
+      VALUES($1,$2,$3,$4,$5,$6,$7,'commercial','','commercial','Eligibility test',100,$8,$9,$10,$11)`,[id,client.client.id,client.development,client.pkg.id,client.pkg.order_key,`CE-${randomUUID().slice(0,6)}`,eventType,treatment,status,client.pkg.cost_code,relationship]);
+    return id;
+  };
+  const eligible=await insert({status:'submitted'});
+  assert.equal((await request(app).post(`/api/variation-account/from-commercial-event/${eligible}`).set('X-BuildLite-Client-Id',a.client.id).send({qsForecast:5})).status,400);
+  for(const id of [await insert({status:'draft'}),await insert({status:'approved'}),await insert({status:'submitted',eventType:'budgetTransfer'}),await insert({status:'submitted',treatment:'recoverableDeduction',relationship:'recovery'})]){
+    assert.equal((await request(app).post(`/api/variation-account/from-commercial-event/${id}`).set('X-BuildLite-Client-Id',a.client.id).send({qsForecast:5,reason:'Not eligible'})).status,409);
+  }
+  const foreign=await insert({status:'submitted',client:b});
+  assert.equal((await request(app).post(`/api/variation-account/from-commercial-event/${foreign}`).set('X-BuildLite-Client-Id',a.client.id).send({qsForecast:5,reason:'Cross tenant'})).status,404);
 });

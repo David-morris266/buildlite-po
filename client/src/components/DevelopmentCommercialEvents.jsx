@@ -322,9 +322,9 @@ export default function DevelopmentCommercialEvents({
     onNavigateToLinkedCrossPackage?.(sourceEvent);
   }
 
-  function handleOpenPackageFromDrawer() {
+  function handleOpenPackageFromDrawer(variationAccountContext = null) {
     if (!selectedEvent) return;
-    onOpenPackage?.(selectedEvent);
+    onOpenPackage?.(selectedEvent, variationAccountContext);
   }
 
   if (!model) return null;

@@ -5,10 +5,15 @@ import { isCvrPeriodLocked } from './cvrPeriodStatus';
 import { normaliseHierarchyCostCodeKey, selectCvrCommercialHierarchy } from './cvrCommercialHierarchyPresentation';
 import { attributeCvrMovementRow } from './cvrMovementAttribution';
 
-const COMPONENTS = [
+const LEGACY_COMPONENTS = [
   ['systemForecast', 'System Forecast'],
   ['expectedLiability', 'Expected Liability'],
   ['vaExposureUplift', 'Variation Account exposure'],
+  ['commercialAdjustment', 'Commercial Adjustment'],
+];
+const CHANGE_EXPOSURE_COMPONENTS = [
+  ['systemForecast', 'System Forecast'],
+  ['changeExposure', 'Change Exposure'],
   ['commercialAdjustment', 'Commercial Adjustment'],
 ];
 
@@ -54,18 +59,19 @@ function hierarchyPath(authority, key) {
   return { state: 'allocated', label: nodes.map((node) => node.name).join(' → '), ids: nodes.map((node) => node.id) };
 }
 
-function componentDelta(name, current, previous, comparable) {
+function componentDelta(name, current, previous, comparable, componentSet) {
   const currentPence = pence(current?.[name]);
   const previousPence = pence(previous?.[name]);
-  const captured = name !== 'expectedLiability'
-    || (current?.expectedLiabilityCaptured !== false && previous?.expectedLiabilityCaptured !== false);
+  const captured = name === 'expectedLiability'
+    ? current?.expectedLiabilityCaptured !== false && previous?.expectedLiabilityCaptured !== false
+    : name !== 'changeExposure' || (current?.changeExposureCaptured !== false && previous?.changeExposureCaptured !== false);
   if (!comparable || !captured || currentPence == null || previousPence == null) {
-    return { key: name, label: COMPONENTS.find(([key]) => key === name)?.[1], available: false, previous: null, current: null, movement: null, previousLabel: '—', currentLabel: '—', movementLabel: '—' };
+    return { key: name, label: componentSet.find(([key]) => key === name)?.[1], available: false, previous: null, current: null, movement: null, previousLabel: '—', currentLabel: '—', movementLabel: '—' };
   }
   const previousValue = money(previousPence);
   const currentValue = money(currentPence);
   const movement = money(currentPence - previousPence);
-  return { key: name, label: COMPONENTS.find(([key]) => key === name)?.[1], available: true, previous: previousValue, current: currentValue, movement, previousLabel: formatCvrMoney(previousValue), currentLabel: formatCvrMoney(currentValue), movementLabel: formatSignedMovement(movement) };
+  return { key: name, label: componentSet.find(([key]) => key === name)?.[1], available: true, previous: previousValue, current: currentValue, movement, previousLabel: formatCvrMoney(previousValue), currentLabel: formatCvrMoney(currentValue), movementLabel: formatSignedMovement(movement) };
 }
 
 export function formatSignedMovement(value) {
@@ -94,8 +100,10 @@ export function buildCvrPeriodComparison({ currentModel, previousModel, currentP
     const currentForecastPence = current ? pence(current.finalForecast) : comparable ? 0 : null;
     const movementPence = comparable && previousForecastPence != null && currentForecastPence != null
       ? currentForecastPence - previousForecastPence : null;
-    const components = COMPONENTS.map(([name]) => componentDelta(
-      name, current || {}, previous || {}, comparable && !newCode && !previousOnly
+    const componentSet = current?.changeExposure != null && previous?.changeExposure != null
+      ? CHANGE_EXPOSURE_COMPONENTS : LEGACY_COMPONENTS;
+    const components = componentSet.map(([name]) => componentDelta(
+      name, current || {}, previous || {}, comparable && !newCode && !previousOnly, componentSet
     ));
     let explainedPence = null;
     if (components.every((component) => component.available)) {

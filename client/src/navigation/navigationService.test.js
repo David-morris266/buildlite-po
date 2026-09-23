@@ -146,6 +146,16 @@ describe('navigationBuilders', () => {
     ]);
   });
 
+  it('builds period breadcrumbs for CVR review subviews', () => {
+    for (const [cvrView, label] of [['movements', 'Movements'], ['exceptions', 'Exceptions'], ['commentary', 'Commentary']]) {
+      const nav = buildDevelopmentWorkspaceNavigation({
+        developmentName: 'Test Site A', activeTab: 'cvr', cvrView, periodKey: 'P04',
+        onBackToList: () => {}, onSelectTab: () => {}, onBackToCvrRegister: () => {}, onBackToCvrSummary: () => {},
+      });
+      expect(nav.breadcrumbs.map((item) => item.label).slice(-2)).toEqual(['P04', label]);
+    }
+  });
+
   it('builds development workspace breadcrumbs for Revenue tab', () => {
     const nav = buildDevelopmentWorkspaceNavigation({
       developmentName: 'Oakwood Meadows',

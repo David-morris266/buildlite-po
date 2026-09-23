@@ -6,6 +6,8 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 
 | File | Purpose |
 |------|---------|
+| `057_change_exposure_identity.sql` | Optional explicit CE identity on a VA item plus append-only authenticated identity audit. Existing rows remain NULL; no inference or backfill. |
+| `058_site_start_budget_milestone.sql` | Explicit immutable Site Start Budget milestone referencing the Opening Budget event, with authenticated provenance and no inferred/backfilled milestone. |
 | `001_baseline.sql` | Phase 0 additive baseline (frozen) |
 | `002_tenant_keys.sql` | Tenant-scoped unique indexes + `jobs.client_id` — **run only after collision checks** (frozen) |
 | `003_reconcile_production.sql` | BL-006: align schema with Render production (additive only) |

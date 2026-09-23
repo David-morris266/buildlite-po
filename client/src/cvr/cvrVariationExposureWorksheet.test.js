@@ -15,11 +15,11 @@ vi.stubGlobal('localStorage', {
 describe('CVR Variation exposure worksheet arithmetic', () => {
   it('keeps Submitted CE, VA uplift and adjustment separate in Final Forecast', () => {
     const row = enrichCvrForecastRow({ committed: 12000, actualCost: 0, currentBudget: 20000, expectedLiability: 500, vaExposureUplift: 5000, commercialAdjustment: 250 });
-    expect(row.systemForecast).toBe(12000);
+    expect(row.systemForecast).toBe(20000);
     expect(row.expectedLiability).toBe(500);
     expect(row.vaExposureUplift).toBe(5000);
     expect(row.commercialAdjustment).toBe(250);
-    expect(row.finalForecast).toBe(17750);
+    expect(row.finalForecast).toBe(25750);
     expect(buildCvrTotals([row]).vaExposureUplift).toBe(5000);
   });
 

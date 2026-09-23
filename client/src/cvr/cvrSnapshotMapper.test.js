@@ -155,6 +155,20 @@ describe('CVR snapshot mapper (BL-031E.4)', () => {
     expect(JSON.stringify(mapped)).not.toMatch(/cost_code_key|manual_accrual|adjustment_reason/);
   });
 
+  it('derives frozen obligation and uncommitted forecast from immutable row facts', () => {
+    const mapped = normalizeCvrSnapshotRow(
+      buildServerCvrSnapshotRowFixture({
+        currentBudget: 80000,
+        committed: 50000,
+        certified: 55000,
+        currentCost: 60000,
+      })
+    );
+
+    expect(mapped.recognisedObligation).toBe(60000);
+    expect(mapped.uncommittedForecast).toBe(20000);
+  });
+
   it('preserves frozen Detailed Selling Costs metadata on snapshot rows', () => {
     const sellingCostsAdoption = {
       mode: 'detailed',

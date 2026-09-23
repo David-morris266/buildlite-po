@@ -16,7 +16,7 @@ describe('calculateSystemForecast — Doc 40 hierarchy', () => {
         actualCost: 100000,
         currentBudget: 250000,
       })
-    ).toBe(240000);
+    ).toBe(250000);
   });
 
   it('Rule 2: uses current budget before actual cost when no commitment', () => {
@@ -73,10 +73,10 @@ describe('BL-012D Doc 40 scenarios', () => {
     });
     const finalForecast = calculateFinalForecast(systemForecast, 0);
 
-    expect(systemForecast).toBe(32000);
-    expect(finalForecast).toBe(32000);
-    expect(calculateCostToComplete(finalForecast, 15000)).toBe(17000);
-    expect(calculateVariance(35000, finalForecast)).toBe(3000);
+    expect(systemForecast).toBe(35000);
+    expect(finalForecast).toBe(35000);
+    expect(calculateCostToComplete(finalForecast, 15000)).toBe(20000);
+    expect(calculateVariance(35000, finalForecast)).toBe(0);
   });
 
   it('Scenario C: actual cost only, no budget', () => {
@@ -161,11 +161,11 @@ describe('enrichCvrForecastRow', () => {
       commercialReason: 'Expected Brickwork Variation',
     });
 
-    expect(row.systemForecast).toBe(240000);
-    expect(row.finalForecast).toBe(255000);
+    expect(row.systemForecast).toBe(250000);
+    expect(row.finalForecast).toBe(265000);
     expect(row.commercialAdjustment).toBe(15000);
-    expect(row.costToComplete).toBe(155000);
-    expect(row.variance).toBe(-5000);
+    expect(row.costToComplete).toBe(165000);
+    expect(row.variance).toBe(-15000);
     expect(row.adjustmentState).toBe('positive');
   });
 
@@ -178,9 +178,9 @@ describe('enrichCvrForecastRow', () => {
       commercialReason: '',
     });
 
-    expect(row.systemForecast).toBe(50000);
-    expect(row.finalForecast).toBe(50000);
-    expect(row.costToComplete).toBe(-30000);
+    expect(row.systemForecast).toBe(80000);
+    expect(row.finalForecast).toBe(80000);
+    expect(row.costToComplete).toBe(0);
   });
 
   it('zero stored budget does not collapse commitment-driven forecast', () => {

@@ -68,6 +68,12 @@ function moneyNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function changeExposureNumber(value) {
+  return value.changeExposure == null
+    ? moneyNumber(value.expectedLiability) + moneyNumber(value.vaExposureUplift)
+    : moneyNumber(value.changeExposure);
+}
+
 function moneyOrNull(value) {
   if (value == null || value === "") return null;
   const n = Number(value);
@@ -218,6 +224,10 @@ async function insertSnapshotRow(dbClient, { clientId, snapshotId, row }) {
   if (Array.isArray(row.adjustmentHistory) && metadata.adjustmentHistory == null) {
     metadata.adjustmentHistory = row.adjustmentHistory;
   }
+  metadata.changeExposure = {
+    amount: moneyNumber(row.changeExposure),
+    evidence: Array.isArray(row.changeExposureEvidence) ? row.changeExposureEvidence : [],
+  };
 
   const { rows } = await runQuery(
     dbClient,
@@ -337,8 +347,7 @@ function verifyPersistedSnapshot(header, insertedRows, insertedPlots, snapshot) 
   assertSameMoney(
     snapshot.finalForecast,
     moneyNumber(snapshot.systemForecast) +
-      moneyNumber(snapshot.expectedLiability) +
-      moneyNumber(snapshot.vaExposureUplift) +
+      changeExposureNumber(snapshot) +
       moneyNumber(snapshot.commercialAdjustment),
     "header.Final = System + Expected + VA Exposure + Adjustment"
   );
@@ -382,8 +391,7 @@ function verifyPersistedSnapshot(header, insertedRows, insertedPlots, snapshot) 
     assertSameMoney(
       candidate.finalForecast,
       moneyNumber(candidate.systemForecast) +
-        moneyNumber(candidate.expectedLiability) +
-        moneyNumber(candidate.vaExposureUplift) +
+        changeExposureNumber(candidate) +
         moneyNumber(candidate.commercialAdjustment),
       `${persisted.cost_code_key}.Final = System + Expected + VA Exposure + Adjustment`
     );

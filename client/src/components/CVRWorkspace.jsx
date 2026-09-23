@@ -59,7 +59,9 @@ import {
   getLedgerReadiness,
 } from '../ledger/ledgerServerCache';
 import { formatCvrSubmissionBlockers } from '../cvr/cvrSubmissionBlockerPresentation';
+import CvrPeriodSubviewNav from './CvrPeriodSubviewNav';
 import { buildCvrPeriodComparisonForPeriod } from '../cvr/cvrPeriodMovement';
+import { buildCvrCommercialHierarchyPresentation } from '../cvr/cvrCommercialHierarchyPresentation';
 
 function StatusBadge({ status }) {
   return (
@@ -160,10 +162,13 @@ export default function CVRWorkspace({
   onBackToSummary,
   onBackToRegister,
   onPeriodChanged,
+  activeSubview = 'worksheet',
+  onSelectSubview,
   onOpenVariationAccount,
   onOpenAdjustmentWorkflow,
   initialCostCodeKey = null,
   hierarchyFilter = null,
+  hierarchyFilterKey = null,
   onClearHierarchyFilter,
   certificatesLoading = false,
   certificatesReady = true,
@@ -297,15 +302,22 @@ export default function CVRWorkspace({
     };
   }, [workspace?.rows?.length]);
 
+  const resolvedHierarchyFilter = useMemo(() => {
+    if (hierarchyFilter) return hierarchyFilter;
+    if (!hierarchyFilterKey || !workspace?.rows) return null;
+    return buildCvrCommercialHierarchyPresentation(workspace.rows, period).items
+      .find((item) => item.key === hierarchyFilterKey)?.filter || null;
+  }, [hierarchyFilter, hierarchyFilterKey, workspace?.rows, period]);
+
   const displayedRows = useMemo(() => {
     if (!workspace?.rows) return [];
-    return filterCvrRowsByHierarchyDescriptor(workspace.rows, hierarchyFilter);
-  }, [workspace?.rows, hierarchyFilter]);
+    return filterCvrRowsByHierarchyDescriptor(workspace.rows, resolvedHierarchyFilter);
+  }, [workspace?.rows, resolvedHierarchyFilter]);
 
   const displayedTotals = useMemo(() => {
-    const rows = hierarchyFilter ? displayedRows : workspace?.rows || [];
+    const rows = resolvedHierarchyFilter ? displayedRows : workspace?.rows || [];
     return formatCvrTotals(buildCvrTotals(rows));
-  }, [workspace?.rows, displayedRows, hierarchyFilter]);
+  }, [workspace?.rows, displayedRows, resolvedHierarchyFilter]);
 
   const memberKeys = useMemo(() => {
     const keys = new Set();
@@ -729,6 +741,8 @@ export default function CVRWorkspace({
         </dl>
       </ApplicationPageHeader>
 
+      <CvrPeriodSubviewNav activeSubview={activeSubview} onSelect={onSelectSubview} />
+
       {addFeedback ? (
         <p className="po-import-step__ok" role="status">
           {addFeedback}
@@ -794,10 +808,10 @@ export default function CVRWorkspace({
         </section>
       ) : null}
 
-      {hierarchyFilter ? (
+      {resolvedHierarchyFilter ? (
         <div className="cvr-workspace__family-filter" role="status">
           <span>
-            Showing hierarchy selection: <strong>{hierarchyFilter.label}</strong>
+            Showing hierarchy selection: <strong>{resolvedHierarchyFilter.label}</strong>
           </span>
           <button
             type="button"
@@ -816,7 +830,7 @@ export default function CVRWorkspace({
           <div className="dev-cvr__matrix-pane">
             <CVRTable
               rows={displayedRows}
-              totals={hierarchyFilter ? displayedTotals : workspace.totals}
+              totals={resolvedHierarchyFilter ? displayedTotals : workspace.totals}
               comparison={periodComparison}
               onRowSelect={handleSelectRow}
               selectedRow={selectedRow}

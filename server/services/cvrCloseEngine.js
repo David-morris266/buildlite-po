@@ -21,6 +21,7 @@ const {
   normaliseCostCodeKey,
   roundMoney,
 } = require("./cvrCloseFormulas");
+const { buildChangeExposureByCostCode } = require("./cvrChangeExposure");
 const {
   getPoCommittedNet,
   getPoCostCode,
@@ -290,9 +291,13 @@ function snapshotRowFromEnriched(row) {
     certified: moneyOrZero(row.certified),
     actualCost: moneyOrZero(row.actualCost),
     currentCost: moneyOrZero(row.currentCost),
+    recognisedObligation: moneyOrZero(row.recognisedObligation),
+    uncommittedForecast: moneyOrZero(row.uncommittedForecast),
     systemForecast: moneyOrZero(row.systemForecast),
     expectedLiability: moneyOrZero(row.expectedLiability),
     vaExposureUplift: moneyOrZero(row.vaExposureUplift),
+    changeExposure: moneyOrZero(row.changeExposure),
+    changeExposureEvidence: Array.isArray(row.changeExposureEvidence) ? row.changeExposureEvidence : [],
     variationExposureItems: Array.isArray(row.variationExposureItems) ? row.variationExposureItems : [],
     expectedLiabilityProvenance: Array.isArray(row.expectedLiabilityProvenance)
       ? row.expectedLiabilityProvenance
@@ -357,6 +362,10 @@ async function buildCvrCloseCandidate({
 
   const actuals = buildActualsByCostCode(transactions);
   const expectedLiabilities = buildExpectedLiabilityByCostCode(events);
+  const changeExposure = buildChangeExposureByCostCode(events, variationExposureDocument?.items || []);
+  if (changeExposure.blockers.length) {
+    return notReadyResult({ clientId, developmentId, periodId, sources, blockers: changeExposure.blockers });
+  }
   const hierarchyByCostCode = new Map((commercialHierarchyDocument?.costCodes || []).map((entry) => [normaliseCostCodeKey(entry.costCodeKey), entry]));
   const variationExposureByCostCode = new Map();
   const authorityBudgetByCostCode = new Map((developmentBudgetDocument?.positions || []).map((p) => [normaliseCostCodeKey(p.costCode), p]));
@@ -383,6 +392,7 @@ async function buildCvrCloseCandidate({
     inputs
   );
   for (const key of variationExposureByCostCode.keys()) allKeys.add(key);
+  for (const key of changeExposure.totals.keys()) allKeys.add(key);
   for (const key of authorityBudgetByCostCode.keys()) allKeys.add(key);
   const rows = [...allKeys].map((key) => {
     const manual = manualByKey.get(key);
@@ -439,6 +449,8 @@ async function buildCvrCloseCandidate({
       actualCost: roundMoney(actualCost) ?? 0,
       expectedLiability: roundMoney(expectedLiabilities.totals.get(key)) ?? 0,
       vaExposureUplift: (variationExposureByCostCode.get(key)?.pence || 0) / 100,
+      changeExposure: roundMoney(changeExposure.totals.get(key)) ?? 0,
+      changeExposureEvidence: changeExposure.evidence.get(key) || [],
       variationExposureItems: variationExposureByCostCode.get(key)?.items || [],
       expectedLiabilityProvenance: expectedLiabilities.provenance.get(key) || [],
       manualAccrual: manual?.manualAccrual ?? 0,

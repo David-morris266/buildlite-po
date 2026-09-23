@@ -8,9 +8,9 @@ const { acknowledgementRequirements, blockingExceptions } = require('../services
 test('VA uplift is a separate exact-pence Final Forecast contribution', () => {
   assert.equal(calculateFinalForecast(12000, 250, 500, 5000), 17750);
   const row = enrichCvrForecastRow({ committed: 12000, currentBudget: 20000, actualCost: 0, manualAccrual: 0, expectedLiability: 500, vaExposureUplift: 5000, commercialAdjustment: 250, certified: 0 });
-  assert.equal(row.systemForecast, 12000);
+  assert.equal(row.systemForecast, 20000);
   assert.equal(row.vaExposureUplift, 5000);
-  assert.equal(row.finalForecast, 17750);
+  assert.equal(row.finalForecast, 25750);
   assert.equal(buildCvrTotals([row]).vaExposureUplift, 5000);
 });
 

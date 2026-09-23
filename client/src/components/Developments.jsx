@@ -13,6 +13,8 @@ export default function Developments({
   initialDevelopmentId = null,
   initialWorkspaceTab = null,
   initialCvrPeriodKey = null,
+  initialCvrSubview = null,
+  initialCvrHierarchyFilterKey = null,
   initialPackageKey = null,
   initialPackageTab = null,
   initialPlotMasterView = null,
@@ -27,6 +29,8 @@ export default function Developments({
   const [activeDevelopmentId, setActiveDevelopmentId] = useState(null);
   const [workspaceTab, setWorkspaceTab] = useState(null);
   const [cvrPeriodKey, setCvrPeriodKey] = useState(null);
+  const [cvrSubview, setCvrSubview] = useState(null);
+  const [cvrHierarchyFilterKey, setCvrHierarchyFilterKey] = useState(null);
   const [packageKey, setPackageKey] = useState(null);
   const [packageTab, setPackageTab] = useState(null);
   const [refreshToken, setRefreshToken] = useState(0);
@@ -57,7 +61,7 @@ export default function Developments({
 
   useEffect(() => {
     const routeKey = JSON.stringify([
-      initialDevelopmentId, initialWorkspaceTab, initialCvrPeriodKey,
+      initialDevelopmentId, initialWorkspaceTab, initialCvrPeriodKey, initialCvrSubview, initialCvrHierarchyFilterKey,
       initialPackageKey, initialPackageTab,
     ]);
     if (hydratedRouteRef.current === routeKey) return;
@@ -66,6 +70,8 @@ export default function Developments({
       setActiveDevelopmentId(null);
       setWorkspaceTab(null);
       setCvrPeriodKey(null);
+      setCvrSubview(null);
+      setCvrHierarchyFilterKey(null);
       setPackageKey(null);
       setPackageTab(null);
       setView('list');
@@ -74,12 +80,14 @@ export default function Developments({
     setActiveDevelopmentId(initialDevelopmentId);
     setWorkspaceTab(initialWorkspaceTab);
     setCvrPeriodKey(initialCvrPeriodKey);
+    setCvrSubview(initialCvrSubview);
+    setCvrHierarchyFilterKey(initialCvrHierarchyFilterKey);
     setPackageKey(initialPackageKey);
     setPackageTab(initialPackageTab);
     setView('workspace');
     onInitialDevelopmentHandled?.();
   }, [
-    initialDevelopmentId, initialWorkspaceTab, initialCvrPeriodKey,
+    initialDevelopmentId, initialWorkspaceTab, initialCvrPeriodKey, initialCvrSubview, initialCvrHierarchyFilterKey,
     initialPackageKey, initialPackageTab, onInitialDevelopmentHandled,
   ]);
 
@@ -225,6 +233,8 @@ export default function Developments({
         navigationOrigin={navigationOrigin}
         initialActiveTab={workspaceTab}
         initialCvrPeriodKey={cvrPeriodKey}
+        initialCvrSubview={cvrSubview}
+        initialCvrHierarchyFilterKey={cvrHierarchyFilterKey}
         initialPackageKey={packageKey}
         initialPackageTab={packageTab}
         initialPlotMasterView={initialPlotMasterView}

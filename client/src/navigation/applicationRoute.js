@@ -28,6 +28,8 @@ const PACKAGE_TABS = new Set([
   'overview', 'matrix', 'certificates', 'variations', 'variation-account', 'history',
 ]);
 
+const CVR_SUBVIEWS = new Set(['summary', 'worksheet', 'movements', 'exceptions', 'commentary']);
+
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,199}$/;
 
 function safeValue(value) {
@@ -50,6 +52,8 @@ export function homeApplicationRoute() {
     developmentId: null,
     workspaceTab: null,
     periodKey: null,
+    cvrSubview: null,
+    cvrHierarchyFilterKey: null,
     packageKey: null,
     packageTab: null,
     administrationSection: null,
@@ -77,7 +81,15 @@ export function parseApplicationRoute(locationLike = globalThis.location) {
   const workspaceTab = params.get('workspace');
   route.workspaceTab = DEVELOPMENT_TABS.has(workspaceTab) ? workspaceTab : 'overview';
   if (route.workspaceTab === 'plot-master') route.plotMasterView = params.get('plotView') === 'tenure-review' ? 'tenure-review' : null;
-  if (route.workspaceTab === 'cvr') route.periodKey = safeValue(params.get('period'));
+  if (route.workspaceTab === 'cvr') {
+    route.periodKey = safeValue(params.get('period'));
+    route.cvrSubview = route.periodKey && CVR_SUBVIEWS.has(params.get('cvrView'))
+      ? params.get('cvrView')
+      : route.periodKey ? 'summary' : null;
+    route.cvrHierarchyFilterKey = route.cvrSubview === 'worksheet'
+      ? safeValue(params.get('cvrFilter'))
+      : null;
+  }
   if (route.workspaceTab === 'packages') {
     route.packageKey = safePackageKey(params.get('package'));
     route.packageTab = PACKAGE_TABS.has(params.get('packageTab'))
@@ -109,6 +121,12 @@ export function serializeApplicationRoute(route, locationLike = globalThis.locat
     if (workspaceTab === 'plot-master' && route?.plotMasterView === 'tenure-review') params.set('plotView', 'tenure-review');
     if (workspaceTab === 'cvr' && safeValue(route?.periodKey)) {
       params.set('period', route.periodKey);
+      if (CVR_SUBVIEWS.has(route?.cvrSubview) && route.cvrSubview !== 'summary') {
+        params.set('cvrView', route.cvrSubview);
+      }
+      if (route?.cvrSubview === 'worksheet' && safeValue(route?.cvrHierarchyFilterKey)) {
+        params.set('cvrFilter', route.cvrHierarchyFilterKey);
+      }
     }
     if (workspaceTab === 'packages' && safePackageKey(route?.packageKey)) {
       params.set('package', route.packageKey);

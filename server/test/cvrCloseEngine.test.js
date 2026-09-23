@@ -284,7 +284,7 @@ async function materialise(developmentId) {
 async function createPeriod(developmentId, body = {}) {
   const res = await request(app)
     .post(`/api/developments/${encodeURIComponent(developmentId)}/cvr/periods`)
-    .send(body);
+    .send({ reportingMonth: "2026-01", ...body });
   assert.equal(res.status, 201);
   return res.body;
 }
