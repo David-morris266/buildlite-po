@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import SectionHeading from './layout/SectionHeading';
 import CvrReportingMonthDialog from './CvrReportingMonthDialog';
 import {
@@ -38,10 +38,14 @@ export default function CVRRegister({
   commercialReadiness = null,
   commercialReadinessLoading = false,
   commercialReadinessError = '',
+  createRequestToken = 0,
 }) {
   const [localRefresh, setLocalRefresh] = useState(0);
   const [reportingMonthPrompt, setReportingMonthPrompt] = useState(null);
   const [reportingMonthBusy, setReportingMonthBusy] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const handledCreateRequest = useRef(0);
+  const createConfirmInFlight = useRef(false);
 
   useEffect(() => {
     if (!isCvrServerAuthorityEnabled()) return undefined;
@@ -92,9 +96,10 @@ export default function CVRRegister({
 
   async function completeCreate(result) {
     if (!result.ok) {
-      window.alert(result.errors?.[0] || 'Could not create CVR period.');
+      setCreateError(result.errors?.[0] || 'Could not create CVR period.');
       return false;
     }
+    setCreateError('');
     setReportingMonthPrompt(null);
     refresh();
     onOpenPeriod?.(result.periodKey);
@@ -102,9 +107,17 @@ export default function CVRRegister({
   }
 
   async function handleCreatePeriod() {
-    const firstPeriod = register.rows.length === 0;
-    if (!register.ready || (firstPeriod && (!commercialReadiness || !commercialReadiness.canCreateFirstCvr))) return;
+    const isFirstPeriod = register.rows.length === 0;
+    if (!register.ready) {
+      setCreateError('CVR data is still loading. Try again when the register is ready.');
+      return;
+    }
+    if (isFirstPeriod && (!commercialReadiness || !commercialReadiness.canCreateFirstCvr)) {
+      setCreateError('This first CVR cannot be started yet. Review the required items on Development Overview.');
+      return;
+    }
 
+    setCreateError('');
     const action = resolveCreateNextReportingMonthAction(development.id);
     if (action.kind === 'recover') {
       const result = await Promise.resolve(createOrOpenDraftPeriod(development.id));
@@ -112,13 +125,23 @@ export default function CVRRegister({
       return;
     }
     if (action.kind === 'blocked') {
-      window.alert(action.reason || 'Could not create CVR period.');
+      setCreateError(action.reason || 'Could not create CVR period.');
       return;
     }
     setReportingMonthPrompt(action);
   }
 
+  useEffect(() => {
+    if (!createRequestToken || handledCreateRequest.current === createRequestToken) return;
+    if (!register.ready || commercialReadinessLoading) return;
+    handledCreateRequest.current = createRequestToken;
+    void handleCreatePeriod();
+    // The token is the event boundary; the ref prevents re-processing it as render inputs settle.
+  }, [createRequestToken, register.ready, commercialReadinessLoading, commercialReadiness]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handleConfirmReportingMonth(reportingMonth) {
+    if (createConfirmInFlight.current) return;
+    createConfirmInFlight.current = true;
     setReportingMonthBusy(true);
     try {
       const result = await Promise.resolve(
@@ -126,6 +149,7 @@ export default function CVRRegister({
       );
       await completeCreate(result);
     } finally {
+      createConfirmInFlight.current = false;
       setReportingMonthBusy(false);
     }
   }
@@ -155,7 +179,7 @@ export default function CVRRegister({
     );
 
     return () => onPrimaryActionChange(null);
-  }, [onPrimaryActionChange, primaryActionLabel, register.draftPeriodKey, register.ready, firstPeriodCreationBlocked]);
+  }, [onPrimaryActionChange, primaryActionLabel, register.draftPeriodKey, register.ready, firstPeriodCreationBlocked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -167,6 +191,7 @@ export default function CVRRegister({
       />
 
       {firstPeriod && commercialReadinessError ? <div className="po-list-feedback po-list-feedback--error" role="alert">Commercial readiness could not be loaded. First-period creation is unavailable until authoritative sources can be checked.</div> : null}
+      {createError ? <div className="po-list-feedback po-list-feedback--error" role="alert">{createError}</div> : null}
       {firstPeriod && !commercialReadinessLoading && commercialReadiness && !commercialReadiness.canCreateFirstCvr ? <div className="po-list-feedback po-list-feedback--error" role="alert">This first CVR cannot be started yet. Review the required items on Development Overview.</div> : null}
       {firstPeriod && commercialReadiness?.canCreateFirstCvr && commercialReadiness.overallState !== 'ready' ? <div className="po-list-feedback po-list-feedback--warning" role="status">You can start this Draft CVR. Commercial readiness items must still be resolved at the appropriate Submit or Lock stage.</div> : null}
 

@@ -259,6 +259,86 @@ describe('DevelopmentPrelimsAdoptionReview (x.4C.2)', () => {
     );
   });
 
+  it('selects all first-CVR fact-only candidates and sends explicit zero-version authority', async () => {
+    const willowCandidates = [
+      ['2000', 'Site Management', 110000, 78000],
+      ['2010', 'Assistant Site Manager', 55000, 39000],
+      ['2020', 'Site Welfare', 36000, 24500],
+      ['2030', 'Temporary Services', 28000, 13800],
+    ].map(([costCodeKey, costCodeDescription, currentFinalForecast, proposedFinalForecast]) =>
+      candidate5231({
+        costCodeKey,
+        costCodeDescription,
+        resolvedPrelimsTotal: proposedFinalForecast,
+        systemForecast: currentFinalForecast,
+        currentAdjustment: 0,
+        currentFinalForecast,
+        proposedAdjustment: proposedFinalForecast - currentFinalForecast,
+        proposedFinalForecast,
+        deltaFinal: proposedFinalForecast - currentFinalForecast,
+        unresolvedCount: 0,
+        unresolvedLines: [],
+        proposalFingerprint: `fp-${costCodeKey}`,
+        inputId: null,
+        inputVersion: null,
+        flags: { unresolvedExposure: false, cannotAdopt: false, noCvrRow: false },
+      })
+    );
+    previewDevelopmentPrelimsAdoption.mockResolvedValueOnce(
+      previewDoc({
+        candidates: willowCandidates,
+        missingFromCvr: [],
+        summary: {
+          costCodeCount: 27,
+          prelimsCostCodeCount: 4,
+          adoptableCostCodeCount: 4,
+          reviewableCostCodeCount: 4,
+          missingFromCvrCount: 0,
+          resolvedPrelimsTotal: 155300,
+          currentFinalForecastTotal: 229000,
+          proposedFinalForecastTotal: 155300,
+          deltaFinalTotal: -73700,
+        },
+      })
+    );
+
+    await act(async () => {
+      root.render(<DevelopmentPrelimsAdoptionReview developmentId="willow" onBack={() => {}} />);
+    });
+    await flush();
+
+    expect(container.querySelector('[data-testid="selected-count"]')?.textContent).toMatch(/0 selected/);
+    expect(container.querySelector('[data-testid="adopt-selected"]')?.disabled).toBe(true);
+
+    await act(async () => {
+      container.querySelector('[data-testid="select-all-eligible"]').click();
+    });
+    expect(container.querySelector('[data-testid="selected-count"]')?.textContent).toMatch(/4 selected/);
+    willowCandidates.forEach(({ costCodeKey }) => {
+      expect(container.querySelector(`[data-testid="select-cost-code-${costCodeKey}"]`)?.checked).toBe(true);
+    });
+    expect(adoptDevelopmentPrelimsIntoCvr).not.toHaveBeenCalled();
+
+    await act(async () => {
+      container.querySelector('[data-testid="select-cost-code-2030"]').click();
+      container.querySelector('[data-testid="adopt-selected"]').click();
+    });
+    expect(container.querySelector('[data-testid="selected-count"]')?.textContent).toMatch(/3 selected/);
+
+    await act(async () => {
+      container.querySelector('[data-testid="adoption-confirm"]').click();
+    });
+    await flush();
+
+    const payload = adoptDevelopmentPrelimsIntoCvr.mock.calls[0][2];
+    expect(payload.selections.map((selection) => selection.costCodeKey)).toEqual([
+      '2000',
+      '2010',
+      '2020',
+    ]);
+    expect(payload.selections.every((selection) => selection.expectedInputVersion === 0)).toBe(true);
+  });
+
   it('posts intent-only payload, shows success, clears selection, and refreshes preview', async () => {
     const refreshed = previewDoc({
       candidates: [

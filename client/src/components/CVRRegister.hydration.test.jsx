@@ -17,13 +17,17 @@ vi.mock('../api/cvrPeriods', () => import('../test/mockCvrPeriodApi'));
 import {
   buildServerCvrInputFixture,
   buildServerCvrPeriodFixture,
+  getCvrMutationCallCounts,
   resetCvrPeriodApiStore,
   seedMockCvrInputs,
   seedMockCvrPeriod,
+  setCvrMutationReject,
   setCvrPeriodListDelay,
 } from '../test/mockCvrPeriodApi';
 import { __resetCvrPeriodServerCacheForTests } from '../cvr/cvrPeriodServerCache';
 import CVRRegister from './CVRRegister';
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const DEV = {
   id: 'dev-cvr-register',
@@ -120,5 +124,93 @@ describe('CVRRegister hydration (BL-031B)', () => {
 
     expect(container.textContent).toContain('Loading CVR data…');
     expect(container.textContent).not.toMatch(/Create New CVR Period/);
+  });
+
+  it('turns an Overview start request into the real first-period reporting-month workflow without creating early', async () => {
+    await act(async () => {
+      root.render(<CVRRegister
+        development={DEV}
+        commercialReadiness={{ canCreateFirstCvr: true, overallState: 'needs_attention' }}
+        createRequestToken={1}
+      />);
+    });
+    await flush();
+
+    expect(document.body.textContent).toContain('Select the closed commercial month this CVR reports.');
+    expect(document.body.textContent).toContain('Create P01');
+    expect(getCvrMutationCallCounts().create).toBe(0);
+
+    const cancel = [...document.body.querySelectorAll('button')].find(button => button.textContent === 'Cancel');
+    act(() => cancel.click());
+    expect(document.body.textContent).not.toContain('Select the closed commercial month this CVR reports.');
+
+    await act(async () => {
+      root.render(<CVRRegister
+        development={DEV}
+        commercialReadiness={{ canCreateFirstCvr: true, overallState: 'needs_attention' }}
+        createRequestToken={2}
+      />);
+    });
+    await flush();
+    expect(document.body.textContent).toContain('Create P01');
+    expect(getCvrMutationCallCounts().create).toBe(0);
+  });
+
+  it('creates exactly one first period from the requested workflow and opens the returned period', async () => {
+    const onOpenPeriod = vi.fn();
+    await act(async () => {
+      root.render(<CVRRegister
+        development={DEV}
+        commercialReadiness={{ canCreateFirstCvr: true, overallState: 'ready' }}
+        createRequestToken={1}
+        onOpenPeriod={onOpenPeriod}
+      />);
+    });
+    await flush();
+
+    const input = document.body.querySelector('input[type="month"]');
+    act(() => {
+      input.value = '2026-08';
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const create = [...document.body.querySelectorAll('button')].find(button => button.textContent === 'Create P01');
+    await act(async () => {
+      create.click();
+      create.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await flush();
+
+    expect(getCvrMutationCallCounts().create).toBe(1);
+    expect(onOpenPeriod).toHaveBeenCalledTimes(1);
+    expect(onOpenPeriod).toHaveBeenCalledWith('P01');
+  });
+
+  it('renders a visible error when first-period creation fails', async () => {
+    setCvrMutationReject();
+    await act(async () => {
+      root.render(<CVRRegister
+        development={DEV}
+        commercialReadiness={{ canCreateFirstCvr: true, overallState: 'ready' }}
+        createRequestToken={1}
+      />);
+    });
+    await flush();
+
+    const input = document.body.querySelector('input[type="month"]');
+    act(() => {
+      input.value = '2026-08';
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => {
+      [...document.body.querySelectorAll('button')].find(button => button.textContent === 'Create P01').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await flush();
+
+    expect(getCvrMutationCallCounts().create).toBe(1);
+    expect(container.querySelector('[role="alert"]')?.textContent).toMatch(/version conflict/i);
   });
 });

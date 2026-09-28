@@ -36,6 +36,7 @@ const {
 const {
   buildPrelimsAdoptionReviewPreview,
 } = require("./prelimsAdoptionPreviewService");
+const { addDraftCvrCostCodeMember } = require("./cvrMembershipService");
 
 const MONEY_TOLERANCE = 0.005;
 
@@ -118,8 +119,8 @@ function parseSelections(body = {}) {
     seen.add(keyNorm);
 
     const expectedInputVersion = Number(item.expectedInputVersion ?? item.inputVersion);
-    if (!Number.isInteger(expectedInputVersion) || expectedInputVersion < 1) {
-      return fail(400, PRELIMS_ADOPTION_ERROR_CODES.CVR_INPUT_CONFLICT, "expectedInputVersion must be a positive integer.", {
+    if (!Number.isInteger(expectedInputVersion) || expectedInputVersion < 0) {
+      return fail(400, PRELIMS_ADOPTION_ERROR_CODES.CVR_INPUT_CONFLICT, "expectedInputVersion must be a non-negative integer.", {
         costCodeKey,
       });
     }
@@ -197,6 +198,7 @@ function validateSelectionAgainstCandidate({
   selection,
   candidate,
   inputDoc,
+  createdFromFactOnly = false,
 }) {
   const costCodeKey = selection.costCodeKey;
 
@@ -227,7 +229,10 @@ function validateSelectionAgainstCandidate({
     );
   }
 
-  if (inputDoc.version !== selection.expectedInputVersion) {
+  const versionMatches = createdFromFactOnly
+    ? selection.expectedInputVersion === 0 && inputDoc.version === 1
+    : inputDoc.version === selection.expectedInputVersion;
+  if (!versionMatches) {
     return fail(
       409,
       PRELIMS_ADOPTION_ERROR_CODES.CVR_INPUT_CONFLICT,
@@ -459,11 +464,37 @@ async function adoptPrelimsForecasts(clientId, developmentId, periodId, body = {
     const plans = [];
     for (const selection of parsed.selections) {
       const candidate = findByCostCodeKey(enginePreview.candidates, selection.costCodeKey);
-      const inputDoc = findByCostCodeKey(inputDocs, selection.costCodeKey);
+      let inputDoc = findByCostCodeKey(inputDocs, selection.costCodeKey);
+      let createdFromFactOnly = false;
+
+      if (!inputDoc && selection.expectedInputVersion === 0 && candidate &&
+          !candidate.flags?.[PRELIMS_ADOPTION_FLAG_KEYS.NO_CVR_ROW] &&
+          !candidate.cannotAdopt && candidate.resolvedPrelimsTotal != null) {
+        const membership = await addDraftCvrCostCodeMember(
+          clientId,
+          developmentId,
+          periodId,
+          { costCodeKey: selection.costCodeKey },
+          { actor: resolvedActor, dbClient }
+        );
+        if (!membership.ok) {
+          await dbClient.query("ROLLBACK");
+          return fail(
+            membership.status || 409,
+            PRELIMS_ADOPTION_ERROR_CODES.CVR_INPUT_CONFLICT,
+            membership.message || `Could not establish CVR input authority for ${selection.costCodeKey}.`,
+            { costCodeKey: selection.costCodeKey }
+          );
+        }
+        inputDoc = membership.input;
+        inputDocs.push(inputDoc);
+        createdFromFactOnly = true;
+      }
       const validated = validateSelectionAgainstCandidate({
         selection,
         candidate,
         inputDoc,
+        createdFromFactOnly,
       });
       if (!validated.ok) {
         await dbClient.query("ROLLBACK");

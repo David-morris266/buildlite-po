@@ -61,7 +61,7 @@ function isSelectableCandidate(row, preview) {
   if (row.flags?.[PRELIMS_ADOPTION_FLAG_KEYS.NO_CVR_ROW]) return false;
   if (row.cannotAdopt || row.flags?.[PRELIMS_ADOPTION_FLAG_KEYS.CANNOT_ADOPT]) return false;
   if (isUpToDate(row)) return false;
-  if (row.inputVersion == null || !Number.isInteger(Number(row.inputVersion))) return false;
+  if (row.inputVersion != null && !Number.isInteger(Number(row.inputVersion))) return false;
   if (!row.proposalFingerprint) return false;
   return true;
 }
@@ -70,7 +70,9 @@ function buildSelectionPayload(row, { acknowledgeUnresolved, acknowledgeSupersed
   return {
     costCodeKey: row.costCodeKey,
     proposalFingerprint: row.proposalFingerprint,
-    expectedInputVersion: Number(row.inputVersion),
+    // Version zero explicitly represents an authoritative fact-only CVR row
+    // whose commercial-input overlay will be established by the adoption command.
+    expectedInputVersion: row.inputVersion == null ? 0 : Number(row.inputVersion),
     expectedSystemForecast: row.systemForecast,
     expectedCurrentAdjustment: row.currentAdjustment,
     acknowledgeUnresolvedExcluded: Boolean(

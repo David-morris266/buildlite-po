@@ -470,6 +470,89 @@ if (!isDbConfigured()) {
     assert.equal(previewRow.systemForecast, ordinaryRow.systemForecast);
   });
 
+  test("first-CVR fact-only Prelims adoption atomically establishes its commercial overlay", async () => {
+    const active = await getActiveClient();
+    const developmentId = await createDevelopment(active);
+    const costCodeKey = `8${String(Date.now()).slice(-6)}`;
+    const costCode = await makeCvrReady(active, developmentId, costCodeKey, "110000.00");
+
+    const period = await request(app)
+      .post(`/api/developments/${developmentId}/cvr/periods`)
+      .send({ reportingMonth: "2026-08-01", periodKey: "P01" });
+    assert.equal(period.status, 201, period.body?.message || JSON.stringify(period.body));
+    const adoptedBudget = await request(app)
+      .post(
+        `/api/developments/${developmentId}/cvr/periods/${period.body.id}/development-budget-adoption`
+      )
+      .send({ actor: "Commercial Manager", reason: "Use authoritative first-CVR fixture budget" });
+    assert.equal(
+      adoptedBudget.status,
+      200,
+      adoptedBudget.body?.message || JSON.stringify(adoptedBudget.body)
+    );
+
+    const prelims = await request(app)
+      .post(`/api/developments/${developmentId}/prelims-items`)
+      .send({
+        version: 0,
+        costCodeKey: costCode.code,
+        name: "First CVR fact-only Prelims",
+        forecastDriver: "LUMP_SUM",
+        lumpSumAmount: 78000,
+        status: "active",
+      });
+    assert.equal(prelims.status, 201, prelims.body?.message || JSON.stringify(prelims.body));
+
+    const preview = await request(app).get(
+      `/api/developments/${developmentId}/prelims-adoption/preview`
+    );
+    assert.equal(preview.status, 200, preview.body?.message || JSON.stringify(preview.body));
+    const candidate = preview.body.candidates.find(
+      (row) => String(row.costCodeKey).toLowerCase() === costCode.code.toLowerCase()
+    );
+    assert.ok(candidate, JSON.stringify(preview.body));
+    assert.equal(candidate.inputId, null);
+    assert.equal(candidate.inputVersion, null);
+    assert.equal(candidate.flags.noCvrRow, false);
+    assert.equal(candidate.cannotAdopt, false);
+
+    const adopted = await request(app)
+      .post(`/api/developments/${developmentId}/cvr/periods/${period.body.id}/prelims-adoption`)
+      .send({
+        expectedPeriodKey: preview.body.periodKey,
+        expectedReportingMonth: preview.body.reportingMonth,
+        selections: [
+          {
+            costCodeKey: candidate.costCodeKey,
+            proposalFingerprint: candidate.proposalFingerprint,
+            expectedInputVersion: 0,
+            expectedSystemForecast: candidate.systemForecast,
+            expectedCurrentAdjustment: candidate.currentAdjustment,
+          },
+        ],
+      });
+    assert.equal(adopted.status, 200, adopted.body?.message || JSON.stringify(adopted.body));
+    assert.equal(adopted.body.adopted.length, 1);
+    assert.equal(adopted.body.adopted[0].newFinal, 78000);
+
+    const stored = await pool.query(
+      `SELECT commercial_adjustment::float8 AS adjustment, version
+         FROM cvr_cost_code_inputs
+        WHERE period_id = $1 AND lower(btrim(cost_code_key)) = lower(btrim($2))`,
+      [period.body.id, costCode.code]
+    );
+    assert.equal(stored.rows.length, 1);
+    assert.equal(stored.rows[0].adjustment, -32000);
+    assert.equal(stored.rows[0].version, 2);
+
+    const audits = await pool.query(
+      `SELECT action FROM cvr_period_audit WHERE period_id = $1 ORDER BY created_at`,
+      [period.body.id]
+    );
+    assert.ok(audits.rows.some((row) => row.action === "cost_code_added"));
+    assert.ok(audits.rows.some((row) => row.action === "prelims_adopted"));
+  });
+
   test("GET preview recognises a mixed-case Master code immediately after one membership POST", async () => {
     const active = await getActiveClient();
     const developmentId = await createDevelopment(active);

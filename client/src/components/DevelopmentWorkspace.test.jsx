@@ -106,7 +106,7 @@ vi.mock('./DevelopmentSellingCostsWorkspace', () => ({
 vi.mock('./DevelopmentPrelimsWorkspace', () => ({
   default: () => <div data-testid="prelims-panel">Prelims panel</div>,
 }));
-vi.mock('./CVRRegister', () => ({ default: ({ onOpenPeriod }) => <div data-testid="cvr-panel">CVR panel<button onClick={() => onOpenPeriod?.('P04')}>Open P04</button></div> }));
+vi.mock('./CVRRegister', () => ({ default: ({ onOpenPeriod, createRequestToken }) => <div data-testid="cvr-panel" data-create-request-token={createRequestToken}>CVR panel<button onClick={() => onOpenPeriod?.('P04')}>Open P04</button></div> }));
 vi.mock('./CVRSummaryPage', () => ({ default: () => null }));
 vi.mock('./CVRWorkspace', () => ({ default: () => null }));
 vi.mock('./SubcontractPackageWorkspace', () => ({
@@ -394,6 +394,8 @@ describe('DevelopmentWorkspace stability guards', () => {
     expect(document.body.textContent).toContain('Development Budget');
     clickTab('Overview');
     act(() => [...document.querySelectorAll('button')].find(button => button.textContent === 'Start first CVR').click());
-    expect(document.querySelector('[data-testid="cvr-panel"]')).not.toBeNull();
+    const register = document.querySelector('[data-testid="cvr-panel"]');
+    expect(register).not.toBeNull();
+    expect(Number(register.dataset.createRequestToken)).toBe(1);
   });
 });

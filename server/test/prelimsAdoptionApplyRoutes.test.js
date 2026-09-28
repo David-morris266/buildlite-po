@@ -269,6 +269,20 @@ test("x.4C.1 pure helpers: reason + ignore proposedAdjustment authority", () => 
   assert.equal(parsed.ok, true);
   assert.equal(parsed.selections[0].proposedAdjustmentIgnored, 999999);
 
+  const factOnly = parseSelections({
+    selections: [
+      {
+        costCodeKey: "2000",
+        proposalFingerprint: "willow-fp",
+        expectedInputVersion: 0,
+        expectedSystemForecast: 110000,
+        expectedCurrentAdjustment: 0,
+      },
+    ],
+  });
+  assert.equal(factOnly.ok, true);
+  assert.equal(factOnly.selections[0].expectedInputVersion, 0);
+
   const empty = parseSelections({ selections: [] });
   assert.equal(empty.ok, false);
   assert.equal(empty.code, PRELIMS_ADOPTION_ERROR_CODES.SELECTION_REQUIRED);

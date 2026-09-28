@@ -144,6 +144,7 @@ export default function DevelopmentWorkspace({
   const [commercialReadiness, setCommercialReadiness] = useState(null);
   const [commercialReadinessLoading, setCommercialReadinessLoading] = useState(true);
   const [commercialReadinessError, setCommercialReadinessError] = useState('');
+  const [firstCvrCreateRequest, setFirstCvrCreateRequest] = useState(0);
 
   useEffect(() => {
     setStartDate(development.startDate || '');
@@ -565,7 +566,12 @@ export default function DevelopmentWorkspace({
   }
 
   function handleStartFirstCvr() {
-    resetCvrToRegister();
+    setCvrView('register');
+    setCvrPeriodKey(null);
+    setCvrFocusCostCodeKey(null);
+    setCvrHierarchyFilter(null);
+    setCvrHierarchyFilterKey(null);
+    setFirstCvrCreateRequest((value) => value + 1);
     handleSelectWorkspaceTab('cvr');
   }
 
@@ -1237,6 +1243,7 @@ export default function DevelopmentWorkspace({
               commercialReadiness={commercialReadiness}
               commercialReadinessLoading={commercialReadinessLoading}
               commercialReadinessError={commercialReadinessError}
+              createRequestToken={firstCvrCreateRequest}
             />
           )
         ) : null}
