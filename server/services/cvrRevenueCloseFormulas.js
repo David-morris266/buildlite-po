@@ -202,6 +202,8 @@ function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing = {}, 
   const cancelled = isCancelledRevenueStatus(plot.revenueStatus);
   const secured = isSecuredRevenueStatus(plot.revenueStatus);
   const contractPrice = roundPlotMoney(plot.sellingPrice || 0);
+  const reservedSellingPriceAuthority =
+    normalizePlotRevenueStatus(plot.revenueStatus) === "Reserved" && contractPrice > 0;
 
   let forecastRevenue = derivedForecast;
   let securedRevenue = 0;
@@ -210,6 +212,8 @@ function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing = {}, 
   } else if (secured) {
     forecastRevenue = contractPrice;
     securedRevenue = contractPrice;
+  } else if (reservedSellingPriceAuthority) {
+    forecastRevenue = contractPrice;
   }
 
   return {
@@ -224,6 +228,7 @@ function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing = {}, 
     tenure: getPlotPricingTenure(plot),
     revenueStatus: normalizePlotRevenueStatus(plot.revenueStatus),
     revenueSource: plot.revenueSource || DEFAULT_REVENUE_SOURCE,
+    reservedSellingPriceAuthority,
   };
 }
 

@@ -92,6 +92,30 @@ test("zero plot Revenue is a genuine £0 lock candidate with settings evidence",
   assert.ok(candidate.assumptions.houseTypePricing);
 });
 
+test("Reserved Selling Price is frozen as unsecured Forecast Revenue", async () => {
+  const candidate = await buildCvrRevenueCloseCandidate({
+    clientId: "client-1",
+    developmentId: "dev-close",
+    loadDevelopment: async () => ({ id: "dev-close", plotMaster: { plots: [{
+      id: "plot-7", plotNumber: "7", houseType: "Ash", niaFt2: 0,
+      revenueStatus: "Reserved", revenueSource: "House Type", sellingPrice: 330000,
+    }] } }),
+    loadSettingsRow: async () => settingsRow({ house_type_pricing: {} }),
+  });
+  assert.equal(candidate.canLock, true);
+  assert.deepEqual(candidate.summary, {
+    forecastRevenue: 330000,
+    securedRevenue: 0,
+    remainingForecast: 330000,
+    plotsSold: 0,
+    plotsRemaining: 1,
+  });
+  assert.equal(candidate.plots[0].sellingPrice, 330000);
+  assert.equal(candidate.plots[0].derivedForecast, 0);
+  assert.equal(candidate.plots[0].forecastRevenue, 330000);
+  assert.equal(candidate.plots[0].securedRevenue, 0);
+});
+
 test("Test Site 1 fixture close matches characterisation", async () => {
   const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, "utf8"));
   const candidate = await buildCvrRevenueCloseCandidate({

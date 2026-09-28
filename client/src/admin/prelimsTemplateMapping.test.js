@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyTemplateMapping,
+  effectivePrelimsSemanticGroup,
   filterCostCodeSearchOptions,
   filterMappingOptions,
   filterTemplateLinesByMapping,
@@ -24,6 +25,16 @@ describe('prelims template mapping helpers', () => {
       'Mapped code 5206 is currently classified BUILD rather than PRELIMS.'
     );
     expect(classifyTemplateMapping('', 'PRELIMS').tone).toBe('unmapped');
+  });
+
+  it('prefers active Commercial Head category and falls back to legacy classification', () => {
+    const codes = [{ code: 'A', commercialHeadId: 'prelims' }, { code: 'B', commercialHeadId: 'build' }, { code: 'C' }];
+    const structure = { heads: [{ id: 'prelims', active: true, buildliteCategory: 'PRELIMINARIES' }, { id: 'build', active: true, buildliteCategory: 'HOUSE_BUILD' }] };
+    expect(effectivePrelimsSemanticGroup('A', 'BUILD', codes, structure)).toBe('PRELIMS');
+    expect(classifyTemplateMapping('A', 'BUILD', { costCodes: codes, structure })).toEqual({ tone: 'normal', message: null });
+    expect(effectivePrelimsSemanticGroup('B', 'PRELIMS', codes, structure)).toBe('HOUSE_BUILD');
+    expect(effectivePrelimsSemanticGroup('C', 'PRELIMS', codes, structure)).toBe('PRELIMS');
+    expect(effectivePrelimsSemanticGroup('C', null, codes, structure)).toBe('UNCLASSIFIED');
   });
 
   it('counts shared canonical codes without treating duplicates as errors', () => {

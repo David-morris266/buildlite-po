@@ -1,0 +1,2 @@
+const API=(import.meta.env.VITE_API_URL||'http://localhost:3001').replace(/\/+$/,'');
+export async function provisionCompany(payload){const response=await fetch(`${API}/api/platform/tenants`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const body=await response.json().catch(()=>({}));if(!response.ok)throw new Error(body.message||'Company provisioning failed.');return body;}

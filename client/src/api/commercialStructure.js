@@ -4,6 +4,7 @@ async function json(response){const text=await response.text().catch(()=>'');let
 export async function listCommercialStructure(){return json(await fetch(`${API_BASE}/api/commercial-structure`));}
 export async function listCommercialHeadCategories(){return json(await fetch(`${API_BASE}/api/commercial-structure/categories`));}
 export async function getRecommendedCommercialStructureTemplate(){return json(await fetch(`${API_BASE}/api/commercial-structure/recommended-template`));}
+export async function adoptRecommendedCommercialStructure(){return json(await fetch(`${API_BASE}/api/commercial-structure/recommended-template/adopt`,{method:'POST'}));}
 export async function updateCommercialHeadCategory(id,payload){return json(await fetch(`${API_BASE}/api/commercial-structure/heads/${encodeURIComponent(id)}/buildlite-category`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}));}
 export async function createCommercialStructureNode(type,payload){return json(await fetch(`${API_BASE}/api/commercial-structure/${type}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}));}
 export async function updateCommercialStructureNode(type,id,payload){return json(await fetch(`${API_BASE}/api/commercial-structure/${type}/${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}));}

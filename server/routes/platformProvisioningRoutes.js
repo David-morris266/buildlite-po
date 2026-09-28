@@ -1,0 +1,2 @@
+const express=require('express');const {assertPlatformPermission}=require('../auth/authorization');const {provisionTenant}=require('../services/tenantProvisioning');const router=express.Router();
+router.post('/tenants',async(req,res)=>{try{assertPlatformPermission(req.buildliteAuth,'platform.tenant_provision');const result=await provisionTenant(req.body||{},req.buildliteAuth);res.status(result.status).json(result.ok?result:{message:result.message});}catch(error){res.status(error.status||500).json({message:error.message});}});module.exports=router;

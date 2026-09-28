@@ -18,7 +18,15 @@ export default function BrandHeader({ activeTab, onTab }) {
   const canViewPaymentApproval = useBuildLitePermission('payment_approval_run.view');
   const canCreatePo = useBuildLitePermission('po.create');
   const principal = useBuildLitePrincipal();
-  const canAdmin = ['tenant.configure', 'users.manage', 'roles.manage', 'terms.publish', 'commercial_templates.manage', 'cost_code_classifications.manage', 'commercial_head_categories.manage']
+  const memberships = principal?.memberships || [];
+  const activeCompanyName = principal?.activeTenant?.name || principal?.activeTenant?.code || 'Company unavailable';
+  const switchCompany = (clientId) => {
+    if (!clientId || clientId === principal?.activeTenant?.clientId) return;
+    const navigate = () => principal?.switchTenant?.(clientId);
+    if (unsavedChanges) unsavedChanges.requestNavigation(navigate);
+    else navigate();
+  };
+  const canAdmin = principal?.platformPermissions?.includes('platform.tenant_provision')||['tenant.configure', 'users.manage', 'roles.manage', 'terms.publish', 'commercial_templates.manage', 'cost_code_classifications.manage', 'commercial_head_categories.manage']
     .some(permission => principal?.permissions?.includes(permission));
   return (
     <header className="brandbar">
@@ -28,6 +36,24 @@ export default function BrandHeader({ activeTab, onTab }) {
           <div className="brand-name">Build Lite</div>
           <div className="brand-tag">Lean Commercial Control</div>
         </div>
+      </div>
+
+      <div className="brand-company" aria-label="Active company context">
+        <span className="brand-company__label">Company</span>
+        {memberships.length > 1 ? (
+          <select
+            className="brand-company__select"
+            aria-label="Switch active company"
+            value={principal.activeTenant.clientId}
+            onChange={(event) => switchCompany(event.target.value)}
+          >
+            {memberships.map((membership) => (
+              <option key={membership.clientId} value={membership.clientId}>
+                {membership.clientName || membership.clientCode} · {membership.roleName}
+              </option>
+            ))}
+          </select>
+        ) : <strong className="brand-company__name">{activeCompanyName}</strong>}
       </div>
 
       <nav className="nav">

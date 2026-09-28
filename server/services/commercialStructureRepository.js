@@ -2,6 +2,7 @@ const { pool, query } = require('../db');
 const { assertServicePermission } = require('../auth/authorization');
 const { PERMISSIONS } = require('../auth/permissions');
 const { COMMERCIAL_HEAD_CATEGORY_KEYS } = require('./commercialHeadCategoryConstants');
+const { getRecommendedCommercialStructureTemplate } = require('./commercialStructureTemplate');
 
 const TYPES = Object.freeze({
   head: { table:'commercial_structure_heads', parent: null },
@@ -21,4 +22,36 @@ async function createNode(clientId,type,body,auth){assertServicePermission(auth,
 async function updateNode(clientId,type,id,body,auth){assertServicePermission(auth,PERMISSIONS.COMMERCIAL_STRUCTURE_MANAGE);if(String(auth.clientId)!==String(clientId))throw Object.assign(new Error('Tenant boundary violation.'),{status:403});const spec=TYPES[type];if(!spec)return fail(400,'Unknown Commercial Structure entity type.');const version=Number(body.version),name=clean(body.name);if(!Number.isInteger(version)||version<1||!name||name.length>120)return fail(400,'Valid version and name are required.');const db=await pool.connect();try{await db.query('BEGIN');const beforeRow=(await db.query(`SELECT * FROM ${spec.table} WHERE client_id=$1 AND id=$2 FOR UPDATE`,[clientId,id])).rows[0];if(!beforeRow){await db.query('ROLLBACK');return fail(404,'Commercial Structure item not found.');}if(Number(beforeRow.version)!==version){await db.query('ROLLBACK');return fail(409,'Commercial Structure item has changed. Reload and try again.');}const next={...body,headId:body.headId??beforeRow.head_id,familyId:body.familyId===undefined?beforeRow.family_id:body.familyId};if(!await validateParents(db,clientId,type,next)){await db.query('ROLLBACK');return fail(400,'The selected hierarchy parent is invalid.');}const active=body.active===undefined?beforeRow.is_active:Boolean(body.active);const row=(await db.query(`UPDATE ${spec.table} SET name=$1,display_order=$2,is_active=$3,version=version+1,updated_at=NOW() WHERE client_id=$4 AND id=$5 RETURNING *`,[name,Number.isInteger(Number(body.displayOrder))?Number(body.displayOrder):beforeRow.display_order,active,clientId,id])).rows[0];const result=mapped(row),before=mapped(beforeRow);await audit(db,clientId,type,id,active===before.active?'update':active?'restore':'archive',before,result,auth);await db.query('COMMIT');return {ok:true,status:200,node:result};}catch(error){await db.query('ROLLBACK');if(error.code==='23505')return fail(409,'A hierarchy item with this name already exists in that location.');throw error;}finally{db.release();}}
 async function reorderSiblings(clientId,type,body,auth){assertServicePermission(auth,PERMISSIONS.COMMERCIAL_STRUCTURE_MANAGE);if(String(auth.clientId)!==String(clientId))throw Object.assign(new Error('Tenant boundary violation.'),{status:403});const spec=TYPES[type];if(!spec)return fail(400,'Unknown Commercial Structure entity type.');const items=Array.isArray(body.items)?body.items:[];if(!items.length||items.some(x=>!x.id||!Number.isInteger(Number(x.version))))return fail(400,'A valid ordered sibling list is required.');const db=await pool.connect();try{await db.query('BEGIN');const ids=items.map(x=>x.id);const rows=(await db.query(`SELECT * FROM ${spec.table} WHERE client_id=$1 AND id=ANY($2::uuid[]) FOR UPDATE`,[clientId,ids])).rows;if(rows.length!==items.length){await db.query('ROLLBACK');return fail(404,'Commercial Structure item not found.');}const parent=x=>`${x.head_id||''}:${x.family_id||''}`;if(new Set(rows.map(parent)).size!==1){await db.query('ROLLBACK');return fail(400,'Only siblings can be reordered together.');}for(const [displayOrder,item] of items.entries()){const before=rows.find(x=>x.id===item.id);if(Number(before.version)!==Number(item.version)){await db.query('ROLLBACK');return fail(409,'Commercial Structure item has changed. Reload and try again.');}const row=(await db.query(`UPDATE ${spec.table} SET display_order=$1,version=version+1,updated_at=NOW() WHERE client_id=$2 AND id=$3 RETURNING *`,[displayOrder,clientId,item.id])).rows[0];await audit(db,clientId,type,item.id,'update',mapped(before),mapped(row),auth);}await db.query('COMMIT');return {ok:true,status:200,structure:await listStructure(clientId)};}catch(error){await db.query('ROLLBACK');throw error;}finally{db.release();}}
 async function setHeadCategory(clientId,id,body,auth){assertServicePermission(auth,PERMISSIONS.COMMERCIAL_HEAD_CATEGORIES_MANAGE);if(String(auth.clientId)!==String(clientId))throw Object.assign(new Error('Tenant boundary violation.'),{status:403});const version=Number(body.version),category=body.buildliteCategory==null||body.buildliteCategory===''?null:String(body.buildliteCategory);if(!Number.isInteger(version)||version<1)return fail(400,'A valid Commercial Head version is required.');if(category&&!COMMERCIAL_HEAD_CATEGORY_KEYS.includes(category))return fail(400,'The selected BuildLite category is invalid.');const db=await pool.connect();try{await db.query('BEGIN');const beforeRow=(await db.query('SELECT * FROM commercial_structure_heads WHERE client_id=$1 AND id=$2 FOR UPDATE',[clientId,id])).rows[0];if(!beforeRow){await db.query('ROLLBACK');return fail(404,'Commercial Head not found.');}if(Number(beforeRow.version)!==version){await db.query('ROLLBACK');return fail(409,'Commercial Head has changed. Reload and try again.');}if(category&&!beforeRow.is_active){await db.query('ROLLBACK');return fail(409,'A BuildLite category can only be assigned to an active Commercial Head.');}if((beforeRow.buildlite_category||null)===category){await db.query('COMMIT');return {ok:true,status:200,node:mapped(beforeRow)};}const row=(await db.query('UPDATE commercial_structure_heads SET buildlite_category=$1,version=version+1,updated_at=NOW() WHERE client_id=$2 AND id=$3 RETURNING *',[category,clientId,id])).rows[0];const before=mapped(beforeRow),result=mapped(row);await audit(db,clientId,'head',id,'update',before,result,auth,PERMISSIONS.COMMERCIAL_HEAD_CATEGORIES_MANAGE);await db.query('COMMIT');return {ok:true,status:200,node:result};}catch(error){await db.query('ROLLBACK');if(error.code==='23505')return fail(409,'That BuildLite category is already assigned to another active Commercial Head.');throw error;}finally{db.release();}}
-module.exports={listStructure,createNode,updateNode,reorderSiblings,setHeadCategory};
+function isExactRecommendedStructure(structure,template){
+  if(structure.families.length||structure.reportingGroups.length||structure.heads.length!==template.heads.length)return false;
+  const heads=[...structure.heads].sort((a,b)=>a.displayOrder-b.displayOrder||a.name.localeCompare(b.name));
+  return heads.every((head,index)=>head.active&&head.name===template.heads[index].name&&head.buildliteCategory===template.heads[index].buildliteCategory&&head.displayOrder===template.heads[index].displayOrder);
+}
+async function adoptRecommendedStructure(clientId,auth){
+  assertServicePermission(auth,PERMISSIONS.COMMERCIAL_STRUCTURE_MANAGE);
+  if(String(auth.clientId)!==String(clientId))throw Object.assign(new Error('Tenant boundary violation.'),{status:403});
+  const template=getRecommendedCommercialStructureTemplate(),db=await pool.connect();
+  try{
+    await db.query('BEGIN');
+    const tenant=await db.query('SELECT id FROM clients WHERE id=$1 FOR UPDATE',[clientId]);
+    if(!tenant.rowCount){await db.query('ROLLBACK');return fail(404,'Company not found.');}
+    const structure=await listStructure(clientId,db);
+    if(isExactRecommendedStructure(structure,template)){
+      await db.query('COMMIT');
+      return {ok:true,status:200,adoption:{templateKey:template.key,templateVersion:template.version,created:{heads:0,families:0,reportingGroups:0},alreadyAdopted:true,structure}};
+    }
+    if(structure.heads.length||structure.families.length||structure.reportingGroups.length){
+      await db.query('ROLLBACK');
+      return fail(409,'The company already has a Commercial Structure. BuildLite will not merge or overwrite it with the recommended structure.');
+    }
+    const created=[];
+    for(const head of template.heads){
+      const row=(await db.query(`INSERT INTO commercial_structure_heads(client_id,name,display_order,origin,buildlite_category,created_by_user_id,created_by_membership_id,created_by_provider_user_id,created_by_display_name) VALUES($1,$2,$3,'buildlite_recommended',$4,$5,$6,$7,$8) RETURNING *`,[clientId,head.name,head.displayOrder,head.buildliteCategory,...actor(auth)])).rows[0];
+      const result=mapped(row);created.push(result);
+      await audit(db,clientId,'head',row.id,'create',null,result,auth);
+    }
+    await db.query('COMMIT');
+    return {ok:true,status:201,adoption:{templateKey:template.key,templateVersion:template.version,created:{heads:created.length,families:0,reportingGroups:0},alreadyAdopted:false,structure:await listStructure(clientId)}};
+  }catch(error){await db.query('ROLLBACK');throw error;}finally{db.release();}
+}
+module.exports={listStructure,createNode,updateNode,reorderSiblings,setHeadCategory,adoptRecommendedStructure,isExactRecommendedStructure};

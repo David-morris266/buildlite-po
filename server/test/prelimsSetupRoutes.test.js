@@ -258,7 +258,7 @@ if (!isDbConfigured()) {
     const customLine = preview.body.lines.find((row) => row.templateLineId === custom.id);
     const disabledLine = preview.body.lines.find((row) => row.templateLineId === disabled.id);
     assert.equal(sm.duration.totalMonths, 38);
-    assert.equal(sm.defaultSelected, true);
+    assert.equal(sm.defaultSelected, false);
     assert.equal(clean.overlap, true);
     assert.equal(clean.defaultSelected, false);
     assert.ok(clean.overlapExistingNames.includes("BL-033D.1 TIME UAT"));

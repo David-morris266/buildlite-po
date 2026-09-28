@@ -11,7 +11,7 @@ function createAuthenticationMiddleware(adapter) {
       req.buildliteAuth = await resolveBuildLitePrincipal(identity, req.get('X-BuildLite-Client-Id') || null);
       enterAuthContext(req.buildliteAuth);
       next();
-    } catch (error) { res.status(error.status || 500).json({ message: error.message, code: error.code }); }
+    } catch (error) { res.status(error.status || 500).json({ message: error.message, code: error.code, memberships:error.memberships }); }
   }];
 }
 module.exports = { createAuthenticationMiddleware };

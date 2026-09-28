@@ -138,17 +138,51 @@ test("missing FIRST_COMPLETION is unresolved, not a genuine £0", () => {
   assert.equal(calc.includedInActiveProposal, false);
 });
 
-test("missing reportingMonth is unresolved and does not use today", () => {
+test("missing reportingMonth resolves total forecast but not as-at phasing and does not use today", () => {
   const original = Date.now;
   Date.now = () => new Date("2030-12-15T12:00:00Z").getTime();
   try {
     const calc = calculateTimeLine(timeLine(), { programme: TEST_SITE_1, reportingMonth: null });
-    assert.equal(calc.state, "unresolved");
-    assert.equal(calc.reason, PRELIMS_UNRESOLVED_REASONS.MISSING_REPORTING_MONTH);
+    assert.equal(calc.state, "resolved");
+    assert.equal(calc.reason, null);
+    assert.equal(calc.totalForecast, 38000);
+    assert.equal(calc.phasingState, "unavailable");
+    assert.equal(calc.phasingReason, PRELIMS_UNRESOLVED_REASONS.MISSING_REPORTING_MONTH);
     assert.equal(calc.elapsedMonths, null);
+    assert.equal(calc.remainingMonths, null);
+    assert.equal(calc.forecastToDate, null);
+    assert.equal(calc.forecastToComplete, null);
+    assert.equal(calc.remainingExposure, null);
   } finally {
     Date.now = original;
   }
+});
+
+test("Willow pre-CVR TIME resolves 13 months and £78,000 without phasing", () => {
+  const programme = {
+    siteStart: "2027-03-01",
+    firstCompletion: null,
+    finalCompletion: "2028-03-31",
+  };
+  const line = timeLine({ monthlyRate: 6000 });
+  const calc = calculateTimeLine(line, {
+    programme,
+    reportingMonth: null,
+  });
+  assert.equal(calc.state, "resolved");
+  assert.equal(calc.totalMonths, 13);
+  assert.equal(calc.totalForecast, 78000);
+  assert.equal(calc.includedInActiveProposal, true);
+  assert.equal(calc.phasingState, "unavailable");
+
+  assert.deepEqual(
+    (({ totalForecast, elapsedMonths, remainingMonths, forecastToDate, forecastToComplete }) =>
+      ({ totalForecast, elapsedMonths, remainingMonths, forecastToDate, forecastToComplete }))(
+      calculateTimeLine(line, { programme, reportingMonth: "2027-09" })
+    ),
+    { totalForecast: 78000, elapsedMonths: 7, remainingMonths: 6,
+      forecastToDate: 42000, forecastToComplete: 36000 }
+  );
 });
 
 test("signed calendar-month offsets resolve Test Site 1 worked examples", () => {

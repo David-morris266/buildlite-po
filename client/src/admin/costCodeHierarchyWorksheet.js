@@ -156,7 +156,7 @@ function styleInstructions(sheet) {
   title.alignment = { vertical: 'middle' }; sheet.getRow(1).height = 31;
   const guidance = [
     ['Workbook guide', 'Grey columns contain BuildLite identity, current state and source evidence. Green columns are the owner-input area. Source evidence is guidance only, not authority.'],
-    ['Allocate a Cost Code', 'Complete Commercial Head and Reporting Group. Commercial Family is optional. You do not need to enter Allocate.'],
+    ['Allocate a Cost Code', 'Complete Commercial Head. Commercial Family and Reporting Group are optional. You do not need to enter Allocate.'],
     ['Not Applicable', 'Use Review Decision = Not Applicable only where the Cost Code deliberately does not belong in the commercial cost hierarchy; leave hierarchy targets blank.'],
     ['Keep Existing', 'Do not change existing reviewed mappings marked Keep Existing unless you intend to propose a different complete path.'],
     ['Required completion', 'Blank unresolved rows block final Apply. Do not alter Cost Code or Description.'],

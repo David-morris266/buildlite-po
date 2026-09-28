@@ -14,4 +14,10 @@ describe('PlotDrawer selling price input', () => {
     expect(match[0]).toContain('step="0.01"');
     expect(match[0]).not.toContain('step="1000"');
   });
+
+  it('explains Reserved Selling Price authority without replacing the fallback source', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'PlotDrawer.jsx'), 'utf8');
+    expect(source).toContain('Reserved Selling Price currently drives Forecast Revenue.');
+    expect(source).toContain('remains stored and resumes if the plot returns to Available');
+  });
 });

@@ -17,6 +17,7 @@ const getOrderMatricesLoadError = vi.hoisted(() => vi.fn());
 const buildDevelopmentWorkspaceModel = vi.hoisted(() => vi.fn());
 const getDevelopmentBudget = vi.hoisted(() => vi.fn());
 const listServerCostCodes = vi.hoisted(() => vi.fn());
+const updateDevelopment = vi.hoisted(() => vi.fn());
 
 vi.mock('../api', () => ({
   listPOs,
@@ -40,6 +41,11 @@ vi.mock('../payments/orderMatrixServerCache', () => ({
 
 vi.mock('../developments/developmentHelpers', () => ({
   buildDevelopmentWorkspaceModel,
+}));
+
+vi.mock('../developments/developmentStore', () => ({
+  updateDevelopment,
+  VERSION_CONFLICT_MESSAGE: 'Development version conflict.',
 }));
 
 vi.mock('../api/developmentBudget', () => ({
@@ -88,7 +94,9 @@ vi.mock('./PlotMaster', () => ({ default: () => <div>Plot Master panel</div> }))
 vi.mock('./DevelopmentCommercialEvents', () => ({
   default: () => <div>Commercial Events panel</div>,
 }));
-vi.mock('./PurchaseLedger', () => ({ default: () => <div>Ledger panel</div> }));
+vi.mock('./PurchaseLedger', () => ({
+  default: () => <div data-testid="ledger-panel">Ledger panel</div>,
+}));
 vi.mock('./RevenueWorkspace', () => ({
   default: () => <div data-testid="revenue-panel">Revenue panel</div>,
 }));
@@ -180,6 +188,11 @@ describe('DevelopmentWorkspace stability guards', () => {
       ],
     });
     listServerCostCodes.mockResolvedValue({ costCodes: [] });
+    updateDevelopment.mockImplementation(async (_id, patch) => ({
+      ...sampleDevelopment,
+      ...patch,
+      version: sampleDevelopment.version + 1,
+    }));
   });
 
   afterEach(() => {
@@ -213,6 +226,75 @@ describe('DevelopmentWorkspace stability guards', () => {
       tab?.click();
     });
   }
+
+  async function changeDate(label, value) {
+    const input = container.querySelector(`input[aria-label="${label}"]`);
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        'value'
+      ).set;
+      setter.call(input, value);
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+  }
+
+  it.each([
+    ['Prelims', 'Start date', '2027-03-01', 'prelims-panel'],
+    ['Prelims', 'Target completion date', '2028-09-30', 'prelims-panel'],
+    ['Revenue', 'Start date', '2027-03-01', 'revenue-panel'],
+    ['Ledger', 'Start date', '2027-03-01', 'ledger-panel'],
+  ])(
+    'keeps %s active when editing %s and the refreshed Development arrives',
+    async (tab, label, value, panelTestId) => {
+      const onDevelopmentChanged = vi.fn();
+      renderWorkspace({ onDevelopmentChanged });
+      await act(async () => { await Promise.resolve(); });
+      clickTab(tab);
+
+      await changeDate(label, value);
+      expect(updateDevelopment).toHaveBeenCalledTimes(1);
+      expect(updateDevelopment).toHaveBeenCalledWith(
+        sampleDevelopment.id,
+        expect.objectContaining({
+          [label === 'Start date' ? 'startDate' : 'targetCompletion']: value,
+          version: sampleDevelopment.version,
+        })
+      );
+      expect(onDevelopmentChanged).toHaveBeenCalledTimes(1);
+
+      renderWorkspace({
+        development: {
+          ...sampleDevelopment,
+          [label === 'Start date' ? 'startDate' : 'targetCompletion']: value,
+          version: sampleDevelopment.version + 1,
+        },
+        onDevelopmentChanged,
+      });
+      await act(async () => { await Promise.resolve(); });
+
+      expect(document.querySelector(`[data-testid="${panelTestId}"]`)).not.toBeNull();
+    }
+  );
+
+  it('keeps Overview active and preserves unrelated Development fields after a date edit', async () => {
+    const onDevelopmentChanged = vi.fn();
+    renderWorkspace({ onDevelopmentChanged });
+    await act(async () => { await Promise.resolve(); });
+
+    await changeDate('Start date', '2027-03-01');
+
+    expect(document.body.textContent).toContain('Overview panel');
+    expect(updateDevelopment).toHaveBeenCalledTimes(1);
+    expect(updateDevelopment.mock.calls[0][1]).toEqual({
+      startDate: '2027-03-01',
+      targetCompletion: '',
+      version: sampleDevelopment.version,
+    });
+    expect(updateDevelopment.mock.calls[0][1]).not.toHaveProperty('developmentName');
+    expect(updateDevelopment.mock.calls[0][1]).not.toHaveProperty('jobNumber');
+  });
 
   it('shows a visible defensive state when the workspace model is missing', () => {
     buildDevelopmentWorkspaceModel.mockReturnValue(null);

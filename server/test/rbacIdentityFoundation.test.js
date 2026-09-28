@@ -66,6 +66,10 @@ test('API returns 401 without identity and exposes authenticated BuildLite princ
   assert.equal(response.body.user.id, 'user-1');
   assert.deepEqual(response.body.permissions, [PERMISSIONS.COMMERCIAL_READ]);
   assert.equal(typeof response.body.tenantReadiness.configured, 'boolean');
+  const readiness = await request(authenticated).get('/api/auth/readiness');
+  assert.equal(readiness.status, 200);
+  assert.equal(readiness.body.clientId, clientId);
+  assert.equal(typeof readiness.body.tenantReadiness.configured, 'boolean');
 });
 
 test('critical financial route is denied before domain execution when permission is absent', async () => {

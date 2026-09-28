@@ -31,7 +31,9 @@ export function effectiveDriver(line, draft = {}) {
 export function draftsFromPreview(preview) {
   return (preview?.lines || []).map((line) => ({
     templateLineId: line.templateLineId,
-    selected: Boolean(line.defaultSelected),
+    // Preview metadata must never opt a Development into a Prelims line. This is
+    // deliberately browser-local until the user selects and adds the line.
+    selected: false,
     costCodeKey: line.costCodeKey || '',
     forecastDriver: line.forecastDriver || PRELIMS_DRIVERS.TIME,
     monthlyRate: '',
@@ -265,7 +267,7 @@ export function isLineReady(line, draft, programme = null) {
       return false;
     }
     const span = resolveTimeSpan(timeLineFromDraft(line, draft), programme);
-    if (span.state === 'invalid') return false;
+    if (span.state !== 'resolved') return false;
   }
   return true;
 }
@@ -308,8 +310,8 @@ export function basisLabel(line) {
   return `${start} → ${end}`;
 }
 
-export function classificationForDraft(draft, semanticGroup) {
-  return classifyTemplateMapping(draft.costCodeKey, semanticGroup);
+export function classificationForDraft(draft, semanticGroup, authority) {
+  return classifyTemplateMapping(draft.costCodeKey, semanticGroup, authority);
 }
 
 /** Compact State-column chips. Classification/overlap semantics unchanged. */

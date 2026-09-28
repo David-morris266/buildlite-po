@@ -163,3 +163,8 @@ Adds an optional controlled BuildLite category to tenant Commercial Heads and a 
 ### 056_plot_master_tenure_review.sql
 
 Adds dedicated Plot Master authority for Admin, Commercial Director, Commercial Manager and QS, plus append-only authenticated audit for explicit plot-level controlled-tenure review. Existing Plot Master source tenure and controlled classifications are not inferred or backfilled.
+`059_secure_tenant_provisioning.sql` adds tenant-scoped Company settings, immutable assisted-provisioning evidence, and narrow Company-settings/Development-creation permissions. Platform provisioning authority remains separate from tenant RBAC.
+
+`060_commercial_director_structure_authority.sql` grants Commercial Directors the existing tenant Commercial Structure and Cost Code onboarding authority without granting platform or user administration.
+
+`061_ledger_cost_code_resolution.sql` separates immutable accounting-source Cost Code evidence from resolved Company Cost Code authority, backfills only safe historic matches, adds append-only resolution audit evidence, and introduces `ledger.manage`.

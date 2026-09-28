@@ -1,10 +1,15 @@
-import { newAdminId, readAdminStore, writeAdminStore } from './adminStorage';
+import { readAdminStore, writeAdminStore } from './adminStorage';
 
 import { notifyMasterDataChanged } from './masterDataEvents';
 
 
 
 export const COMPANY_SETTINGS_KEY = 'buildlite_company_settings_v1';
+
+function companySettingsKey() {
+  const clientId = localStorage.getItem('buildlite_active_client_id');
+  return clientId ? `${COMPANY_SETTINGS_KEY}:${clientId}` : `${COMPANY_SETTINGS_KEY}:unscoped`;
+}
 
 
 
@@ -144,7 +149,7 @@ function normaliseCompanySettings(raw = {}) {
 
 export function getCompanySettings() {
 
-  return normaliseCompanySettings(readAdminStore(COMPANY_SETTINGS_KEY, {}));
+  return normaliseCompanySettings(readAdminStore(companySettingsKey(), {}));
 
 }
 
@@ -172,12 +177,19 @@ export function saveCompanySettings(patch = {}) {
 
   });
 
-  writeAdminStore(COMPANY_SETTINGS_KEY, next);
+  writeAdminStore(companySettingsKey(), next);
 
   notifyMasterDataChanged('company');
 
   return next;
 
+}
+
+export function cacheAuthoritativeCompanySettings(settings = {}) {
+  const next = normaliseCompanySettings(settings);
+  writeAdminStore(companySettingsKey(), next);
+  notifyMasterDataChanged('company');
+  return next;
 }
 
 

@@ -112,6 +112,24 @@ router.put(
 );
 
 router.post(
+  '/:templateId/reviewed-mappings',
+  requirePermission(PERMISSIONS.COMMERCIAL_TEMPLATES_MANAGE),
+  guarded('REVIEWED MAPPINGS', 'Failed to apply reviewed Prelims mappings.', async (req, res) => {
+    if (rejectProductStandardMutation(req, res)) return;
+    sendResult(
+      res,
+      await repository.applyReviewedMappings(
+        req.buildliteAuth.clientId,
+        req.params.templateId,
+        req.body || {},
+        authenticatedWriteContext(req)
+      ),
+      'template'
+    );
+  })
+);
+
+router.post(
   '/:templateId/lines',
   requirePermission(PERMISSIONS.COMMERCIAL_TEMPLATES_MANAGE),
   guarded('LINE CREATE', 'Failed to create Prelims template line.', async (req, res) => {

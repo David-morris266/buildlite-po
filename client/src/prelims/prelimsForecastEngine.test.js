@@ -88,7 +88,7 @@ describe('BL-033D.1 Prelims TIME and LUMP_SUM calculations', () => {
     expect(mixed.totalMonths).toBe(5);
   });
 
-  it('leaves missing FIRST_COMPLETION and missing reportingMonth unresolved, not £0', () => {
+  it('leaves missing FIRST_COMPLETION unresolved but resolves total forecast without as-at phasing', () => {
     const missingFirst = calculateTimeLine(timeLine({ startBasis: 'FIRST_COMPLETION' }), {
       programme: TEST_SITE_1,
       reportingMonth: '2026-08',
@@ -103,9 +103,49 @@ describe('BL-033D.1 Prelims TIME and LUMP_SUM calculations', () => {
       programme: TEST_SITE_1,
       reportingMonth: null,
     });
-    expect(missingMonth.reason).toBe(PRELIMS_UNRESOLVED_REASONS.MISSING_REPORTING_MONTH);
+    expect(missingMonth.state).toBe('resolved');
+    expect(missingMonth.reason).toBeNull();
+    expect(missingMonth.totalForecast).toBe(38000);
+    expect(missingMonth.phasingState).toBe('unavailable');
+    expect(missingMonth.phasingReason).toBe(PRELIMS_UNRESOLVED_REASONS.MISSING_REPORTING_MONTH);
     expect(missingMonth.elapsedMonths).toBeNull();
+    expect(missingMonth.remainingMonths).toBeNull();
+    expect(missingMonth.forecastToDate).toBeNull();
+    expect(missingMonth.forecastToComplete).toBeNull();
+    expect(missingMonth.remainingExposure).toBeNull();
     vi.useRealTimers();
+  });
+
+  it('resolves Willow pre-CVR total forecast without inventing as-at evidence', () => {
+    const programme = {
+      siteStart: '2027-03-01',
+      firstCompletion: null,
+      finalCompletion: '2028-03-31',
+    };
+    const line = timeLine({ monthlyRate: 6000 });
+    const calc = calculateTimeLine(line, {
+      programme,
+      reportingMonth: null,
+    });
+    expect(calc.state).toBe('resolved');
+    expect(calc.totalMonths).toBe(13);
+    expect(calc.totalForecast).toBe(78000);
+    expect(calc.includedInActiveProposal).toBe(true);
+    expect(calc.phasingState).toBe('unavailable');
+    expect(calc.elapsedMonths).toBeNull();
+
+    expect(calculateTimeLine(line, { programme, reportingMonth: '2027-03' })).toMatchObject({
+      totalForecast: 78000, elapsedMonths: 1, remainingMonths: 12,
+      forecastToDate: 6000, forecastToComplete: 72000, phasingState: 'resolved',
+    });
+    expect(calculateTimeLine(line, { programme, reportingMonth: '2027-09' })).toMatchObject({
+      totalForecast: 78000, elapsedMonths: 7, remainingMonths: 6,
+      forecastToDate: 42000, forecastToComplete: 36000,
+    });
+    expect(calculateTimeLine(line, { programme, reportingMonth: '2028-03' })).toMatchObject({
+      totalForecast: 78000, elapsedMonths: 13, remainingMonths: 0,
+      forecastToDate: 78000, forecastToComplete: 0,
+    });
   });
 
   it('resolves signed calendar-month offsets for Test Site 1 worked examples', () => {

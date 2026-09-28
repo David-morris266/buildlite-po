@@ -156,7 +156,7 @@ export async function importLocalDevelopments(options = {}) {
 }
 
 export async function ensureDevelopmentsReady(options = {}) {
-  const { attemptImport = true } = options;
+  const { attemptImport = false } = options;
 
   if (loadState === 'loaded' && cache.length) {
     return listDevelopments();

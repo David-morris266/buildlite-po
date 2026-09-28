@@ -91,6 +91,32 @@ a { color: var(--accent); }
 .brand-left { display:flex; align-items:center; gap:12px; }
 .brand-name { font-weight:800; letter-spacing:0.3px; }
 .brand-tag { font-size:12px; color:var(--muted); }
+.brand-company {
+  display: grid;
+  gap: 3px;
+  min-width: 220px;
+  margin-left: auto;
+}
+.brand-company__label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.brand-company__name,
+.brand-company__select {
+  max-width: 300px;
+  font-size: 13px;
+}
+.brand-company__select {
+  width: 100%;
+  padding: 7px 30px 7px 10px;
+  border-color: rgba(124,255,107,0.38);
+  background: #0f1417;
+  color: var(--text);
+  font-weight: 700;
+}
 
 /* Nav */
 .nav { display:flex; gap:8px; }
@@ -105,6 +131,12 @@ a { color: var(--accent); }
   white-space: nowrap;
 }
 .nav .tab.active { color:#071007; background: linear-gradient(180deg, var(--accent), #29d659); border-color: transparent; }
+
+@media (max-width: 1180px) {
+  .brandbar { flex-wrap: wrap; }
+  .brand-company { order: 2; min-width: min(100%, 260px); }
+  .nav { order: 3; width: 100%; overflow-x: auto; }
+}
 
 /* Print tweaks for PO PDFs */
 @media print {

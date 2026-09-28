@@ -200,13 +200,17 @@ describe('developmentStore import guards', () => {
     clearImportAttemptedFlagForTests();
   });
 
-  it('imports only when server is empty, local data exists, and import not yet attempted', async () => {
+  it('does not auto-import legacy local data for a fresh tenant unless recovery explicitly requests it', async () => {
     storage.set(
       DEVELOPMENTS_LOCAL_BACKUP_KEY,
       JSON.stringify([sampleLocalDevelopment()])
     );
 
     await ensureDevelopmentsReady();
+    expect(getDevelopment(TEST_SITE_ID)).toBeNull();
+    expect(readLocalDevelopmentsBackup()).toHaveLength(1);
+
+    await ensureDevelopmentsReady({ attemptImport: true });
     expect(getDevelopment(TEST_SITE_ID)?.developmentName).toBe('Test Site 1');
     expect(readLocalDevelopmentsBackup()).toHaveLength(1);
   });

@@ -76,6 +76,15 @@ export async function applyPlotTenureReview(id, payload) {
   return handleJson(res);
 }
 
+export async function applySalesRegisterImport(id, payload) {
+  const res = await fetch(buildUrl(`/api/developments/${encodeURIComponent(id)}/revenue/sales-register-import`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return handleJson(res);
+}
+
 export async function createDevelopment(payload = {}) {
   const actor = sessionActor();
   const res = await fetch(buildUrl('/api/developments'), {

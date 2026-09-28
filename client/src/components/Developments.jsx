@@ -8,6 +8,7 @@ import {
   getDevelopment,
   refreshDevelopment,
 } from '../developments/developmentStore';
+import {useBuildLitePermission} from '../auth/BuildLiteAuthProvider';
 
 export default function Developments({
   initialDevelopmentId = null,
@@ -25,6 +26,7 @@ export default function Developments({
   onRouteChange = null,
   onRouteReplace = null,
 }) {
+  const canCreateDevelopment=useBuildLitePermission('development.create');
   const [view, setView] = useState('list');
   const [activeDevelopmentId, setActiveDevelopmentId] = useState(null);
   const [workspaceTab, setWorkspaceTab] = useState(null);
@@ -180,7 +182,7 @@ export default function Developments({
     );
   }
 
-  if (view === 'new') {
+  if (view === 'new' && canCreateDevelopment) {
     return (
       <StandardWorkspace>
         <DevelopmentForm
@@ -261,7 +263,7 @@ export default function Developments({
     <StandardWorkspace>
       <DevelopmentList
         refreshToken={refreshToken}
-        onNewDevelopment={() => setView('new')}
+        onNewDevelopment={canCreateDevelopment?() => setView('new'):null}
         onOpenDevelopment={openWorkspace}
       />
     </StandardWorkspace>

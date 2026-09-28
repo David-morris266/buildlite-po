@@ -29,9 +29,6 @@ function validateHierarchyUpdates(body = {}) {
     if (!commercialHeadId && (commercialFamilyId || reportingGroupId)) {
       errors.push(`updates[${index}] cannot set Family or Reporting Group while Commercial Head is Unallocated.`);
     }
-    if (commercialHeadId && !reportingGroupId) {
-      errors.push(`updates[${index}].reportingGroup is required when Commercial Head is assigned.`);
-    }
     const reviewDisposition = entry?.reviewDisposition === 'not_applicable' ? 'not_applicable' : null;
     if (reviewDisposition && (commercialHeadId || commercialFamilyId || reportingGroupId)) errors.push(`updates[${index}] cannot allocate hierarchy and mark Not applicable together.`);
     return { id, version, commercialHeadId, commercialFamilyId, reportingGroupId, reviewDisposition };

@@ -273,15 +273,35 @@ if (!isDbConfigured()) {
       .send({ version: 2, commercialFamily: "Super-Structure" });
     assert.equal(invalidMetadata.status, 400);
     assert.match(invalidMetadata.body.message, /commercialHead is required/);
-    assert.match(invalidMetadata.body.message, /reportingGroup is required/);
   });
 
-  test("new records still require complete commercial metadata", async () => {
+  test("new records require Commercial Head but not Reporting Group", async () => {
     const incomplete = await request(app)
       .post("/api/cost-codes")
       .send({ code: `INCOMPLETE-${Date.now()}`, description: "Incomplete" });
     assert.equal(incomplete.status, 400);
-    assert.match(incomplete.body.message, /Commercial Head and Reporting Group are required/);
+    assert.match(incomplete.body.message, /Commercial Head is required/);
+  });
+
+  test("Head-only hierarchy mapping is allocated and creates no Reporting Group", async () => {
+    const active = await getActiveClient();
+    const created = await createCostCode(active.id, payload({ code: `HEAD-${Date.now()}` }), { auth: routeAuth });
+    trackId(created.costCode.id);
+    const groupsBefore = Number((await pool.query('SELECT count(*) FROM commercial_structure_reporting_groups WHERE client_id=$1', [active.id])).rows[0].count);
+    const applied = await request(app).put('/api/cost-codes/hierarchy/bulk').send({ updates: [{ id: created.costCode.id, version: created.costCode.version, commercialHeadId: hierarchy.headId, commercialFamilyId: null, reportingGroupId: null }] });
+    assert.equal(applied.status, 200);
+    assert.equal(applied.body.costCodes[0].hierarchyReviewState, 'allocated');
+    assert.equal(applied.body.costCodes[0].commercialHeadId, hierarchy.headId);
+    assert.equal(applied.body.costCodes[0].reportingGroupId, null);
+    assert.equal(Number((await pool.query('SELECT count(*) FROM commercial_structure_reporting_groups WHERE client_id=$1', [active.id])).rows[0].count), groupsBefore);
+    const unrelated = await request(app).put(`/api/cost-codes/${created.costCode.id}`).send({ version: applied.body.costCodes[0].version, notes: 'Unrelated property update' });
+    assert.equal(unrelated.status, 200);
+    assert.equal(unrelated.body.commercialHeadId, hierarchy.headId);
+    assert.equal(unrelated.body.hierarchyReviewState, 'allocated');
+    const refreshed = await request(app).get(`/api/cost-codes/${created.costCode.id}`);
+    assert.equal(refreshed.status, 200);
+    assert.equal(refreshed.body.commercialHeadId, hierarchy.headId);
+    assert.equal(refreshed.body.commercialHead, applied.body.costCodes[0].commercialHead);
   });
 
   test("deactivate retains the row and hides it from the compatibility select", async () => {

@@ -198,7 +198,15 @@ async function loadCvrCloseSources({ clientId, developmentId, periodId, dbClient
       });
       return { ok: false, sources };
     }
-    sources.ledger = sourceOk(ledgerResult.transactions || []);
+    const transactions = ledgerResult.transactions || [];
+    const unresolved = transactions.filter((item) => item.resolutionStatus === 'unresolved');
+    sources.ledger = unresolved.length
+      ? sourceFailure('unresolved-ledger-transactions', {
+          value: transactions,
+          count: unresolved.length,
+          unresolvedValue: unresolved.reduce((sum, item) => sum + (Number(item.netAmount) || 0), 0),
+        })
+      : sourceOk(transactions);
   } catch (err) {
     sources.ledger = sourceFailure("ledger-query-failed", { error: err.message });
     return { ok: false, sources };

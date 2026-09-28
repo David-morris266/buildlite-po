@@ -10,7 +10,7 @@ const { findProgrammeRow } = require("./developmentProgrammeRepository");
 const { programmeRowToDocument, seedProgrammeFromDevelopment } = require(
   "./developmentProgrammeMapper"
 );
-const { listClassifications } = require("./costCodeClassificationRepository");
+const { listEffectivePrelimsClassifications } = require("./prelimsClassificationAuthority");
 const { getTemplate, listTemplates } = require("./prelimsTemplateRepository");
 const { listPrelimsItems } = require("./prelimsItemRepository");
 const { validatePrelimsItemBody, preserveCostCodeKey } = require("./prelimsItemValidation");
@@ -120,7 +120,9 @@ function buildPreviewLines({ template, existingRows, classificationsByKey, progr
       costCodeKey ? classificationsByKey.get(costCodeKey.toLowerCase()) : null
     );
     const selectable = Boolean(line.enabled) && !applied;
-    const defaultSelected = selectable && Boolean(costCodeKey) && !overlap;
+    // A mapped company-template line is available for review, not selected on the
+    // Development's behalf. Selection is an explicit, browser-local owner action.
+    const defaultSelected = false;
 
     return {
       templateLineId: line.id,
@@ -175,7 +177,7 @@ async function previewPrelimsSetup(clientId, developmentId, { templateId, report
   const items = await listPrelimsItems(clientId, developmentId, { reportingMonth });
   if (!items.ok) return items;
   const existingRows = await listExistingItemRows(clientId, developmentId);
-  const classifications = await listClassifications(clientId);
+  const classifications = await listEffectivePrelimsClassifications(clientId);
   const classificationsByKey = new Map(
     (classifications.classifications || []).map((row) => [String(row.costCodeKey).toLowerCase(), row])
   );

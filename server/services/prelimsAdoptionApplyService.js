@@ -22,7 +22,8 @@ const {
   provisionalActor,
 } = require("./cvrPeriodRepository");
 const { buildCvrCloseCandidate } = require("./cvrCloseEngine");
-const { listClassifications } = require("./costCodeClassificationRepository");
+const { liveDocument: loadLiveDevelopmentBudget } = require("./cvrDevelopmentBudgetSnapshot");
+const { listEffectivePrelimsClassifications } = require("./prelimsClassificationAuthority");
 const { listPrelimsItems } = require("./prelimsItemRepository");
 const {
   PRELIMS_ADOPTION_METADATA_KEY,
@@ -385,6 +386,19 @@ async function adoptPrelimsForecasts(clientId, developmentId, periodId, body = {
 
     const inputRows = await listCostCodeInputRowsForUpdate(clientId, periodId, dbClient);
     const inputDocs = inputRows.map(inputRowToDocument);
+    const usesDevelopmentBudget = period.budgetSourceMode === "development_budget";
+    const developmentBudgetDocument = usesDevelopmentBudget
+      ? await loadLiveDevelopmentBudget(dbClient, clientId, developmentId)
+      : null;
+    if (usesDevelopmentBudget && !developmentBudgetDocument) {
+      await dbClient.query("ROLLBACK");
+      return fail(
+        409,
+        PRELIMS_ADOPTION_ERROR_CODES.CVR_CLOSE_NOT_READY,
+        "Current CVR Development Budget authority is unavailable.",
+        { blockers: [{ source: "developmentBudget", reason: "development_budget_unavailable" }] }
+      );
+    }
 
     const closeCandidate = await buildCvrCloseCandidate({
       clientId,
@@ -392,6 +406,7 @@ async function adoptPrelimsForecasts(clientId, developmentId, periodId, body = {
       periodId,
       actor: resolvedActor,
       dbClient,
+      developmentBudgetDocument,
     });
     if (!closeCandidate.ready) {
       await dbClient.query("ROLLBACK");
@@ -414,7 +429,7 @@ async function adoptPrelimsForecasts(clientId, developmentId, periodId, body = {
     }
     const collection = collectionResult.collection;
 
-    const classificationsResult = await listClassifications(clientId, dbClient);
+    const classificationsResult = await listEffectivePrelimsClassifications(clientId, dbClient);
     const classifications = classificationsResult.ok
       ? classificationsResult.classifications || []
       : [];

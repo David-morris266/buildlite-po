@@ -72,6 +72,9 @@ function attachPrelimsCalculation(item, context = {}) {
     calculation: {
       ...calculation,
       reasonLabel: calculation.reason ? PRELIMS_UNRESOLVED_LABELS[calculation.reason] || calculation.reason : null,
+      phasingReasonLabel: calculation.phasingReason
+        ? PRELIMS_UNRESOLVED_LABELS[calculation.phasingReason] || calculation.phasingReason
+        : null,
     },
   };
 }

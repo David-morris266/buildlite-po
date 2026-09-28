@@ -21,6 +21,8 @@ import AdminPrelimsTemplatesPage from './AdminPrelimsTemplatesPage';
 import AdminSellingCostsTemplatesPage from './AdminSellingCostsTemplatesPage';
 import AdminSetupDataImportPage from './AdminSetupDataImportPage';
 import AdminSubcontractTermsPage from './AdminSubcontractTermsPage';
+import AdminPlatformProvisioningPage from './AdminPlatformProvisioningPage';
+import AdminCompanyReadinessPage from './AdminCompanyReadinessPage';
 
 const showDeveloperTools = !import.meta.env.PROD;
 const COMMERCIAL_TEMPLATES_PERMISSION = 'commercial_templates.manage';
@@ -40,6 +42,7 @@ export default function AdministrationModule({
   const principal = useBuildLitePrincipal();
   const canManageCommercialTemplates = principal?.permissions?.includes(COMMERCIAL_TEMPLATES_PERMISSION) === true;
   const canManageClassifications = principal?.permissions?.includes(CLASSIFICATION_PERMISSION) === true;
+  const canProvision=principal?.platformPermissions?.includes('platform.tenant_provision')===true;
   const [view, setView] = useState('landing');
   const [viewContext, setViewContext] = useState(null);
   const [setupStep, setSetupStep] = useState(null);
@@ -121,12 +124,15 @@ export default function AdministrationModule({
     );
   }
 
-  if (view === 'setup-data-import' || view === 'setup-assistant') {
+  if (view === 'company-readiness') {
+    return <AdministrationWorkspace><AdminCompanyReadinessPage onOpen={openView} onOpenDevelopments={onOpenDevelopments} /></AdministrationWorkspace>;
+  }
+  if (view === 'setup-data-import' || view === 'setup-assistant' || view === 'cost-code-import') {
     return (
       <AdministrationWorkspace>
         <AdminSetupDataImportPage
           onBack={goToDashboard}
-          onLaunchSetup={(step) => setSetupStep(step || 1)}
+          initialCostCodeImport={view === 'cost-code-import'}
         />
       </AdministrationWorkspace>
     );
@@ -142,7 +148,7 @@ export default function AdministrationModule({
   if (view === 'commercial-structure') {
     return (
       <AdministrationWorkspace>
-        <AdminCommercialStructurePage onBack={goToDashboard} />
+        <AdminCommercialStructurePage onBack={goToDashboard} onReviewCostCodeHierarchy={()=>openView('cost-codes',{openHierarchySetup:true})} />
       </AdministrationWorkspace>
     );
   }
@@ -157,7 +163,7 @@ export default function AdministrationModule({
     return (
       <AdministrationWorkspace>
         {returnAction}
-        <AdminCostCodesPage onBack={goToDashboard} issueFilter={viewContext} onClearIssueFilter={() => setViewContext(null)} onOpenBulkClassification={canManageClassifications?()=>openView('cost-code-classification'):null} />
+        <AdminCostCodesPage onBack={goToDashboard} issueFilter={viewContext?.records?viewContext:null} initialHierarchySetup={viewContext?.openHierarchySetup===true} onClearIssueFilter={() => setViewContext(null)} onOpenBulkClassification={canManageClassifications?()=>openView('cost-code-classification'):null} />
       </AdministrationWorkspace>
     );
   }
@@ -216,6 +222,7 @@ export default function AdministrationModule({
       </AdministrationWorkspace>
     );
   }
+  if(view==='platform-provisioning'){if(!canProvision){return <AdministrationWorkspace><AdministrationLanding onOpen={openView} showDeveloperTools={showDeveloperTools} canManageCommercialTemplates={canManageCommercialTemplates}/></AdministrationWorkspace>}return <AdministrationWorkspace><AdminPlatformProvisioningPage onBack={goToDashboard}/></AdministrationWorkspace>}
   if (view === 'cost-code-classification') {
     if (!canManageClassifications) return null;
     return <AdministrationWorkspace><AdminCostCodeBulkClassification onBack={()=>openView('cost-codes')} initialSemanticGroup={viewContext?.semanticGroup||''}/></AdministrationWorkspace>;
@@ -243,6 +250,7 @@ export default function AdministrationModule({
         onOpen={openView}
         showDeveloperTools={showDeveloperTools}
         canManageCommercialTemplates={canManageCommercialTemplates}
+        canProvision={canProvision}
         accessError={accessError}
       />
     </AdministrationWorkspace>

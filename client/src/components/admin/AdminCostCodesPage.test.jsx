@@ -179,6 +179,32 @@ describe('AdminCostCodesPage (BL-033D.x.2A.2)', () => {
     expect(localStorage.getItem(COST_CODE_MASTER_KEY)).toBeNull();
   });
 
+  it('shows authoritative hierarchy IDs, separates status badges, and omits hierarchy from unrelated saves', async () => {
+    authorityEnabled.value = true;
+    seedMockCostCodes([{ id: 'cc-2000', code: '2000', description: 'Site Management', version: 5, commercialHead: 'Preliminaries', commercialHeadId: 'head-land', commercialFamily: '', commercialFamilyId: null, reportingGroup: '', reportingGroupId: null, hierarchyReviewState: 'allocated' }]);
+    await renderPage();
+    const item = [...container.querySelectorAll('button')].find((el) => el.textContent.includes('2000'));
+    const badges = item.querySelector('.admin-record-list__badges');
+    expect(badges).toBeTruthy();
+    expect([...badges.querySelectorAll('.admin-chip')].map((badge) => badge.textContent)).toEqual(['Allocated', 'Active']);
+    await act(async () => { item.click(); await Promise.resolve(); });
+    const head = [...container.querySelectorAll('form label')].find((label) => label.querySelector('.dev-form__label')?.textContent === 'Commercial Head')?.querySelector('select');
+    expect(head.value).toBe('head-land');
+    expect(head.selectedOptions[0].textContent).toBe('Land');
+    const notes = container.querySelector('textarea');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(notes, 'Unrelated note');
+      notes.dispatchEvent(new Event('input', { bubbles: true }));
+      container.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await Promise.resolve(); await Promise.resolve();
+    });
+    const payload = getCostCodesCallCounts().lastWritePayload;
+    expect(payload.notes).toBe('Unrelated note');
+    expect(payload).not.toHaveProperty('commercialHeadId');
+    expect(payload).not.toHaveProperty('commercialFamilyId');
+    expect(payload).not.toHaveProperty('reportingGroupId');
+  });
+
   it('shows truthful empty and persisted legacy metadata values', async () => {
     authorityEnabled.value = true;
     seedMockCostCodes([{

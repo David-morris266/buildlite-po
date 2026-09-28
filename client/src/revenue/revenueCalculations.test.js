@@ -170,6 +170,21 @@ describe('plotRevenueEngine', () => {
     expect(rows[1].effectivePrice).toBe(400000);
   });
 
+  it('presents Reserved Selling Price as effective authority and retains the fallback source', () => {
+    const rows = buildPlotRevenueRegisterRows([{
+      id: 'plot-7', plotNumber: '7', houseType: 'Ash', revenueStatus: 'Reserved',
+      revenueSource: 'House Type', pricingSource: 'Reserved Selling Price',
+      fallbackPricingSource: 'House Type', reservedSellingPriceAuthority: true,
+      sellingPrice: 330000, forecastSellingPrice: 330000, effectivePrice: 330000,
+    }]);
+    expect(rows[0]).toMatchObject({
+      pricingSource: 'Reserved Selling Price',
+      fallbackPricingSource: 'House Type',
+      reservedSellingPriceAuthority: true,
+      forecastSellingPrice: 330000,
+    });
+  });
+
   it('builds register rows with commercial tenure from plot master', () => {
     const rows = buildPlotRevenueRegisterRows([
       {
@@ -232,6 +247,7 @@ describe('plotRevenueEngine', () => {
         sellingPrice: 285000,
         forecastSellingPrice: 250000,
         revenueStatus: 'Available',
+        pricingRequiresArea: true,
       },
       {
         id: 'plot-y',

@@ -14,6 +14,8 @@ import {
   ensureLedgerReadyForDevelopment,
   getLedgerReadiness,
 } from '../ledger/ledgerServerCache';
+import { listActiveCostCodesForSelect } from '../admin/costCodeMasterStore';
+import { resolveServerLedgerTransaction } from '../ledger/ledgerServerMutations';
 
 function StatusBadge({ status }) {
   return (
@@ -70,6 +72,9 @@ export default function PurchaseLedger({
   const [sortKey, setSortKey] = useState('transactionDate');
   const [sortDir, setSortDir] = useState('desc');
   const [localRefresh, setLocalRefresh] = useState(0);
+  const [eligibleCostCodes, setEligibleCostCodes] = useState([]);
+  const [resolutionDrafts, setResolutionDrafts] = useState({});
+  const [resolutionError, setResolutionError] = useState('');
 
   useEffect(() => {
     if (!isLedgerServerAuthorityEnabled()) return undefined;
@@ -88,6 +93,16 @@ export default function PurchaseLedger({
       cancelled = true;
     };
   }, [development.id, refreshToken]);
+
+  useEffect(() => {
+    if (!listTransactions(development.id).some((row) => row.resolutionStatus === 'unresolved')) {
+      setEligibleCostCodes([]);
+      return;
+    }
+    listActiveCostCodesForSelect()
+      .then((rows) => setEligibleCostCodes((rows || []).filter((row) => row.allowLedgerImport !== false)))
+      .catch(() => setEligibleCostCodes([]));
+  }, [development.id, localRefresh]);
 
   const workspace = useMemo(() => {
     void refreshToken;
@@ -140,6 +155,27 @@ export default function PurchaseLedger({
     onLedgerChanged?.();
   }
 
+  async function handleResolve(transaction) {
+    const draft = resolutionDrafts[transaction.id] || {};
+    setResolutionError('');
+    const result = await resolveServerLedgerTransaction(development.id, transaction.id, {
+      resolvedCostCodeId: draft.costCodeId,
+      reason: draft.reason,
+      version: transaction.resolutionVersion,
+    });
+    if (!result.ok) {
+      setResolutionError(result.errors?.[0] || 'Unable to resolve transaction.');
+      return;
+    }
+    setResolutionDrafts((current) => {
+      const next = { ...current };
+      delete next[transaction.id];
+      return next;
+    });
+    setLocalRefresh((value) => value + 1);
+    onLedgerChanged?.();
+  }
+
   if (importOpen) {
     return (
       <PurchaseLedgerImportWizard
@@ -180,6 +216,25 @@ export default function PurchaseLedger({
       />
 
       <LedgerSummaryDashboard cards={workspace.summaryCards} />
+
+      {listTransactions(development.id).some((txn) => txn.resolutionStatus === 'unresolved') ? (
+        <section className="po-module-card dev-ledger__unmatched" aria-labelledby="ledger-unmatched-title">
+          <h2 id="ledger-unmatched-title" className="po-matrix-section__title">Unmatched transactions</h2>
+          <p>These source transactions remain financial evidence but are excluded from allocated Actual Cost and CVR until resolved.</p>
+          {resolutionError ? <p role="alert" className="po-list-feedback po-list-feedback--error">{resolutionError}</p> : null}
+          <div className="po-table-wrap"><table className="po-data-table"><thead><tr><th>Date</th><th>Supplier / reference</th><th>Source Cost Code</th><th>Description</th><th>Net</th><th>Resolution</th></tr></thead><tbody>
+            {listTransactions(development.id).filter((txn) => txn.resolutionStatus === 'unresolved').map((txn) => {
+              const draft = resolutionDrafts[txn.id] || {};
+              return <tr key={txn.id}><td>{txn.transactionDate}</td><td>{txn.supplier}<br />{txn.invoiceNumber || txn.reference || '—'}</td><td>{txn.sourceCostCodeKey}</td><td>{txn.description || '—'}</td><td>{formatLedgerTransactionRow(txn).amountLabel}</td><td>
+                <select className="select" aria-label={`Resolve ${txn.sourceCostCodeKey}`} value={draft.costCodeId || ''} onChange={(event) => setResolutionDrafts((current) => ({ ...current, [txn.id]: { ...draft, costCodeId: event.target.value } }))}><option value="">Select Company Cost Code</option>{eligibleCostCodes.map((code) => <option key={code.id} value={code.id}>{code.code} — {code.element}</option>)}</select>
+                <input className="input" aria-label={`Resolution reason for ${txn.sourceCostCodeKey}`} placeholder="Resolution reason" value={draft.reason || ''} onChange={(event) => setResolutionDrafts((current) => ({ ...current, [txn.id]: { ...draft, reason: event.target.value } }))} />
+                <button type="button" className="po-list-btn-secondary" disabled={!draft.costCodeId || !String(draft.reason || '').trim()} onClick={() => handleResolve(txn)}>Resolve to Cost Code</button>
+              </td></tr>;
+            })}
+          </tbody></table></div>
+          <p>Genuinely new Cost Code? Create and review it in Administration → Cost Codes, then return here to resolve it.</p>
+        </section>
+      ) : null}
 
       <header className="dev-ledger__list-header">
         <div>

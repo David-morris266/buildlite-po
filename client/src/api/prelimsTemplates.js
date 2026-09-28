@@ -108,3 +108,15 @@ export async function updatePrelimsTemplateLine(templateId, lineId, payload = {}
   );
   return handleJson(res);
 }
+
+export async function applyReviewedPrelimsMappings(templateId, payload = {}) {
+  const res = await fetch(
+    buildUrl(`/api/prelims-templates/${encodeURIComponent(templateId)}/reviewed-mappings`),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(withActor(payload)),
+    }
+  );
+  return handleJson(res);
+}

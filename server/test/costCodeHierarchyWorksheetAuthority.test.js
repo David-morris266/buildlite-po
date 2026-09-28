@@ -68,6 +68,25 @@ test('preview is zero-write, deterministic and blocks unresolved, duplicate, unk
   assert.equal(invalid.summary.blockers, 2);
 });
 
+test('Head-only worksheet mapping is valid and creates no Family or Reporting Group', async () => {
+  const code = (await pool.query(`INSERT INTO cost_codes(client_id,code,description,is_active,version) VALUES($1,'HEAD-ONLY','Head only',true,1) RETURNING *`, [fixture.client.id])).rows[0];
+  const rows = [{ id: code.id, code: 'HEAD-ONLY', description: 'Head only', version: 1, commercialHead: 'Land' }];
+  const reviewed = (await worksheet.preview(fixture.client.id, { rows, sourceFilename: 'head-only.xlsx' }, fixture.auth)).preview;
+  assert.equal(reviewed.summary.blockers, 0);
+  assert.equal(reviewed.summary.allocations, 1);
+  assert.equal(reviewed.summary.newFamilies, 0);
+  assert.equal(reviewed.summary.newReportingGroups, 0);
+  assert.deepEqual(reviewed.rows[0].after.labels, { commercialHead: 'Land', commercialFamily: '', reportingGroup: '' });
+  const groupsBefore = Number((await pool.query('SELECT count(*) FROM commercial_structure_reporting_groups WHERE client_id=$1', [fixture.client.id])).rows[0].count);
+  const applied = await worksheet.apply(fixture.client.id, { rows, sourceFilename: 'head-only.xlsx', catalogueRevision: reviewed.catalogueRevision, reviewToken: reviewed.reviewToken }, fixture.auth);
+  assert.equal(applied.ok, true, applied.message);
+  const saved = (await pool.query('SELECT commercial_head_id,commercial_family_id,reporting_group_id FROM cost_codes WHERE id=$1', [code.id])).rows[0];
+  assert.equal(saved.commercial_head_id, fixture.head.id);
+  assert.equal(saved.commercial_family_id, null);
+  assert.equal(saved.reporting_group_id, null);
+  assert.equal(Number((await pool.query('SELECT count(*) FROM commercial_structure_reporting_groups WHERE client_id=$1', [fixture.client.id])).rows[0].count), groupsBefore);
+});
+
 test('protected worksheet identity is exact while hierarchy labels normalize independently', async () => {
   const exactDescription = 'Compound  - Groundworks';
   const code = (await pool.query(`INSERT INTO cost_codes(client_id,code,description,is_active,version) VALUES($1,'002220',$2,true,1) RETURNING *`, [fixture.client.id, exactDescription])).rows[0];
@@ -119,9 +138,9 @@ test('atomic apply creates reviewed paths, maps and marks Not Applicable without
   assert.equal(codes.find((row) => row.code === 'ALPHA-1').notes, 'unchanged note');
   assert.ok(codes.find((row) => row.code === 'ALPHA-1').commercial_head_id);
   assert.equal(codes.find((row) => row.code === 'NA-1').hierarchy_review_disposition, 'not_applicable');
-  assert.equal((await pool.query('SELECT count(*)::int n FROM cost_code_hierarchy_review_audit WHERE client_id=$1', [fixture.client.id])).rows[0].n, 2);
-  assert.equal((await pool.query('SELECT count(*)::int n FROM cost_code_import_batches WHERE client_id=$1', [fixture.client.id])).rows[0].n, 1);
-  assert.equal((await pool.query('SELECT count(*)::int n FROM cost_code_import_row_evidence WHERE client_id=$1', [fixture.client.id])).rows[0].n, 3);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM cost_code_hierarchy_review_audit WHERE client_id=$1', [fixture.client.id])).rows[0].n, 3);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM cost_code_import_batches WHERE client_id=$1', [fixture.client.id])).rows[0].n, 2);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM cost_code_import_row_evidence WHERE client_id=$1', [fixture.client.id])).rows[0].n, 4);
   await assert.rejects(pool.query('UPDATE cost_code_hierarchy_review_audit SET operation=operation WHERE client_id=$1', [fixture.client.id]), /append-only/);
 });
 

@@ -4,13 +4,14 @@
 
 const express = require("express");
 const { isDbConfigured } = require("../db");
-const { getActiveClient } = require("../services/activeClient");
+const { requirePermission } = require("../auth/authorization");
+const { PERMISSIONS } = require("../auth/permissions");
 const {
   getLedgerTotals,
   importLedgerBatch,
   listLedgerBatches,
   listLedgerTransactions,
-  provisionalActor,
+  resolveLedgerTransaction,
   reverseLedgerTransaction,
 } = require("../services/ledgerRepository");
 
@@ -32,15 +33,12 @@ function sendResult(res, result, payloadKey) {
   return res.status(result.status || 200).json(result[payloadKey]);
 }
 
-router.get("/ledger/batches", async (req, res) => {
+router.get("/ledger/batches", requirePermission(PERMISSIONS.COMMERCIAL_READ), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
     }
-    const active = await getActiveClient();
-    if (!active) return res.status(404).json({ error: "No active client set" });
-
-    const result = await listLedgerBatches(active.id, req.params.developmentId);
+    const result = await listLedgerBatches(req.buildliteAuth.clientId, req.params.developmentId);
     if (!result.ok) return sendResult(res, result);
     res.json({ batches: result.batches });
   } catch (err) {
@@ -49,15 +47,12 @@ router.get("/ledger/batches", async (req, res) => {
   }
 });
 
-router.get("/ledger/transactions", async (req, res) => {
+router.get("/ledger/transactions", requirePermission(PERMISSIONS.COMMERCIAL_READ), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
     }
-    const active = await getActiveClient();
-    if (!active) return res.status(404).json({ error: "No active client set" });
-
-    const result = await listLedgerTransactions(active.id, req.params.developmentId);
+    const result = await listLedgerTransactions(req.buildliteAuth.clientId, req.params.developmentId);
     if (!result.ok) return sendResult(res, result);
     res.json({ transactions: result.transactions });
   } catch (err) {
@@ -66,15 +61,12 @@ router.get("/ledger/transactions", async (req, res) => {
   }
 });
 
-router.get("/ledger/totals", async (req, res) => {
+router.get("/ledger/totals", requirePermission(PERMISSIONS.COMMERCIAL_READ), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
     }
-    const active = await getActiveClient();
-    if (!active) return res.status(404).json({ error: "No active client set" });
-
-    const result = await getLedgerTotals(active.id, req.params.developmentId);
+    const result = await getLedgerTotals(req.buildliteAuth.clientId, req.params.developmentId);
     if (!result.ok) return sendResult(res, result);
     res.json(result.totals);
   } catch (err) {
@@ -83,18 +75,13 @@ router.get("/ledger/totals", async (req, res) => {
   }
 });
 
-router.post("/ledger/batches", async (req, res) => {
+router.post("/ledger/batches", requirePermission(PERMISSIONS.LEDGER_MANAGE), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
     }
-    const active = await getActiveClient();
-    if (!active) return res.status(404).json({ error: "No active client set" });
-
     const body = req.body || {};
-    const result = await importLedgerBatch(active.id, req.params.developmentId, body, {
-      actor: provisionalActor(body),
-    });
+    const result = await importLedgerBatch(req.buildliteAuth.clientId, req.params.developmentId, body, req.buildliteAuth);
     sendResult(res, result, "import");
   } catch (err) {
     console.error("[Ledger] import batch error:", err);
@@ -102,26 +89,33 @@ router.post("/ledger/batches", async (req, res) => {
   }
 });
 
-router.post("/ledger/transactions/:transactionId/reverse", async (req, res) => {
+router.post("/ledger/transactions/:transactionId/reverse", requirePermission(PERMISSIONS.LEDGER_MANAGE), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
     }
-    const active = await getActiveClient();
-    if (!active) return res.status(404).json({ error: "No active client set" });
-
     const body = req.body || {};
     const result = await reverseLedgerTransaction(
-      active.id,
+      req.buildliteAuth.clientId,
       req.params.developmentId,
       req.params.transactionId,
       body,
-      { actor: provisionalActor(body) }
+      req.buildliteAuth
     );
     sendResult(res, result, "transaction");
   } catch (err) {
     console.error("[Ledger] reverse transaction error:", err);
     res.status(500).json({ message: "Failed to reverse ledger transaction." });
+  }
+});
+
+router.post("/ledger/transactions/:transactionId/resolve", requirePermission(PERMISSIONS.LEDGER_MANAGE), async (req,res) => {
+  try {
+    const result = await resolveLedgerTransaction(req.buildliteAuth.clientId, req.params.developmentId, req.params.transactionId, req.body || {}, req.buildliteAuth);
+    sendResult(res, result, "transaction");
+  } catch (err) {
+    console.error("[Ledger] resolve transaction error:", err);
+    res.status(500).json({message:"Failed to resolve ledger transaction."});
   }
 });
 

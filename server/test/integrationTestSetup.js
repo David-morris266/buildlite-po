@@ -22,6 +22,20 @@ async function ensureActiveTestClient(pool) {
   return inserted.rows[0].id;
 }
 
+async function ensureDefaultTestPrincipal(pool, clientId) {
+  const userId = '00000000-0000-0000-0000-000000000001';
+  const membershipId = '00000000-0000-0000-0000-000000000002';
+  await pool.query(`INSERT INTO buildlite_users(id,auth_provider,provider_user_id,email_snapshot,display_name)
+    VALUES($1,'clerk','test-user','test@example.invalid','Test Commercial Manager')
+    ON CONFLICT(id) DO NOTHING`, [userId]);
+  const role = await pool.query("SELECT id FROM roles WHERE key='commercial_manager' LIMIT 1");
+  if (role.rows[0]) {
+    await pool.query(`INSERT INTO client_user_memberships(id,client_id,user_id,role_id,is_active)
+      VALUES($1,$2,$3,$4,TRUE) ON CONFLICT(id) DO NOTHING`,
+      [membershipId, clientId, userId, role.rows[0].id]);
+  }
+}
+
 async function prepareIntegrationTestDatabase(pool) {
   await assertActiveTestDatabase(pool);
   await init();
@@ -74,7 +88,14 @@ async function prepareIntegrationTestDatabase(pool) {
   if (!hasSiteStartBudget.rowCount) {
     await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '058_site_start_budget_milestone.sql'), 'utf8'));
   }
-  await ensureActiveTestClient(pool);
+  const hasTenantProvisioning = await pool.query("SELECT 1 FROM information_schema.tables WHERE table_name='tenant_provisioning_audit'");
+  if (!hasTenantProvisioning.rowCount) await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '059_secure_tenant_provisioning.sql'), 'utf8'));
+  const hasCommercialDirectorStructureAuthority = await pool.query("SELECT 1 FROM role_permissions rp JOIN roles r ON r.id=rp.role_id WHERE r.key='commercial_director' AND rp.permission_key='commercial_structure.manage'");
+  if (!hasCommercialDirectorStructureAuthority.rowCount) await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '060_commercial_director_structure_authority.sql'), 'utf8'));
+  const hasLedgerResolution = await pool.query("SELECT 1 FROM information_schema.columns WHERE table_name='ledger_transactions' AND column_name='source_cost_code_key'");
+  if (!hasLedgerResolution.rowCount) await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '061_ledger_cost_code_resolution.sql'), 'utf8'));
+  const activeClientId = await ensureActiveTestClient(pool);
+  await ensureDefaultTestPrincipal(pool, activeClientId);
 }
 
 module.exports = {

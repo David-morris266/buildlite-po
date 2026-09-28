@@ -15,6 +15,7 @@ import RevenueStrategyPanel from './RevenueStrategyPanel';
 import RevenueHouseTypeSummary from './RevenueHouseTypeSummary';
 
 import PlotDrawer from './PlotDrawer';
+import SalesRegisterImportWizard from './SalesRegisterImportWizard';
 import TenureBadge from './TenureBadge';
 
 import { updatePlot } from '../developments/plotMaster';
@@ -44,12 +45,15 @@ import {
   buildPlotRevenueRegisterRows,
 
   buildRevenueExceptions,
+  groupRevenueExceptions,
 
   filterPlotRevenueRows,
 
   sortPlotRevenueRows,
 
 } from '../revenue/plotRevenueEngine';
+import { applySalesRegisterImport } from '../api/developments';
+import { getDevelopment, refreshDevelopment } from '../developments/developmentStore';
 
 import { buildRevenueDiagnostics } from '../revenue/revenueDiagnostics';
 
@@ -250,6 +254,7 @@ export default function RevenueWorkspace({
   const [summaryLines, setSummaryLines] = useState([]);
   const [savingSummary, setSavingSummary] = useState(false);
   const [summaryMessage, setSummaryMessage] = useState('');
+  const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -282,7 +287,7 @@ export default function RevenueWorkspace({
     };
   }, [developmentId, refreshToken, localRefresh]);
 
-  const plots = pricingContext?.plots || [];
+  const plots = useMemo(() => pricingContext?.plots || [], [pricingContext]);
   const strategy = pricingContext?.strategy || emptyRevenueStrategy();
   const houseTypePricing = pricingContext?.houseTypePricing || {};
 
@@ -383,6 +388,7 @@ export default function RevenueWorkspace({
 
 
   const exceptions = useMemo(() => buildRevenueExceptions(displayPricedPlots), [displayPricedPlots]);
+  const exceptionGroups = useMemo(() => groupRevenueExceptions(exceptions), [exceptions]);
 
 
 
@@ -580,6 +586,13 @@ export default function RevenueWorkspace({
     setLocalRefresh((value) => value + 1); onRevenueChanged?.();
   }
 
+  async function handleSalesRegisterApply(payload) {
+    await applySalesRegisterImport(developmentId, payload);
+    await refreshDevelopment(developmentId);
+    setImportOpen(false);
+    handleStrategyChanged({ updatedCount: payload.updates.length, source: 'sales-register-import' });
+  }
+
 
 
   if (loadError) {
@@ -596,6 +609,19 @@ export default function RevenueWorkspace({
     return (
       <div className="revenue-workspace revenue-workspace--loading">
         <p className="revenue-workspace__lead">Loading revenue data…</p>
+      </div>
+    );
+  }
+
+  if (importOpen && pricingContext.revenueMode !== 'summary') {
+    return (
+      <div className="revenue-workspace revenue-workspace--sales-import">
+        <SalesRegisterImportWizard
+          plots={plots}
+          developmentVersion={getDevelopment(developmentId)?.version}
+          onCancel={() => setImportOpen(false)}
+          onApply={handleSalesRegisterApply}
+        />
       </div>
     );
   }
@@ -819,6 +845,10 @@ export default function RevenueWorkspace({
 
             />
 
+            <button type="button" className="po-btn-primary" onClick={() => setImportOpen(true)}>
+              Import Sales Register
+            </button>
+
           </header>
 
 
@@ -967,8 +997,6 @@ export default function RevenueWorkspace({
 
         </section>
 
-
-
         <section className="po-module-card revenue-actions" aria-labelledby="commercial-actions-title">
 
           <header className="revenue-workspace__header revenue-workspace__header--compact">
@@ -1001,28 +1029,20 @@ export default function RevenueWorkspace({
 
               <ul className="revenue-exceptions__list">
 
-                {exceptions.map((item) => (
-
-                  <li key={item.id}>
-
-                    <button
-
-                      type="button"
-
-                      className="revenue-exceptions__card revenue-exceptions__card--action"
-
-                      onClick={() => handleOpenPlot(item.plotId)}
-
-                    >
-
-                      <span className="revenue-exceptions__label">{item.label}</span>
-
-                      <span className="revenue-exceptions__message">{item.message}</span>
-
-                    </button>
-
+                {exceptionGroups.map((group) => (
+                  <li key={group.id} className="revenue-exceptions__card">
+                    <span className="revenue-exceptions__label">
+                      {group.label} — {group.count} plot{group.count === 1 ? '' : 's'}
+                    </span>
+                    <span className="revenue-exceptions__message">{group.plotNumbers.join(', ')}</span>
+                    <span className="revenue-exceptions__detail-actions">
+                      {group.items.map((item) => (
+                        <button type="button" className="revenue-insights__link" key={item.id} onClick={() => handleOpenPlot(item.plotId)}>
+                          Plot {item.plotNumber}
+                        </button>
+                      ))}
+                    </span>
                   </li>
-
                 ))}
 
               </ul>

@@ -149,6 +149,9 @@ export default function DevelopmentWorkspace({
     setStartDate(development.startDate || '');
     setTargetCompletion(development.targetCompletion || '');
     setDateError('');
+  }, [development.id, development.startDate, development.targetCompletion]);
+
+  useEffect(() => {
     setActiveTab(initialActiveTab || 'overview');
     if (!initialCvrPeriodKey) {
       setCvrView('register');
@@ -173,7 +176,7 @@ export default function DevelopmentWorkspace({
     setCommercialNavigationStack([]);
     setDevelopmentCommercialTarget(null);
     setCommercialRegisterError('');
-  }, [development.id, development.startDate, development.targetCompletion, initialActiveTab, initialCvrPeriodKey]);
+  }, [development.id, initialActiveTab, initialCvrPeriodKey]);
 
   useEffect(() => {
     if (!initialActiveTab && !initialCvrPeriodKey) return;
@@ -1138,7 +1141,18 @@ export default function DevelopmentWorkspace({
         ) : null}
 
         {activeTab === 'prelims' ? (
-          <DevelopmentPrelimsWorkspace developmentId={model.id} />
+          <DevelopmentPrelimsWorkspace
+            developmentId={model.id}
+            onSetUpCompanyTemplate={() => onNavigate?.({
+              view: 'administration',
+              section: 'prelims-templates',
+              returnDevelopment: {
+                id: development.id,
+                name: development.developmentName || development.jobNumber || 'Development',
+                workspaceTab: 'prelims',
+              },
+            })}
+          />
         ) : null}
 
         {activeTab === 'cvr' ? (

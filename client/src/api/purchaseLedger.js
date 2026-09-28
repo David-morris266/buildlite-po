@@ -103,3 +103,10 @@ export async function reverseLedgerTransactionForDevelopment(
   );
   return handleJson(res);
 }
+
+export async function resolveLedgerTransactionForDevelopment(developmentId, transactionId, payload) {
+  const res = await fetch(buildUrl(`${ledgerUrl(developmentId, 'transactions')}/${encodeURIComponent(transactionId)}/resolve`), {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload || {}),
+  });
+  return handleJson(res);
+}

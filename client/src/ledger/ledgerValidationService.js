@@ -14,7 +14,7 @@ import { getExistingInvoiceKeys } from './ledgerTransactionStore';
 
 export const WARNING_TYPES = {
   DEVELOPMENT_MISMATCH: 'Development identifier mismatch',
-  NEW_COST_CODE: 'New Cost Code will be created',
+  NEW_COST_CODE: 'Not matched to Company Cost Code',
 };
 
 export const ERROR_TYPES = {
@@ -248,6 +248,8 @@ export function validateLedgerImport(rows, headerRowIndex, fieldByColumn, contex
   const errorCount = errors.length;
   const warningCount = rowWarnings.length + globalWarnings.length;
   const pendingList = [...pendingNewCostCentres.values()];
+  const unresolvedRows = validRows.filter((row) => row.warnings.includes(WARNING_TYPES.NEW_COST_CODE));
+  const resolvedRows = validRows.filter((row) => !row.warnings.includes(WARNING_TYPES.NEW_COST_CODE));
 
   if (!rowCount) {
     globalWarnings.push('No data rows were found below the header row.');
@@ -260,6 +262,10 @@ export function validateLedgerImport(rows, headerRowIndex, fieldByColumn, contex
     errorCount,
     newCostCentresPending: pendingList.length,
     totalValue: Math.round((totalValue + Number.EPSILON) * 100) / 100,
+    resolvedCount: resolvedRows.length,
+    unresolvedCount: unresolvedRows.length,
+    allocatedValue: Math.round((resolvedRows.reduce((sum, row) => sum + row.netAmount, 0) + Number.EPSILON) * 100) / 100,
+    unresolvedValue: Math.round((unresolvedRows.reduce((sum, row) => sum + row.netAmount, 0) + Number.EPSILON) * 100) / 100,
     validRows,
     errors,
     exceptions: errors,

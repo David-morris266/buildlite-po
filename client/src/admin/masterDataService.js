@@ -72,6 +72,9 @@ export const ADMIN_VIEWS = [
   'selling-costs-templates',
   'subcontract-terms',
   'developer-tools',
+  'platform-provisioning',
+  'company-readiness',
+  'cost-code-import',
 ];
 
 export function isAdminView(value) {
@@ -98,6 +101,9 @@ export function getAdminViewTitle(view) {
     'selling-costs-templates': 'Selling Costs Templates',
     'subcontract-terms': 'Subcontract Terms',
     'developer-tools': 'Developer Tools',
+    'platform-provisioning': 'Provision Company',
+    'company-readiness': 'Company Readiness',
+    'cost-code-import': 'Import Cost Codes',
   };
   return titles[view] || 'Administration';
 }

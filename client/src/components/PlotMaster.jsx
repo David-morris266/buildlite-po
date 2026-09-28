@@ -244,7 +244,6 @@ export default function PlotMaster({
                 <th>Commercial</th>
                 <th>Phase</th>
                 <th>Tenure</th>
-                <th>Status</th>
                 <th className="dev-plot-master__actions-col">Actions</th>
               </tr>
             </thead>
@@ -261,7 +260,6 @@ export default function PlotMaster({
                   </td>
                   <td>{plot.phase || '—'}</td>
                   <td>{plot.tenure || '—'}<small className="dev-selling-costs__destination-provenance">{plot.tenureCode && plot.tenureCode !== 'UNREVIEWED' ? plot.tenureCode.replaceAll('_', ' ') : 'Classification unreviewed'}</small></td>
-                  <td>{plot.status || '—'}</td>
                   <td className="dev-plot-master__row-actions">
                     <button
                       type="button"

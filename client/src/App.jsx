@@ -15,10 +15,10 @@ import { CommercialWorkspace } from './components/layout/WorkspaceShell';
 import { NavigationProvider } from './navigation/NavigationContext';
 import { UnsavedChangesProvider } from './navigation/UnsavedChangesProvider.jsx';
 import { useOptionalUnsavedChanges } from './navigation/UnsavedChangesContext.js';
-import SetupAssistant, { dismissSetupAssistant } from './setup/SetupAssistant';
+import { dismissSetupAssistant } from './setup/SetupAssistant';
 import { buildPoFormSeedFromSetup, loadSetupDraft } from './setup/setupDraft';
 import { useBuildLitePrincipal } from './auth/BuildLiteAuthProvider';
-import { shouldEnterSetup } from './navigation/startupDestination';
+import { shouldEnterCompanyReadiness } from './navigation/startupDestination';
 import { parseSubcontractOrderKey } from './payments/packageKeyMigration';
 import {
   homeApplicationRoute,
@@ -38,7 +38,6 @@ function ApplicationContent() {
   const [tab, setTab] = useState(
     initialRoute.view === 'setup' ? HOME_VIEW : initialRoute.view
   );
-  const [setupDismissed, setSetupDismissed] = useState(false);
   const [setupLaunchSeed, setSetupLaunchSeed] = useState(null);
   const [listFocusPo, setListFocusPo] = useState(null);
   const [cvrNav, setCvrNav] = useState({
@@ -120,6 +119,10 @@ function ApplicationContent() {
   }, []);
 
   const writeAdministrationRoute = useCallback((administrationSection, options) => {
+    setAdminLaunch((current) => ({
+      section: administrationSection || 'landing',
+      returnDevelopment: current?.returnDevelopment || null,
+    }));
     const route = {
       ...homeApplicationRoute(),
       view: 'administration',
@@ -128,35 +131,27 @@ function ApplicationContent() {
     currentRouteRef.current = route;
     writeApplicationRoute(route, options);
   }, []);
+  const handleAdministrationViewChange = useCallback((administrationSection) => {
+    writeAdministrationRoute(administrationSection);
+  }, [writeAdministrationRoute]);
+  const handleAdministrationViewReplace = useCallback((administrationSection) => {
+    writeAdministrationRoute(administrationSection, { replace: true });
+  }, [writeAdministrationRoute]);
 
-  const showSetup = shouldEnterSetup({
-    routeView: parseApplicationRoute().view,
-    tenantReadiness: principal?.tenantReadiness,
-    setupDismissed,
-  });
-
-  const exitSetup = () => {
-    dismissSetupAssistant();
-    setSetupDismissed(true);
-    navigateCanonical(homeApplicationRoute());
-  };
+  useEffect(() => {
+    const route = currentRouteRef.current;
+    if (!shouldEnterCompanyReadiness({ routeView: route.view, tenantReadiness: principal?.tenantReadiness })) return;
+    navigateCanonical({ ...homeApplicationRoute(), view: 'administration', administrationSection: 'company-readiness' }, { replace: true });
+  }, [navigateCanonical, principal?.tenantReadiness]);
 
   const handleLaunchPO = (seed = null) => {
     dismissSetupAssistant();
-    setSetupDismissed(true);
     setSetupLaunchSeed(seed || buildPoFormSeedFromSetup(loadSetupDraft()));
     navigateCanonical({ ...homeApplicationRoute(), view: 'form' });
   };
 
-  const handleOpenAdministration = () => {
-    dismissSetupAssistant();
-    setSetupDismissed(true);
-    navigateCanonical({ ...homeApplicationRoute(), view: 'administration' });
-  };
-
   const handleOpenDevelopments = () => {
     dismissSetupAssistant();
-    setSetupDismissed(true);
     navigateCanonical({ ...homeApplicationRoute(), view: 'developments' });
   };
 
@@ -210,12 +205,6 @@ function ApplicationContent() {
     navigateCanonical({ ...homeApplicationRoute(), view: 'list' });
   };
 
-  if (showSetup) {
-    return <SetupAssistant onExit={exitSetup} onLaunchPO={handleLaunchPO}
-      onExplore={exitSetup} onOpenAdministration={handleOpenAdministration}
-      onOpenDevelopments={handleOpenDevelopments} />;
-  }
-
   return <NavigationProvider><CommercialAssistantProvider><div id="app">
     <BrandHeader activeTab={tab} onTab={handleTab} />
     <CommercialAssistantDrawer />
@@ -223,14 +212,14 @@ function ApplicationContent() {
       {tab === 'home' ? <CommercialWorkspace><BuildLiteHome onNavigate={handleHomeNavigate} /></CommercialWorkspace> : null}
       {tab === 'administration' ? <AdministrationModule dashboardResetToken={adminDashboardReset}
         initialView={adminLaunch?.section} returnDevelopment={adminLaunch?.returnDevelopment}
-        onViewChange={(administrationSection) => writeAdministrationRoute(administrationSection)}
-        onViewReplace={(administrationSection) => writeAdministrationRoute(administrationSection, { replace: true })}
+        onViewChange={handleAdministrationViewChange}
+        onViewReplace={handleAdministrationViewReplace}
         onReturnToDevelopment={(target) => {
           setAdminLaunch(null);
-          setCvrNav({ developmentId: target.id, periodKey: null, workspaceTab: 'overview' });
+          setCvrNav({ developmentId: target.id, periodKey: null, workspaceTab: target.workspaceTab || 'overview' });
           navigateCanonical({
             ...homeApplicationRoute(), view: 'developments', developmentId: target.id,
-            workspaceTab: 'overview',
+            workspaceTab: target.workspaceTab || 'overview',
           });
         }} onLaunchPO={handleLaunchPO} onOpenDevelopments={handleOpenDevelopments} /> : null}
       {tab === 'cvrs' ? <CommercialWorkspace><CVRPortfolio refreshToken={cvrRefresh}

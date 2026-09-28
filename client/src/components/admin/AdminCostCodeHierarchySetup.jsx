@@ -37,6 +37,7 @@ export default function AdminCostCodeHierarchySetup({ records = [], onCancel, on
   const [worksheetFilename, setWorksheetFilename] = useState('');
   const [worksheetPreview, setWorksheetPreview] = useState(null);
   const [worksheetResult, setWorksheetResult] = useState(null);
+  const [applyResult, setApplyResult] = useState(null);
 
   useEffect(() => {
     let live = true;
@@ -68,17 +69,26 @@ export default function AdminCostCodeHierarchySetup({ records = [], onCancel, on
     return { ...current, [id]: next };
   });
   const toggle = (id) => setSelected((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; });
-  const applyBulk = () => { if (bulkHead && bulkGroup) for (const id of selected) update(id, { commercialHeadId: bulkHead, commercialFamilyId: bulkFamily || null, reportingGroupId: bulkGroup, reviewDisposition: null }); };
+  const applyBulk = () => { if (bulkHead) for (const id of selected) update(id, { commercialHeadId: bulkHead, commercialFamilyId: bulkFamily || null, reportingGroupId: bulkGroup || null, reviewDisposition: null }); };
   const markNotApplicable = () => { for (const id of selected) update(id, { commercialHeadId: null, commercialFamilyId: null, reportingGroupId: null, reviewDisposition: 'not_applicable' }); };
 
   async function save() {
-    const invalid = changes.find((record) => drafts[record.id].commercialHeadId && !drafts[record.id].reportingGroupId);
-    if (invalid) { setError(`${invalid.code} requires a Reporting Group.`); return; }
-    setSaving(true); setError('');
+    setSaving(true); setError(''); setApplyResult(null);
     const result = await bulkUpdateCostCodeHierarchyOnServer(changes.map((record) => ({ id: record.id, version: record.version, ...drafts[record.id] })));
-    setSaving(false);
-    if (!result.ok) { setError(result.errors?.[0] || 'Could not apply hierarchy changes.'); return; }
-    onApplied?.(result.costCodes);
+    if (!result.ok) { setSaving(false); setError(result.errors?.[0] || 'Could not apply hierarchy changes.'); return; }
+    try {
+      invalidateCostCodes();
+      const [freshRecords, freshStructure, freshSummary] = await Promise.all([refreshCostCodes(), loadCommercialStructure(), getCostCodeOnboardingSummary()]);
+      setWorksheetRecords(freshRecords);
+      setDrafts(Object.fromEntries(freshRecords.filter((record) => record.active !== false).map((record) => [record.id, { ...hierarchyOf(record), reviewDisposition: record.hierarchyReviewDisposition || null }])));
+      setSelected(new Set()); setCatalogue(freshStructure); setSummary(freshSummary); setReviewing(false);
+      setApplyResult({ updated: result.costCodes.length, refreshFailed: false });
+      onApplied?.(freshRecords);
+    } catch (cause) {
+      setReviewing(false);
+      setApplyResult({ updated: result.costCodes.length, refreshFailed: true });
+      setError(`Hierarchy changes were applied, but BuildLite could not refresh the Cost Code view. Reload before editing a Cost Code. ${cause.message || ''}`.trim());
+    } finally { setSaving(false); }
   }
 
   async function exportWorksheet() {
@@ -117,6 +127,7 @@ export default function AdminCostCodeHierarchySetup({ records = [], onCancel, on
   const separator = <span aria-hidden="true"> {'\u00B7'} </span>;
   return <AdminPageShell title="Cost Code Commercial Hierarchy" lead="Review and apply the company reporting hierarchy. Source evidence is never applied automatically." onBack={onCancel} actions={<><AdminButton variant="secondary" onClick={onCancel}>Cancel</AdminButton><AdminButton onClick={() => setReviewing(true)} disabled={!changes.length}>Review {changes.length} changes</AdminButton></>}>
     {error ? <p className="admin-inline-warning" role="alert">{error}</p> : null}
+    {applyResult && !applyResult.refreshFailed ? <p className="admin-inline-success" role="status">Hierarchy applied. {applyResult.updated} Cost Codes updated. Authoritative hierarchy and readiness have been refreshed.</p> : null}
     {!reviewing ? <>
       <section className="po-module-card"><h2>Onboarding review</h2><p>{summary.total} active{separator}{summary.allocated} Allocated{separator}{summary.notReviewed} Not reviewed{separator}{summary.notApplicable} Not applicable{separator}{summary.needsAttention} Needs attention</p></section>
       <section className="po-module-card">
@@ -130,9 +141,9 @@ export default function AdminCostCodeHierarchySetup({ records = [], onCancel, on
         <label><span>Show</span><select className="input" aria-label="Show cost codes" value={filter} onChange={(event) => setFilter(event.target.value)}><option value="not_reviewed">Not reviewed</option><option value="needs_attention">Needs attention</option><option value="not_applicable">Not applicable</option><option value="allocated">Allocated</option><option value="all">All</option></select></label>
         <AdminButton variant="secondary" disabled={!visible.length} onClick={() => setSelected(new Set(visible.map((record) => record.id)))}>Select all filtered ({visible.length})</AdminButton>
         <label><span>Bulk Commercial Head</span><select className="input" aria-label="Bulk Commercial Head" value={bulkHead} onChange={(event) => { setBulkHead(event.target.value); setBulkFamily(''); setBulkGroup(''); }}><option value="">Choose Head</option>{activeHeads(catalogue).map((head) => <option key={head.id} value={head.id}>{head.name}</option>)}</select></label>
-        <label><span>Optional Family</span><select className="input" aria-label="Bulk Commercial Family" value={bulkFamily} disabled={!bulkHead} onChange={(event) => { setBulkFamily(event.target.value); setBulkGroup(''); }}><option value="">No family</option>{familiesFor(catalogue, bulkHead).map((family) => <option key={family.id} value={family.id}>{family.name}</option>)}</select></label>
-        <label><span>Reporting Group</span><select className="input" aria-label="Bulk Reporting Group" value={bulkGroup} disabled={!bulkHead} onChange={(event) => setBulkGroup(event.target.value)}><option value="">Choose Reporting Group</option>{groupsFor(catalogue, bulkHead, bulkFamily || null).filter((group) => group.active).map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
-        <AdminButton variant="secondary" disabled={!selected.size || !bulkHead || !bulkGroup} onClick={applyBulk}>Assign complete path to {selected.size}</AdminButton>
+        <label><span>Commercial Family (optional)</span><select className="input" aria-label="Bulk Commercial Family" value={bulkFamily} disabled={!bulkHead} onChange={(event) => { setBulkFamily(event.target.value); setBulkGroup(''); }}><option value="">No family</option>{familiesFor(catalogue, bulkHead).map((family) => <option key={family.id} value={family.id}>{family.name}</option>)}</select></label>
+        <label><span>Reporting Group (optional)</span><select className="input" aria-label="Bulk Reporting Group" value={bulkGroup} disabled={!bulkHead} onChange={(event) => setBulkGroup(event.target.value)}><option value="">No reporting group</option>{groupsFor(catalogue, bulkHead, bulkFamily || null).filter((group) => group.active).map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+        <AdminButton variant="secondary" disabled={!selected.size || !bulkHead} onClick={applyBulk}>Assign hierarchy to {selected.size}</AdminButton>
         <AdminButton variant="secondary" disabled={!selected.size} onClick={markNotApplicable}>Mark {selected.size} Not applicable</AdminButton>
       </section>
       <div className="cost-code-hierarchy__rows" role="list">{visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((record) => {
@@ -145,8 +156,8 @@ export default function AdminCostCodeHierarchySetup({ records = [], onCancel, on
           <section className="cost-code-hierarchy__legacy"><h3>Source evidence</h3><span>{[record.legacy?.subHeading, record.legacy?.trade, record.legacy?.element].filter(Boolean).join(' · ') || '—'}</span>{proposal && !equal(hierarchyOf(record), proposal) ? <div><strong>Suggested Commercial Head: Land</strong>{pending ? <span>Added to review</span> : <button type="button" className="admin-link-button" onClick={() => update(record.id, proposal)}>Use suggestion</button>}</div> : null}</section>
           <section className="cost-code-hierarchy__fields">
             <label><span>Commercial Head</span><select className="input" aria-label={`${record.code} Commercial Head`} value={draft.commercialHeadId || ''} onChange={(event) => update(record.id, { commercialHeadId: event.target.value || null, commercialFamilyId: null, reportingGroupId: null })}><option value="">Unallocated</option>{activeHeads(catalogue).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}{head && !head.active ? <option value={head.id}>{head.name} (Archived)</option> : null}</select></label>
-            <label><span>Commercial Family</span><select className="input" aria-label={`${record.code} Family`} value={draft.commercialFamilyId || ''} disabled={!draft.commercialHeadId} onChange={(event) => update(record.id, { commercialFamilyId: event.target.value || null, reportingGroupId: null })}><option value="">No family</option>{families.map((item) => <option key={item.id} value={item.id}>{item.name}{!item.active ? ' (Archived)' : ''}</option>)}</select></label>
-            <label><span>Reporting Group</span><select className="input" aria-label={`${record.code} Reporting Group`} value={draft.reportingGroupId || ''} disabled={!draft.commercialHeadId} onChange={(event) => update(record.id, { reportingGroupId: event.target.value || null })}><option value="">Not set</option>{groups.map((item) => <option key={item.id} value={item.id}>{item.name}{!item.active ? ' (Archived)' : ''}</option>)}</select></label>
+            <label><span>Commercial Family (optional)</span><select className="input" aria-label={`${record.code} Family`} value={draft.commercialFamilyId || ''} disabled={!draft.commercialHeadId} onChange={(event) => update(record.id, { commercialFamilyId: event.target.value || null, reportingGroupId: null })}><option value="">No family</option>{families.map((item) => <option key={item.id} value={item.id}>{item.name}{!item.active ? ' (Archived)' : ''}</option>)}</select></label>
+            <label><span>Reporting Group (optional)</span><select className="input" aria-label={`${record.code} Reporting Group`} value={draft.reportingGroupId || ''} disabled={!draft.commercialHeadId} onChange={(event) => update(record.id, { reportingGroupId: event.target.value || null })}><option value="">No reporting group</option>{groups.map((item) => <option key={item.id} value={item.id}>{item.name}{!item.active ? ' (Archived)' : ''}</option>)}</select></label>
             {!record.commercialHeadId && record.commercialHead ? <small>Unresolved legacy hierarchy: {currentLabels.commercialHead} · {currentLabels.reportingGroup || 'No reporting group'}</small> : null}
           </section>
         </article>;

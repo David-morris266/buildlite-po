@@ -15,6 +15,7 @@ const store = {
   totalsCallCount: 0,
   importCallCount: 0,
   reverseCallCount: 0,
+  resolveCallCount: 0,
 };
 
 export class PurchaseLedgerApiError extends Error {
@@ -50,6 +51,7 @@ export function resetLedgerApiStore() {
   store.totalsCallCount = 0;
   store.importCallCount = 0;
   store.reverseCallCount = 0;
+  store.resolveCallCount = 0;
 }
 
 export function seedMockLedgerTransactions(developmentId, transactions) {
@@ -91,7 +93,8 @@ export function getLedgerMutationCallCounts() {
   return {
     import: store.importCallCount,
     reverse: store.reverseCallCount,
-    total: store.importCallCount + store.reverseCallCount,
+    resolve: store.resolveCallCount,
+    total: store.importCallCount + store.reverseCallCount + store.resolveCallCount,
   };
 }
 
@@ -121,6 +124,10 @@ export function buildServerLedgerTransactionFixture(overrides = {}) {
     supplier: overrides.supplier || 'Wipe It Cleaners',
     supplierCode: overrides.supplierCode || 'WIC',
     costCodeKey: overrides.costCodeKey || '5231',
+    sourceCostCodeKey: overrides.sourceCostCodeKey || overrides.costCodeKey || '5231',
+    resolvedCostCodeId: overrides.resolutionStatus === 'unresolved' ? null : (overrides.resolvedCostCodeId || '77777777-aaaa-4bbb-8ccc-eeeeeeeeeeee'),
+    resolutionStatus: overrides.resolutionStatus || 'resolved',
+    resolutionVersion: overrides.resolutionVersion || 1,
     transactionDate: overrides.transactionDate || '2026-01-15',
     invoiceNumber: overrides.invoiceNumber || 'INV-1',
     description: overrides.description || 'January invoice',
@@ -180,6 +187,7 @@ export async function getLedgerTotalsForDevelopment(developmentId) {
   for (const txn of transactions) {
     totalNet += Number(txn.netAmount) || 0;
     totalVat += Number(txn.vatAmount) || 0;
+    if (txn.resolutionStatus === 'unresolved') continue;
     const key = txn.costCodeKey || txn.costCode;
     if (key) {
       actualCostByCostCode[key] = (actualCostByCostCode[key] || 0) + (Number(txn.netAmount) || 0);
@@ -187,10 +195,27 @@ export async function getLedgerTotalsForDevelopment(developmentId) {
   }
   return {
     totalNet,
+    sourceTotalNet: totalNet,
+    allocatedTotalNet: transactions.filter((txn) => txn.resolutionStatus !== 'unresolved').reduce((sum, txn) => sum + (Number(txn.netAmount) || 0), 0),
+    unresolvedTotalNet: transactions.filter((txn) => txn.resolutionStatus === 'unresolved').reduce((sum, txn) => sum + (Number(txn.netAmount) || 0), 0),
+    unresolvedCount: transactions.filter((txn) => txn.resolutionStatus === 'unresolved').length,
     totalVat,
     transactionCount: transactions.length,
     actualCostByCostCode,
   };
+}
+
+export async function resolveLedgerTransactionForDevelopment(developmentId, transactionId, payload = {}) {
+  store.resolveCallCount += 1;
+  if (store.mutationShouldReject) throw store.mutationRejectError;
+  const rows = store.transactionsByDevelopment.get(developmentId) || [];
+  const index = rows.findIndex((row) => row.id === transactionId);
+  if (index < 0) throw new PurchaseLedgerApiError('Ledger transaction not found.', {status:404});
+  if (Number(rows[index].resolutionVersion || 1) !== Number(payload.version)) throw new PurchaseLedgerApiError('Ledger resolution changed. Refresh and try again.', {status:409});
+  rows[index] = {...rows[index], costCodeKey: payload.costCodeKey || 'RESOLVED', resolvedCostCodeId: payload.resolvedCostCodeId, resolutionStatus:'resolved', resolutionVersion:Number(payload.version)+1};
+  store.transactionsByDevelopment.set(developmentId, rows);
+  store.totalsByDevelopment.delete(developmentId);
+  return clone(rows[index]);
 }
 
 export async function importLedgerBatchForDevelopment(developmentId, payload = {}) {

@@ -134,6 +134,8 @@ export default function PlotDrawer({
 
   const drawerEyebrow = openedFrom === 'Revenue' ? 'Revenue' : 'Plot Master';
   const closeLabel = openedFrom === 'Revenue' ? 'Back to Revenue' : 'Close';
+  const reservedSellingPriceAuthority =
+    form.revenueStatus === 'Reserved' && Number(form.sellingPrice) > 0;
 
   return (
     <PODrawerShell
@@ -292,6 +294,11 @@ export default function PlotDrawer({
                   <option key={source} value={source}>{source}</option>
                 ))}
               </select>
+              {reservedSellingPriceAuthority ? (
+                <small>
+                  Reserved Selling Price currently drives Forecast Revenue. {form.revenueSource} remains stored and resumes if the plot returns to Available or the Selling Price is removed.
+                </small>
+              ) : null}
             </label>
             <label className="dev-form__field">
               <span className="dev-form__label">Garage</span>

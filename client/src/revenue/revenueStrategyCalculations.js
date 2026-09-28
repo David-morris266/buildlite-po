@@ -166,6 +166,7 @@ export function buildHouseTypePricingRows(plots = [], strategy = {}, houseTypePr
 }
 
 export function recalculateHouseTypePricing(houseTypePricing = {}, plots = [], strategy = {}) {
+  void strategy;
   const map = buildHouseTypePricingMap(plots, houseTypePricing);
   const next = { ...map };
 
@@ -229,6 +230,14 @@ export function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing
   const cancelled = isCancelledRevenueStatus(plot.revenueStatus);
   const secured = isSecuredRevenueStatus(plot.revenueStatus);
   const contractPrice = roundPlotMoney(plot.sellingPrice || 0);
+  const reservedSellingPriceAuthority =
+    String(plot.revenueStatus || '').trim() === 'Reserved' && contractPrice > 0;
+  const source = plot.revenueSource || DEFAULT_REVENUE_SOURCE;
+  const houseTypeRecord = houseTypePricing[String(plot.houseType || '').trim()] || {};
+  const pricingRequiresArea = !secured && !cancelled && !reservedSellingPriceAuthority && (
+    source === 'Development Strategy' ||
+    (source === DEFAULT_REVENUE_SOURCE && houseTypeRecord.sellingBasis !== 'Manual')
+  );
 
   let forecastRevenue = derivedForecast;
   let securedRevenue = 0;
@@ -237,6 +246,8 @@ export function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing
   } else if (secured) {
     forecastRevenue = contractPrice;
     securedRevenue = contractPrice;
+  } else if (reservedSellingPriceAuthority) {
+    forecastRevenue = contractPrice;
   }
 
   const effectivePrice = forecastRevenue;
@@ -254,8 +265,13 @@ export function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing
     remainingForecastRevenue: roundPlotMoney(forecastRevenue - securedRevenue),
     effectivePrice,
     perFt2,
-    pricingSource: plot.revenueSource || DEFAULT_REVENUE_SOURCE,
+    pricingSource: reservedSellingPriceAuthority
+      ? 'Reserved Selling Price'
+      : plot.revenueSource || DEFAULT_REVENUE_SOURCE,
+    fallbackPricingSource: plot.revenueSource || DEFAULT_REVENUE_SOURCE,
+    reservedSellingPriceAuthority,
     isManualOverride: (plot.revenueSource || DEFAULT_REVENUE_SOURCE) === 'Manual Value',
+    pricingRequiresArea,
   };
 }
 

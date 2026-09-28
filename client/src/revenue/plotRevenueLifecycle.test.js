@@ -76,16 +76,52 @@ describe('private plot revenue lifecycle', () => {
     expect(getPlotSecuredRevenue(plot)).toBe(0);
   });
 
-  it('Reserved with stray sellingPrice is still not secured', () => {
+  it('Reserved with a positive sellingPrice uses it for Forecast but remains unsecured', () => {
     const plot = manualPlot({
       revenueStatus: 'Reserved',
       sellingPrice: 250000,
     });
     const enriched = enrichPlotWithPricing(plot, strategy, {});
-    expect(enriched.forecastRevenue).toBe(255100);
+    expect(enriched.forecastRevenue).toBe(250000);
     expect(enriched.securedRevenue).toBe(0);
+    expect(enriched.remainingForecastRevenue).toBe(250000);
+    expect(enriched.pricingSource).toBe('Reserved Selling Price');
+    expect(enriched.fallbackPricingSource).toBe('Manual Value');
+    expect(enriched.reservedSellingPriceAuthority).toBe(true);
     expect(getPlotSecuredRevenue(plot)).toBe(0);
-    expect(getPlotEffectivePrice(plot)).toBe(255100);
+    expect(getPlotEffectivePrice(plot)).toBe(250000);
+  });
+
+  it('Reserved without sellingPrice keeps its configured source forecast', () => {
+    const enriched = enrichPlotWithPricing(
+      manualPlot({ revenueStatus: 'Reserved', sellingPrice: 0 }), strategy, {}
+    );
+    expect(enriched.forecastRevenue).toBe(255100);
+    expect(enriched.pricingSource).toBe('Manual Value');
+    expect(enriched.reservedSellingPriceAuthority).toBe(false);
+  });
+
+  it('Reserved sellingPrice does not require NIA from a dormant House Type fallback', () => {
+    const enriched = enrichPlotWithPricing(manualPlot({
+      revenueStatus: 'Reserved', revenueSource: 'House Type', houseType: 'Ash',
+      niaFt2: 0, sellingPrice: 330000,
+    }), strategy, {});
+    expect(enriched.derivedForecast).toBe(0);
+    expect(enriched.forecastRevenue).toBe(330000);
+    expect(enriched.pricingRequiresArea).toBe(false);
+  });
+
+  it('Available with retained sellingPrice resumes the configured source forecast', () => {
+    const reserved = enrichPlotWithPricing(
+      manualPlot({ revenueStatus: 'Reserved', sellingPrice: 250000 }), strategy, {}
+    );
+    const available = enrichPlotWithPricing(
+      manualPlot({ revenueStatus: 'Available', sellingPrice: 250000 }), strategy, {}
+    );
+    expect(reserved.forecastRevenue).toBe(250000);
+    expect(available.forecastRevenue).toBe(255100);
+    expect(available.securedRevenue).toBe(0);
+    expect(available.sellingPrice).toBe(250000);
   });
 
   it('Exchanged uses sellingPrice for Forecast and Secured', () => {

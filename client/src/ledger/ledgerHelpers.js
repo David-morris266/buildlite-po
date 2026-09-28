@@ -5,11 +5,11 @@
 import { formatMoney, formatPoDate, formatPoDateTime } from '../components/poDrawerHelpers';
 import { isLedgerServerAuthorityEnabled } from './ledgerAuthority';
 import { getLedgerReadiness } from './ledgerServerCache';
+import { getCachedLedgerTotals } from './ledgerServerCache';
 import {
   getActualCostsByCostCode,
   getLastImportRecord,
   getTotalActualCost,
-  getTransactionCount,
   getUnmatchedTransactionCount,
   listImportHistory,
   listTransactions,
@@ -55,6 +55,9 @@ export function buildLedgerWorkspaceModel(development) {
   const actualCost = getTotalActualCost(developmentId);
   const unmatchedCount = getUnmatchedTransactionCount(developmentId);
   const importHistory = listImportHistory(developmentId);
+  const authorityTotals = isLedgerServerAuthorityEnabled() ? getCachedLedgerTotals(developmentId) : null;
+  const sourceActual = authorityTotals?.sourceTotalNet ?? actualCost;
+  const unresolvedValue = authorityTotals?.unresolvedTotalNet ?? 0;
 
   const importStatus = lastImport
     ? { label: 'Imported', modifier: 'approved' }
@@ -84,7 +87,7 @@ export function buildLedgerWorkspaceModel(development) {
         modifier: 'default',
       },
       {
-        label: 'Actual Cost',
+        label: 'Allocated Actual Cost',
         value: formatLedgerMoney(actualCost),
         modifier: 'accent',
       },
@@ -93,6 +96,8 @@ export function buildLedgerWorkspaceModel(development) {
         value: String(unmatchedCount),
         modifier: unmatchedCount > 0 ? 'warning' : 'muted',
       },
+      { label: 'Source Evidence', value: formatLedgerMoney(sourceActual), modifier: 'muted' },
+      { label: 'Unresolved Value', value: formatLedgerMoney(unresolvedValue), modifier: unresolvedValue ? 'warning' : 'muted' },
       {
         label: 'Last Import',
         value: lastImport ? formatPoDate(lastImport.importDate) : '—',
@@ -115,7 +120,7 @@ export function formatLedgerTransactionRow(transaction) {
     ...transaction,
     dateLabel: formatPoDate(transaction.transactionDate),
     amountLabel: formatLedgerMoney(transaction.netAmount),
-    costCentreLabel: transaction.costCode || '—',
+    costCentreLabel: transaction.costCode || `Unresolved (${transaction.sourceCostCodeKey || 'unknown'})`,
     sourceLabel: transaction.source || '—',
     supplierLabel: transaction.supplier || '—',
     descriptionLabel: transaction.description || '—',

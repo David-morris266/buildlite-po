@@ -13,6 +13,9 @@ vi.mock('../ledger/ledgerAuthority', () => ({
 }));
 
 vi.mock('../api/purchaseLedger', () => import('../test/mockPurchaseLedgerApi'));
+vi.mock('../admin/costCodeMasterStore', () => ({
+  listActiveCostCodesForSelect: async () => [{id:'cc-6210',code:'6210',element:'Sales Office',allowLedgerImport:true}],
+}));
 
 import {
   buildServerLedgerTransactionFixture,
@@ -107,5 +110,19 @@ describe('PurchaseLedger hydration (BL-031B)', () => {
 
     expect(container.textContent).toContain('No ledger transactions have been imported');
     expect(container.textContent).not.toContain('Loading ledger data…');
+  });
+
+  it('shows persisted unresolved evidence and a deliberate resolution workflow', async () => {
+    seedMockLedgerTransactions(DEV.id, [buildServerLedgerTransactionFixture({
+      developmentId:DEV.id, supplier:'Odd Jobs Ltd', invoiceNumber:'PL-0099',
+      costCodeKey:null, sourceCostCodeKey:'9998', resolutionStatus:'unresolved', netAmount:1250,
+    })]);
+    await act(async () => { root.render(<PurchaseLedger development={DEV} />); });
+    await flush();
+    expect(container.textContent).toContain('Unmatched transactions');
+    expect(container.textContent).toContain('Odd Jobs Ltd');
+    expect(container.textContent).toContain('9998');
+    expect(container.textContent).toContain('excluded from allocated Actual Cost and CVR');
+    expect(container.querySelector('button').textContent).not.toContain('Create Cost Code');
   });
 });

@@ -96,6 +96,7 @@ export function getCachedLedgerTotals(developmentId) {
 function actualsFromTransactions(transactions) {
   const totals = {};
   for (const txn of transactions) {
+    if (txn.resolutionStatus === 'unresolved') continue;
     const key = normaliseCostCodeKey(txn.costCode || txn.costCodeKey);
     if (!key) continue;
     totals[key] = Math.round(((totals[key] || 0) + (Number(txn.netAmount) || 0) + Number.EPSILON) * 100) / 100;
@@ -212,6 +213,10 @@ export function appendCachedLedgerTransactions(developmentId, documents = []) {
   transactionsByDevelopment.set(developmentId, next);
   totalsByDevelopment.set(developmentId, {
     totalNet: next.reduce((sum, txn) => sum + (Number(txn.netAmount) || 0), 0),
+    sourceTotalNet: next.reduce((sum, txn) => sum + (Number(txn.netAmount) || 0), 0),
+    allocatedTotalNet: next.filter((txn) => txn.resolutionStatus !== 'unresolved').reduce((sum, txn) => sum + (Number(txn.netAmount) || 0), 0),
+    unresolvedTotalNet: next.filter((txn) => txn.resolutionStatus === 'unresolved').reduce((sum, txn) => sum + (Number(txn.netAmount) || 0), 0),
+    unresolvedCount: next.filter((txn) => txn.resolutionStatus === 'unresolved').length,
     totalVat: next.reduce((sum, txn) => sum + (Number(txn.vatAmount) || 0), 0),
     transactionCount: next.length,
     actualCostByCostCode: actualsFromTransactions(next),

@@ -6,7 +6,7 @@
 const { listCvrPeriods, listCostCodeInputs } = require("./cvrPeriodRepository");
 const { CVR_PERIOD_STATUSES, isCvrPeriodLocked } = require("./cvrPeriodConstants");
 const { buildCvrCloseCandidate } = require("./cvrCloseEngine");
-const { listClassifications } = require("./costCodeClassificationRepository");
+const { listEffectivePrelimsClassifications } = require("./prelimsClassificationAuthority");
 const { costCodeRowToDocument } = require("./costCodeMasterMapper");
 const { findCostCodeRowByCode } = require("./costCodeMasterRepository");
 const { listPrelimsItems } = require("./prelimsItemRepository");
@@ -203,10 +203,23 @@ async function buildPrelimsAdoptionReviewPreview(clientId, developmentId, { repo
   if (!collectionResult.ok) return collectionResult;
 
   const collection = collectionResult.collection;
+  const usesDevelopmentBudget = openPeriod.budgetSourceMode === "development_budget";
+  const developmentBudgetDocument = usesDevelopmentBudget
+    ? openPeriod.budgetSource?.document || null
+    : null;
+  if (usesDevelopmentBudget && !developmentBudgetDocument) {
+    return {
+      ok: false,
+      status: 409,
+      message: "Current CVR Development Budget authority is unavailable.",
+      blockers: [{ source: "developmentBudget", reason: "development_budget_unavailable" }],
+    };
+  }
   const closeCandidate = await buildCvrCloseCandidate({
     clientId,
     developmentId,
     periodId: openPeriod.id,
+    developmentBudgetDocument,
   });
 
   if (!closeCandidate.ready) {
@@ -218,7 +231,7 @@ async function buildPrelimsAdoptionReviewPreview(clientId, developmentId, { repo
     };
   }
 
-  const classificationsResult = await listClassifications(clientId);
+  const classificationsResult = await listEffectivePrelimsClassifications(clientId);
   const classifications = classificationsResult.ok
     ? classificationsResult.classifications || []
     : [];

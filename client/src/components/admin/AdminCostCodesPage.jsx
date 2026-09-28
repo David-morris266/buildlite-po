@@ -55,6 +55,8 @@ const EMPTY_FORM = {
   version: 1,
 };
 
+const HIERARCHY_STATE_LABELS = { allocated: 'Allocated', not_reviewed: 'Not Reviewed', not_applicable: 'Not Applicable', needs_attention: 'Needs Attention' };
+
 function boolSelect(value, onChange) {
   return (
     <select className="input" value={value ? 'yes' : 'no'} onChange={(e) => onChange(e.target.value === 'yes')}>
@@ -64,7 +66,7 @@ function boolSelect(value, onChange) {
   );
 }
 
-export default function AdminCostCodesPage({ onBack, issueFilter = null, onClearIssueFilter, onOpenBulkClassification = null }) {
+export default function AdminCostCodesPage({ onBack, issueFilter = null, onClearIssueFilter, onOpenBulkClassification = null, initialHierarchySetup = false }) {
   const serverAuthority = isAdminCostCodeServerAuthority();
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -87,7 +89,7 @@ export default function AdminCostCodesPage({ onBack, issueFilter = null, onClear
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [conflict, setConflict] = useState(false);
-  const [hierarchySetup, setHierarchySetup] = useState(false);
+  const [hierarchySetup, setHierarchySetup] = useState(initialHierarchySetup);
   const [commercialStructure,setCommercialStructure]=useState(null);
   const [commercialStructureError,setCommercialStructureError]=useState('');
 
@@ -272,23 +274,20 @@ export default function AdminCostCodesPage({ onBack, issueFilter = null, onClear
     setSaving(false);
   }
 
-  const unclassifiedCount = (allRecords || []).filter(
-    (item) => lookupClassification(classificationsByKey, item.code).semanticGroup === 'UNCLASSIFIED'
-  ).length;
   const codeLocked = serverAuthority && !isNew;
 
   if (hierarchySetup) {
-    return <AdminCostCodeHierarchySetup records={allRecords || []} onCancel={() => setHierarchySetup(false)} onApplied={() => { setHierarchySetup(false); setRefresh((value) => value + 1); setSaveMessage('Commercial hierarchy applied.'); }} />;
+    return <AdminCostCodeHierarchySetup records={allRecords || []} onCancel={() => setHierarchySetup(false)} onApplied={() => { setSelectedId(null); setForm(EMPTY_FORM); setRefresh((value) => value + 1); }} />;
   }
 
   return (
     <AdminPageShell
       title="Cost Codes"
-      lead="Master cost code records remain the commercial identity. BuildLite Group is engine taxonomy only and does not change CVR until a later forecast-driver slice."
+      lead="Customer Cost Codes remain the commercial identity. Review their required Commercial Head and optional Family or Reporting Group through the company Commercial Structure."
       onBack={onBack}
       actions={<><AdminButton variant="secondary" onClick={() => setHierarchySetup(true)} disabled={showError || !serverAuthority || masterUnresolved}>Set up Commercial Hierarchy</AdminButton><AdminButton variant="primary" onClick={startNew} disabled={showError}>Add Cost Code</AdminButton></>}
     >
-      {onOpenBulkClassification ? <AdminButton type="button" variant="secondary" onClick={onOpenBulkClassification}>Bulk classification</AdminButton> : null}
+      {onOpenBulkClassification ? <details className="po-module-card"><summary>Advanced legacy compatibility classification</summary><p>BuildLite Group is retained for older Prelims compatibility. It is not required for modern hierarchy readiness and does not replace Commercial Head mapping.</p><AdminButton type="button" variant="secondary" onClick={onOpenBulkClassification}>Open legacy bulk classification</AdminButton></details> : null}
       {classificationError ? (
         <p className="admin-inline-warning" role="status">{classificationError}</p>
       ) : null}
@@ -335,7 +334,7 @@ export default function AdminCostCodesPage({ onBack, issueFilter = null, onClear
           items={[
             { label: 'Total Cost Codes', value: (allRecords || []).length },
             { label: 'Active', value: (allRecords || []).filter((item) => item.active).length, tone: 'success' },
-            { label: 'Unclassified', value: unclassifiedCount, tone: unclassifiedCount ? 'warning' : 'muted' },
+            { label: 'Not Reviewed', value: (allRecords || []).filter((item) => item.hierarchyReviewState === 'not_reviewed').length, tone: (allRecords || []).some((item) => item.hierarchyReviewState === 'not_reviewed') ? 'warning' : 'muted' },
             { label: 'Filtered', value: listRecords.length },
           ]}
         />
@@ -369,7 +368,7 @@ export default function AdminCostCodesPage({ onBack, issueFilter = null, onClear
               </select>
             </label>
             <label className="dev-form__field">
-              <span className="dev-form__label">BuildLite Group</span>
+              <span className="dev-form__label">Legacy BuildLite Group filter</span>
               <select className="input" value={filterGroup} onChange={(e) => setFilterGroup(e.target.value)}>
                 <option value="">All groups</option>
                 {SEMANTIC_GROUP_KEYS.map((item) => (
@@ -413,8 +412,6 @@ export default function AdminCostCodesPage({ onBack, issueFilter = null, onClear
               />
             ) : null}
             {!showLoading && !showError && listRecords.map((record) => {
-              const recordClassification = lookupClassification(classificationsByKey, record.code);
-              const unclassified = recordClassification.semanticGroup === 'UNCLASSIFIED';
               return (
               <button
                 key={record.id}
@@ -429,12 +426,14 @@ export default function AdminCostCodesPage({ onBack, issueFilter = null, onClear
               >
                 <span className="admin-record-list__code">{record.code}</span>
                 <span className="admin-record-list__meta">{record.description || record.reportingGroup || record.trade}</span>
-                <AdminStatusBadge tone={unclassified ? 'warning' : 'accent'}>
-                  {unclassified ? 'Unclassified' : recordClassification.semanticGroup}
-                </AdminStatusBadge>
-                <AdminStatusBadge tone={record.active ? 'success' : 'muted'}>
-                  {record.active ? 'Active' : 'Inactive'}
-                </AdminStatusBadge>
+                <span className="admin-record-list__badges">
+                  <AdminStatusBadge tone={record.hierarchyReviewState === 'allocated' ? 'success' : record.hierarchyReviewState === 'needs_attention' ? 'warning' : 'muted'}>
+                    {HIERARCHY_STATE_LABELS[record.hierarchyReviewState] || 'Not Reviewed'}
+                  </AdminStatusBadge>
+                  <AdminStatusBadge tone={record.active ? 'success' : 'muted'}>
+                    {record.active ? 'Active' : 'Inactive'}
+                  </AdminStatusBadge>
+                </span>
               </button>
               );
             })}
@@ -513,8 +512,12 @@ export default function AdminCostCodesPage({ onBack, issueFilter = null, onClear
                 </label>
                 {!form.commercialHeadId && (form.commercialHead||form.trade)?<p className="admin-form__hint admin-form__field--wide">Unresolved legacy hierarchy: {[form.commercialHead,form.commercialFamily,form.trade].filter(Boolean).join(' · ')}. Select a company hierarchy path or clear to Unallocated.</p>:null}
                 {commercialStructureError?<p className="admin-inline-warning admin-form__field--wide" role="alert">{commercialStructureError}</p>:null}
+                <details className="admin-form__field--wide">
+                  <summary>Advanced legacy compatibility classification</summary>
+                  <p className="admin-form__hint">Only maintain this for an older workflow that explicitly requires it. Commercial hierarchy readiness uses the Head and Reporting Group above.</p>
+                  <div className="admin-form__grid">
                 <label className="dev-form__field">
-                  <span className="dev-form__label">BuildLite Group</span>
+                  <span className="dev-form__label">Legacy BuildLite Group</span>
                   <select
                     className="input"
                     value={classification.semanticGroup}
@@ -556,6 +559,8 @@ export default function AdminCostCodesPage({ onBack, issueFilter = null, onClear
                     Unclassified codes keep Standard CVR forecasting. They are not treated as Other.
                   </p>
                 ) : null}
+                  </div>
+                </details>
                 <label className="dev-form__field">
                   <span className="dev-form__label">Reporting Order</span>
                   <input className="input" type="number" value={form.reportingOrder ?? 0} onChange={(e) => setForm((p) => ({ ...p, reportingOrder: Number(e.target.value) || 0 }))} />

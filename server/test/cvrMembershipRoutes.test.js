@@ -20,8 +20,23 @@ const {
 } = require("../services/cvrMembershipService");
 const { FORECAST_DRIVERS, SEMANTIC_GROUPS } = require("../services/costCodeClassificationConstants");
 const { normaliseCostCodeKey } = require("../services/cvrPeriodValidation");
+const developmentBudget = require("../services/developmentBudgetRepository");
+const { PERMISSIONS } = require("../auth/permissions");
 
-const app = createApp();
+let authenticatedClientId = null;
+const testAuth = () => ({
+  userId: "00000000-0000-0000-0000-000000000001",
+  providerUserId: "test-user",
+  displayName: "Test Commercial Manager",
+  email: "test@example.invalid",
+  clientId: authenticatedClientId,
+  membershipId: "00000000-0000-0000-0000-000000000002",
+  roleKey: "commercial_manager",
+  roleName: "Commercial Manager",
+  permissions: [...new Set(Object.values(PERMISSIONS))],
+  memberships: [],
+});
+const app = createApp({ testPrincipal: testAuth });
 const ROOT = path.join(__dirname, "..");
 const MIGRATION_004 = path.join(ROOT, "migrations", "004_developments.sql");
 const MIGRATION_009 = path.join(ROOT, "migrations", "009_cvr_and_purchase_ledger.sql");
@@ -37,6 +52,8 @@ const testDevelopmentIds = [];
 const testTenantIds = [];
 const testCostCodeIds = [];
 const testClassificationKeys = [];
+const testHeadIds = [];
+const headByClient = new Map();
 
 function trackDevelopment(id) {
   if (id && !testDevelopmentIds.includes(id)) testDevelopmentIds.push(id);
@@ -79,6 +96,17 @@ async function ensureSchema() {
 
 async function cleanup() {
   if (testDevelopmentIds.length) {
+    await pool.query("ALTER TABLE development_budget_event_lines DISABLE TRIGGER USER");
+    await pool.query("ALTER TABLE development_budget_events DISABLE TRIGGER USER");
+    await pool.query(
+      `DELETE FROM development_budget_event_lines WHERE development_id = ANY($1::text[])`,
+      [testDevelopmentIds]
+    );
+    await pool.query(`DELETE FROM development_budget_events WHERE development_id = ANY($1::text[])`, [
+      testDevelopmentIds,
+    ]);
+    await pool.query("ALTER TABLE development_budget_event_lines ENABLE TRIGGER USER");
+    await pool.query("ALTER TABLE development_budget_events ENABLE TRIGGER USER");
     await pool.query(
       `DELETE FROM cvr_period_snapshot_rows WHERE snapshot_id IN (
          SELECT id FROM cvr_period_snapshots WHERE development_id = ANY($1::text[])
@@ -126,6 +154,9 @@ async function cleanup() {
   if (testCostCodeIds.length) {
     await pool.query(`DELETE FROM cost_codes WHERE id = ANY($1::uuid[])`, [testCostCodeIds]);
   }
+  if (testHeadIds.length) {
+    await pool.query(`DELETE FROM commercial_structure_heads WHERE id = ANY($1::uuid[])`, [testHeadIds]);
+  }
   if (testTenantIds.length) {
     await pool.query(`DELETE FROM cost_code_classifications WHERE client_id = ANY($1::uuid[])`, [
       testTenantIds,
@@ -138,9 +169,23 @@ async function cleanup() {
 
 async function getActiveClient() {
   const { rows } = await pool.query(
-    "SELECT id, code, name FROM clients WHERE is_active = true LIMIT 1"
+    "SELECT id, code, name FROM clients WHERE id = $1 AND is_active = true",
+    [authenticatedClientId]
   );
   return rows[0] || null;
+}
+
+async function ensureHead(clientId) {
+  if (headByClient.has(clientId)) return headByClient.get(clientId);
+  const inserted = await pool.query(
+    `INSERT INTO commercial_structure_heads (client_id, name, display_order)
+     VALUES ($1, $2, 999) RETURNING id`,
+    [clientId, `CVR membership fixture ${uniqueCode("HEAD")}`]
+  );
+  const id = inserted.rows[0].id;
+  headByClient.set(clientId, id);
+  testHeadIds.push(id);
+  return id;
 }
 
 async function createDevelopment(overrides = {}) {
@@ -161,16 +206,33 @@ async function createDevelopment(overrides = {}) {
 }
 
 async function createDraftPeriod(developmentId) {
+  const client = await getActiveClient();
+  const readinessCode = await createMaster(client.id, { code: uniqueCode("READY") });
+  const budget = await developmentBudget.postEvent(
+    client.id,
+    developmentId,
+    {
+      eventType: "opening_budget",
+      effectiveDate: "2026-01-01",
+      reference: `OPEN-${developmentId}`,
+      reason: "Valid CVR readiness fixture",
+      idempotencyKey: `open-${developmentId}`,
+      lines: [{ costCodeId: readinessCode.id, amount: "1.00" }],
+    },
+    testAuth()
+  );
+  assert.equal(budget.ok, true, budget.message || JSON.stringify(budget));
   const res = await request(app)
     .post(`/api/developments/${encodeURIComponent(developmentId)}/cvr/periods`)
-    .send({ periodKey: "P01", actor: "Commercial Manager" });
+    .send({ periodKey: "P01", reportingMonth: "2026-08-01", actor: "Commercial Manager" });
   assert.equal(res.status, 201, res.body?.message || JSON.stringify(res.body));
   return res.body;
 }
 
 async function createMaster(clientId, overrides = {}) {
   const code = overrides.code || uniqueCode("CC");
-  const created = await createCostCode(clientId, masterPayload({ ...overrides, code }), {
+  const commercialHeadId = overrides.commercialHeadId || (await ensureHead(clientId));
+  const created = await createCostCode(clientId, masterPayload({ ...overrides, code, commercialHeadId }), {
     actor: "Commercial Manager",
   });
   assert.equal(created.ok, true, created.message || JSON.stringify(created));
@@ -204,6 +266,12 @@ if (!isDbConfigured()) {
     assert.equal(db.rows[0].db, "buildlite_test");
     assert.notEqual(db.rows[0].db, "buildlite_clone");
     await ensureSchema();
+    const membership = await pool.query(
+      `SELECT client_id FROM client_user_memberships
+       WHERE id = '00000000-0000-0000-0000-000000000002' AND is_active = true`
+    );
+    authenticatedClientId = membership.rows[0]?.client_id || null;
+    assert.ok(authenticatedClientId, "Default test principal must have an active tenant membership");
   });
 
   test.after(async () => {
@@ -254,7 +322,7 @@ if (!isDbConfigured()) {
     assert.equal(res.body.costCodeLabel, master.label);
     assert.equal(res.body.description, master.description);
     assert.equal(res.body.commercialHead, master.commercialHead);
-    assert.equal(res.body.trade, master.reportingGroup);
+    assert.equal(res.body.trade, master.reportingGroup || "");
     assert.equal(res.body.originalBudget, null);
     assert.equal(res.body.currentBudget, null);
     assert.equal(res.body.commercialAdjustment, 0);
@@ -343,7 +411,10 @@ if (!isDbConfigured()) {
     trackTenant(other.rows[0].id);
     const foreign = await createCostCode(
       other.rows[0].id,
-      masterPayload({ code: uniqueCode("FOREIGN") }),
+      masterPayload({
+        code: uniqueCode("FOREIGN"),
+        commercialHeadId: await ensureHead(other.rows[0].id),
+      }),
       { actor: "Other" }
     );
     assert.equal(foreign.ok, true, foreign.message);
@@ -506,8 +577,6 @@ if (!isDbConfigured()) {
       .send({
         costCodeKey: master.code,
         costCodeLabel: `${master.code} — Seeded`,
-        originalBudget: 10000,
-        currentBudget: 11000,
         commercialAdjustment: 250,
         adjustmentReason: "Keep me",
         manualAccrual: 40,
@@ -523,8 +592,8 @@ if (!isDbConfigured()) {
     });
     assert.equal(duplicate.status, 409);
     assert.equal(duplicate.body.code, CVR_MEMBERSHIP_ERROR_CODES.COST_CODE_ALREADY_MEMBER);
-    assert.equal(duplicate.body.input.originalBudget, 10000);
-    assert.equal(duplicate.body.input.currentBudget, 11000);
+    assert.equal(duplicate.body.input.originalBudget, null);
+    assert.equal(duplicate.body.input.currentBudget, null);
     assert.equal(duplicate.body.input.commercialAdjustment, 250);
     assert.equal(duplicate.body.input.manualAccrual, 40);
     assert.equal(duplicate.body.input.adjustmentReason, "Keep me");
@@ -554,6 +623,7 @@ if (!isDbConfigured()) {
 
     const imported = await request(app)
       .post(`/api/developments/${encodeURIComponent(development.id)}/ledger/batches`)
+      .set('X-BuildLite-Client-Id', client.id)
       .send({
         actor: "QS",
         originalFileName: "marketing.csv",

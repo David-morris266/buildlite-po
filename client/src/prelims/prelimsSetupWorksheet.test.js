@@ -127,10 +127,10 @@ describe('Prelims setup worksheet helpers', () => {
     });
   });
 
-  it('defaults overlap lines unticked and unmapped/disabled not ready', () => {
+  it('defaults every available line unticked and leaves unmapped/disabled lines not ready', () => {
     const next = preview();
     const drafts = draftsFromPreview(next);
-    expect(drafts.find((row) => row.templateLineId === 'sm').selected).toBe(true);
+    expect(drafts.find((row) => row.templateLineId === 'sm').selected).toBe(false);
     expect(drafts.find((row) => row.templateLineId === 'clean').selected).toBe(false);
     expect(drafts.find((row) => row.templateLineId === 'custom').selected).toBe(false);
     expect(isLineReady(next.lines[2], drafts[2])).toBe(false);
@@ -182,13 +182,14 @@ describe('Prelims setup worksheet helpers', () => {
     const overlap = computeOverlap(next.lines[1], drafts[1], next, drafts);
     expect(overlap.overlap).toBe(true);
     expect(overlap.existingNames).toContain('BL-033D.1 TIME UAT');
-    expect(isLineReady(next.lines[1], drafts[1])).toBe(true);
+    expect(isLineReady(next.lines[1], drafts[1], PROGRAMME)).toBe(true);
     expect(readyStateLabel(next.lines[1], drafts[1], true)).toMatch(/overlap/i);
   });
 
   it('builds apply payload only from selected ready lines', () => {
     const next = preview();
     const drafts = draftsFromPreview(next);
+    drafts[0].selected = true;
     drafts[0].monthlyRate = '5500';
     drafts[2].selected = true;
     drafts[2].costCodeKey = 'UAT-CC-001';
@@ -203,6 +204,7 @@ describe('Prelims setup worksheet helpers', () => {
   it('builds apply payload with development-owned TIME offsets', () => {
     const next = preview();
     const drafts = draftsFromPreview(next);
+    drafts[0].selected = true;
     drafts[0].monthlyRate = '5500';
     drafts[0].startOffsetMonths = 3;
     drafts[0].endOffsetMonths = 0;
@@ -300,6 +302,7 @@ describe('Prelims setup worksheet helpers', () => {
   it('reports selected readiness and forecast from the existing line calculation', () => {
     const next = preview();
     const drafts = draftsFromPreview(next);
+    drafts[0].selected = true;
     drafts[0].monthlyRate = '1000';
     drafts[2].selected = true;
     drafts[2].costCodeKey = 'UAT-CC-001';
@@ -310,6 +313,60 @@ describe('Prelims setup worksheet helpers', () => {
       readyForecast: 38000,
       unresolved: 1,
     });
+  });
+
+  it('makes a Willow-shaped TIME line ready before P01 but keeps missing programme fail-closed', () => {
+    const next = preview({
+      preview: {
+        programme: {
+          exists: false,
+          siteStart: '2027-03-01',
+          firstCompletion: null,
+          finalCompletion: '2028-03-31',
+        },
+        reportingMonth: null,
+      },
+    });
+    const drafts = draftsFromPreview(next);
+    drafts[0].selected = true;
+    drafts[0].monthlyRate = '6000';
+
+    expect(isLineReady(next.lines[0], drafts[0], next.programme)).toBe(true);
+    expect(livePreviewCalculation(next.lines[0], drafts[0], next.programme, null).calc)
+      .toMatchObject({
+        state: 'resolved',
+        totalMonths: 13,
+        totalForecast: 78000,
+        phasingState: 'unavailable',
+        forecastToDate: null,
+        forecastToComplete: null,
+      });
+    expect(setupProgress(next, drafts)).toMatchObject({
+      selected: 1,
+      ready: 1,
+      readyForecast: 78000,
+      unresolved: 0,
+    });
+
+    expect(isLineReady(next.lines[0], drafts[0], {
+      exists: false,
+      siteStart: null,
+      firstCompletion: null,
+      finalCompletion: null,
+    })).toBe(false);
+    expect(isLineReady(next.lines[0], { ...drafts[0], monthlyRate: '' }, next.programme)).toBe(false);
+  });
+
+  it('keeps a mapped Lump Sum ready without a reporting month or programme', () => {
+    const next = preview();
+    const draft = {
+      ...draftsFromPreview(next)[2],
+      selected: true,
+      costCodeKey: 'UAT-CC-001',
+      lumpSumAmount: '25000',
+    };
+    expect(isLineReady(next.lines[2], draft, null)).toBe(true);
+    expect(livePreviewCalculation(next.lines[2], draft, null, null).calc.totalForecast).toBe(25000);
   });
 
   it('resets newly applied rows while retaining every meaningful unadded edit', () => {

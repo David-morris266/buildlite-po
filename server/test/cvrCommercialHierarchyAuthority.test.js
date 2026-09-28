@@ -19,6 +19,8 @@ async function applyIfMissing(table, file) {
 
 function fakeHierarchyRows() {
   return [
+    { id:'head-only',code:'HEAD',description:'Head only',is_active:true,commercial_head_id:'h1',head_id:'h1',head_name:'Custom Head',head_display_order:2,head_active:true },
+    { id:'family-only',code:'FAMILY',description:'Head and family',is_active:true,commercial_head_id:'h2',commercial_family_id:'f2',head_id:'h2',head_name:'Build',head_active:true,family_id:'f2',family_name:'Envelope',family_active:true,family_head_id:'h2' },
     { id:'two',code:'A',description:'Two level',is_active:true,commercial_head_id:'h1',reporting_group_id:'g1',head_id:'h1',head_name:'Custom Head',head_display_order:2,head_active:true,group_id:'g1',group_name:'Direct Group',group_display_order:1,group_active:true,group_head_id:'h1',group_family_id:null },
     { id:'three',code:'B',description:'Three level',is_active:true,commercial_head_id:'h2',commercial_family_id:'f2',reporting_group_id:'g2',head_id:'h2',head_name:'Build',head_active:true,family_id:'f2',family_name:'Envelope',family_active:true,family_head_id:'h2',group_id:'g2',group_name:'Brickwork',group_active:true,group_head_id:'h2',group_family_id:'f2' },
     { id:'empty',code:'C',description:'Unallocated',is_active:true },
@@ -37,6 +39,12 @@ test('resolution model preserves two/three-level authority and all explicit non-
   assert.equal(byCode.get('A').head.name, 'Custom Head');
   assert.equal(byCode.get('B').resolutionState, 'allocated');
   assert.equal(byCode.get('B').family.name, 'Envelope');
+  assert.equal(byCode.get('HEAD').resolutionState, 'allocated');
+  assert.equal(byCode.get('HEAD').family, null);
+  assert.equal(byCode.get('HEAD').reportingGroup, null);
+  assert.equal(byCode.get('FAMILY').resolutionState, 'allocated');
+  assert.equal(byCode.get('FAMILY').family.name, 'Envelope');
+  assert.equal(byCode.get('FAMILY').reportingGroup, null);
   assert.equal(byCode.get('C').resolutionState, 'unallocated');
   assert.equal(byCode.get('D').resolutionState, 'unresolved_legacy');
   assert.equal(byCode.get('D').head, null);
@@ -73,6 +81,7 @@ if (!isDbConfigured()) {
     const family = (await pool.query("INSERT INTO commercial_structure_families(client_id,head_id,name,display_order) VALUES($1,$2,'Family',5) RETURNING *", [client.id, head.id])).rows[0];
     const nested = (await pool.query("INSERT INTO commercial_structure_reporting_groups(client_id,head_id,family_id,name,display_order) VALUES($1,$2,$3,'Nested',6) RETURNING *", [client.id, head.id, family.id])).rows[0];
     await pool.query("INSERT INTO cost_codes(client_id,code,description,commercial_head_id,reporting_group_id,commercial_head,reporting_group,trade,is_active) VALUES($1,'TWO','Two',$2,$3,'Tenant Custom','Direct','Direct',true),($1,'EMPTY','Empty',NULL,NULL,NULL,NULL,NULL,true),($1,'LEGACY','Legacy',NULL,NULL,'Historic',NULL,'Historic Group',true)", [client.id, head.id, direct.id]);
+    await pool.query("INSERT INTO cost_codes(client_id,code,description,commercial_head_id,commercial_head,is_active) VALUES($1,'HEADONLY','Head only',$2,'Tenant Custom',true)", [client.id, head.id]);
     const notApplicable = (await pool.query("INSERT INTO cost_codes(client_id,code,description,trade,hierarchy_review_disposition,is_active) VALUES($1,'NOTAPP','Revenue control','Legacy revenue control','not_applicable',true) RETURNING *", [client.id])).rows[0];
     await pool.query("INSERT INTO cost_codes(client_id,code,description,commercial_head_id,commercial_family_id,reporting_group_id,commercial_head,commercial_family,reporting_group,trade,is_active) VALUES($1,'THREE','Three',$2,$3,$4,'Tenant Custom','Family','Nested','Nested',true)", [client.id, head.id, family.id, nested.id]);
     await pool.query("INSERT INTO cost_codes(client_id,code,description,is_active) VALUES($1,'OTHER','Other tenant',true)", [other.id]);
@@ -89,7 +98,11 @@ if (!isDbConfigured()) {
   test('Draft authority is tenant-scoped and Submit freezes canonical hash and authenticated provenance', async () => {
     const draft = await periods.getCvrPeriod(fixture.client.id, fixture.developmentId, fixture.period.id);
     assert.equal(draft.period.commercialHierarchy.state, 'live');
-    assert.deepEqual(draft.period.commercialHierarchy.document.costCodes.map(row => row.costCodeKey), ['EMPTY','LEGACY','NOTAPP','THREE','TWO']);
+    assert.deepEqual(draft.period.commercialHierarchy.document.costCodes.map(row => row.costCodeKey), ['EMPTY','HEADONLY','LEGACY','NOTAPP','THREE','TWO']);
+    const headOnly = draft.period.commercialHierarchy.document.costCodes.find(row => row.costCodeKey === 'HEADONLY');
+    assert.equal(headOnly.resolutionState, 'allocated');
+    assert.equal(headOnly.family, null);
+    assert.equal(headOnly.reportingGroup, null);
     assert.equal(draft.period.commercialHierarchy.document.costCodes.find(row => row.costCodeKey === 'TWO').family, null);
     assert.equal(draft.period.commercialHierarchy.document.costCodes.find(row => row.costCodeKey === 'NOTAPP').resolutionState, 'not_applicable');
     const submitted = await periods.submitCvrPeriod(fixture.client.id, fixture.developmentId, fixture.period.id, {}, { actor:'Hierarchy QS', auth:fixture.auth });

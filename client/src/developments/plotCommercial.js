@@ -79,6 +79,12 @@ export function getPlotContractPrice(plot = {}) {
 export function getPlotForecastRevenue(plot = {}) {
   if (isCancelledRevenueStatus(plot.revenueStatus)) return 0;
   if (isSecuredRevenueStatus(plot.revenueStatus)) return getPlotContractPrice(plot);
+  if (
+    normalizePlotRevenueStatus(plot.revenueStatus) === 'Reserved' &&
+    getPlotContractPrice(plot) > 0
+  ) {
+    return getPlotContractPrice(plot);
+  }
   return roundPlotMoney(plot.forecastSellingPrice || 0);
 }
 

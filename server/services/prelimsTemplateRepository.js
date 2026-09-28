@@ -421,6 +421,79 @@ async function updateTemplateLine(clientId, templateId, lineId, body = {}, { act
   }
 }
 
+async function applyReviewedMappings(clientId, templateId, body = {}, { actor, auth } = {}) {
+  assertServicePermission(auth, PERMISSIONS.COMMERCIAL_TEMPLATES_MANAGE);
+  if (!isUuid(templateId)) return { ok: false, status: 400, message: 'templateId must be a valid UUID.' };
+  const expectedTemplateVersion = Number(body.version);
+  const changes = Array.isArray(body.changes) ? body.changes : [];
+  if (!Number.isInteger(expectedTemplateVersion) || expectedTemplateVersion < 1 || changes.length > 250) {
+    return { ok: false, status: 400, message: 'A valid template version and reviewed changes are required.' };
+  }
+  const seen = new Set();
+  for (const change of changes) {
+    if (!isUuid(change?.lineId) || !Number.isInteger(Number(change?.version)) || Number(change.version) < 1 || seen.has(change.lineId)) {
+      return { ok: false, status: 400, message: 'Each reviewed line must have a unique lineId and positive version.' };
+    }
+    seen.add(change.lineId);
+  }
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query('BEGIN');
+    const headerResult = await dbClient.query(
+      'SELECT * FROM client_prelims_templates WHERE client_id=$1 AND id=$2 FOR UPDATE',
+      [clientId, templateId]
+    );
+    const header = headerResult.rows[0];
+    if (!header) { await dbClient.query('ROLLBACK'); return { ok: false, status: 404, message: 'Prelims template not found.' }; }
+    if (Number(header.version) !== expectedTemplateVersion) {
+      await dbClient.query('ROLLBACK');
+      return { ok: false, status: 409, message: 'Prelims template version conflict.' };
+    }
+    for (const change of changes) {
+      const lineResult = await dbClient.query(
+        'SELECT * FROM client_prelims_template_lines WHERE client_id=$1 AND template_id=$2 AND id=$3 FOR UPDATE',
+        [clientId, templateId, change.lineId]
+      );
+      const line = lineResult.rows[0];
+      if (!line || Number(line.version) !== Number(change.version)) {
+        await dbClient.query('ROLLBACK');
+        return { ok: false, status: 409, message: 'A reviewed Prelims line changed. Reload and review again.' };
+      }
+      let costCodeKey = null;
+      if (change.costCodeKey != null && String(change.costCodeKey).trim()) {
+        const codeResult = await dbClient.query(
+          'SELECT code FROM cost_codes WHERE client_id=$1 AND lower(btrim(code))=lower(btrim($2)) AND is_active=TRUE',
+          [clientId, String(change.costCodeKey)]
+        );
+        if (codeResult.rows.length !== 1) {
+          await dbClient.query('ROLLBACK');
+          return { ok: false, status: 409, message: 'A reviewed Cost Code is unavailable or does not belong to this company.' };
+        }
+        costCodeKey = codeResult.rows[0].code;
+      }
+      await dbClient.query(
+        `UPDATE client_prelims_template_lines
+         SET cost_code_key=$4, enabled=$5, version=version+1, updated_at=NOW(), updated_by=$6
+         WHERE client_id=$1 AND template_id=$2 AND id=$3`,
+        [clientId, templateId, change.lineId, costCodeKey, change.enabled !== false, actor || null]
+      );
+    }
+    if (changes.length) {
+      await dbClient.query(
+        'UPDATE client_prelims_templates SET version=version+1, updated_at=NOW(), updated_by=$3 WHERE client_id=$1 AND id=$2',
+        [clientId, templateId, actor || null]
+      );
+    }
+    await dbClient.query('COMMIT');
+    return getTemplate(clientId, templateId);
+  } catch (error) {
+    await dbClient.query('ROLLBACK');
+    throw error;
+  } finally {
+    dbClient.release();
+  }
+}
+
 module.exports = {
   listTemplates,
   getTemplate,
@@ -428,4 +501,5 @@ module.exports = {
   updateTemplate,
   createTemplateLine,
   updateTemplateLine,
+  applyReviewedMappings,
 };

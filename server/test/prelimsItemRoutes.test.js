@@ -337,7 +337,7 @@ if (!isDbConfigured()) {
     assert.equal(cancelledGroup.activeProposal, 0);
   });
 
-  test("missing reporting month leaves TIME unresolved rather than inventing today", async () => {
+  test("missing reporting month retains TIME total forecast without inventing as-at phasing", async () => {
     const active = await getActiveClient();
     const developmentId = await createDevelopment(active);
     await request(app)
@@ -351,11 +351,24 @@ if (!isDbConfigured()) {
     await request(app).post(`/api/developments/${developmentId}/prelims-items`).send(timeBody());
     const listed = await request(app).get(`/api/developments/${developmentId}/prelims-items`);
     assert.equal(listed.body.reportingMonth, null);
-    assert.equal(listed.body.items[0].calculation.state, "unresolved");
-    assert.equal(listed.body.items[0].calculation.reason, "MISSING_REPORTING_MONTH");
-    assert.equal(listed.body.items[0].calculation.totalForecast, null);
-    assert.equal(listed.body.summary.development.activeProposal, null);
-    assert.equal(listed.body.summary.development.hasUnresolved, true);
+    assert.equal(listed.body.items[0].calculation.state, "resolved");
+    assert.equal(listed.body.items[0].calculation.reason, null);
+    assert.equal(listed.body.items[0].calculation.totalForecast, 38000);
+    assert.equal(listed.body.items[0].calculation.phasingState, "unavailable");
+    assert.equal(listed.body.items[0].calculation.phasingReason, "MISSING_REPORTING_MONTH");
+    assert.equal(listed.body.items[0].calculation.forecastToDate, null);
+    assert.equal(listed.body.items[0].calculation.forecastToComplete, null);
+    assert.equal(listed.body.summary.development.activeProposal, 38000);
+    assert.equal(listed.body.summary.development.remainingExposure, null);
+    assert.equal(listed.body.summary.development.hasUnresolved, false);
+
+    const phased = await request(app).get(
+      `/api/developments/${developmentId}/prelims-items?reportingMonth=2026-09`
+    );
+    assert.equal(phased.body.items[0].monthlyRate, 1000);
+    assert.equal(phased.body.items[0].calculation.totalForecast, 38000);
+    assert.equal(phased.body.items[0].calculation.elapsedMonths, 1);
+    assert.equal(phased.body.items[0].calculation.forecastToComplete, 37000);
   });
 
   test("TIME offsets persist on create/update and keep zero-default money identical", async () => {

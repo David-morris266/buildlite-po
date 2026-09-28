@@ -18,7 +18,7 @@ import { resolveTimeSpan, suggestedPrelimsDriver } from '../prelims/prelimsForec
 import DevelopmentPrelimsAdoptionReview from './DevelopmentPrelimsAdoptionReview';
 import DevelopmentPrelimsSetupWorksheet from './DevelopmentPrelimsSetupWorksheet';
 import PrelimsTimeSpanFields from './PrelimsTimeSpanFields';
-import { coerceOffsetMonths } from '../programme/programmeCalendar';
+import { coerceOffsetMonths, parseIsoDateParts } from '../programme/programmeCalendar';
 
 const EMPTY_ADD_FORM = {
   id: null,
@@ -51,6 +51,12 @@ function unresolvedLineLabel(count) {
   return count === 1 ? '1 unresolved line' : `${count} unresolved lines`;
 }
 
+function ukDateLabel(value) {
+  const parts = parseIsoDateParts(value);
+  if (!parts) return '—';
+  return `${String(parts.day).padStart(2, '0')}/${String(parts.month).padStart(2, '0')}/${parts.year}`;
+}
+
 function formatResolvedProposalText(activeProposal, unresolvedCount = 0) {
   const amount =
     activeProposal == null && unresolvedCount > 0
@@ -79,6 +85,7 @@ function groupByCostCode(items = []) {
 function LineCalc({ item }) {
   const calc = item.calculation || {};
   const unresolved = calc.state !== 'resolved';
+  const phasingUnavailable = calc.phasingState === 'unavailable';
   if (item.forecastDriver === PRELIMS_DRIVERS.LUMP_SUM) {
     return (
       <dl className="dev-prelims__calc">
@@ -129,11 +136,11 @@ function LineCalc({ item }) {
       </div>
       <div>
         <dt>Forecast to date</dt>
-        <dd>{unresolved ? 'Unresolved' : moneyLabel(calc.forecastToDate)}</dd>
+        <dd>{unresolved ? 'Unresolved' : phasingUnavailable ? 'Not available yet' : moneyLabel(calc.forecastToDate)}</dd>
       </div>
       <div>
         <dt>Forecast to complete</dt>
-        <dd>{unresolved ? 'Unresolved' : moneyLabel(calc.forecastToComplete)}</dd>
+        <dd>{unresolved ? 'Unresolved' : phasingUnavailable ? 'Not available yet' : moneyLabel(calc.forecastToComplete)}</dd>
       </div>
       {unresolved ? (
         <div className="dev-prelims__calc-reason">
@@ -141,11 +148,17 @@ function LineCalc({ item }) {
           <dd>{calc.reasonLabel || PRELIMS_UNRESOLVED_LABELS[calc.reason] || calc.reason}</dd>
         </div>
       ) : null}
+      {phasingUnavailable ? (
+        <div className="dev-prelims__calc-reason">
+          <dt>As-at phasing</dt>
+          <dd>Available when a CVR reporting month exists.</dd>
+        </div>
+      ) : null}
     </dl>
   );
 }
 
-export default function DevelopmentPrelimsWorkspace({ developmentId }) {
+export default function DevelopmentPrelimsWorkspace({ developmentId, onSetUpCompanyTemplate = null }) {
   const [collection, setCollection] = useState(null);
   const [costCodes, setCostCodes] = useState([]);
   const [mode, setMode] = useState('add');
@@ -363,13 +376,14 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
             <dd>
               {collection.reportingMonth
                 ? `CVR reporting month ${collection.reportingMonth}`
-                : 'No reporting month — TIME is unresolved'}
+                : 'No reporting month — total forecasts available; as-at phasing pending'}
             </dd>
           </div>
           <div>
             <dt>Programme</dt>
             <dd>
-              {collection.programme?.siteStart || '—'} → {collection.programme?.finalCompletion || '—'}
+              {ukDateLabel(collection.programme?.siteStart)} →{' '}
+              {ukDateLabel(collection.programme?.finalCompletion)}
             </dd>
           </div>
           <div>
@@ -393,6 +407,7 @@ export default function DevelopmentPrelimsWorkspace({ developmentId }) {
       {workspaceView === 'setup' ? (
         <DevelopmentPrelimsSetupWorksheet
           developmentId={developmentId}
+          onSetUpCompanyTemplate={onSetUpCompanyTemplate}
           onCancel={() => setWorkspaceView('lines')}
           onApplied={async () => {
             await load();

@@ -279,6 +279,8 @@ describe('DevelopmentPrelimsWorkspace (x.5 landing + add/edit)', () => {
     ).toBeTruthy();
     expect(createDevelopmentPrelimsItem).not.toHaveBeenCalled();
     expect(updateDevelopmentPrelimsItem).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('01/09/2026 → 01/10/2029');
+    expect(container.textContent).not.toContain('2026-09-01 → 2029-10-01');
   });
 
   it('uses Set up site Prelims when no lines exist', async () => {

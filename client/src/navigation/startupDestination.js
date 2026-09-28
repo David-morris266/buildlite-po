@@ -1,5 +1,4 @@
-export function shouldEnterSetup({ routeView, tenantReadiness, setupDismissed = false } = {}) {
-  if (setupDismissed) return false;
-  if (routeView === 'setup') return true;
-  return tenantReadiness?.configured !== true;
+export function shouldEnterCompanyReadiness({ routeView, tenantReadiness } = {}) {
+  if (routeView !== 'home' && routeView !== 'setup') return false;
+  return tenantReadiness?.configured === false;
 }

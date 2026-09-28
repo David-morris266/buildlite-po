@@ -13,8 +13,25 @@ const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { createCostCode } = require("../services/costCodeMasterRepository");
 const { normaliseCostCodeKey } = require("../services/cvrPeriodValidation");
+const developmentBudget = require("../services/developmentBudgetRepository");
+const developmentBudgetSnapshot = require("../services/cvrDevelopmentBudgetSnapshot");
+const { buildCvrCloseCandidate } = require("../services/cvrCloseEngine");
+const { PERMISSIONS } = require("../auth/permissions");
 
-const app = createApp();
+let authenticatedClientId = null;
+const testAuth = () => ({
+  userId: "00000000-0000-0000-0000-000000000001",
+  providerUserId: "test-user",
+  displayName: "Test Commercial Manager",
+  email: "test@example.invalid",
+  clientId: authenticatedClientId,
+  membershipId: "00000000-0000-0000-0000-000000000002",
+  roleKey: "commercial_manager",
+  roleName: "Commercial Manager",
+  permissions: [...new Set(Object.values(PERMISSIONS))],
+  memberships: [],
+});
+const app = createApp({ testPrincipal: testAuth });
 const ROOT = path.join(__dirname, "..");
 const MIGRATION_004 = path.join(ROOT, "migrations", "004_developments.sql");
 const MIGRATION_009 = path.join(ROOT, "migrations", "009_cvr_and_purchase_ledger.sql");
@@ -26,6 +43,8 @@ const MIGRATION_019 = path.join(ROOT, "migrations", "019_development_prelims_tim
 
 const testDevelopmentIds = [];
 const testCostCodeIds = [];
+const testHeadIds = [];
+let fixtureHeadId = null;
 
 function trackDevelopment(id) {
   if (id && !testDevelopmentIds.includes(id)) testDevelopmentIds.push(id);
@@ -43,6 +62,16 @@ async function ensureSchema() {
 
 async function cleanup() {
   if (!testDevelopmentIds.length) return;
+  await pool.query("ALTER TABLE development_budget_event_lines DISABLE TRIGGER USER");
+  await pool.query("ALTER TABLE development_budget_events DISABLE TRIGGER USER");
+  await pool.query(`DELETE FROM development_budget_event_lines WHERE development_id = ANY($1::text[])`, [
+    testDevelopmentIds,
+  ]);
+  await pool.query(`DELETE FROM development_budget_events WHERE development_id = ANY($1::text[])`, [
+    testDevelopmentIds,
+  ]);
+  await pool.query("ALTER TABLE development_budget_event_lines ENABLE TRIGGER USER");
+  await pool.query("ALTER TABLE development_budget_events ENABLE TRIGGER USER");
   await pool.query(`DELETE FROM development_prelims_items WHERE development_id = ANY($1::text[])`, [
     testDevelopmentIds,
   ]);
@@ -68,13 +97,63 @@ async function cleanup() {
   if (testCostCodeIds.length) {
     await pool.query(`DELETE FROM cost_codes WHERE id = ANY($1::uuid[])`, [testCostCodeIds]);
   }
+  if (testHeadIds.length) {
+    await pool.query(`DELETE FROM commercial_structure_heads WHERE id = ANY($1::uuid[])`, [testHeadIds]);
+  }
 }
 
 async function getActiveClient() {
   const { rows } = await pool.query(
-    "SELECT id, code, name FROM clients WHERE is_active = true LIMIT 1"
+    "SELECT id, code, name FROM clients WHERE id = $1 AND is_active = true",
+    [authenticatedClientId]
   );
   return rows[0] || null;
+}
+
+async function createReadyCostCode(active, code) {
+  const created = await createCostCode(
+    active.id,
+    {
+      code,
+      description: "Prelims adoption fixture",
+      commercialHeadId: fixtureHeadId,
+      defaultVatTreatment: "Standard",
+      defaultOrderType: "S",
+      actor: "Commercial Manager",
+    },
+    { actor: "Commercial Manager" }
+  );
+  if (!created.ok && created.status === 409) {
+    const existing = await pool.query(
+      `SELECT id, code, description FROM cost_codes
+       WHERE client_id = $1 AND lower(btrim(code)) = lower(btrim($2)) AND is_active = true`,
+      [active.id, code]
+    );
+    assert.equal(existing.rows.length, 1, created.message || JSON.stringify(created));
+    return existing.rows[0];
+  }
+  assert.equal(created.ok, true, created.message || JSON.stringify(created));
+  testCostCodeIds.push(created.costCode.id);
+  return created.costCode;
+}
+
+async function makeCvrReady(active, developmentId, code = "5231", amount = "50280.00") {
+  const costCode = await createReadyCostCode(active, code);
+  const budget = await developmentBudget.postEvent(
+    active.id,
+    developmentId,
+    {
+      eventType: "opening_budget",
+      effectiveDate: "2026-08-01",
+      reference: `OPEN-${developmentId}`,
+      reason: "Valid Prelims preview readiness fixture",
+      idempotencyKey: `open-${developmentId}`,
+      lines: [{ costCodeId: costCode.id, amount }],
+    },
+    testAuth()
+  );
+  assert.equal(budget.ok, true, budget.message || JSON.stringify(budget));
+  return costCode;
 }
 
 async function createDevelopment(active) {
@@ -111,6 +190,19 @@ if (!isDbConfigured()) {
     assert.equal(db.rows[0].db, "buildlite_test");
     assert.notEqual(db.rows[0].db, "buildlite_clone");
     await ensureSchema();
+    const membership = await pool.query(
+      `SELECT client_id FROM client_user_memberships
+       WHERE id = '00000000-0000-0000-0000-000000000002' AND is_active = true`
+    );
+    authenticatedClientId = membership.rows[0]?.client_id || null;
+    assert.ok(authenticatedClientId, "Default test principal must have an active tenant membership");
+    const head = await pool.query(
+      `INSERT INTO commercial_structure_heads (client_id, name, display_order)
+       VALUES ($1, $2, 999) RETURNING id`,
+      [authenticatedClientId, `Prelims preview fixture ${Date.now()}`]
+    );
+    fixtureHeadId = head.rows[0].id;
+    testHeadIds.push(fixtureHeadId);
   });
 
   test.after(async () => {
@@ -130,6 +222,7 @@ if (!isDbConfigured()) {
   test("GET prelims-adoption/preview is read-only and returns commercial review", async () => {
     const active = await getActiveClient();
     const developmentId = await createDevelopment(active);
+    await makeCvrReady(active, developmentId);
 
     await request(app)
       .put(`/api/developments/${developmentId}/programme`)
@@ -145,21 +238,32 @@ if (!isDbConfigured()) {
       .send({ reportingMonth: "2026-08-01", periodKey: "P04" });
     assert.equal(period.status, 201, period.body?.message || JSON.stringify(period.body));
 
+    const adoptedBudget = await request(app)
+      .post(
+        `/api/developments/${developmentId}/cvr/periods/${period.body.id}/development-budget-adoption`
+      )
+      .send({ actor: "Commercial Manager", reason: "Use authoritative fixture budget" });
+    assert.equal(
+      adoptedBudget.status,
+      200,
+      adoptedBudget.body?.message || JSON.stringify(adoptedBudget.body)
+    );
+
+    const addedInput = await request(app)
+      .post(`/api/developments/${developmentId}/cvr/periods/${period.body.id}/cost-code-members`)
+      .send({ costCodeKey: "5231", actor: "Commercial Manager" });
+    assert.equal(addedInput.status, 201, addedInput.body?.message || JSON.stringify(addedInput.body));
+    const prelimsInput = addedInput.body;
     const inputs = await request(app)
-      .put(`/api/developments/${developmentId}/cvr/periods/${period.body.id}/inputs`)
+      .patch(
+        `/api/developments/${developmentId}/cvr/periods/${period.body.id}/inputs/${prelimsInput.id}`
+      )
       .send({
+        version: prelimsInput.version,
         actor: "QS",
-        inputs: [
-          {
-            costCodeKey: "5231",
-            costCodeLabel: "Site Prelims",
-            currentBudget: 50280,
-            originalBudget: 50280,
-            commercialAdjustment: 520,
-            adjustmentReason: "P04 controlled adjustment",
-            manualAccrual: 120,
-          },
-        ],
+        commercialAdjustment: 520,
+        adjustmentReason: "P04 controlled adjustment",
+        manualAccrual: 120,
       });
     assert.equal(inputs.status, 200, inputs.body?.message || JSON.stringify(inputs.body));
 
@@ -243,7 +347,7 @@ if (!isDbConfigured()) {
     assert.equal(row.proposedFinalForecast, 58000);
     assert.equal(row.deltaFinal, 7200);
     assert.equal(row.manualAccrual, 120);
-    assert.equal(row.inputVersion, 1);
+    assert.equal(row.inputVersion, 2);
     assert.ok(row.proposalFingerprint);
     assert.match(row.unresolvedExcludedMessage, /excluded from proposed CVR value/i);
     assert.equal(row.unresolvedLines.length, 1);
@@ -278,6 +382,92 @@ if (!isDbConfigured()) {
       [developmentId]
     ).catch(() => ({ rows: [{ n: 0 }] }));
     assert.equal(snapshotCount.rows[0].n, 0);
+
+    const budgetDocument = await developmentBudgetSnapshot.liveDocument(
+      pool,
+      active.id,
+      developmentId
+    );
+    const ordinaryCandidate = await buildCvrCloseCandidate({
+      clientId: active.id,
+      developmentId,
+      periodId: period.body.id,
+      developmentBudgetDocument: budgetDocument,
+    });
+    const ordinaryRow = ordinaryCandidate.snapshot.rows.find(
+      (item) => item.costCodeKey === "5231"
+    );
+    assert.equal(ordinaryRow.currentBudget, 50280);
+    assert.equal(ordinaryRow.systemForecast, row.systemForecast);
+    const storedBudget = await pool.query(
+      `SELECT original_budget, current_budget FROM cvr_cost_code_inputs
+       WHERE period_id = $1 AND lower(btrim(cost_code_key)) = '5231'`,
+      [period.body.id]
+    );
+    assert.equal(storedBudget.rows[0].original_budget, null);
+    assert.equal(storedBudget.rows[0].current_budget, null);
+  });
+
+  test("preview preserves the recognised-obligation floor above Development Budget", async () => {
+    const active = await getActiveClient();
+    const developmentId = await createDevelopment(active);
+    const costCode = `floor-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    await makeCvrReady(active, developmentId, costCode, "100.00");
+
+    const period = await request(app)
+      .post(`/api/developments/${developmentId}/cvr/periods`)
+      .send({ reportingMonth: "2026-08-01", periodKey: "P04" });
+    assert.equal(period.status, 201, period.body?.message || JSON.stringify(period.body));
+
+    const added = await request(app)
+      .post(`/api/developments/${developmentId}/cvr/periods/${period.body.id}/cost-code-members`)
+      .send({ costCodeKey: costCode, actor: "Commercial Manager" });
+    assert.equal(added.status, 201, added.body?.message || JSON.stringify(added.body));
+    const canonicalCostCode = added.body.costCodeKey;
+    const patched = await request(app)
+      .patch(`/api/developments/${developmentId}/cvr/periods/${period.body.id}/inputs/${added.body.id}`)
+      .send({ version: added.body.version, actor: "QS", manualAccrual: 120 });
+    assert.equal(patched.status, 200, patched.body?.message || JSON.stringify(patched.body));
+
+    const prelims = await request(app)
+      .post(`/api/developments/${developmentId}/prelims-items`)
+      .send({
+        version: 0,
+        costCodeKey: canonicalCostCode,
+        name: "Obligation floor regression",
+        forecastDriver: "LUMP_SUM",
+        lumpSumAmount: 200,
+        status: "active",
+      });
+    assert.equal(prelims.status, 201, prelims.body?.message || JSON.stringify(prelims.body));
+
+    const preview = await request(app).get(
+      `/api/developments/${developmentId}/prelims-adoption/preview`
+    );
+    assert.equal(preview.status, 200, preview.body?.message || JSON.stringify(preview.body));
+    const previewRow = preview.body.candidates.find(
+      (item) => String(item.costCodeKey).toLowerCase() === canonicalCostCode.toLowerCase()
+    );
+    assert.ok(previewRow, JSON.stringify(preview.body));
+    assert.equal(previewRow.systemForecast, 120);
+
+    const budgetDocument = await developmentBudgetSnapshot.liveDocument(
+      pool,
+      active.id,
+      developmentId
+    );
+    const ordinaryCandidate = await buildCvrCloseCandidate({
+      clientId: active.id,
+      developmentId,
+      periodId: period.body.id,
+      developmentBudgetDocument: budgetDocument,
+    });
+    const ordinaryRow = ordinaryCandidate.snapshot.rows.find(
+      (item) => String(item.costCodeKey).toLowerCase() === canonicalCostCode.toLowerCase()
+    );
+    assert.equal(ordinaryRow.currentBudget, 100);
+    assert.equal(ordinaryRow.systemForecast, 120);
+    assert.equal(previewRow.systemForecast, ordinaryRow.systemForecast);
   });
 
   test("GET preview recognises a mixed-case Master code immediately after one membership POST", async () => {
@@ -285,13 +475,14 @@ if (!isDbConfigured()) {
     const developmentId = await createDevelopment(active);
     const mixedCode = `UAT-CC-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
+    await makeCvrReady(active, developmentId, `READY-${Date.now().toString(36)}`);
+
     const created = await createCostCode(
       active.id,
       {
         code: mixedCode,
         description: "BL-037C mixed-case membership preview",
-        commercialHead: "Build",
-        reportingGroup: "General",
+        commercialHeadId: fixtureHeadId,
         defaultVatTreatment: "Standard",
         defaultOrderType: "S",
         actor: "Commercial Manager",

@@ -18,6 +18,9 @@ const CRITICAL_ROUTE_PERMISSIONS = Object.freeze({
   'POST /api/payment-releases/batches': P.PAYMENT_RELEASE_EXECUTE,
   'POST /api/developments/:developmentId/budget-authority/events': P.DEVELOPMENT_BUDGET_POST,
   'POST /api/developments/:developmentId/budget-authority/site-start-budget': P.DEVELOPMENT_BUDGET_POST,
+  'POST /api/developments/:developmentId/ledger/batches': P.LEDGER_MANAGE,
+  'POST /api/developments/:developmentId/ledger/transactions/:transactionId/resolve': P.LEDGER_MANAGE,
+  'POST /api/developments/:developmentId/ledger/transactions/:transactionId/reverse': P.LEDGER_MANAGE,
     'POST /api/developments/:developmentId/cvr/periods/:periodId/approve': P.CVR_LOCK,
     'POST /api/developments/:developmentId/cvr/periods/:periodId/variation-exposure/acknowledgements': P.CVR_LOCK,
   'POST /api/packages/:packageId/certificates/:certificateId/approve': P.CERTIFICATE_LOCK,
@@ -34,5 +37,8 @@ const CRITICAL_ROUTE_PERMISSIONS = Object.freeze({
   'PUT /api/subcontract-terms/developments/:developmentId/default': P.TERMS_ASSIGN_DEFAULT,
   'PUT /api/subcontract-terms/purchase-orders/:poNumber/override': P.TERMS_ASSIGN_OVERRIDE,
   'POST /api/clients/active': P.TENANT_CONFIGURE,
+  'POST /api/developments': P.DEVELOPMENT_CREATE,
+  'PUT /api/company-settings': P.COMPANY_SETTINGS_MANAGE,
+  'POST /api/commercial-structure/recommended-template/adopt': P.COMMERCIAL_STRUCTURE_MANAGE,
 });
 module.exports = { CRITICAL_ROUTE_PERMISSIONS };

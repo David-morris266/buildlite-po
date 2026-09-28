@@ -14,6 +14,7 @@ const createPrelimsTemplate = vi.hoisted(() => vi.fn());
 const updatePrelimsTemplate = vi.hoisted(() => vi.fn());
 const createPrelimsTemplateLine = vi.hoisted(() => vi.fn());
 const updatePrelimsTemplateLine = vi.hoisted(() => vi.fn());
+const applyReviewedPrelimsMappings = vi.hoisted(() => vi.fn());
 const listCostCodesForTemplateMapping = vi.hoisted(() => vi.fn());
 const listCostCodeClassifications = vi.hoisted(() => vi.fn());
 const loadCommercialStructure = vi.hoisted(() => vi.fn());
@@ -25,6 +26,7 @@ vi.mock('../../api/prelimsTemplates', () => ({
   updatePrelimsTemplate,
   createPrelimsTemplateLine,
   updatePrelimsTemplateLine,
+  applyReviewedPrelimsMappings,
   PrelimsTemplateApiError: class PrelimsTemplateApiError extends Error {
     constructor(message, { status = 0 } = {}) {
       super(message);
@@ -133,6 +135,8 @@ describe('Admin Prelims Templates', () => {
     updatePrelimsTemplate.mockReset();
     createPrelimsTemplateLine.mockReset();
     updatePrelimsTemplateLine.mockReset();
+    applyReviewedPrelimsMappings.mockReset();
+    applyReviewedPrelimsMappings.mockResolvedValue(HOUSEBUILDING);
     listCostCodesForTemplateMapping.mockResolvedValue([
       {
         code: '5231',
@@ -257,6 +261,32 @@ describe('Admin Prelims Templates', () => {
     await clickNamed(container, 'Back to template');
     expect(container.querySelector('[aria-label="Map Prelims Cost Codes"]')).toBeNull();
     expect(container.textContent).toContain('Edit line');
+  });
+
+  it('opens a reviewed proposal workspace without writing and retains existing mappings', async () => {
+    await act(async () => {
+      root.render(<AdminPrelimsTemplatesPage onBack={() => {}} />);
+    });
+    await flush();
+    await clickNamed(container, 'Housebuilding Prelims');
+    await flush();
+    await clickNamed(container, 'Propose mappings');
+    await flush();
+
+    const review = container.querySelector('[aria-label="Review proposed Prelims mappings"]');
+    expect(review).toBeTruthy();
+    expect(review.textContent).toContain('Nothing is saved until you apply');
+    expect(review.textContent).toContain('Proposed');
+    expect(review.textContent).toContain('Existing mapping');
+    expect(updatePrelimsTemplateLine).not.toHaveBeenCalled();
+    expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
+
+    await clickNamed(review, 'Apply reviewed mappings');
+    await flush();
+    expect(applyReviewedPrelimsMappings).toHaveBeenCalledWith('tpl-1', expect.objectContaining({
+      version: 1,
+      changes: [expect.objectContaining({ lineId: 'line-1', costCodeKey: 'P100-SM' })],
+    }));
   });
 
   it('keeps disabled template lines out of the routine mapping workspace', async () => {
@@ -454,7 +484,7 @@ describe('Admin Prelims Templates', () => {
     expect(container.textContent).toContain('Also used on 1 other line');
     expect(container.textContent).toContain('PRELIMS');
     expect(container.textContent).toContain(
-      'Mapped code 5206 is currently classified BUILD rather than PRELIMS.'
+      'Mapped code 5206 is currently classified HOUSE_BUILD rather than PRELIMS.'
     );
     expect(container.textContent).toContain(
       'Mapped code 1110 is currently classified UNCLASSIFIED rather than PRELIMS.'

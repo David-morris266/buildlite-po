@@ -56,6 +56,28 @@ test("Available and Reserved keep derived forecast with Secured 0", () => {
   }
 });
 
+test("Reserved positive sellingPrice drives Forecast but remains unsecured", () => {
+  const priced = enrichPlotWithPricing(
+    manualPlot({ revenueStatus: "Reserved", revenueSource: "House Type", houseType: "Unknown", niaFt2: 0, sellingPrice: 330000 }),
+    strategy(),
+    {}
+  );
+  assert.equal(priced.derivedForecast, 0);
+  assert.equal(priced.forecastRevenue, 330000);
+  assert.equal(priced.securedRevenue, 0);
+  assert.equal(priced.remainingForecastRevenue, 330000);
+  assert.equal(priced.reservedSellingPriceAuthority, true);
+});
+
+test("Available retained sellingPrice does not override configured source", () => {
+  const priced = enrichPlotWithPricing(
+    manualPlot({ revenueStatus: "Available", sellingPrice: 330000 }), strategy(), {}
+  );
+  assert.equal(priced.forecastRevenue, 255100);
+  assert.equal(priced.securedRevenue, 0);
+  assert.equal(priced.sellingPrice, 330000);
+});
+
 test("Exchanged substitutes contractual sellingPrice for Forecast and Secured", () => {
   const priced = enrichPlotWithPricing(
     manualPlot({ revenueStatus: "Exchanged", sellingPrice: 250000, manualForecastValue: 255100 }),
@@ -166,6 +188,7 @@ test("summarize remaining, plots sold, and no completion double-count", () => {
   const priced = enrichPlotsWithPricing(
     [
       manualPlot({ id: "a", plotNumber: "1", revenueStatus: "Available" }),
+      manualPlot({ id: "r", plotNumber: "R", revenueStatus: "Reserved", sellingPrice: 330000 }),
       manualPlot({
         id: "b",
         plotNumber: "2",
@@ -183,9 +206,9 @@ test("summarize remaining, plots sold, and no completion double-count", () => {
     {}
   );
   const summary = summarizePricedPlots(priced);
-  assert.equal(summary.forecastRevenue, 255100 + 250000 + 250000);
+  assert.equal(summary.forecastRevenue, 255100 + 330000 + 250000 + 250000);
   assert.equal(summary.securedRevenue, 500000);
-  assert.equal(summary.remainingForecast, 255100);
+  assert.equal(summary.remainingForecast, 255100 + 330000);
   assert.equal(summary.plotsSold, 2);
 });
 

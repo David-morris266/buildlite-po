@@ -39,6 +39,8 @@ vi.mock('./components/PaymentReleaseWorklist', () => ({ default: () => <div>Rele
 vi.mock('./components/CVRPortfolio', () => ({ default: () => <div>CVR</div> }));
 vi.mock('./components/admin/AdministrationModule', () => ({ default: (props) => <div data-testid="admin" data-view={props.initialView || ''}>
   Admin
+  <button onClick={() => props.onViewChange?.('company-readiness')}>Company Readiness</button>
+  <button onClick={() => props.onViewChange?.('cost-codes')}>Cost Codes</button>
   <button onClick={() => props.onViewChange?.('selling-costs-templates')}>Selling Costs Templates</button>
   <button onClick={() => props.onViewChange?.('prelims-templates')}>Prelims Templates</button>
   <button onClick={() => props.onViewChange?.('landing')}>Administration landing</button>
@@ -118,15 +120,33 @@ describe('GP-1 salvaged application entry', () => {
     expect(container.querySelector('[data-testid="admin"]').dataset.view).toBe('selling-costs-templates');
   });
 
-  it('sends an unconfigured tenant or explicit setup request to Setup', () => {
-    principal = { tenantReadiness: { configured: false } };
+  it('keeps parent canonical Administration state synchronized across repeated Readiness and Cost Code round trips', () => {
+    window.history.replaceState({}, '', '/?view=administration&section=company-readiness');
     act(() => root.render(<App />));
-    expect(container.textContent).toContain('Setup Assistant');
+    const admin = () => container.querySelector('[data-testid="admin"]');
+    const click = label => act(() => [...container.querySelectorAll('button')].find(button => button.textContent === label).click());
+    expect(admin().dataset.view).toBe('company-readiness');
+    click('Cost Codes');
+    expect(admin().dataset.view).toBe('cost-codes');
+    expect(window.location.search).toBe('?view=administration&section=cost-codes');
+    click('Company Readiness');
+    expect(admin().dataset.view).toBe('company-readiness');
+    expect(window.location.search).toBe('?view=administration&section=company-readiness');
+    click('Cost Codes'); click('Company Readiness');
+    expect(admin().dataset.view).toBe('company-readiness');
+  });
 
-    principal = { tenantReadiness: { configured: true } };
+  it('sends an unconfigured tenant to modern Company Readiness instead of Setup', async () => {
+    principal = { tenantReadiness: { configured: false } };
+    await act(async () => root.render(<App />));
+    expect(container.querySelector('[data-testid="admin"]').dataset.view).toBe('company-readiness');
+    expect(container.textContent).not.toContain('Setup Assistant');
+    expect(window.location.search).toBe('?view=administration&section=company-readiness');
+
+    principal = { tenantReadiness: { configured: false } };
     window.history.replaceState({}, '', '/?setup=1');
-    act(() => root.render(<App />));
-    expect(container.textContent).toContain('Setup Assistant');
+    await act(async () => window.dispatchEvent(new PopStateEvent('popstate')));
+    expect(container.querySelector('[data-testid="admin"]').dataset.view).toBe('company-readiness');
   });
 
   it('opens tenant Cost Codes with a bounded return to the originating Development', () => {

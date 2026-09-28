@@ -228,7 +228,7 @@ export function getTotalActualCost(developmentId) {
   if (isLedgerServerAuthorityEnabled()) {
     if (!getLedgerReadiness(developmentId).ready) return null;
     const totals = getCachedLedgerTotals(developmentId);
-    if (totals.totalNet != null) return roundMoney(totals.totalNet);
+    if (totals.allocatedTotalNet != null) return roundMoney(totals.allocatedTotalNet);
   }
   const totals = getActualCostsByCostCode(developmentId);
   if (!totals) return null;
@@ -238,5 +238,5 @@ export function getTotalActualCost(developmentId) {
 }
 
 export function getUnmatchedTransactionCount(developmentId) {
-  return listTransactions(developmentId).filter((txn) => txn.unmatched).length;
+  return listTransactions(developmentId).filter((txn) => txn.resolutionStatus === 'unresolved' || txn.unmatched).length;
 }

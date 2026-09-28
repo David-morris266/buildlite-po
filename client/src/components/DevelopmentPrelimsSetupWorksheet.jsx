@@ -37,7 +37,7 @@ function moneyLabel(value) {
   return formatCvrMoney(value);
 }
 
-export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCancel, onApplied }) {
+export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCancel, onApplied, onSetUpCompanyTemplate = null }) {
   const [templates, setTemplates] = useState([]);
   const [templateId, setTemplateId] = useState('');
   const [preview, setPreview] = useState(null);
@@ -284,6 +284,11 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
         <p className="dev-workspace__section-lead">
           Create a company Prelims template in Administration before setting up this site.
         </p>
+        {onSetUpCompanyTemplate ? (
+          <button className="btn btn--primary" type="button" onClick={onSetUpCompanyTemplate}>
+            Set up Company Prelims Template
+          </button>
+        ) : null}
         <button className="btn" type="button" onClick={() => requestNavigation(onCancel)}>
           Cancel
         </button>
@@ -348,6 +353,12 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
           {progress.unresolved ? ` · ${progress.unresolved} unresolved` : ''}
         </p>
       ) : null}
+      {preview && !preview.reportingMonth ? (
+        <p className="dev-workspace__section-lead">
+          Total Forecast is available now. As-at phasing will become available when a CVR
+          reporting month exists.
+        </p>
+      ) : null}
 
       {preview ? (
         <div className="dev-prelims-setup__table-wrap">
@@ -383,7 +394,8 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
                 );
                 const classification = classificationForDraft(
                   draft,
-                  classifications[String(draft.costCodeKey || '').trim()]?.semanticGroup
+                  classifications[String(draft.costCodeKey || '').trim()]?.semanticGroup,
+                  { costCodes, structure: commercialStructure }
                 );
                 const rowClass = [
                   !line.enabled ? 'dev-prelims-setup__row--disabled' : '',

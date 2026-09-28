@@ -79,13 +79,13 @@ export default function PurchaseLedgerImportWizard({
   const [selectedProfileId, setSelectedProfileId] = useState('');
   const [profileName, setProfileName] = useState('');
   const [importComplete, setImportComplete] = useState(null);
-  const [createUnknownCostCentres, setCreateUnknownCostCentres] = useState(true);
+  const [createUnknownCostCentres] = useState(false);
   const [crossCheckConfirmed, setCrossCheckConfirmed] = useState(false);
   const [showCrossCheckDialog, setShowCrossCheckDialog] = useState(false);
 
   const profiles = useMemo(
     () => listImportProfiles(development.id),
-    [development.id, stepIndex]
+    [development.id]
   );
 
   useEffect(() => {
@@ -93,7 +93,7 @@ export default function PurchaseLedgerImportWizard({
     listActiveCostCodesForSelect()
       .then((codes) => {
         if (cancelled) return;
-        const keys = (codes || []).map((item) =>
+        const keys = (codes || []).filter((item) => item.allowLedgerImport !== false).map((item) =>
           normaliseCostCodeKey(item.code || item.label)
         );
         setKnownCostCodes(keys.filter(Boolean));
@@ -605,16 +605,16 @@ export default function PurchaseLedgerImportWizard({
 
             <dl className="po-import-review-grid dev-ledger-import__summary">
               <div>
-                <dt>Rows</dt>
+                <dt>Source transactions</dt>
                 <dd>{validationResult.rowCount}</dd>
               </div>
               <div>
-                <dt>Rows imported</dt>
-                <dd>{validationResult.importedCount}</dd>
+                <dt>Resolved</dt>
+                <dd>{validationResult.resolvedCount}</dd>
               </div>
               <div>
-                <dt>Warnings</dt>
-                <dd>{validationResult.warningCount}</dd>
+                <dt>Unresolved</dt>
+                <dd>{validationResult.unresolvedCount}</dd>
               </div>
               <div>
                 <dt>Errors</dt>
@@ -629,25 +629,17 @@ export default function PurchaseLedgerImportWizard({
                 </dd>
               </div>
               <div>
-                <dt>New Cost Codes</dt>
-                <dd>{validationResult.newCostCentresPending}</dd>
+                <dt>Allocated value</dt>
+                <dd>{formatLedgerMoney(validationResult.allocatedValue)}</dd>
               </div>
               <div>
-                <dt>Total value</dt>
+                <dt>Total source value</dt>
                 <dd>{formatLedgerMoney(validationResult.totalValue)}</dd>
               </div>
+              <div><dt>Unresolved value</dt><dd>{formatLedgerMoney(validationResult.unresolvedValue)}</dd></div>
             </dl>
 
-            {validationResult.newCostCentresPending > 0 ? (
-              <label className="dev-ledger-import__create-cost-centres">
-                <input
-                  type="checkbox"
-                  checked={createUnknownCostCentres}
-                  onChange={(event) => setCreateUnknownCostCentres(event.target.checked)}
-                />
-                <span>Create new Cost Codes from unknown Cost Codes</span>
-              </label>
-            ) : null}
+            {validationResult.unresolvedCount > 0 ? <p className="dev-ledger-import__warnings-title">Unresolved transactions will be retained as financial evidence and will not enter allocated Cost Code Actuals or CVR until resolved.</p> : null}
 
             {!validationResult.mappingComplete ? (
               <p className="dev-ledger-import__blocked" role="status">
@@ -689,7 +681,7 @@ export default function PurchaseLedgerImportWizard({
                     <tr>
                       <th>Row</th>
                       <th>Supplier</th>
-                      <th>Cost Code</th>
+                      <th>Source Cost Code</th>
                       <th>Invoice</th>
                       <th>Amount</th>
                       <th>Warnings</th>
@@ -786,7 +778,7 @@ export default function PurchaseLedgerImportWizard({
                 <dd>{development.developmentName}</dd>
               </div>
               <div>
-                <dt>Imported rows</dt>
+                <dt>Transactions ready</dt>
                 <dd>{validationResult.importedCount}</dd>
               </div>
               <div>
@@ -815,12 +807,7 @@ export default function PurchaseLedgerImportWizard({
                 <dt>Errors</dt>
                 <dd>{validationResult.errorCount}</dd>
               </div>
-              <div>
-                <dt>New Cost Codes</dt>
-                <dd>
-                  {createUnknownCostCentres ? validationResult.newCostCentresPending : 0}
-                </dd>
-              </div>
+              <div><dt>Unresolved</dt><dd>{validationResult.unresolvedCount}</dd></div>
             </dl>
 
             {crossCheck && !crossCheck.balanced ? (

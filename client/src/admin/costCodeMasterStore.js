@@ -426,7 +426,6 @@ export function validateCostCodeMasterPayload(payload = {}) {
 
   if (!commercialHead) errors.push('Commercial Head is required.');
 
-  if (!reportingGroup) errors.push('Reporting Group is required.');
 
 
 
@@ -603,6 +602,7 @@ export function toCostCodeSelectShape(record) {
     element: record.description,
 
     label,
+    allowLedgerImport: record.allowLedgerImport !== false,
 
     commercialHead: record.commercialHead || '',
 
@@ -615,8 +615,6 @@ export function toCostCodeSelectShape(record) {
     allowBudget: record.allowBudget,
 
     allowPurchaseOrders: record.allowPurchaseOrders,
-
-    allowLedgerImport: record.allowLedgerImport,
 
     allowForecastAdjustment: record.allowForecastAdjustment,
 

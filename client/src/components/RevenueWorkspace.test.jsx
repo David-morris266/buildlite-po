@@ -6,6 +6,11 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getRevenuePricingContext = vi.hoisted(() => vi.fn());
+const applySalesRegisterImport = vi.hoisted(() => vi.fn());
+
+vi.mock('../api/developments', () => ({
+  applySalesRegisterImport,
+}));
 
 vi.mock('../revenue/revenueStrategy', async (importOriginal) => {
   const actual = await importOriginal();
@@ -112,6 +117,27 @@ describe('RevenueWorkspace async loading guard', () => {
     expect(container.querySelector('button[aria-pressed="true"]')?.textContent).toBe('Sales Register');
   });
 
+  it('opens the real Sales Register importer from the actual action and supports cancel/reopen without mutation', async () => {
+    getRevenuePricingContext.mockResolvedValue(sampleContext);
+    renderRevenue();
+    await act(async () => { await Promise.resolve(); });
+
+    const open = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Import Sales Register');
+    expect(open).toBeTruthy();
+    await act(async () => { open.click(); });
+    expect(container.querySelector('input[aria-label="Sales Register file"]')).toBeTruthy();
+    expect(document.body.textContent).toContain('Review existing customer sales facts');
+    expect(applySalesRegisterImport).not.toHaveBeenCalled();
+
+    const cancel = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Cancel');
+    await act(async () => { cancel.click(); });
+    expect(container.querySelector('input[aria-label="Sales Register file"]')).toBeFalsy();
+    const reopen = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Import Sales Register');
+    await act(async () => { reopen.click(); });
+    expect(container.querySelector('input[aria-label="Sales Register file"]')).toBeTruthy();
+    expect(applySalesRegisterImport).not.toHaveBeenCalled();
+  });
+
   it('renders Summary Revenue lines without Sales Register controls or false secondary metrics', async () => {
     getRevenuePricingContext.mockResolvedValue({
       ...sampleContext,
@@ -127,6 +153,8 @@ describe('RevenueWorkspace async loading guard', () => {
     expect(document.body.textContent).toContain('not tracked in Summary Revenue');
     expect(document.body.textContent).not.toContain('Revenue Strategy Panel');
     expect(document.body.textContent).not.toContain('Revenue Dashboard');
+    expect(document.body.textContent).not.toContain('Import Sales Register');
+    expect(container.querySelector('input[aria-label="Sales Register file"]')).toBeFalsy();
   });
 
   it('shows a visible error instead of permanent loading when fetch rejects', async () => {

@@ -268,6 +268,45 @@ if (!isDbConfigured()) {
     assert.equal(lineConflict.status, 409);
   });
 
+  test("reviewed mappings apply atomically with tenant Cost Code and optimistic-version checks", async () => {
+    const copied = await request(app)
+      .post('/api/prelims-templates')
+      .send({ origin: 'buildlite_standard', name: `Reviewed mappings ${Date.now()}` });
+    assert.equal(copied.status, 201);
+    trackTemplate(copied.body.id);
+    const [one, two] = copied.body.lines;
+    const applied = await request(app)
+      .post(`/api/prelims-templates/${copied.body.id}/reviewed-mappings`)
+      .send({
+        version: copied.body.version,
+        changes: [
+          { lineId: one.id, version: one.version, costCodeKey: '5231', enabled: true },
+          { lineId: two.id, version: two.version, costCodeKey: null, enabled: false },
+        ],
+      });
+    assert.equal(applied.status, 200);
+    assert.equal(applied.body.lines.find((line) => line.id === one.id).costCodeKey, '5231');
+    assert.equal(applied.body.lines.find((line) => line.id === two.id).enabled, false);
+
+    const stale = await request(app)
+      .post(`/api/prelims-templates/${copied.body.id}/reviewed-mappings`)
+      .send({ version: copied.body.version, changes: [] });
+    assert.equal(stale.status, 409);
+
+    const before = await request(app).get(`/api/prelims-templates/${copied.body.id}`);
+    const invalid = await request(app)
+      .post(`/api/prelims-templates/${copied.body.id}/reviewed-mappings`)
+      .send({
+        version: before.body.version,
+        changes: [
+          { lineId: one.id, version: before.body.lines.find((line) => line.id === one.id).version, costCodeKey: 'NOT-A-TENANT-CODE', enabled: true },
+        ],
+      });
+    assert.equal(invalid.status, 409);
+    const after = await request(app).get(`/api/prelims-templates/${copied.body.id}`);
+    assert.equal(after.body.lines.find((line) => line.id === one.id).costCodeKey, '5231');
+  });
+
   test("other tenant cannot read a company template; D.1 5231 money and Review & Adopt stay absent", async () => {
     const active = await getActiveClient();
     const created = await request(app)

@@ -12,8 +12,8 @@ const same = (left, right) => String(left || '') === String(right || '');
 function currentHierarchy(structure, row) {
   const head = structure.heads.find((item) => item.id === row.commercial_head_id);
   const family = row.commercial_family_id ? structure.families.find((item) => item.id === row.commercial_family_id) : null;
-  const group = structure.reportingGroups.find((item) => item.id === row.reporting_group_id);
-  const valid = Boolean(head && group && head.active && group.active && (!row.commercial_family_id || (family && family.active)) && group.headId === head.id && (group.familyId || null) === (family?.id || null));
+  const group = row.reporting_group_id ? structure.reportingGroups.find((item) => item.id === row.reporting_group_id) : null;
+  const valid = Boolean(head && head.active && (!row.commercial_family_id || (family && family.active && family.headId === head.id)) && (!row.reporting_group_id || (group && group.active && group.headId === head.id && (group.familyId || null) === (family?.id || null))));
   return {
     path: { commercialHeadId: row.commercial_head_id || null, commercialFamilyId: row.commercial_family_id || null, reportingGroupId: row.reporting_group_id || null },
     labels: { commercialHead: head?.name || row.commercial_head || '', commercialFamily: family?.name || row.commercial_family || '', reportingGroup: group?.name || row.reporting_group || '' },
@@ -108,7 +108,7 @@ function previewDocument(structure, inputRows = []) {
     existingPathsMatched: resolved.filter((row) => row.action === 'allocate' && row.resolution?.state === STATES.MATCHED).length,
     newHeads: new Set(proposals.map((item) => key(item.commercialHead))).size,
     newFamilies: new Set(proposals.filter((item) => item.commercialFamily).map((item) => `${key(item.commercialHead)}::${key(item.commercialFamily)}`)).size,
-    newReportingGroups: proposals.length,
+    newReportingGroups: proposals.filter((item) => item.reportingGroup).length,
     blockers: resolved.filter((row) => row.blocker).length,
     warnings: 0,
   };
@@ -153,12 +153,12 @@ async function apply(clientId, body, auth) {
       const existing = structure.costCodes.find((item) => String(item.id) === row.id);
       let target = null;
       if (row.action === 'allocate') {
-        if (row.resolution.state === STATES.MATCHED) target = { h: { id: row.resolution.path.commercialHeadId, name: row.resolution.labels.commercialHead }, f: row.resolution.path.commercialFamilyId ? { id: row.resolution.path.commercialFamilyId, name: row.resolution.labels.commercialFamily } : null, g: { id: row.resolution.path.reportingGroupId, name: row.resolution.labels.reportingGroup } };
+        if (row.resolution.state === STATES.MATCHED) target = { h: { id: row.resolution.path.commercialHeadId, name: row.resolution.labels.commercialHead }, f: row.resolution.path.commercialFamilyId ? { id: row.resolution.path.commercialFamilyId, name: row.resolution.labels.commercialFamily } : null, g: row.resolution.path.reportingGroupId ? { id: row.resolution.path.reportingGroupId, name: row.resolution.labels.reportingGroup } : null };
         else { const cacheKey = [key(row.resolution.proposal.commercialHead), key(row.resolution.proposal.commercialFamily), key(row.resolution.proposal.reportingGroup)].join('::'); if (!pathCache.has(cacheKey)) pathCache.set(cacheKey, await createPath(db, clientId, row.resolution.proposal, auth, 'hierarchy_mapping_worksheet')); target = pathCache.get(cacheKey); }
       }
       if (row.action === 'allocate' || row.action === 'not_applicable') {
         const before = { commercialHeadId: existing.commercial_head_id, commercialFamilyId: existing.commercial_family_id, reportingGroupId: existing.reporting_group_id, reviewDisposition: existing.hierarchy_review_disposition };
-        const after = row.action === 'allocate' ? { commercialHeadId: target.h.id, commercialFamilyId: target.f?.id || null, reportingGroupId: target.g.id, reviewDisposition: null } : { commercialHeadId: null, commercialFamilyId: null, reportingGroupId: null, reviewDisposition: 'not_applicable' };
+        const after = row.action === 'allocate' ? { commercialHeadId: target.h.id, commercialFamilyId: target.f?.id || null, reportingGroupId: target.g?.id || null, reviewDisposition: null } : { commercialHeadId: null, commercialFamilyId: null, reportingGroupId: null, reviewDisposition: 'not_applicable' };
         const changed = await db.query(`UPDATE cost_codes SET commercial_head=$1,commercial_family=$2,reporting_group=$3,commercial_head_id=$4,commercial_family_id=$5,reporting_group_id=$6,hierarchy_mode=$7,hierarchy_review_disposition=$8,hierarchy_reviewed_at=NOW(),hierarchy_reviewed_by_user_id=$9,hierarchy_reviewed_by_membership_id=$10,hierarchy_reviewed_by_provider_user_id=$11,hierarchy_reviewed_by_display_name=$12,hierarchy_reviewed_by_role_key=$13,version=version+1,updated_at=NOW(),updated_by=$12 WHERE client_id=$14 AND id=$15 AND version=$16 RETURNING version`, [target?.h?.name || null, target?.f?.name || null, target?.g?.name || null, after.commercialHeadId, after.commercialFamilyId, after.reportingGroupId, target ? (target.f ? 'three-level' : 'two-level') : null, after.reviewDisposition, auth.userId, auth.membershipId, auth.providerUserId, auth.displayName, auth.roleKey, clientId, row.id, row.version]);
         if (!changed.rowCount) { await db.query('ROLLBACK'); return fail(409, `Cost Code ${row.code} changed after preview.`); }
         await db.query(`INSERT INTO cost_code_hierarchy_review_audit(client_id,cost_code_id,operation,before_document,after_document,resulting_cost_code_version,actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name,actor_role_key,actor_permission_key) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, [clientId, row.id, row.action === 'allocate' ? 'allocate' : 'mark_not_applicable', JSON.stringify(before), JSON.stringify(after), changed.rows[0].version, auth.userId, auth.membershipId, auth.providerUserId, auth.displayName, auth.roleKey, PERMISSIONS.COMMERCIAL_STRUCTURE_MANAGE]);

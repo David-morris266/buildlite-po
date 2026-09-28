@@ -36,6 +36,8 @@ const paymentAuthorityRoutes = require('./routes/paymentAuthorityRoutes');
 const paymentReleaseRoutes = require('./routes/paymentReleaseRoutes');
 const developmentBudgetRoutes = require('./routes/developmentBudgetRoutes');
 const commercialStructureRoutes = require('./routes/commercialStructureRoutes');
+const platformProvisioningRoutes=require('./routes/platformProvisioningRoutes');
+const companySettingsRoutes=require('./routes/companySettingsRoutes');
 
 function allowedOrigins() {
   const configured = String(process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean);
@@ -43,7 +45,7 @@ function allowedOrigins() {
 }
 function defaultTestPrincipal(req) {
   const requestedActor=req?.body?.approvedBy||req?.body?.issuedBy||req?.body?.actor||req?.body?.lockedBy||'Test Commercial Manager';
-  return { userId:'00000000-0000-0000-0000-000000000001', providerUserId:'test-user', displayName:requestedActor, email:'test@example.invalid', clientId:null, membershipId:'00000000-0000-0000-0000-000000000002', roleKey:'commercial_manager', roleName:'Commercial Manager', permissions:[...new Set(Object.values(PERMISSIONS))], memberships:[] };
+  return { userId:'00000000-0000-0000-0000-000000000001', providerUserId:'test-user', displayName:requestedActor, email:'test@example.invalid', clientId:req?.get?.('X-BuildLite-Client-Id')||null, membershipId:'00000000-0000-0000-0000-000000000002', roleKey:'commercial_manager', roleName:'Commercial Manager', permissions:[...new Set(Object.values(PERMISSIONS))], memberships:[] };
 }
 
 function createApp(options = {}) {
@@ -62,6 +64,8 @@ function createApp(options = {}) {
   app.use(express.json({ limit: "2mb" }));
   app.use('/api', ...createAuthenticationMiddleware(authAdapter));
   app.use('/api/auth', authRoutes);
+  app.use('/api/platform',platformProvisioningRoutes);
+  app.use('/api/company-settings',companySettingsRoutes);
 
   app.use("/api", poRoutes);
   app.use("/api/jobs", jobRoutes);

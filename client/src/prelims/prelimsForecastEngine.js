@@ -35,6 +35,8 @@ function emptyCalculation(overrides = {}) {
     assumptionAmount: null,
     remainingExposure: null,
     includedInActiveProposal: false,
+    phasingState: 'unavailable',
+    phasingReason: null,
     ...overrides,
   };
 }
@@ -140,7 +142,11 @@ function applyStatusToAssumption(calculation, status, assumptionAmount) {
     ...calculation,
     assumptionAmount,
     remainingExposure:
-      calculation.remainingExposure != null ? calculation.remainingExposure : assumptionAmount,
+      calculation.remainingExposure != null
+        ? calculation.remainingExposure
+        : calculation.phasingState === 'unavailable'
+          ? null
+          : assumptionAmount,
     includedInActiveProposal: calculation.state === PRELIMS_CALC_STATES.RESOLVED,
   };
 }
@@ -233,11 +239,6 @@ export function calculateTimeLine(line = {}, { programme = null, reportingMonth 
     return invalid(PRELIMS_UNRESOLVED_REASONS.INVALID_RATE);
   }
 
-  const asAt = toYearMonth(reportingMonth);
-  if (!asAt) {
-    return unresolved(PRELIMS_UNRESOLVED_REASONS.MISSING_REPORTING_MONTH);
-  }
-
   const span = resolveTimeSpan({ ...line, forecastDriver: PRELIMS_DRIVERS.TIME }, programme);
   if (span.state !== PRELIMS_CALC_STATES.RESOLVED) {
     return span.state === PRELIMS_CALC_STATES.INVALID
@@ -252,10 +253,32 @@ export function calculateTimeLine(line = {}, { programme = null, reportingMonth 
   }
 
   const { resolvedStart, resolvedEnd, totalMonths, outsideProgramme } = span;
+  const totalForecast = roundMoney(rate * totalMonths) ?? 0;
+  const asAt = toYearMonth(reportingMonth);
+
+  if (!asAt) {
+    return applyStatusToAssumption({
+      state: PRELIMS_CALC_STATES.RESOLVED,
+      reason: null,
+      resolvedStart,
+      resolvedEnd,
+      totalMonths,
+      elapsedMonths: null,
+      remainingMonths: null,
+      totalForecast,
+      forecastToDate: null,
+      forecastToComplete: null,
+      assumptionAmount: totalForecast,
+      remainingExposure: null,
+      includedInActiveProposal: false,
+      outsideProgramme: Boolean(outsideProgramme),
+      phasingState: 'unavailable',
+      phasingReason: PRELIMS_UNRESOLVED_REASONS.MISSING_REPORTING_MONTH,
+    }, line.status, totalForecast);
+  }
 
   const elapsedMonths = elapsedCalendarMonths(resolvedStart, resolvedEnd, asAt);
   const remainingMonths = totalMonths - elapsedMonths;
-  const totalForecast = roundMoney(rate * totalMonths) ?? 0;
   const forecastToDate = roundMoney(rate * elapsedMonths) ?? 0;
   const forecastToComplete = roundMoney(rate * remainingMonths) ?? 0;
 
@@ -274,6 +297,8 @@ export function calculateTimeLine(line = {}, { programme = null, reportingMonth 
     remainingExposure: forecastToComplete,
     includedInActiveProposal: false,
     outsideProgramme: Boolean(outsideProgramme),
+    phasingState: 'resolved',
+    phasingReason: null,
   };
   return applyStatusToAssumption(resolved, line.status, totalForecast);
 }
@@ -297,6 +322,8 @@ export function calculateLumpSumLine(line = {}) {
     assumptionAmount: amount,
     remainingExposure: amount,
     includedInActiveProposal: false,
+    phasingState: 'not_applicable',
+    phasingReason: null,
   };
   if (isComplete(line.status) || isCancelled(line.status)) {
     resolved.forecastToDate = amount;
@@ -340,6 +367,7 @@ export function aggregatePrelimsLines(lines = []) {
         remainingExposure: null,
         hasUnresolved: false,
         hasResolvedAmount: false,
+        hasUnavailablePhasing: false,
       });
     }
     const bucket = byCostCode.get(key);
@@ -354,9 +382,13 @@ export function aggregatePrelimsLines(lines = []) {
     if (calc.includedInActiveProposal) {
       bucket.hasResolvedAmount = true;
       bucket.activeProposal = roundMoney((bucket.activeProposal || 0) + (calc.totalForecast || 0));
-      bucket.remainingExposure = roundMoney(
-        (bucket.remainingExposure || 0) + (calc.remainingExposure || 0)
-      );
+      if (calc.phasingState === 'unavailable') {
+        bucket.hasUnavailablePhasing = true;
+      } else {
+        bucket.remainingExposure = roundMoney(
+          (bucket.remainingExposure || 0) + (calc.remainingExposure || 0)
+        );
+      }
       if (Math.abs(calc.totalForecast || 0) <= 0.005) bucket.resolvedZeroCount += 1;
     }
   }
@@ -365,6 +397,8 @@ export function aggregatePrelimsLines(lines = []) {
     if (!bucket.hasResolvedAmount) {
       bucket.activeProposal = bucket.hasUnresolved ? null : 0;
       bucket.remainingExposure = bucket.hasUnresolved ? null : 0;
+    } else if (bucket.hasUnavailablePhasing) {
+      bucket.remainingExposure = null;
     }
     return bucket;
   });
@@ -382,12 +416,14 @@ export function aggregatePrelimsLines(lines = []) {
       activeProposal: moneyOrNull(resolvedProposalParts, {
         anyUnresolved: unresolvedGroups.length > 0 && resolvedProposalParts.length === 0,
       }),
-      remainingExposure: moneyOrNull(
-        costCodes.filter((row) => row.hasResolvedAmount).map((row) => row.remainingExposure),
-        {
-          anyUnresolved: unresolvedGroups.length > 0 && resolvedProposalParts.length === 0,
-        }
-      ),
+      remainingExposure: costCodes.some((row) => row.hasUnavailablePhasing)
+        ? null
+        : moneyOrNull(
+            costCodes.filter((row) => row.hasResolvedAmount).map((row) => row.remainingExposure),
+            {
+              anyUnresolved: unresolvedGroups.length > 0 && resolvedProposalParts.length === 0,
+            }
+          ),
       hasUnresolved: costCodes.some((row) => row.hasUnresolved),
     },
   };

@@ -382,8 +382,10 @@ async function putInputs(developmentId, periodId, inputs) {
 }
 
 async function importLedger(developmentId, transactions) {
+  const client = await getActiveClient();
   const res = await request(app)
     .post(`/api/developments/${encodeURIComponent(developmentId)}/ledger/batches`)
+    .set('X-BuildLite-Client-Id', client.id)
     .send({
       actor: "QS",
       originalFileName: "approve-snapshot.csv",

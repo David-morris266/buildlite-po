@@ -1,10 +1,6 @@
 import { useEffect, useState } from 'react';
-import {
-  CVR_PERIOD_OPTIONS,
-  FORECAST_BEHAVIOUR_OPTIONS,
-  getCompanySettings,
-  saveCompanySettings,
-} from '../../admin/companyStore';
+import { getCompanySettings, saveCompanySettings } from '../../api/companySettings';
+import { cacheAuthoritativeCompanySettings, CVR_PERIOD_OPTIONS, FORECAST_BEHAVIOUR_OPTIONS } from '../../admin/companyStore';
 import AdminPageShell from './AdminPageShell';
 import { AdminButton, AdminKpiGrid, AdminSectionNav } from './adminUi';
 
@@ -26,12 +22,14 @@ const SECTIONS = [
 ];
 
 export default function AdminCompanyPage({ onBack }) {
-  const [form, setForm] = useState(getCompanySettings());
+  const [form, setForm] = useState({companyName:'',tradingName:'',companyNumber:'',vatRegistrationNumber:'',registeredOffice:'',website:'',logoUrl:'',currency:'GBP',financialYearStart:'04-01',vatRate:20,defaultRetentionPercent:5,defaultCvrPeriod:'Monthly',defaultForecastBehaviour:'Committed',numberingPrefixes:{}});
+  const [version,setVersion]=useState(0);
+  const [error,setError]=useState('');
   const [saved, setSaved] = useState(false);
   const [activeSection, setActiveSection] = useState('identity');
 
   useEffect(() => {
-    setForm(getCompanySettings());
+    getCompanySettings().then(result=>{cacheAuthoritativeCompanySettings(result.settings);setForm(result.settings);setVersion(result.version);}).catch(e=>setError(e.message));
   }, []);
 
   function updateField(field, value) {
@@ -47,10 +45,10 @@ export default function AdminCompanyPage({ onBack }) {
     }));
   }
 
-  function handleSave(event) {
+  async function handleSave(event) {
     event.preventDefault();
-    saveCompanySettings(form);
-    setSaved(true);
+    setError('');
+    try{const result=await saveCompanySettings(form,version);cacheAuthoritativeCompanySettings(result.settings);setForm(result.settings);setVersion(result.version);setSaved(true);}catch(e){setError(e.message);}
   }
 
   return (
@@ -72,6 +70,7 @@ export default function AdminCompanyPage({ onBack }) {
           { label: 'CVR Period', value: form.defaultCvrPeriod },
         ]}
       />
+      {error?<div role="alert" className="po-list-feedback po-list-feedback--error">{error}</div>:null}
 
       <AdminSectionNav sections={SECTIONS} active={activeSection} onChange={setActiveSection} />
 
@@ -82,7 +81,8 @@ export default function AdminCompanyPage({ onBack }) {
             <div className="admin-form__grid">
               <label className="dev-form__field">
                 <span className="dev-form__label">Company Name</span>
-                <input className="input" value={form.companyName} onChange={(e) => updateField('companyName', e.target.value)} />
+                <input className="input" value={form.companyName} readOnly aria-describedby="company-name-authority" />
+                <small id="company-name-authority">Provisioned company identity. Contact the BuildLite platform owner to rename the tenant.</small>
               </label>
               <label className="dev-form__field">
                 <span className="dev-form__label">Trading Name</span>

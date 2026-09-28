@@ -8178,10 +8178,18 @@
   font-size: 0.75rem;
 }
 
-.admin-record-list__item .admin-chip {
+.admin-record-list__badges {
   grid-column: 2;
   grid-row: 1 / span 2;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
   align-self: center;
+}
+
+.admin-record-list__badges .admin-chip {
+  white-space: nowrap;
 }
 
 .admin-property-panel {
@@ -12087,4 +12095,17 @@
 .commercial-head-cost-code-discovery {
   display: grid;
   gap: 0.5rem;
+}
+.admin-readiness-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+}
+
+.admin-readiness-item .admin-panel__heading {
+  align-items: flex-start;
+}
+
+.admin-readiness-item .admin-panel__heading p {
+  margin-bottom: 0;
 }

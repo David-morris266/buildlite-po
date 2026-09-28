@@ -3,10 +3,20 @@
  * Mapping identity is the canonical cost-code only. Classification is advisory.
  */
 
-export function classifyTemplateMapping(costCodeKey, semanticGroup) {
+export function effectivePrelimsSemanticGroup(costCodeKey, semanticGroup, costCodes = [], structure = null) {
+  const key = String(costCodeKey || '').trim().toLowerCase();
+  const costCode = (costCodes || []).find((row) => String(row?.code || row?.value || '').trim().toLowerCase() === key);
+  const head = costCode?.commercialHeadId && structure?.heads?.find((row) => row.id === costCode.commercialHeadId);
+  if (head?.active !== false && head?.buildliteCategory) {
+    return head.buildliteCategory === 'PRELIMINARIES' ? 'PRELIMS' : head.buildliteCategory;
+  }
+  return String(semanticGroup || 'UNCLASSIFIED').trim() || 'UNCLASSIFIED';
+}
+
+export function classifyTemplateMapping(costCodeKey, semanticGroup, authority = {}) {
   const key = String(costCodeKey || '').trim();
   if (!key) return { tone: 'unmapped', message: null };
-  const group = String(semanticGroup || 'UNCLASSIFIED').trim() || 'UNCLASSIFIED';
+  const group = effectivePrelimsSemanticGroup(key, semanticGroup, authority.costCodes, authority.structure);
   if (group === 'PRELIMS') return { tone: 'normal', message: null };
   return {
     tone: 'warning',

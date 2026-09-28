@@ -22,6 +22,8 @@ export function buildPlotRevenueRegisterRows(plots = []) {
     revenueCategory: plot.revenueCategory,
     revenueSource: plot.revenueSource,
     pricingSource: plot.pricingSource || plot.revenueSource,
+    fallbackPricingSource: plot.fallbackPricingSource || plot.revenueSource,
+    reservedSellingPriceAuthority: Boolean(plot.reservedSellingPriceAuthority),
     isManualOverride: plot.isManualOverride,
     sellingPrice: roundPlotMoney(plot.sellingPrice),
     forecastSellingPrice: roundPlotMoney(plot.forecastSellingPrice || plot.effectivePrice),
@@ -148,7 +150,7 @@ export function buildRevenueExceptions(plots = []) {
       });
     }
 
-    if (!niaFt2) {
+    if (!niaFt2 && plot.pricingRequiresArea) {
       exceptions.push({
         id: `missing-nia:${plot.id}`,
         type: 'missingNia',
@@ -186,4 +188,19 @@ export function buildRevenueExceptions(plots = []) {
   }
 
   return exceptions;
+}
+
+export function groupRevenueExceptions(exceptions = []) {
+  const grouped = new Map();
+  for (const exception of exceptions) {
+    const key = exception.type || exception.label;
+    const current = grouped.get(key) || { id: `group:${key}`, type: exception.type, label: exception.label, items: [] };
+    current.items.push(exception);
+    grouped.set(key, current);
+  }
+  return [...grouped.values()].map((group) => ({
+    ...group,
+    count: group.items.length,
+    plotNumbers: group.items.map((item) => item.plotNumber),
+  }));
 }

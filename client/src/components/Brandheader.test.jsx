@@ -5,8 +5,9 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 let permissions = [];
+let principal = { permissions, activeTenant: { clientId: 'hawthorn', name: 'Hawthorn Gardens UAT Company' }, memberships: [], switchTenant: vi.fn() };
 vi.mock('../auth/BuildLiteAuthProvider', () => ({
-  useBuildLitePrincipal: () => ({ permissions }),
+  useBuildLitePrincipal: () => principal,
   useBuildLitePermission: permission => permissions.includes(permission),
 }));
 vi.mock('../commercialAssistant/CommercialAssistantIndicator', () => ({ default: () => null }));
@@ -29,6 +30,7 @@ afterEach(() => {
   if (root) act(() => root.unmount());
   container?.remove();
   permissions = [];
+  principal = { permissions, activeTenant: { clientId: 'hawthorn', name: 'Hawthorn Gardens UAT Company' }, memberships: [], switchTenant: vi.fn() };
 });
 
 describe('GP-1 top navigation', () => {
@@ -43,6 +45,7 @@ describe('GP-1 top navigation', () => {
 
   it('shows authority-owned navigation by permission rather than role', () => {
     permissions = ['payment_approval_run.view', 'payment_release.execute', 'po.create', 'tenant.configure'];
+    principal = { ...principal, permissions };
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -53,8 +56,36 @@ describe('GP-1 top navigation', () => {
     expect(container.textContent).not.toContain('Payment Release');
   });
 
+  it('keeps active company context visible and exposes authorised memberships globally', () => {
+    principal = {
+      permissions: [],
+      activeTenant: { clientId: 'hawthorn', name: 'Hawthorn Gardens UAT Company' },
+      memberships: [
+        { clientId: 'hawthorn', clientName: 'Hawthorn Gardens UAT Company', roleName: 'Commercial Director' },
+        { clientId: 'willow', clientName: 'Willow Homes UAT Ltd', roleName: 'Commercial Director' },
+      ],
+      switchTenant: vi.fn(),
+    };
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => root.render(<BrandHeader activeTab="administration" onTab={vi.fn()} />));
+    const selector = container.querySelector('[aria-label="Switch active company"]');
+    expect(selector).not.toBeNull();
+    expect(Array.from(selector.options).map(option => option.textContent)).toEqual([
+      'Hawthorn Gardens UAT Company · Commercial Director',
+      'Willow Homes UAT Ltd · Commercial Director',
+    ]);
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(selector, 'willow');
+      selector.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(principal.switchTenant).toHaveBeenCalledWith('willow');
+  });
+
   it('guards global module navigation while Prelims setup is dirty', () => {
     permissions = ['tenant.configure'];
+    principal = { ...principal, permissions };
     const onTab = vi.fn();
     container = document.createElement('div');
     document.body.appendChild(container);

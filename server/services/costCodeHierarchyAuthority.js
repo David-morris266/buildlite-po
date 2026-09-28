@@ -48,7 +48,7 @@ function matches(rows, name, predicate = () => true) { return rows.filter((item)
 function resolvePath(structure, input) {
   const commercialHead = clean(input.commercialHead); const commercialFamily = clean(input.commercialFamily); const reportingGroup = clean(input.reportingGroup || input.trade);
   if (!commercialHead && !commercialFamily && !reportingGroup) return { state: STATES.UNALLOCATED, path: { commercialHeadId: null, commercialFamilyId: null, reportingGroupId: null }, labels: { commercialHead: '', commercialFamily: '', reportingGroup: '' } };
-  if (!commercialHead || !reportingGroup) return { state: STATES.INVALID, reason: 'Commercial Head and Reporting Group are both required for an allocated row.' };
+  if (!commercialHead) return { state: STATES.INVALID, reason: 'Commercial Head is required for an allocated row.' };
   const heads = matches(structure.heads, commercialHead); if (heads.length > 1) return { state: STATES.AMBIGUOUS, reason: 'Commercial Head is ambiguous.' };
   const head = heads[0]; if (head && !head.active) return { state: STATES.ARCHIVED, reason: 'Commercial Head is archived.' };
   if (!head) return { state: STATES.NEW, proposal: { commercialHead, commercialFamily, reportingGroup }, labels: { commercialHead, commercialFamily, reportingGroup } };
@@ -59,6 +59,7 @@ function resolvePath(structure, input) {
     family = families[0]; if (family && !family.active) return { state: STATES.ARCHIVED, reason: 'Commercial Family is archived.' };
     if (!family) return { state: STATES.NEW, proposal: { commercialHead, commercialFamily, reportingGroup }, existing: { commercialHeadId: head.id, commercialHeadVersion: head.version }, labels: { commercialHead: head.name, commercialFamily, reportingGroup } };
   }
+  if (!reportingGroup) return { state: STATES.MATCHED, path: { commercialHeadId: head.id, commercialFamilyId: family?.id || null, reportingGroupId: null }, versions: { commercialHead: head.version, commercialFamily: family?.version || null, reportingGroup: null }, labels: { commercialHead: head.name, commercialFamily: family?.name || '', reportingGroup: '' } };
   const groups = matches(structure.reportingGroups, reportingGroup, (item) => item.headId === head.id && (item.familyId || null) === (family?.id || null));
   if (groups.length > 1) return { state: STATES.AMBIGUOUS, reason: 'Reporting Group is ambiguous.' };
   const group = groups[0]; if (group && !group.active) return { state: STATES.ARCHIVED, reason: 'Reporting Group is archived.' };
@@ -91,9 +92,12 @@ async function createPath(db, clientId, proposal, auth, origin = 'cost_code_impo
     if (!family) { family = (await db.query(`INSERT INTO commercial_structure_families(client_id,head_id,name,display_order,origin,created_by_user_id,created_by_membership_id,created_by_provider_user_id,created_by_display_name) VALUES($1,$2,$3,(SELECT count(*) FROM commercial_structure_families WHERE client_id=$1 AND head_id=$2),$4,$5,$6,$7,$8) RETURNING *`, [clientId, head.id, proposal.commercialFamily, origin, auth.userId, auth.membershipId, auth.providerUserId, auth.displayName])).rows[0]; await auditStructureCreate(db, clientId, 'family', family, auth); }
     if (!family.is_active) throw Object.assign(Error('Reviewed Commercial Family is now archived.'), { status: 409 });
   }
-  let group = (await db.query('SELECT * FROM commercial_structure_reporting_groups WHERE client_id=$1 AND head_id=$2 AND family_id IS NOT DISTINCT FROM $3 AND lower(btrim(name))=lower(btrim($4)) FOR UPDATE', [clientId, head.id, family?.id || null, proposal.reportingGroup])).rows[0];
-  if (!group) { group = (await db.query(`INSERT INTO commercial_structure_reporting_groups(client_id,head_id,family_id,name,display_order,origin,created_by_user_id,created_by_membership_id,created_by_provider_user_id,created_by_display_name) VALUES($1,$2,$3,$4,(SELECT count(*) FROM commercial_structure_reporting_groups WHERE client_id=$1 AND head_id=$2 AND family_id IS NOT DISTINCT FROM $3),$5,$6,$7,$8,$9) RETURNING *`, [clientId, head.id, family?.id || null, proposal.reportingGroup, origin, auth.userId, auth.membershipId, auth.providerUserId, auth.displayName])).rows[0]; await auditStructureCreate(db, clientId, 'reporting_group', group, auth); }
-  if (!group.is_active) throw Object.assign(Error('Reviewed Reporting Group is now archived.'), { status: 409 });
+  let group = null;
+  if (proposal.reportingGroup) {
+    group = (await db.query('SELECT * FROM commercial_structure_reporting_groups WHERE client_id=$1 AND head_id=$2 AND family_id IS NOT DISTINCT FROM $3 AND lower(btrim(name))=lower(btrim($4)) FOR UPDATE', [clientId, head.id, family?.id || null, proposal.reportingGroup])).rows[0];
+    if (!group) { group = (await db.query(`INSERT INTO commercial_structure_reporting_groups(client_id,head_id,family_id,name,display_order,origin,created_by_user_id,created_by_membership_id,created_by_provider_user_id,created_by_display_name) VALUES($1,$2,$3,$4,(SELECT count(*) FROM commercial_structure_reporting_groups WHERE client_id=$1 AND head_id=$2 AND family_id IS NOT DISTINCT FROM $3),$5,$6,$7,$8,$9) RETURNING *`, [clientId, head.id, family?.id || null, proposal.reportingGroup, origin, auth.userId, auth.membershipId, auth.providerUserId, auth.displayName])).rows[0]; await auditStructureCreate(db, clientId, 'reporting_group', group, auth); }
+    if (!group.is_active) throw Object.assign(Error('Reviewed Reporting Group is now archived.'), { status: 409 });
+  }
   return { h: head, f: family, g: group };
 }
 

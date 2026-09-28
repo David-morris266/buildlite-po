@@ -8,10 +8,7 @@ import {
   detectLedgerHeaderRowIndex,
   ledgerMappingToFieldByColumn,
 } from './ledgerImportFields';
-import {
-  alignFieldByColumnToHeaders,
-  getMissingRequiredFields,
-} from './ledgerImportFields';
+import { alignFieldByColumnToHeaders } from './ledgerImportFields';
 import {
   createCostCentresFromImport,
 } from './ledgerCostCentreImport';
@@ -97,7 +94,7 @@ export async function executeLedgerImport(developmentId, validationResult, metad
 
   let newCostCentresCreated = 0;
   if (
-    metadata.createUnknownCostCentres &&
+    !isLedgerServerAuthorityEnabled() && metadata.createUnknownCostCentres &&
     validationResult.pendingNewCostCentres?.length &&
     !isCvrServerAuthorityEnabled()
   ) {

@@ -5,11 +5,14 @@ import {
   PrelimsTemplateApiError,
   createPrelimsTemplate,
   createPrelimsTemplateLine,
+  applyReviewedPrelimsMappings,
   getPrelimsTemplate,
   listPrelimsTemplates,
   updatePrelimsTemplate,
   updatePrelimsTemplateLine,
 } from '../../api/prelimsTemplates';
+import { commercialHeadCostCodeDiscovery } from '../../admin/commercialHeadCostCodeDiscovery';
+import { proposePrelimsMappings } from '../../prelims/prelimsMappingProposals';
 import { listCostCodesForTemplateMapping } from '../../admin/prelimsTemplateCostCodes';
 import { TIME_BASIS_LABELS } from '../../prelims/prelimsConstants';
 import {
@@ -229,6 +232,7 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
   const [mappingSavingId, setMappingSavingId] = useState(null);
   const [mappingNotice, setMappingNotice] = useState('');
   const [mappingError, setMappingError] = useState('');
+  const [proposalRows, setProposalRows] = useState(null);
   const lineFormRef = useRef(null);
   const isAddForm = Boolean(form && !form.id);
   const editingLineId = form?.id || null;
@@ -395,7 +399,7 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
   function classificationFor(code) {
     if (!code) return classifyTemplateMapping('', null);
     const row = classificationByKey[String(code).toLowerCase()];
-    return classifyTemplateMapping(code, row?.semanticGroup || 'UNCLASSIFIED');
+    return classifyTemplateMapping(code, row?.semanticGroup || 'UNCLASSIFIED', { costCodes, structure: commercialStructure });
   }
 
   function scrollLineFormIntoView() {
@@ -415,6 +419,47 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
     setMappingNotice('');
     setMappingError('');
     setMappingMode(true);
+  }
+
+  function startProposals() {
+    const discovery = commercialHeadCostCodeDiscovery({
+      structure: commercialStructure,
+      costCodes,
+      category: 'PRELIMINARIES',
+    });
+    setForm(null);
+    setMappingMode(false);
+    setMappingNotice('');
+    setMappingError('');
+    setProposalRows(proposePrelimsMappings(selected?.lines || [], discovery.suggested || []));
+  }
+
+  function updateProposal(lineId, patch) {
+    setProposalRows((rows) => rows?.map((row) => row.id === lineId ? { ...row, ...patch, proposalStatus: 'owner-reviewed' } : row));
+  }
+
+  async function applyProposals() {
+    if (!selected || !proposalRows) return;
+    const changes = proposalRows
+      .filter((row) => String(row.proposedCostCodeKey || '') !== String(row.costCodeKey || '') || row.proposedEnabled !== (row.enabled !== false))
+      .map((row) => ({
+        lineId: row.id,
+        version: row.version,
+        costCodeKey: row.proposedCostCodeKey || null,
+        enabled: row.proposedEnabled,
+      }));
+    setBusy(true);
+    setMappingError('');
+    try {
+      await applyReviewedPrelimsMappings(selected.id, { version: selected.version, changes });
+      setProposalRows(null);
+      await refresh(selected.id);
+      setMappingNotice(`${changes.length} reviewed mapping change${changes.length === 1 ? '' : 's'} applied.`);
+    } catch (err) {
+      setMappingError(err.message || 'Could not apply reviewed mappings.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function saveMapping(line, costCodeKey) {
@@ -571,7 +616,7 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
             {mappingSummary.mapped} mapped &middot; {mappingSummary.unmapped} unmapped &middot;{' '}
             {mappingSummary.disabled} disabled
           </p>
-          {!mappingMode ? <div className="admin-form__grid">
+          {!mappingMode && !proposalRows ? <div className="admin-form__grid">
             <label className="dev-form__field admin-form__field--wide">
               <span className="dev-form__label">Template name</span>
               <input
@@ -582,7 +627,7 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
               />
             </label>
           </div> : null}
-          {!mappingMode ? <div className="dev-prelims__actions">
+          {!mappingMode && !proposalRows ? <div className="dev-prelims__actions">
             <AdminButton disabled={busy} onClick={() => handleSaveHeader()}>
               Save name
             </AdminButton>
@@ -605,9 +650,68 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
             <AdminButton disabled={busy} variant="primary" onClick={startMapping}>
               Map Cost Codes
             </AdminButton>
+            {selected.origin === 'buildlite_standard' ? (
+              <AdminButton disabled={busy} variant="primary" onClick={startProposals}>
+                Propose mappings
+              </AdminButton>
+            ) : null}
           </div> : null}
 
-          {mappingMode ? (
+          {proposalRows ? (
+            <section className="admin-prelims-mapping-workspace" aria-label="Review proposed Prelims mappings">
+              <div className="admin-prelims-mapping-workspace__header">
+                <div>
+                  <h3>Review proposed mappings</h3>
+                  <p>Nothing is saved until you apply the reviewed set. Existing mappings are retained unless you explicitly change them.</p>
+                </div>
+                <AdminButton variant="secondary" onClick={() => setProposalRows(null)}>Cancel review</AdminButton>
+              </div>
+              {mappingError ? <p role="alert" className="admin-prelims-mapping-error">{mappingError}</p> : null}
+              <p className="admin-prelims-mapping-summary" aria-label="Proposal review summary">
+                {proposalRows.filter((row) => row.enabled !== false).length} enabled lines &middot;{' '}
+                {proposalRows.filter((row) => row.proposalStatus.startsWith('proposed')).length} proposed &middot;{' '}
+                {proposalRows.filter((row) => row.proposalStatus === 'needs-review').length} need review &middot;{' '}
+                {proposalRows.filter((row) => row.proposalStatus === 'existing').length} existing mappings &middot;{' '}
+                {proposalRows.filter((row) => row.proposedEnabled === false).length} disabled
+              </p>
+              <AdminDataTable className="admin-prelims-mapping-table">
+                <thead><tr><th>Prelim</th><th>Driver</th><th>Reviewed treatment</th><th>Basis / guidance</th><th>Status</th></tr></thead>
+                <tbody>
+                  {proposalRows.map((line) => (
+                    <tr key={line.id}>
+                      <td><strong>{line.name}</strong></td>
+                      <td>{driverLabel(line.forecastDriver)}</td>
+                      <td>
+                        <CommercialHeadCostCodePicker
+                          category="PRELIMINARIES"
+                          structure={commercialStructure}
+                          codes={costCodes}
+                          identity="code"
+                          name={`${line.name} reviewed mapping`}
+                          contextKey={`proposal-${line.id}`}
+                          valueCode={line.proposedCostCodeKey || ''}
+                          disabled={busy || line.proposedEnabled === false}
+                          onSetUpCommercialStructure={onSetUpCommercialStructure}
+                          onChange={(code) => updateProposal(line.id, { proposedCostCodeKey: code || '' })}
+                        />
+                        <label className="admin-form__hint">
+                          <input type="checkbox" checked={line.proposedEnabled === false} onChange={(event) => updateProposal(line.id, { proposedEnabled: !event.target.checked })} /> Disable line
+                        </label>
+                      </td>
+                      <td className="admin-table__guidance">{line.proposalBasis}</td>
+                      <td><AdminStatusBadge tone={line.proposalStatus === 'needs-review' ? 'neutral' : line.proposalStatus === 'existing' ? 'accent' : 'success'}>{line.proposalStatus === 'needs-review' ? 'Needs owner review' : line.proposalStatus === 'existing' ? 'Existing mapping' : line.proposalStatus === 'owner-reviewed' ? 'Owner reviewed' : 'Proposed'}</AdminStatusBadge></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </AdminDataTable>
+              <div className="dev-prelims__actions">
+                <AdminButton variant="primary" disabled={busy} onClick={applyProposals}>Apply reviewed mappings</AdminButton>
+                <AdminButton variant="secondary" disabled={busy} onClick={() => setProposalRows(null)}>Cancel</AdminButton>
+              </div>
+            </section>
+          ) : null}
+
+          {mappingMode && !proposalRows ? (
             <section className="admin-prelims-mapping-workspace" aria-label="Map Prelims Cost Codes">
               <div className="admin-prelims-mapping-workspace__header">
                 <div>
@@ -699,15 +803,15 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
             </section>
           ) : null}
 
-          {!mappingMode && isAddForm ? (
+          {!mappingMode && !proposalRows && isAddForm ? (
             <div ref={lineFormRef} className="admin-prelims-line-form--add">
               <TemplateLineForm {...lineFormProps} />
             </div>
           ) : null}
 
-          {!mappingMode && !selected.lines?.length && !form ? (
+          {!mappingMode && !proposalRows && !selected.lines?.length && !form ? (
             <p>This blank template has no lines yet.</p>
-          ) : !mappingMode && selected.lines?.length ? (
+          ) : !mappingMode && !proposalRows && selected.lines?.length ? (
             <AdminDataTable>
               <thead>
                 <tr>

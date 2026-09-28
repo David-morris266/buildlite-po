@@ -1,4 +1,11 @@
 const CARD_META = {
+  'company-readiness': {
+    icon: '✓',
+    title: 'Company Readiness',
+    description: 'Authoritative company, Commercial Structure and Cost Code setup status.',
+    accent: 'company',
+    status: 'Readiness',
+  },
   company: {
     icon: '🏢',
     title: 'Company',
@@ -9,7 +16,7 @@ const CARD_META = {
   'setup-data-import': {
     icon: '📥',
     title: 'Setup & Data Import',
-    description: 'Re-run setup, import cost codes and future master data imports.',
+    description: 'Import authoritative Cost Codes and future company master data.',
     accent: 'company',
     status: 'Import',
   },
@@ -22,8 +29,8 @@ const CARD_META = {
   },
   clients: {
     icon: '👥',
-    title: 'Clients',
-    description: 'Client master records for developments.',
+    title: 'Development contacts',
+    description: 'Legacy browser-local contact records; not BuildLite companies.',
     accent: 'company',
     status: 'Active',
   },
@@ -102,11 +109,13 @@ const CARD_META = {
   },
 };
 
+CARD_META['platform-provisioning']={icon:'+',title:'Provision Company',description:'Restricted platform operation for creating an isolated BuildLite customer.',accent:'company',status:'Platform'};
+
 const GROUPS = [
   {
     id: 'company',
     title: 'Company',
-    cardIds: ['company', 'setup-data-import', 'users', 'clients', 'approval-settings'],
+    cardIds: ['company-readiness', 'company', 'setup-data-import', 'users', 'clients', 'approval-settings'],
   },
   {
     id: 'commercial',
@@ -199,17 +208,19 @@ export default function AdministrationLanding({
   showDeveloperTools,
   canManageCommercialTemplates = false,
   accessError = '',
+  canProvision = false,
 }) {
+  const baseGroups=canProvision?GROUPS.map(group=>group.id==='company'?{...group,cardIds:['platform-provisioning',...group.cardIds]}:group):GROUPS;
   const groups = showDeveloperTools
     ? [
-        ...GROUPS,
+        ...baseGroups,
         {
           id: 'developer',
           title: 'Developer Tools',
           cardIds: ['developer-tools'],
         },
       ]
-    : GROUPS;
+    : baseGroups;
 
   return (
     <div className="admin-landing admin-landing--control-centre">

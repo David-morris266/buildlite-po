@@ -8,11 +8,13 @@ import {
   PurchaseLedgerApiError,
   importLedgerBatchForDevelopment,
   reverseLedgerTransactionForDevelopment,
+  resolveLedgerTransactionForDevelopment,
 } from '../api/purchaseLedger';
 import {
   appendCachedLedgerTransactions,
   replaceCachedLedgerTotals,
   upsertCachedLedgerBatch,
+  refreshLedgerForDevelopment,
 } from './ledgerServerCache';
 
 function mapApiError(error) {
@@ -60,4 +62,12 @@ export async function reverseServerLedgerTransaction(developmentId, transactionI
 
 export function applyLedgerTotalsToCache(developmentId, totals) {
   return replaceCachedLedgerTotals(developmentId, totals);
+}
+
+export async function resolveServerLedgerTransaction(developmentId, transactionId, payload) {
+  try {
+    await resolveLedgerTransactionForDevelopment(developmentId, transactionId, payload);
+    await refreshLedgerForDevelopment(developmentId);
+    return {ok:true};
+  } catch (error) { return mapApiError(error); }
 }

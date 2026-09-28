@@ -313,8 +313,10 @@ async function putInputs(developmentId, periodId, inputs) {
 }
 
 async function importLedger(developmentId, transactions) {
+  const client = await getActiveClient();
   const res = await request(app)
     .post(`/api/developments/${encodeURIComponent(developmentId)}/ledger/batches`)
+    .set('X-BuildLite-Client-Id', client.id)
     .send({
       actor: "QS",
       originalFileName: "close-engine.csv",
@@ -785,6 +787,20 @@ if (!isDbConfigured()) {
     assertRow(result, "5231", { actualCost: 1000, currentCost: 1000 });
   });
 
+  test("GP10-008 unresolved ledger evidence blocks close and cannot manufacture a CVR row", async () => {
+    const world = await setupBase();
+    await importLedger(world.development.id, [{
+      supplier: "Odd Jobs Ltd", invoiceNumber: `PL-0099-${Date.now()}`,
+      transactionDate: "2026-02-01", costCodeKey: "9998", netAmount: 1250,
+    }]);
+    const result = await buildCvrCloseCandidate({
+      clientId: world.client.id, developmentId: world.development.id, periodId: world.period.id,
+    });
+    assert.equal(result.ready, false);
+    assert.ok(result.blockers.some((blocker) => blocker.reason === "unresolved-ledger-transactions"));
+    assert.equal(result.rows, undefined);
+  });
+
   test("11-12. manual accrual and current cost", async () => {
     const world = await setupBase({
       inputs: [
@@ -830,6 +846,9 @@ if (!isDbConfigured()) {
     await putInputs(actualFallback.id, periodC.id, [
       { costCodeKey: "2300", costCodeLabel: "Site", currentBudget: 0, originalBudget: 0 },
     ]);
+    await pool.query(`INSERT INTO cost_codes(client_id,code,element,is_active,allow_ledger_import)
+      VALUES($1,'2300','Site',TRUE,TRUE) ON CONFLICT(client_id,code) DO UPDATE SET is_active=TRUE,allow_ledger_import=TRUE`,
+      [(await getActiveClient()).id]);
     await importLedger(actualFallback.id, [
       {
         supplier: "Plant",

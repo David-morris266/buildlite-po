@@ -138,7 +138,7 @@ function sharedFields(body = {}, errors, { requireCommercialMetadata = true, exi
     ? body.reportingGroup || body.trade
     : existing?.reporting_group;
   const reportingGroup = validateCommercialMetadata
-    ? parseRequiredText(reportingGroupValue, "reportingGroup", errors, MAX_HIERARCHY_NAME_LENGTH)
+    ? parseOptionalText(reportingGroupValue, "reportingGroup", errors, MAX_HIERARCHY_NAME_LENGTH)
     : existing?.reporting_group ?? null;
   const trade = hasReportingGroup ? reportingGroup : existing?.trade ?? reportingGroup;
   const hierarchyMode = Object.prototype.hasOwnProperty.call(body, "hierarchyMode") || commercialMetadataChanged
