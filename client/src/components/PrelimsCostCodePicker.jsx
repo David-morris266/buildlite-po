@@ -21,6 +21,7 @@ export default function PrelimsCostCodePicker({
   contextKey = '',
   allOptions = null,
   scopeLabel = '',
+  overlayClassName = '',
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -193,7 +194,7 @@ export default function PrelimsCostCodePicker({
       {open && !disabled && menuStyle ? createPortal(
         <div
           ref={menuRef}
-          className="dev-prelims-setup__cost-code-menu dev-prelims-setup__cost-code-menu--portal"
+          className={`dev-prelims-setup__cost-code-menu dev-prelims-setup__cost-code-menu--portal${overlayClassName ? ` ${overlayClassName}` : ''}`}
           id={`${name}-cost-code-list`}
           role="listbox"
           aria-label={`${name} cost code options`}

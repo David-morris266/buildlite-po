@@ -11530,6 +11530,10 @@
   z-index: 100;
 }
 
+.dev-prelims-setup__cost-code-menu--portal.dev-cvr-add__cost-code-menu {
+  z-index: 1210;
+}
+
 .dev-prelims-setup__cost-code-scope {
   padding: 0.45rem 0.65rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);

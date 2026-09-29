@@ -20,7 +20,7 @@ import { newAdminId, readAdminStore, writeAdminStore } from './adminStorage';
 
 import { notifyMasterDataChanged } from './masterDataEvents';
 import { isCostCodeServerAuthorityEnabled } from './costCodeAuthority';
-import { ensureCostCodesReady } from './costCodeServerCache';
+import { ensureCostCodesReady, refreshCostCodes } from './costCodeServerCache';
 
 
 
@@ -628,11 +628,11 @@ export function toCostCodeSelectShape(record) {
 
 
 
-export async function listActiveCostCodesForSelect() {
+export async function listActiveCostCodesForSelect({ fresh = false } = {}) {
 
   if (isCostCodeServerAuthorityEnabled()) {
 
-    const rows = await ensureCostCodesReady();
+    const rows = fresh ? await refreshCostCodes() : await ensureCostCodesReady();
 
     return (rows || []).filter((item) => item.active !== false).map(toCostCodeSelectShape);
 

@@ -279,6 +279,36 @@ describe('BL-033D.x.2A.2 Admin cost-code authority', () => {
     expect(a[0].label).not.toBe(a[0].value);
   });
 
+  it('can refresh membership candidates from current tenant authority instead of reusing stale options', async () => {
+    authorityEnabled.value = true;
+    seedMockCostCodes([{ code: '1110', description: 'Existing member' }]);
+    const cached = await listActiveCostCodesForSelect();
+    expect(cached.map((item) => item.code)).toEqual(['1110']);
+
+    seedMockCostCodes([
+      { code: '1110', description: 'Existing member' },
+      {
+        id: 'cc-5400',
+        code: '5400',
+        description: 'Selling Costs General Allowance',
+        commercialHeadId: 'head-selling',
+        commercialHead: 'Sales & Marketing',
+        allowBudget: true,
+        allowForecastAdjustment: true,
+        active: true,
+      },
+    ]);
+
+    expect((await listActiveCostCodesForSelect()).map((item) => item.code)).not.toContain('5400');
+    const refreshed = await listActiveCostCodesForSelect({ fresh: true });
+    expect(refreshed.map((item) => item.code)).toContain('5400');
+    expect(refreshed.find((item) => item.code === '5400')).toMatchObject({
+      id: 'cc-5400',
+      commercialHeadId: 'head-selling',
+      active: true,
+    });
+  });
+
   it('does not migrate browser master or seed from the compatibility endpoint when ON', async () => {
     authorityEnabled.value = true;
     seedMockCostCodes([]);

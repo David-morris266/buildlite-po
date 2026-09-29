@@ -400,7 +400,7 @@ if (!isDbConfigured()) {
     assert.equal(res.body.reviewState, SELLING_COSTS_REVIEW_STATES.NOT_ADOPTED);
   });
 
-  test("GET review blocks when destination is missing from CVR and does not add membership", async () => {
+  test("zero-budget destination becomes reviewable only after explicit CVR membership", async () => {
     const active = await getActiveClient();
     const developmentId = await createDevelopment(active);
     await insertCostCode(active.id, "5400", "Selling Costs — General Allowance");
@@ -422,6 +422,40 @@ if (!isDbConfigured()) {
     const after = await snapshotState(developmentId, periodId);
     assert.equal(after.members.length, 0);
     assert.deepEqual(after, before);
+
+    const added = await request(app)
+      .post(
+        `/api/developments/${encodeURIComponent(
+          developmentId
+        )}/cvr/periods/${encodeURIComponent(periodId)}/cost-code-members`
+      )
+      .send({ costCodeKey: "5400", actor: "Commercial Manager" });
+    assert.equal(added.status, 201, added.body?.message || JSON.stringify(added.body));
+    assert.equal(added.body.costCodeKey, "5400");
+    assert.equal(added.body.originalBudget, null);
+    assert.equal(added.body.currentBudget, null);
+    assert.equal(added.body.commercialAdjustment, 0);
+    assert.equal(added.body.manualAccrual, 0);
+
+    const review = await request(app).get(
+      `/api/developments/${developmentId}/selling-costs/review`
+    );
+    assert.equal(review.status, 200, review.body?.message || JSON.stringify(review.body));
+    assert.equal(review.body.reviewStatus, "ready");
+    assert.equal(review.body.canAdopt, true);
+    assert.equal(review.body.destination.costCodeKey, "5400");
+    assert.equal(review.body.comparison.systemForecast, 0);
+    assert.equal(review.body.comparison.currentAdjustment, 0);
+    assert.equal(review.body.comparison.proposedReplacementAdjustment, KNOWN_PROPOSAL);
+    assert.equal(review.body.comparison.proposedFinalForecast, KNOWN_PROPOSAL);
+    assert.equal(review.body.comparison.adoptionMetadata, null);
+
+    const afterReview = await snapshotState(developmentId, periodId);
+    assert.equal(afterReview.members.length, 1);
+    assert.equal(afterReview.members[0].original_budget, null);
+    assert.equal(afterReview.members[0].current_budget, null);
+    assert.equal(afterReview.members[0].adj, 0);
+    assert.equal(afterReview.members[0].accrual, 0);
   });
 
   test("GET review blocks inactive and missing destinations", async () => {

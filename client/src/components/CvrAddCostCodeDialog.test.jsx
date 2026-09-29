@@ -4,6 +4,9 @@
 import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const listActiveCostCodesForSelect = vi.hoisted(() => vi.fn());
 
@@ -88,7 +91,7 @@ describe('CvrAddCostCodeDialog', () => {
 
   it('loads active Master codes and excludes existing CVR members', async () => {
     await renderDialog();
-    expect(listActiveCostCodesForSelect).toHaveBeenCalled();
+    expect(listActiveCostCodesForSelect).toHaveBeenCalledWith({ fresh: true });
     expect(container.textContent).toContain('Add Cost Code');
     expect(container.querySelector('input[placeholder="e.g. BRK01 — Brickwork"]')).toBeNull();
     await act(async () => {
@@ -98,6 +101,17 @@ describe('CvrAddCostCodeDialog', () => {
     expect(document.querySelector('[data-cost-code="5400"]')).toBeTruthy();
     expect(document.querySelector('[data-cost-code="5231"]')).toBeTruthy();
     expect(document.querySelector('[data-cost-code="1110"]')).toBeNull();
+    expect(document.querySelector('[role="listbox"]')?.parentElement).toBe(document.body);
+    expect(document.querySelector('[role="listbox"]')?.classList).toContain(
+      'dev-cvr-add__cost-code-menu'
+    );
+    const styles = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../styles/po-module.css'),
+      'utf8'
+    );
+    expect(styles).toMatch(
+      /\.dev-prelims-setup__cost-code-menu--portal\.dev-cvr-add__cost-code-menu\s*\{[^}]*z-index:\s*1210/s
+    );
   });
 
   it('searches by code then posts only the selected key', async () => {

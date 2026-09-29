@@ -37,7 +37,9 @@ export default function CvrAddCostCodeDialog({
     setErrors([]);
     setLoadError('');
     let cancelled = false;
-    listActiveCostCodesForSelect()
+    // Membership candidates must reflect the active tenant at the moment the
+    // command is opened; an earlier company/cache view is not authority.
+    listActiveCostCodesForSelect({ fresh: true })
       .then((codes) => {
         if (!cancelled) setOptions(codes || []);
       })
@@ -105,6 +107,7 @@ export default function CvrAddCostCodeDialog({
               setErrors([]);
             }}
             name="CVR add"
+            overlayClassName="dev-cvr-add__cost-code-menu"
           />
         </label>
         <div className="dev-cvr-add__actions modal-actions">
