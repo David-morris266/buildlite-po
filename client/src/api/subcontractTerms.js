@@ -7,3 +7,4 @@ export const publishSubcontractTerms=(id,body={})=>call(`/versions/${id}/publish
 export const cloneSubcontractTerms=(id,body={})=>call(`/versions/${id}/clone`,{method:'POST',body:JSON.stringify(body)});
 export const retireSubcontractTerms=(id,body={})=>call(`/versions/${id}/retire`,{method:'POST',body:JSON.stringify(body)});
 export const setTenantSubcontractTermsDefault=(termsVersionId,body={})=>call('/default',{method:'PUT',body:JSON.stringify({...body,termsVersionId})});
+export const confirmApprovedPoSubcontractTerms=(poNumber,termsVersionId,reason)=>call(`/purchase-orders/${encodeURIComponent(poNumber)}/confirm-legacy`,{method:'POST',body:JSON.stringify({termsVersionId,reason})});

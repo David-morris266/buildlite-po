@@ -100,4 +100,5 @@ test('critical-route manifest covers the pilot high-risk boundary', () => {
 
 test('critical-route manifest protects certificate Return to Draft with certificate.lock', () => {
   assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/packages/:packageId/certificates/:certificateId/reject'], PERMISSIONS.CERTIFICATE_LOCK);
+  assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/subcontract-terms/purchase-orders/:poNumber/confirm-legacy'], PERMISSIONS.TERMS_ASSIGN_OVERRIDE);
 });

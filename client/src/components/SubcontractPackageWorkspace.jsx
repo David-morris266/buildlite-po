@@ -51,6 +51,7 @@ export default function SubcontractPackageWorkspace({
   const [certRefresh, setCertRefresh] = useState(0);
   const [commercialEventRefresh, setCommercialEventRefresh] = useState(0);
   const [certificateDetailActive, setCertificateDetailActive] = useState(false);
+  const [termsRefresh, setTermsRefresh] = useState(0);
 
   const {
     certificatesLoading,
@@ -58,7 +59,7 @@ export default function SubcontractPackageWorkspace({
     certificatesError,
     governingTerms,
     hydratedPackage,
-  } = usePaymentCertificateServerHydration(order);
+  } = usePaymentCertificateServerHydration(order, termsRefresh);
 
   const authoritativeOrder = useMemo(
     () => mergeHydratedPackageIntoOrder(order, hydratedPackage),
@@ -195,6 +196,10 @@ export default function SubcontractPackageWorkspace({
           <SubcontractPackageOverview
             pkg={pkg}
             onOpenMatrix={() => setActiveTab('matrix')}
+            onTermsConfigured={() => {
+              setTermsRefresh((value) => value + 1);
+              setCertRefresh((value) => value + 1);
+            }}
           />
         ) : null}
 

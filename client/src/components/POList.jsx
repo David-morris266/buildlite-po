@@ -6,7 +6,7 @@ import {
   getPO,
   approvePO,
   requestApproval,
-  poPdfUrl,
+  downloadPoPdf,
   listSuppliers,
 } from '../api';
 import {
@@ -39,12 +39,6 @@ const asMoney = (v) => {
         maximumFractionDigits: 2,
       })
     : '0.00';
-};
-
-// Open PDF helper (now uses poPdfUrl from api.js)
-const openPdf = (poNumber) => {
-  if (!poNumber) return;
-  window.open(poPdfUrl(poNumber), '_blank', 'noopener');
 };
 
 export default function POList({
@@ -160,6 +154,19 @@ export default function POList({
     setSelected(po);
     setEditMode(false);
     setDrawerOpen(true);
+  }
+
+  async function onDownloadPdf(number) {
+    if (!number) return;
+    try {
+      setListFeedback(null);
+      await downloadPoPdf(number);
+    } catch (error) {
+      setListFeedback({
+        type: 'error',
+        message: error.message || 'Unable to download Purchase Order PDF. Please try again.',
+      });
+    }
   }
 
   async function onEdit(number) {
@@ -455,7 +462,7 @@ export default function POList({
                           {rowActionLabel}
                         </button>
 
-                        <button type="button" onClick={() => openPdf(number)}>
+                        <button type="button" onClick={() => onDownloadPdf(number)}>
                           🖨️ PDF
                         </button>
 
@@ -533,7 +540,7 @@ export default function POList({
             feedback={listFeedback}
             updatingApproval={updatingApproval}
             onClose={closeDrawer}
-            onDownloadPdf={() => openPdf(selected.poNumber)}
+            onDownloadPdf={() => onDownloadPdf(selected.poNumber)}
             onEdit={() => setEditMode(true)}
             onDelete={() => onDelete(selected.poNumber)}
             onSendForApproval={() => onSendForApproval(selected.poNumber)}

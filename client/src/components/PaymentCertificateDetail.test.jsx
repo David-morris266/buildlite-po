@@ -166,6 +166,29 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     expect(document.body.textContent).toContain('Delete Draft');
   });
 
+  it('exposes the payment-cycle anchor control in the Draft Final Review stage', () => {
+    setDraftCertificate();
+    const certificate = {
+      ...getCertificate(),
+      paymentTimetable: {
+        state: 'live', readiness: 'missing_anchor_date', dates: null,
+        reasons: ['Required contractual_valuation_date is unavailable.'],
+        governingTermsSnapshot: { paymentRules: { anchor: { type: 'contractual_valuation_date' } } },
+      },
+    };
+    getCertificate.mockReturnValue(certificate);
+    summarizeCertificateProgress.mockReturnValue({
+      certificate,
+      totals: { grossWorksThisCertificate: 38400, retention: 1920, vat: 7296, netPayment: 43776 },
+      matrix: {}, grid: { cells: [] }, matrixReady: true,
+    });
+    renderDetail();
+    const finalReview = [...container.querySelectorAll('.po-cert-stages button')].find((button) => button.textContent.includes('Submit'));
+    act(() => finalReview.click());
+    expect(container.textContent).toContain('Contractual Timetable');
+    expect(container.textContent).toContain('Final review');
+  });
+
   it('hides Delete Draft after a submitted certificate is rejected back to Draft', () => {
     setDraftCertificate();
     const certificate = { ...getCertificate(), hasSubmissionHistory: true };

@@ -447,17 +447,20 @@ export default function PaymentCertificateDetail({
       ) : null}
 
       {editable && activeStage === 'release' ? (
-        <PaymentCertificateSubmissionReview
-          certificate={certificate}
-          totals={summary?.totals}
-          applicationComparison={applicationComparison}
-          onEditStage={setActiveStage}
-          onSubmit={() => {
-            setWorkflowFeedback(null);
-            setDialog('submit');
-          }}
-          busy={lifecycleBusy}
-        />
+        <>
+          <PaymentCertificateTimetable certificate={certificate} orderKey={order.orderKey} order={order} onChanged={refresh} />
+          <PaymentCertificateSubmissionReview
+            certificate={certificate}
+            totals={summary?.totals}
+            applicationComparison={applicationComparison}
+            onEditStage={setActiveStage}
+            onSubmit={() => {
+              setWorkflowFeedback(null);
+              setDialog('submit');
+            }}
+            busy={lifecycleBusy}
+          />
+        </>
       ) : null}
 
       {submitted ? (

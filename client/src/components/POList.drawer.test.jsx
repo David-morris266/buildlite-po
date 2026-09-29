@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const listPOs = vi.hoisted(() => vi.fn());
 const listSuppliers = vi.hoisted(() => vi.fn());
 const getPO = vi.hoisted(() => vi.fn());
+const downloadPoPdf = vi.hoisted(() => vi.fn());
 
 vi.mock('../api', () => ({
   listPOs,
@@ -16,7 +17,7 @@ vi.mock('../api', () => ({
   deletePO: vi.fn(),
   approvePO: vi.fn(),
   requestApproval: vi.fn(),
-  poPdfUrl: vi.fn(() => '/pdf'),
+  downloadPoPdf,
 }));
 
 vi.mock('../suppliers/usePoReviewLiveSupplier', () => ({
@@ -60,6 +61,7 @@ describe('POList focus drawer mount', () => {
       supplierSnapshot: { name: 'Test Supplier' },
       items: [],
     });
+    downloadPoPdf.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -83,5 +85,33 @@ describe('POList focus drawer mount', () => {
     });
 
     expect(document.body.textContent).toContain('S0001');
+  });
+
+  it('downloads from the real drawer control through the authenticated PDF request', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    act(() => {
+      root.render(<POList focusPoNumber="S0001" onFocusHandled={vi.fn()} />);
+    });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    const button = [...document.body.querySelectorAll('button')]
+      .find((item) => item.textContent.trim() === 'Download PDF');
+    expect(button).toBeTruthy();
+    await act(async () => { button.click(); await Promise.resolve(); });
+
+    expect(downloadPoPdf).toHaveBeenCalledWith('S0001');
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('keeps the user in BuildLite and presents a failed PDF request', async () => {
+    downloadPoPdf.mockRejectedValueOnce(new Error('Select an authorized company for this request.'));
+    act(() => {
+      root.render(<POList focusPoNumber="S0001" onFocusHandled={vi.fn()} />);
+    });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const button = [...document.body.querySelectorAll('button')]
+      .find((item) => item.textContent.trim() === 'Download PDF');
+    await act(async () => { button.click(); await Promise.resolve(); });
+    expect(document.body.textContent).toContain('Select an authorized company for this request.');
   });
 });

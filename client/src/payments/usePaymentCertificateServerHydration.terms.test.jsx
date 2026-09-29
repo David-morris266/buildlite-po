@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const fetchPackageByOrderKey = vi.hoisted(() => vi.fn());
 const ensureCertificatesReadyForPackage = vi.hoisted(() => vi.fn());
+const refreshCertificatesForPackage = vi.hoisted(() => vi.fn());
 
 vi.mock('./packageStore', () => ({
   fetchPackageByOrderKey,
@@ -15,6 +16,7 @@ vi.mock('./paymentCertificateAuthority', () => ({
 }));
 vi.mock('./paymentCertificateServerCache', () => ({
   ensureCertificatesReadyForPackage,
+  refreshCertificatesForPackage,
   getCertificateLoadError: () => null,
   getCertificateLoadState: () => 'loaded',
   rememberPackageUuidForOrderKey: vi.fn(),
@@ -22,8 +24,8 @@ vi.mock('./paymentCertificateServerCache', () => ({
 
 import { mergeHydratedPackageIntoOrder, usePaymentCertificateServerHydration } from './usePaymentCertificateServerHydration';
 
-function Probe({ order }) {
-  const state = usePaymentCertificateServerHydration(order);
+function Probe({ order, refreshToken = 0 }) {
+  const state = usePaymentCertificateServerHydration(order, refreshToken);
   return <pre>{JSON.stringify(state)}</pre>;
 }
 
@@ -95,5 +97,39 @@ describe('Payment Certificate package terms hydration', () => {
     expect(host.textContent).toContain('terms-revision-1');
     expect(host.textContent).toContain('Standard 2026');
     expect(host.textContent).not.toContain('Revision 2');
+  });
+
+  it('reloads authoritative package terms when prospective configuration completes', async () => {
+    const packageId = '99b64320-e1b9-41f8-8586-82ffa3d802b6';
+    fetchPackageByOrderKey
+      .mockResolvedValueOnce({ id: packageId, orderKey: 'willow::groundworks::3000', governingTerms: { state: 'unconfigured' } })
+      .mockResolvedValueOnce({ id: packageId, orderKey: 'willow::groundworks::3000', governingTerms: { state: 'common', version: { id: 'terms-1', familyName: 'Standard terms' } } });
+    ensureCertificatesReadyForPackage.mockResolvedValue([]);
+    refreshCertificatesForPackage.mockResolvedValue([]);
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => root.render(<Probe order={{ orderKey: 'willow::groundworks::3000' }} />));
+    expect(host.textContent).toContain('unconfigured');
+    await act(async () => root.render(<Probe order={{ orderKey: 'willow::groundworks::3000' }} refreshToken={1} />));
+    expect(fetchPackageByOrderKey).toHaveBeenCalledTimes(2);
+    expect(refreshCertificatesForPackage).toHaveBeenCalledWith(packageId);
+    expect(host.textContent).toContain('terms-1');
+  });
+
+  it('does not reuse stale order terms when a configured package is explicitly refreshed', async () => {
+    const packageId = '99b64320-e1b9-41f8-8586-82ffa3d802b6';
+    fetchPackageByOrderKey.mockResolvedValue({
+      id: packageId, orderKey: 'willow::groundworks::3000',
+      governingTerms: { state: 'common', version: { id: 'terms-1', familyName: 'Willow UAT Standard Subcontract Terms' } },
+    });
+    refreshCertificatesForPackage.mockResolvedValue([]);
+    host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host);
+    const staleOrder = { id: packageId, packageUuid: packageId, orderKey: 'willow::groundworks::3000', governingTerms: { state: 'unconfigured' } };
+    await act(async () => root.render(<Probe order={staleOrder} refreshToken={1} />));
+    expect(fetchPackageByOrderKey).toHaveBeenCalledWith('willow::groundworks::3000');
+    expect(refreshCertificatesForPackage).toHaveBeenCalledWith(packageId);
+    expect(host.textContent).toContain('Willow UAT Standard Subcontract Terms');
+    expect(host.textContent).not.toContain('unconfigured');
   });
 });

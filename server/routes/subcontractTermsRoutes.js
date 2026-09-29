@@ -17,6 +17,6 @@ router.put('/default',requirePermission(PERMISSIONS.TERMS_DEFAULT),async(req,res
 router.put('/developments/:developmentId/default',requirePermission(PERMISSIONS.TERMS_DEFAULT),async(req,res)=>{const c=await tenant(res);if(c)send(res,await repo.setDevelopmentDefault(c.id,req.params.developmentId,req.body.termsVersionId,authoritativeBody(req)));});
 router.get('/purchase-orders/:poNumber',async(req,res)=>{const c=await tenant(res);if(c){const terms=await repo.resolveForPo(c.id,req.params.poNumber);if(!terms)return res.status(404).json({message:'PO not found.'});res.json(terms);}});
 router.put('/purchase-orders/:poNumber/override',requirePermission(PERMISSIONS.TERMS_OVERRIDE),async(req,res)=>{const c=await tenant(res);if(c)send(res,await repo.setPoOverride(c.id,req.params.poNumber,req.body.termsVersionId,req.body.reason,authoritativeBody(req)));});
-router.post('/purchase-orders/:poNumber/confirm-legacy',async(req,res)=>{const c=await tenant(res);if(c)send(res,await repo.confirmLegacy(c.id,req.params.poNumber,req.body.termsVersionId,req.body.reason,req.body),'terms');});
+router.post('/purchase-orders/:poNumber/confirm-legacy',requirePermission(PERMISSIONS.TERMS_ASSIGN_OVERRIDE),async(req,res)=>{const c=await tenant(res);if(c)send(res,await repo.confirmLegacy(c.id,req.params.poNumber,req.body.termsVersionId,req.body.reason,authoritativeBody(req)),'terms');});
 router.get('/packages/:packageId',async(req,res)=>{const c=await tenant(res);if(c)res.json(await repo.resolveForPackage(c.id,req.params.packageId));});
 module.exports=router;

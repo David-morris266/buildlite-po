@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { listPOs, getPO, approvePO, poPdfUrl } from '../api'
+import { listPOs, getPO, approvePO, downloadPoPdf } from '../api'
 import { syncPackageFromApprovedPo } from '../payments/subcontractOrders'
 import {
   buildApproveBody,
@@ -11,16 +11,11 @@ import PODrawerShell from './PODrawerShell'
 import POReviewDrawerContent from './POReviewDrawerContent'
 import './POList.css'
 
-const openPdf = (poNumber) => {
-  if (!poNumber) return
-  window.open(poPdfUrl(poNumber), '_blank', 'noopener')
-}
-
 // ------- helpers -------
 const toNumber = (v) => {
   if (v == null) return 0
   if (typeof v === 'number') return v
-  const n = parseFloat(String(v).replace(/[^0-9.\-]/g, ''))
+  const n = parseFloat(String(v).replace(/[^0-9.-]/g, ''))
   return Number.isFinite(n) ? n : 0
 }
 const fmt = (n) => toNumber(n).toLocaleString()
@@ -59,6 +54,7 @@ export default function POArchive({ onOpenPackage = null }) {
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [feedback, setFeedback] = useState(null)
 
   // table UX
   const [sortKey, setSortKey] = useState('updated') // 'updated' | 'number'
@@ -140,6 +136,16 @@ export default function POArchive({ onOpenPackage = null }) {
     refresh()
   }
 
+  async function onDownloadPdf(poNumber) {
+    if (!poNumber) return
+    try {
+      setFeedback(null)
+      await downloadPoPdf(poNumber)
+    } catch (error) {
+      setFeedback({ type: 'error', message: error.message || 'Unable to download Purchase Order PDF. Please try again.' })
+    }
+  }
+
   function closeDrawer() {
     setDrawerOpen(false)
     setSelected(null)
@@ -155,6 +161,8 @@ export default function POArchive({ onOpenPackage = null }) {
         lead="View completed and archived Purchase Orders."
         showBack={false}
       />
+
+      {feedback ? <div className={`po-list-feedback po-list-feedback--${feedback.type}`} role="status">{feedback.message}</div> : null}
 
       <div className="po-module-card">
         <p className="po-filters__hint">
@@ -320,10 +328,9 @@ export default function POArchive({ onOpenPackage = null }) {
         {selected ? (
           <POReviewDrawerContent
             po={selected}
+            feedback={feedback}
             onClose={closeDrawer}
-            onDownloadPdf={() =>
-              openPdf(selected.poNumber || selected.number)
-            }
+            onDownloadPdf={() => onDownloadPdf(selected.poNumber || selected.number)}
             onApprove={() => updateApproval('Approved')}
             onReject={() => updateApproval('Rejected')}
             onOpenPackage={onOpenPackage}

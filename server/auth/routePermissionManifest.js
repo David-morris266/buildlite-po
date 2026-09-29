@@ -36,6 +36,7 @@ const CRITICAL_ROUTE_PERMISSIONS = Object.freeze({
   'PUT /api/subcontract-terms/default': P.TERMS_ASSIGN_DEFAULT,
   'PUT /api/subcontract-terms/developments/:developmentId/default': P.TERMS_ASSIGN_DEFAULT,
   'PUT /api/subcontract-terms/purchase-orders/:poNumber/override': P.TERMS_ASSIGN_OVERRIDE,
+  'POST /api/subcontract-terms/purchase-orders/:poNumber/confirm-legacy': P.TERMS_ASSIGN_OVERRIDE,
   'POST /api/clients/active': P.TENANT_CONFIGURE,
   'POST /api/developments': P.DEVELOPMENT_CREATE,
   'PUT /api/company-settings': P.COMPANY_SETTINGS_MANAGE,

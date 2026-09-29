@@ -6,6 +6,7 @@ const { toPence, fromPence } = require('./variationAccountAuthorityRepository');
 const { CANONICAL_JSON_SHA256_V1, hashCanonicalJson, verifyJsonIntegrity } = require('./canonicalJsonIntegrity');
 const { lockCertificateInTransaction } = require('./paymentCertificateRepository');
 const { getCertificateForPackage } = require('./paymentCertificateRepository');
+const { dateOnly } = require('./paymentCertificateTimetable');
 
 const fail = (status, message) => ({ ok: false, status, message });
 const money = value => fromPence(toPence(value));
@@ -77,6 +78,7 @@ function eligibility(facts) {
 
 const APPROVAL_WARNING_DEFINITIONS = Object.freeze({
   payment_rules_unavailable: 'Governing payment-rule authority is unavailable or requires review.',
+  payment_notice_configuration_unavailable: 'Payment Notice configuration is unavailable or requires review. The submitted payment timetable remains authoritative.',
   payment_notice_incomplete: 'The required Payment Notice has not been issued.',
   pay_less_incomplete: 'The intended payment is below the notified sum and the Pay Less process is incomplete.',
   final_payment_date_missing: 'The final payment date is unavailable.',
@@ -86,7 +88,11 @@ const APPROVAL_WARNING_DEFINITIONS = Object.freeze({
 function combinedApprovalReadiness(facts) {
   const position = eligibility(facts);
   const warnings = [];
-  if (facts.readiness.state !== 'ready') warnings.push({ code: 'payment_rules_unavailable', classification: 'process_warning', meaning: APPROVAL_WARNING_DEFINITIONS.payment_rules_unavailable, underlyingState: facts.readiness.state || 'unavailable' });
+  if (facts.readiness.state !== 'ready') {
+    const timetableIsAuthoritative = facts.deadline?.readiness === 'ready' && facts.deadline?.calculation_status === 'calculated' && facts.deadline?.governing_terms_snapshot;
+    const code = timetableIsAuthoritative ? 'payment_notice_configuration_unavailable' : 'payment_rules_unavailable';
+    warnings.push({ code, classification: 'process_warning', meaning: APPROVAL_WARNING_DEFINITIONS[code], underlyingState: facts.readiness.state || 'unavailable' });
+  }
   if (facts.readiness.mode !== 'certificate_as_payment_notice' && !facts.paymentNotice) warnings.push({ code: 'payment_notice_incomplete', classification: 'process_warning', meaning: APPROVAL_WARNING_DEFINITIONS.payment_notice_incomplete, underlyingState: 'not_issued' });
   if (toPence(position.intendedPayment) < toPence(position.notifiedSum) && !facts.payLess) warnings.push({ code: 'pay_less_incomplete', classification: 'process_warning', meaning: APPROVAL_WARNING_DEFINITIONS.pay_less_incomplete, underlyingState: 'not_issued' });
   if (!facts.deadline?.final_date_for_payment) warnings.push({ code: 'final_payment_date_missing', classification: 'process_warning', meaning: APPROVAL_WARNING_DEFINITIONS.final_payment_date_missing, underlyingState: 'missing' });
@@ -149,7 +155,7 @@ async function listQueue(clientId, auth) {
       const lines=[];
       for(const assessment of assessments){const snapshot=evidence.find(item=>item.id===assessment.id)||{};lines.push({assessmentId:assessment.id,variationAccountItemId:assessment.variation_account_item_id,reference:assessment.variation_reference,description:assessment.description,assessment:money(assessment.signed_current_assessment),appliedPriorAuthority:money(snapshot.priorAuthority||0),supportingSources:snapshot.authorityClassification?.supportingSources||[],authorityEnvelope:money(snapshot.authorityClassification?.effectiveRecognisedAuthority||snapshot.priorAuthority||0),unapprovedAtLock:money(snapshot.unapprovedAmount||0),previouslyResolved:0,unresolvedAmount:money(snapshot.unapprovedAmount||0),existingSupportOptions:await supportOptions({query},clientId,assessment)});}
       const unsupported=money(sourceAuthority.unapprovedCertifiedGross||0),notified=paymentNotice?money(paymentNotice.notified_sum):money(totals?.netPayment||0),intendedPayment=intended?money(intended.intended_amount):notified;
-      items.push({id,certificateId:id,packageId,certificateVersion:Number(document.version),certificateNumber:Number(document.certificateNumber),development:raw.development_name,subcontractor:raw.supplier_label,packageTrade:raw.package_payload?.description||raw.cost_code,costCode:raw.cost_code,dueDate:deadline?.due_date||null,paymentNoticeDeadline:deadline?.payment_notice_deadline||null,payLessDeadline:deadline?.pay_less_notice_deadline||null,finalPaymentDate:deadline?.final_date_for_payment||null,submittedBy:document.submittedBy,submittedAt:document.submittedAt,contractorApplication:money(application.comparison?.applicationCurrentGross??application.application?.currentPeriodGrossClaimed??0),applicationDifference:money(application.comparison?.difference??0),orderedWorks:money(sourceAuthority.orderedWorkGross??totals?.matrixGrossThisCertificate??0),variations:money(sourceAuthority.variationAssessmentGross??assessments.reduce((sum,item)=>sum+Number(item.signed_current_assessment||0),0)),otherAssessed:money(sourceAuthority.paymentDiscoveredGross||0),appliedPriorAuthority:fromPence(lines.reduce((sum,line)=>sum+toPence(line.appliedPriorAuthority),0)),gross:money(totals?.grossWorksThisCertificate||0),retention:money(totals?.retention||0),recoveries:money(totals?.recoveryDeductionSigned||0),vat:money(totals?.vat||0),net:money(totals?.netPayment||0),notifiedSum:notified,intendedPayment,payLessReduction:fromPence(toPence(notified)-toPence(intendedPayment)),unapprovedAtLock:unsupported,newCommercialAuthorityProposed:unsupported,cashAmountProposed:intendedPayment,priorCashAuthority:0,releaseStatus:'not_released',workflowState:'awaiting_approval',statusSummary:hardBlockers.length?'Approval blocked':ready.warnings.length?`${ready.warnings.length} warning${ready.warnings.length===1?'':'s'}`:'Awaiting Approval',eligible:hardBlockers.length===0,warnings:ready.warnings,hardBlockers,reasons:hardBlockers,lines});
+      items.push({id,certificateId:id,packageId,certificateVersion:Number(document.version),certificateNumber:Number(document.certificateNumber),development:raw.development_name,subcontractor:raw.supplier_label,packageTrade:raw.package_payload?.description||raw.cost_code,costCode:raw.cost_code,dueDate:dateOnly(deadline?.due_date),paymentNoticeDeadline:dateOnly(deadline?.payment_notice_deadline),payLessDeadline:dateOnly(deadline?.pay_less_notice_deadline),finalPaymentDate:dateOnly(deadline?.final_date_for_payment),submittedBy:document.submittedBy,submittedAt:document.submittedAt,contractorApplication:money(application.comparison?.applicationCurrentGross??application.application?.currentPeriodGrossClaimed??0),applicationDifference:money(application.comparison?.difference??0),orderedWorks:money(sourceAuthority.orderedWorkGross??totals?.matrixGrossThisCertificate??0),variations:money(sourceAuthority.variationAssessmentGross??assessments.reduce((sum,item)=>sum+Number(item.signed_current_assessment||0),0)),otherAssessed:money(sourceAuthority.paymentDiscoveredGross||0),appliedPriorAuthority:fromPence(lines.reduce((sum,line)=>sum+toPence(line.appliedPriorAuthority),0)),gross:money(totals?.grossWorksThisCertificate||0),retention:money(totals?.retention||0),recoveries:money(totals?.recoveryDeductionSigned||0),vat:money(totals?.vat||0),net:money(totals?.netPayment||0),notifiedSum:notified,intendedPayment,payLessReduction:fromPence(toPence(notified)-toPence(intendedPayment)),unapprovedAtLock:unsupported,newCommercialAuthorityProposed:unsupported,cashAmountProposed:intendedPayment,priorCashAuthority:0,releaseStatus:'not_released',workflowState:'awaiting_approval',statusSummary:hardBlockers.length?'Approval blocked':ready.warnings.length?`${ready.warnings.length} warning${ready.warnings.length===1?'':'s'}`:'Awaiting Approval',eligible:hardBlockers.length===0,warnings:ready.warnings,hardBlockers,reasons:hardBlockers,lines});
       continue;
     }
     const facts = await loadLockedFacts({ query }, clientId, id);
@@ -173,8 +179,8 @@ async function listQueue(clientId, auth) {
     items.push({ id, certificateId: id, certificateVersion: Number(facts.certificate.version), certificateNumber: Number(facts.certificate.certificate_number),
       development: facts.certificate.development_name, subcontractor: facts.certificate.supplier_label,
       packageTrade: facts.certificate.package_payload?.description || facts.certificate.cost_code, costCode: facts.certificate.cost_code,
-      dueDate: facts.deadline?.due_date || null, paymentNoticeDeadline: facts.deadline?.payment_notice_deadline || null,
-      payLessDeadline: facts.deadline?.pay_less_notice_deadline || null, finalPaymentDate: facts.deadline?.final_date_for_payment || null,
+      dueDate: dateOnly(facts.deadline?.due_date), paymentNoticeDeadline: dateOnly(facts.deadline?.payment_notice_deadline),
+      payLessDeadline: dateOnly(facts.deadline?.pay_less_notice_deadline), finalPaymentDate: dateOnly(facts.deadline?.final_date_for_payment),
       submittedBy: facts.certificate.submitted_by || null, submittedAt: facts.certificate.submitted_at || null,
       approvedBy: facts.certificate.approved_by || null, approvedAt: facts.certificate.approved_at || null,
       contractorApplication: money(application.comparison?.applicationCurrentGross ?? application.application?.currentPeriodGrossClaimed ?? 0),

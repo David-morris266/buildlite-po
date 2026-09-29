@@ -10,6 +10,7 @@ import {
   getCertificateLoadError,
   getCertificateLoadState,
   rememberPackageUuidForOrderKey,
+  refreshCertificatesForPackage,
 } from './paymentCertificateServerCache';
 
 export function derivePaymentCertificateUiState(loadState, errorMessage = '') {
@@ -50,9 +51,9 @@ export function mergeHydratedPackageIntoOrder(order, hydratedPackage) {
   };
 }
 
-async function resolveHydrationPackage(order) {
+async function resolveHydrationPackage(order, forceRefresh = false) {
   const fromContext = resolvePackageUuidFromOrder(order);
-  if (fromContext && order?.governingTerms) return order;
+  if (!forceRefresh && fromContext && order?.governingTerms) return order;
   if (!order?.orderKey) return fromContext ? order : null;
   try {
     return await fetchPackageByOrderKey(order.orderKey);
@@ -64,7 +65,7 @@ async function resolveHydrationPackage(order) {
 /**
  * Hydrate server certificates for one package when authority is ON.
  */
-export function usePaymentCertificateServerHydration(order) {
+export function usePaymentCertificateServerHydration(order, refreshToken = 0) {
   const authorityEnabled = isPaymentCertificateServerAuthorityEnabled();
   const orderKey = order?.orderKey || null;
   const [loadState, setLoadState] = useState(() => {
@@ -94,7 +95,8 @@ export function usePaymentCertificateServerHydration(order) {
     setLoadError('');
 
     (async () => {
-      const hydratedPackage = await resolveHydrationPackage(order);
+      const forceRefresh = refreshToken > 0;
+      const hydratedPackage = await resolveHydrationPackage(order, forceRefresh);
       const packageUuid = resolvePackageUuidFromOrder(hydratedPackage);
       if (cancelled) return;
       setHydratedPackage(hydratedPackage || null);
@@ -109,7 +111,8 @@ export function usePaymentCertificateServerHydration(order) {
 
       rememberPackageUuidForOrderKey(orderKey, packageUuid);
       try {
-        await ensureCertificatesReadyForPackage(packageUuid);
+        if (forceRefresh) await refreshCertificatesForPackage(packageUuid);
+        else await ensureCertificatesReadyForPackage(packageUuid);
         if (cancelled) return;
         setLoadState(getCertificateLoadState(packageUuid));
         setLoadError('');
@@ -127,7 +130,7 @@ export function usePaymentCertificateServerHydration(order) {
     return () => {
       cancelled = true;
     };
-  }, [authorityEnabled, orderKey, packageUuidHint]);
+  }, [authorityEnabled, orderKey, packageUuidHint, refreshToken]);
 
   return {
     ...derivePaymentCertificateUiState(loadState, loadError),

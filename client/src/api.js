@@ -1,4 +1,5 @@
 import { enrichPoWithDevelopmentRef, enrichPosWithDevelopmentRefs } from './developments/poDevelopmentRefStore';
+import { authenticatedBlob } from './auth/authenticatedFetch';
 
 // API base URL from VITE_API_URL (Netlify/staging) with localhost fallback for dev.
 const API_BASE = (
@@ -214,6 +215,15 @@ export async function requestApproval(number, body) {
 
 export function poPdfUrl(number) {
   return buildUrl(`/api/po/${encodeURIComponent(number)}/pdf`);
+}
+
+export async function downloadPoPdf(number) {
+  const poNumber = String(number || '').trim();
+  if (!poNumber) throw new Error('Purchase Order number is required.');
+  return authenticatedBlob(poPdfUrl(poNumber), {
+    downloadName: `${poNumber}.pdf`,
+    expectedContentType: 'application/pdf',
+  });
 }
 
 /* ---------- Brand ---------- */

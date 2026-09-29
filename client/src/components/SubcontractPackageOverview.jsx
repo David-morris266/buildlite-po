@@ -1,4 +1,7 @@
-import { formatDisplayMoney, formatSignedDisplayMoney, formatExactDisplayMoney, formatSignedExactDisplayMoney, formatPoDate, formatPoDateTime } from './poDrawerHelpers';
+import { useState } from 'react';
+import { confirmApprovedPoSubcontractTerms, listSubcontractTerms } from '../api/subcontractTerms';
+import { useBuildLitePermission } from '../auth/BuildLiteAuthProvider';
+import { formatDisplayMoney, formatExactDisplayMoney, formatSignedExactDisplayMoney, formatPoDate, formatPoDateTime } from './poDrawerHelpers';
 
 function StatusBadge({ status }) {
   return (
@@ -11,8 +14,42 @@ function StatusBadge({ status }) {
 export default function SubcontractPackageOverview({
   pkg,
   onOpenMatrix,
+  onTermsConfigured,
 }) {
+  const canAssignTerms = useBuildLitePermission('terms.assign_override');
+  const [termsSetup, setTermsSetup] = useState({ open: false, loading: false, versions: [], versionId: '', reason: '', error: '', saving: false });
   if (!pkg) return null;
+  const governingOrders = pkg.governingTerms?.orders || [];
+  const canConfigureSingleOrder = pkg.governingTerms?.state === 'unconfigured' && governingOrders.length === 1;
+
+  async function openTermsSetup() {
+    setTermsSetup((current) => ({ ...current, open: true, loading: true, error: '' }));
+    try {
+      const result = await listSubcontractTerms();
+      const versions = (result.families || []).flatMap((family) =>
+        (family.versions || [])
+          .filter((version) => version.status === 'published')
+          .map((version) => ({ ...version, familyName: family.name }))
+      );
+      setTermsSetup((current) => ({ ...current, loading: false, versions, versionId: current.versionId || versions[0]?.id || '' }));
+    } catch (error) {
+      setTermsSetup((current) => ({ ...current, loading: false, error: error.message || 'Unable to load company subcontract terms.' }));
+    }
+  }
+
+  async function confirmTerms(event) {
+    event.preventDefault();
+    const poNumber = governingOrders[0]?.poNumber;
+    if (!poNumber || !termsSetup.versionId || !termsSetup.reason.trim()) return;
+    setTermsSetup((current) => ({ ...current, saving: true, error: '' }));
+    try {
+      await confirmApprovedPoSubcontractTerms(poNumber, termsSetup.versionId, termsSetup.reason.trim());
+      setTermsSetup((current) => ({ ...current, open: false, saving: false }));
+      onTermsConfigured?.();
+    } catch (error) {
+      setTermsSetup((current) => ({ ...current, saving: false, error: error.message || 'Unable to confirm contract terms.' }));
+    }
+  }
 
   if (pkg.matrixReady === false) {
     return (
@@ -74,6 +111,26 @@ export default function SubcontractPackageOverview({
           : pkg.governingTerms?.version
             ? `${pkg.governingTerms.version.familyName} — revision ${pkg.governingTerms.version.revisionNumber}`
             : pkg.governingTerms?.message || 'Contract terms: Not configured'}</p>
+        {canConfigureSingleOrder && canAssignTerms ? (
+          <>
+            {!termsSetup.open ? <button type="button" className="po-btn-primary" onClick={openTermsSetup}>Configure contract terms</button> : null}
+            {termsSetup.open ? <form className="po-package-terms-setup" onSubmit={confirmTerms}>
+              {termsSetup.loading ? <p role="status">Loading published company terms…</p> : null}
+              {!termsSetup.loading && termsSetup.versions.length === 0 ? <p role="alert">No published company subcontract terms are available. Configure and publish them in Administration → Subcontract Terms, then return here.</p> : null}
+              {termsSetup.versions.length ? <>
+                <label className="dev-form__field"><span className="dev-form__label">Published terms</span><select className="input" value={termsSetup.versionId} onChange={(event) => setTermsSetup((current) => ({ ...current, versionId: event.target.value }))}>{termsSetup.versions.map((version) => <option key={version.id} value={version.id}>{version.familyName} — {version.version_label || `Revision ${version.revision_number}`}</option>)}</select></label>
+                <label className="dev-form__field"><span className="dev-form__label">Prospective confirmation reason</span><textarea className="input" value={termsSetup.reason} onChange={(event) => setTermsSetup((current) => ({ ...current, reason: event.target.value }))} required /></label>
+                <p className="po-package-empty-note">This confirms the published terms for future payment cycles. It does not rewrite the approved order or completed certificate evidence.</p>
+                <button type="submit" className="po-btn-primary" disabled={termsSetup.saving || !termsSetup.versionId || !termsSetup.reason.trim()}>{termsSetup.saving ? 'Confirming…' : 'Confirm contract terms'}</button>
+              </> : null}
+              <button type="button" onClick={() => setTermsSetup((current) => ({ ...current, open: false, error: '' }))}>Cancel</button>
+              {termsSetup.error ? <p role="alert">{termsSetup.error}</p> : null}
+            </form> : null}
+          </>
+        ) : null}
+        {pkg.governingTerms?.state === 'unconfigured' && governingOrders.length > 1 ? (
+          <p className="po-package-empty-note">Configure terms against each linked Purchase Order before certification.</p>
+        ) : null}
       </section>
 
       <div className="po-package-overview__grid">

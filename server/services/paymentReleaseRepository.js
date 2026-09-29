@@ -3,13 +3,12 @@ const { assertServicePermission } = require('../auth/authorization');
 const { PERMISSIONS } = require('../auth/permissions');
 const { toPence, fromPence } = require('./variationAccountAuthorityRepository');
 const { CANONICAL_JSON_SHA256_V1, hashCanonicalJson, verifyJsonIntegrity } = require('./canonicalJsonIntegrity');
+const { dateOnly } = require('./paymentCertificateTimetable');
 
 const money = value => fromPence(toPence(value));
 const clean = value => String(value ?? '').trim();
 const fail = (status, message) => ({ ok: false, status, message });
 const actor = auth => [auth.userId, auth.membershipId, auth.providerUserId, auth.displayName];
-const dateOnly = value => value instanceof Date ? value.toISOString().slice(0, 10) : value ? String(value).slice(0, 10) : null;
-
 function requireReleasePermission(auth) {
   assertServicePermission(auth, PERMISSIONS.PAYMENT_RELEASE_EXECUTE);
   if (!auth?.userId || !auth?.membershipId || !auth?.providerUserId) {
