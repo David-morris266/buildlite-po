@@ -160,6 +160,21 @@ async function listQueue(clientId, auth) {
     }
     const facts = await loadLockedFacts({ query }, clientId, id);
     const ready = eligibility(facts);
+    const authorityDecision = (await query(`SELECT d.id,d.run_id,r.run_reference,d.signed_cash_amount,d.reason,d.certificate_version,
+      d.approved_by_user_id,d.approved_by_membership_id,d.approved_by_provider_user_id,d.approved_by_display_name,d.approved_role_key,d.approved_at
+      FROM payment_authority_decisions d JOIN payment_authority_runs r ON r.id=d.run_id AND r.client_id=d.client_id
+      WHERE d.client_id=$1 AND d.certificate_id=$2 AND d.decision_kind='authority' ORDER BY d.approved_at DESC,d.id DESC LIMIT 1`,[clientId,id])).rows[0]||null;
+    const exceptionalRows=(await query(`SELECT l.assessment_id,l.variation_account_item_id,l.signed_unapproved_at_lock,l.signed_new_commercial_authority,l.basis,
+      d.id decision_id,d.run_id,d.approved_by_user_id,d.approved_by_membership_id,d.approved_by_provider_user_id,d.approved_by_display_name,d.approved_role_key,d.approved_at,
+      r.run_reference,a.id authority_allocation_id,a.source_type,a.source_reference_snapshot,
+      COALESCE((SELECT SUM(ABS(reversal.signed_allocated_amount)) FROM package_variation_account_authority_allocations reversal
+        WHERE reversal.client_id=a.client_id AND reversal.reverses_allocation_id=a.id),0) reversed_amount
+      FROM payment_authority_decision_lines l
+      JOIN payment_authority_decisions d ON d.id=l.decision_id AND d.client_id=l.client_id AND d.decision_kind='authority'
+      JOIN payment_authority_runs r ON r.id=d.run_id AND r.client_id=d.client_id
+      LEFT JOIN package_variation_account_authority_allocations a ON a.client_id=l.client_id AND a.payment_authority_decision_line_id=l.id AND a.allocation_kind='authority'
+      WHERE l.client_id=$1 AND l.certificate_id=$2 AND l.signed_new_commercial_authority<>0 ORDER BY d.approved_at,d.id,l.id`,[clientId,id])).rows;
+    const exceptionalByAssessment=exceptionalRows.reduce((map,row)=>{const granted=money(row.signed_new_commercial_authority),reversed=money(row.reversed_amount),remaining=fromPence(toPence(granted)-Math.sign(toPence(granted))*Math.abs(toPence(reversed)));const decision={decisionId:row.decision_id,runId:row.run_id,runReference:row.run_reference,authorityAllocationId:row.authority_allocation_id,sourceType:row.source_type,sourceReference:row.source_reference_snapshot,unsupportedAtSubmission:money(row.signed_unapproved_at_lock),authorityGranted:granted,reversedAmount:reversed,activeAuthority:remaining,status:toPence(reversed)===0?'active':Math.abs(toPence(reversed))>=Math.abs(toPence(granted))?'reversed':'partially_reversed',reason:row.basis,approvedBy:{userId:row.approved_by_user_id,membershipId:row.approved_by_membership_id,providerUserId:row.approved_by_provider_user_id,displayName:row.approved_by_display_name,roleKey:row.approved_role_key},approvedAt:row.approved_at};if(!map.has(row.assessment_id))map.set(row.assessment_id,[]);map.get(row.assessment_id).push(decision);return map;},new Map());
     const lines = [];
     for (const assessment of facts.assessments) {
       const snapshot = assessment.source_authority_snapshot || {};
@@ -169,6 +184,7 @@ async function listQueue(clientId, auth) {
         supportingSources: snapshot.authorityClassification?.supportingSources || [],
         authorityEnvelope: money(snapshot.authorityClassification?.effectiveRecognisedAuthority || snapshot.priorAuthority || 0),
         unapprovedAtLock: money(snapshot.unapprovedAmount || 0),previouslyResolved:fromPence(resolved),unresolvedAmount:fromPence(toPence(snapshot.unapprovedAmount||0)-resolved),
+        exceptionalAuthorityDecisions: exceptionalByAssessment.get(assessment.id)||[],
         existingSupportOptions: await supportOptions({ query }, clientId, assessment) });
     }
     const sourceAuthority = facts.certificate.payload?.sourceAuthoritySnapshot || {};
@@ -194,7 +210,7 @@ async function listQueue(clientId, auth) {
       authorisedNewCommercialAuthority: facts.priorCommercialAuthority, unapprovedAtLock,
       newCommercialAuthorityProposed: unapprovedAtLock,
       cashAmountProposed: fromPence(toPence(ready.intendedPayment) - toPence(facts.priorCash)), releaseStatus: 'not_released',
-      workflowState, statusSummary: 'Payment Authorised',
+      workflowState, statusSummary: 'Payment Authorised', paymentAuthority:authorityDecision?{decisionId:authorityDecision.id,runId:authorityDecision.run_id,runReference:authorityDecision.run_reference,authorisedCash:money(authorityDecision.signed_cash_amount),reason:authorityDecision.reason,certificateVersion:Number(authorityDecision.certificate_version),approvedBy:{userId:authorityDecision.approved_by_user_id,membershipId:authorityDecision.approved_by_membership_id,providerUserId:authorityDecision.approved_by_provider_user_id,displayName:authorityDecision.approved_by_display_name,roleKey:authorityDecision.approved_role_key},approvedAt:authorityDecision.approved_at}:null,
       severity: workflowState, ...ready, lines });
   }
   const rank = { awaiting_approval: 0, authorised: 1 };
@@ -273,16 +289,22 @@ async function approveDecision(db, clientId, runId, input, auth, options = {}) {
       supported += amount; supports.push({ source, amount: fromPence(amount) });
     }
     const newly = toPence(line.newCommercialAuthority);
+    const exceptionalDecision = clean(line.exceptionalAuthorityDecision);
+    const exceptionalReason = clean(line.exceptionalAuthorityReason);
+    if (unapproved && exceptionalDecision !== 'approve') return fail(400, 'Each unsupported VA assessment requires an explicit exceptional-authority decision.');
+    if (newly && !exceptionalReason) return fail(400, 'A human commercial reason is required for exceptional authority.');
     if ((supported || newly) && Math.sign(supported || newly) !== Math.sign(unapproved)) return fail(409, 'Authority sign must match the locked assessment.');
     if (Math.abs(supported + newly) > Math.abs(unapproved)) return fail(409, 'Support plus new Payment Authority exceeds the locked unapproved assessment.');
-    if (!clean(line.basis)) return fail(400, 'Each VA decision line requires a basis.');
-    frozen.push({ assessment, snapshot, unapproved, supported, newly, supports, basis: clean(line.basis) });
+    const basis = newly ? exceptionalReason : clean(line.basis);
+    if (!basis) return fail(400, 'Each VA decision line requires a basis.');
+    frozen.push({ assessment, snapshot, unapproved, supported, newly, supports, basis, exceptionalDecision: exceptionalDecision || null, exceptionalReason: exceptionalReason || null });
   }
   const sourceSnapshot = { certificateId: facts.certificate.id, certificateVersion: Number(facts.certificate.version), noticeMode: ready.noticeMode,
     deadlineSnapshotId: facts.deadline?.id || null, paymentNoticeSnapshotId: facts.paymentNotice?.id || null, payLessSnapshotId: facts.payLess?.id || null,
     intendedPaymentDecisionId: facts.intended?.id || null, intendedPaymentDecisionVersion: facts.intended?.decision_version || null,
     approvalWarnings: options.approvalWarnings || [],
-    lines: frozen.map(item => ({ assessmentId: item.assessment.id, sourceAuthoritySnapshot: item.snapshot, supports: item.supports })) };
+    lines: frozen.map(item => ({ assessmentId: item.assessment.id, sourceAuthoritySnapshot: item.snapshot, supports: item.supports,
+      exceptionalAuthorityDecision: item.exceptionalDecision, exceptionalAuthorityReason: item.exceptionalReason })) };
   const c = facts.certificate;
   const decision = (await db.query(`INSERT INTO payment_authority_decisions(
     client_id,run_id,development_id,package_id,certificate_id,certificate_version,signed_cash_amount,certified_gross,retention,recoveries,vat,certificate_net,

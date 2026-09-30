@@ -11598,8 +11598,14 @@
 .payment-approval-detail dl div { display: flex; justify-content: space-between; gap: 1rem; padding: .15rem 0; }
 .payment-approval-detail dd { margin: 0; font-weight: 700; text-align: right; }
 .payment-approval-detail__authority { grid-column: 1 / -1; }
+.payment-approval-detail__exception { grid-column: 1 / -1; border: 1px solid rgba(251, 146, 60, .65); border-left-width: 4px; border-radius: .6rem; padding: .85rem 1rem; background: rgba(124, 45, 18, .2); }
+.payment-approval-detail__exception > p { color: #fed7aa; }
 .payment-approval-detail__exceptions { color: #fdba74; padding-left: 1.25rem; }
 .payment-authority-line { border-top: 1px solid rgba(148, 163, 184, .3); padding: .65rem 0; }
+.payment-authority-line--exception fieldset { display: grid; gap: .4rem; margin: .75rem 0 0; padding: .65rem; border: 1px solid rgba(251, 146, 60, .45); }
+.payment-authority-line__historic-decision { margin-top: .75rem; padding: .75rem; border-left: 4px solid #22c55e; background: rgba(20, 83, 45, .2); }
+.payment-authority-line__historic-decision > p { margin: .45rem 0 0; }
+.payment-authority-provenance { margin-top: .65rem; padding-top: .65rem; border-top: 1px solid rgba(148, 163, 184, .3); }
 .payment-authority-line details { margin-top: .5rem; }
 .payment-authority-line label { display: grid; gap: .25rem; margin-top: .5rem; max-width: 32rem; }
 .payment-approval-selection, .payment-approval-result {

@@ -33,9 +33,9 @@ async function seed(label, { warnings = false } = {}) {
   return {ids,auth};
 }
 
-async function addVaAssessment(fixture, amount=200) {
+async function addVaAssessment(fixture, amount=200, reference='VA-COMB-1') {
   const va=randomUUID(),assessment=randomUUID();
-  await pool.query(`INSERT INTO package_variation_account_items(id,client_id,development_id,package_id,cost_code,variation_reference,description,status,current_contractor_value,current_qs_forecast,created_by_user_id,created_by_membership_id,created_by_provider_user_id,created_by_display_name) VALUES($1,$2,$3,$4,'4330','VA-COMB-1','Combined approval variation','active',$5,$5,$6,$7,$8,'Authenticated Approver')`,[va,fixture.ids.client,fixture.ids.development,fixture.ids.package,amount,fixture.ids.user,fixture.ids.membership,fixture.auth.providerUserId]);
+  await pool.query(`INSERT INTO package_variation_account_items(id,client_id,development_id,package_id,cost_code,variation_reference,description,status,current_contractor_value,current_qs_forecast,created_by_user_id,created_by_membership_id,created_by_provider_user_id,created_by_display_name) VALUES($1,$2,$3,$4,'4330',$5,'Combined approval variation','active',$6,$6,$7,$8,$9,'Authenticated Approver')`,[va,fixture.ids.client,fixture.ids.development,fixture.ids.package,reference,amount,fixture.ids.user,fixture.ids.membership,fixture.auth.providerUserId]);
   await pool.query(`INSERT INTO package_variation_account_certificate_assessments(id,client_id,development_id,package_id,certificate_id,variation_account_item_id,signed_current_assessment,assessment_basis,status,created_by_user_id,created_by_membership_id,created_by_provider_user_id,created_by_display_name,updated_by_user_id,updated_by_membership_id,updated_by_provider_user_id,updated_by_display_name) VALUES($1,$2,$3,$4,$5,$6,$7,'Combined approval assessment','draft',$8,$9,$10,'Authenticated Approver',$8,$9,$10,'Authenticated Approver')`,[assessment,fixture.ids.client,fixture.ids.development,fixture.ids.package,fixture.ids.certificate,va,amount,fixture.ids.user,fixture.ids.membership,fixture.auth.providerUserId]);
   return {va,assessment};
 }
@@ -101,14 +101,42 @@ test('failure after certificate lock rolls back every combined fact and permits 
 
 test('combined approval binds new authority to the final Locked VA assessment facts',async t=>{
   if(!isDbConfigured())return t.skip();const fixture=await seed('VA');const va=await addVaAssessment(fixture);
-  const input=body(fixture,{cashAmount:1368,lines:[{assessmentId:va.assessment,newCommercialAuthority:201,basis:'Payment Authority for locked QS assessment',supportUsages:[]}]});
+  const input=body(fixture,{cashAmount:1368,lines:[{assessmentId:va.assessment,exceptionalAuthorityDecision:'approve',exceptionalAuthorityReason:'Work verified; formal instruction outstanding.',newCommercialAuthority:201,basis:'Payment Authority for locked QS assessment',supportUsages:[]}]});
   const excessive=await repository.approveSubmittedCertificate(fixture.ids.client,input,fixture.auth);assert.equal(excessive.ok,false);assert.match(excessive.message,/exceeds the locked unapproved assessment/);assert.equal((await counts(fixture.ids.certificate)).certificate.status,'submitted');
   assert.equal((await pool.query('SELECT status FROM package_variation_account_certificate_assessments WHERE id=$1',[va.assessment])).rows[0].status,'draft');
   input.lines[0].newCommercialAuthority=200;
   const result=await repository.approveSubmittedCertificate(fixture.ids.client,input,fixture.auth);assert.equal(result.ok,true,result.message);
   const assessment=(await pool.query('SELECT * FROM package_variation_account_certificate_assessments WHERE id=$1',[va.assessment])).rows[0];assert.equal(assessment.status,'locked');assert.equal(Number(assessment.source_authority_snapshot.unapprovedAmount),200);
   const line=(await pool.query('SELECT * FROM payment_authority_decision_lines WHERE decision_id=$1',[result.decisionId])).rows[0];assert.equal(line.assessment_id,va.assessment);assert.equal(Number(line.signed_assessment),200);assert.equal(Number(line.signed_unapproved_at_lock),200);assert.equal(Number(line.signed_new_commercial_authority),200);
+  assert.equal(line.basis,'Work verified; formal instruction outstanding.');
+  const decision=(await pool.query('SELECT source_snapshot FROM payment_authority_decisions WHERE id=$1',[result.decisionId])).rows[0];assert.equal(decision.source_snapshot.lines[0].exceptionalAuthorityDecision,'approve');assert.equal(decision.source_snapshot.lines[0].exceptionalAuthorityReason,'Work verified; formal instruction outstanding.');
   const allocation=(await pool.query('SELECT * FROM package_variation_account_authority_allocations WHERE payment_authority_decision_line_id=$1',[line.id])).rows[0];assert.equal(allocation.variation_account_item_id,va.va);assert.equal(Number(allocation.signed_allocated_amount),200);
+  const history=(await repository.listQueue(fixture.ids.client,fixture.auth))[0];assert.equal(history.workflowState,'authorised');assert.equal(history.paymentAuthority.decisionId,result.decisionId);assert.equal(history.paymentAuthority.authorisedCash,1368);assert.equal(history.paymentAuthority.approvedBy.displayName,'Authenticated Approver');const historicalLine=history.lines.find(item=>item.assessmentId===va.assessment);assert.equal(historicalLine.unapprovedAtLock,200);assert.deepEqual(historicalLine.exceptionalAuthorityDecisions.map(item=>({granted:item.authorityGranted,active:item.activeAuthority,status:item.status,reason:item.reason,source:item.sourceType})),[{granted:200,active:200,status:'active',reason:'Work verified; formal instruction outstanding.',source:'payment_authority'}]);
+});
+
+test('unsupported assessment requires an explicit decision and human reason, while partial authority remains exact',async t=>{
+  if(!isDbConfigured())return t.skip();const fixture=await seed('EXPLICIT-VA');const va=await addVaAssessment(fixture,300);
+  const withoutDecision=await repository.approveSubmittedCertificate(fixture.ids.client,body(fixture,{cashAmount:1482,lines:[{assessmentId:va.assessment,newCommercialAuthority:300,basis:'System default',supportUsages:[]}]}),fixture.auth);
+  assert.equal(withoutDecision.ok,false);assert.match(withoutDecision.message,/explicit exceptional-authority decision/i);
+  const blankReason=await repository.approveSubmittedCertificate(fixture.ids.client,body(fixture,{cashAmount:1482,lines:[{assessmentId:va.assessment,exceptionalAuthorityDecision:'approve',exceptionalAuthorityReason:'   ',newCommercialAuthority:300,basis:'System default',supportUsages:[]}]}),fixture.auth);
+  assert.equal(blankReason.ok,false);assert.match(blankReason.message,/human commercial reason/i);
+  const result=await repository.approveSubmittedCertificate(fixture.ids.client,body(fixture,{cashAmount:1482,lines:[{assessmentId:va.assessment,exceptionalAuthorityDecision:'approve',exceptionalAuthorityReason:'Verified portion only.',newCommercialAuthority:200,basis:'System default',supportUsages:[]}]}),fixture.auth);
+  assert.equal(result.ok,true,result.message);
+  const line=(await pool.query('SELECT signed_new_commercial_authority,basis FROM payment_authority_decision_lines WHERE decision_id=$1',[result.decisionId])).rows[0];assert.equal(Number(line.signed_new_commercial_authority),200);assert.equal(line.basis,'Verified portion only.');
+  const allocation=(await pool.query('SELECT signed_allocated_amount FROM package_variation_account_authority_allocations WHERE payment_authority_decision_line_id IN (SELECT id FROM payment_authority_decision_lines WHERE decision_id=$1)',[result.decisionId])).rows[0];assert.equal(Number(allocation.signed_allocated_amount),200);
+  const history=(await repository.listQueue(fixture.ids.client,fixture.auth))[0];const evidence=history.lines.find(item=>item.assessmentId===va.assessment).exceptionalAuthorityDecisions[0];assert.equal(evidence.unsupportedAtSubmission,300);assert.equal(evidence.authorityGranted,200);assert.equal(evidence.activeAuthority,200);
+});
+
+test('each unsupported VA requires its own explicit decision and persists its own reason',async t=>{
+  if(!isDbConfigured())return t.skip();const fixture=await seed('MULTI-VA');const one=await addVaAssessment(fixture,100,'VA-A');const two=await addVaAssessment(fixture,150,'VA-B');
+  const first={assessmentId:one.assessment,exceptionalAuthorityDecision:'approve',exceptionalAuthorityReason:'Reason A',newCommercialAuthority:100,basis:'System provenance',supportUsages:[]};
+  const denied=await repository.approveSubmittedCertificate(fixture.ids.client,body(fixture,{cashAmount:1425,lines:[first,{assessmentId:two.assessment,newCommercialAuthority:150,basis:'System provenance',supportUsages:[]}]}),fixture.auth);
+  assert.equal(denied.ok,false);assert.match(denied.message,/explicit exceptional-authority decision/i);
+  const second={assessmentId:two.assessment,exceptionalAuthorityDecision:'approve',exceptionalAuthorityReason:'Reason B',newCommercialAuthority:125,basis:'System provenance',supportUsages:[]};
+  const result=await repository.approveSubmittedCertificate(fixture.ids.client,body(fixture,{cashAmount:1425,lines:[first,second]}),fixture.auth);assert.equal(result.ok,true,result.message);
+  const lines=(await pool.query('SELECT signed_new_commercial_authority,basis FROM payment_authority_decision_lines WHERE decision_id=$1 ORDER BY signed_new_commercial_authority',[result.decisionId])).rows;
+  assert.deepEqual(lines.map(row=>[Number(row.signed_new_commercial_authority),row.basis]),[[100,'Reason A'],[125,'Reason B']]);
+  const history=(await repository.listQueue(fixture.ids.client,fixture.auth))[0];assert.deepEqual(history.lines.map(line=>line.exceptionalAuthorityDecisions.map(decision=>decision.reason)).filter(reasons=>reasons.length).sort(),[['Reason A'],['Reason B']]);
 });
 
 test('combined approval requires both existing permissions and ignores browser actor fields',async t=>{
