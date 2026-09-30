@@ -29,6 +29,31 @@ function sameMoney(left, right) {
   return Math.abs(signedMoney(left) - signedMoney(right)) < 0.005;
 }
 
+async function resolveDraftLineCostCodes(db, clientId, lines) {
+  const ids = [...new Set((lines || []).map((line) => String(line.costCodeId || '').trim()).filter(Boolean))];
+  const result = ids.length ? await db.query(
+    `SELECT id,code,COALESCE(description,element,'') description
+       FROM cost_codes
+      WHERE client_id=$1 AND is_active=true AND id=ANY($2::uuid[])`,
+    [clientId, ids]
+  ) : { rows: [] };
+  const byId = new Map(result.rows.map((row) => [row.id, row]));
+  if (byId.size !== ids.length) {
+    throw Object.assign(new Error('Every selected Variation Order Cost Code must be an active Cost Code Master record for this tenant.'), { httpStatus: 400 });
+  }
+  return (lines || []).map((line) => {
+    const costCodeId = String(line.costCodeId || '').trim() || null;
+    const authority = costCodeId ? byId.get(costCodeId) : null;
+    return {
+      ...line,
+      costCodeId,
+      costCode: authority?.code || String(line.costCode || '').trim(),
+      costCodeDescription: authority?.description || String(line.costCodeDescription || '').trim(),
+      costCodeSourceEvidence: String(line.costCodeSourceEvidence || line.costCode || '').trim(),
+    };
+  });
+}
+
 function validateCreate(body = {}) {
   const errors = [];
   if (!String(body.developmentId || "").trim()) errors.push("developmentId is required.");
@@ -293,12 +318,13 @@ async function createDraftVariationOrder(clientId, body = {}, { actor = actorFro
         body.reversesId || null, actor]
     );
     const vo = inserted.rows[0];
-    for (const [index, line] of body.lines.entries()) {
+    const resolvedLines = await resolveDraftLineCostCodes(db, clientId, body.lines);
+    for (const [index, line] of resolvedLines.entries()) {
       await db.query(
         `INSERT INTO variation_order_lines
-         (client_id, variation_order_id, line_number, cost_code, description, net_value, vat_treatment, retention_treatment)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [clientId, vo.id, index + 1, String(line.costCode).trim(), String(line.description).trim(), Number(line.netValue),
+         (client_id, variation_order_id, line_number, cost_code_id, cost_code, cost_code_description, cost_code_source_evidence, description, net_value, vat_treatment, retention_treatment)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [clientId, vo.id, index + 1, line.costCodeId, line.costCode, line.costCodeDescription, line.costCodeSourceEvidence, String(line.description).trim(), Number(line.netValue),
           line.vatTreatment || "inherit", line.retentionTreatment || "inherit"]
       );
     }
@@ -362,7 +388,9 @@ async function createDraftVariationOrderFromCommercialEvent(clientId, commercial
     reference: String(body.reference || ce.event_number || ""),
     description: String(body.description || ce.description || ""),
     lines: [{
+      costCodeId: null,
       costCode: ce.cost_code,
+      costCodeSourceEvidence: ce.cost_code,
       description: String(body.description || ce.description || ""),
       netValue: body.netValue == null ? Number(ce.value) : Number(body.netValue),
     }],
@@ -419,24 +447,28 @@ async function updateDraftVariationOrder(clientId, id, body = {}, { actor = acto
        WHERE client_id=$1 AND id=$2 RETURNING *`,
       [clientId, id, String(body.reference || ""), String(body.description).trim(), body.vatTreatment || "inherit", body.retentionTreatment || "inherit", body.termsOverride || {}, actor]
     );
-    const existingLines = await db.query("SELECT id FROM variation_order_lines WHERE client_id=$1 AND variation_order_id=$2", [clientId, id]);
+    const existingLines = await db.query("SELECT id,cost_code_source_evidence FROM variation_order_lines WHERE client_id=$1 AND variation_order_id=$2", [clientId, id]);
     const existingLineIds = new Set(existingLines.rows.map((line) => line.id));
     if (body.lines.some((line) => line.id && !existingLineIds.has(line.id))) {
       throw Object.assign(new Error("Variation Order line identity is invalid."), { httpStatus: 400 });
     }
+    const existingSourceEvidence = new Map(existingLines.rows.map((line) => [line.id, line.cost_code_source_evidence]));
+    const resolvedLines = await resolveDraftLineCostCodes(db, clientId, body.lines.map((line) => line.id && existingSourceEvidence.has(line.id)
+      ? { ...line, costCodeSourceEvidence: existingSourceEvidence.get(line.id) }
+      : line));
     await db.query("DELETE FROM variation_order_lines WHERE client_id=$1 AND variation_order_id=$2", [clientId, id]);
-    for (const [index, line] of body.lines.entries()) {
+    for (const [index, line] of resolvedLines.entries()) {
       if (line.id) {
         await db.query(
-          `INSERT INTO variation_order_lines(id,client_id,variation_order_id,line_number,cost_code,description,net_value,vat_treatment,retention_treatment)
-           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-          [line.id, clientId, id, index + 1, String(line.costCode).trim(), String(line.description).trim(), Number(line.netValue), line.vatTreatment || "inherit", line.retentionTreatment || "inherit"]
+          `INSERT INTO variation_order_lines(id,client_id,variation_order_id,line_number,cost_code_id,cost_code,cost_code_description,cost_code_source_evidence,description,net_value,vat_treatment,retention_treatment)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+          [line.id, clientId, id, index + 1, line.costCodeId, line.costCode, line.costCodeDescription, line.costCodeSourceEvidence, String(line.description).trim(), Number(line.netValue), line.vatTreatment || "inherit", line.retentionTreatment || "inherit"]
         );
       } else {
         await db.query(
-          `INSERT INTO variation_order_lines(client_id,variation_order_id,line_number,cost_code,description,net_value,vat_treatment,retention_treatment)
-           VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [clientId, id, index + 1, String(line.costCode).trim(), String(line.description).trim(), Number(line.netValue), line.vatTreatment || "inherit", line.retentionTreatment || "inherit"]
+          `INSERT INTO variation_order_lines(client_id,variation_order_id,line_number,cost_code_id,cost_code,cost_code_description,cost_code_source_evidence,description,net_value,vat_treatment,retention_treatment)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [clientId, id, index + 1, line.costCodeId, line.costCode, line.costCodeDescription, line.costCodeSourceEvidence, String(line.description).trim(), Number(line.netValue), line.vatTreatment || "inherit", line.retentionTreatment || "inherit"]
         );
       }
     }
@@ -570,14 +602,17 @@ async function validateVariationOrderForSubmit(db, clientId, row) {
   if (!String(row.description || "").trim() || !lines.rows.length || lines.rows.some((line) => !String(line.cost_code || "").trim() || !String(line.description || "").trim() || !Number.isFinite(Number(line.net_value)))) {
     throw Object.assign(new Error("Variation Order requires a description and at least one valid signed cost-code line."), { httpStatus: 400 });
   }
-  const costCodes = [...new Set(lines.rows.map((line) => String(line.cost_code).trim().toLowerCase()))];
+  if (lines.rows.some((line) => !line.cost_code_id)) {
+    throw Object.assign(new Error("Every Variation Order line needs confirmed Cost Code Master authority before Submit."), { httpStatus: 400 });
+  }
+  const costCodes = [...new Set(lines.rows.map((line) => line.cost_code_id))];
   const validCodes = await db.query(
-    `SELECT lower(btrim(code)) AS code FROM cost_codes
-     WHERE client_id=$1 AND is_active=true AND lower(btrim(code))=ANY($2::text[])`,
+    `SELECT id FROM cost_codes
+     WHERE client_id=$1 AND is_active=true AND id=ANY($2::uuid[])`,
     [clientId, costCodes]
   );
   if (validCodes.rows.length !== costCodes.length) {
-    throw Object.assign(new Error("Every Variation Order line must use an active tenant Cost Code Master code."), { httpStatus: 400 });
+    throw Object.assign(new Error("Every Variation Order line must reference an active tenant Cost Code Master identity."), { httpStatus: 400 });
   }
   const relation = await db.query(
     `SELECT ce.id FROM variation_order_commercial_events link

@@ -10261,6 +10261,14 @@
   margin: 0;
 }
 
+.po-ce-drawer__section-heading--static {
+  cursor: default;
+}
+
+.po-ce-drawer__workflow-decision {
+  border-color: rgba(88, 166, 255, 0.45);
+}
+
 .admin-table__row--selected td {
   background: color-mix(in srgb, var(--po-primary, #166534) 8%, transparent);
 }

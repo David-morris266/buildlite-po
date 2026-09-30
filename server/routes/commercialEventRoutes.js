@@ -192,13 +192,13 @@ router.post("/:id/approve", requirePermission(PERMISSIONS.CE_APPROVE), async (re
   }
 });
 
-router.post("/:id/reject", async (req, res) => {
+router.post("/:id/reject", requirePermission(PERMISSIONS.CE_APPROVE), async (req, res) => {
   try {
     if (!isDbConfigured()) return res.status(500).json({ message: "Database not configured" });
     const active = await getActiveClient();
     if (!active) return res.status(404).json({ error: "No active client set" });
 
-    const result = await rejectCommercialEvent(active.id, req.params.id, workflowBody(req));
+    const result = await rejectCommercialEvent(active.id, req.params.id, workflowBody(req), { auth: req.buildliteAuth });
     if (!result.ok) return res.status(result.status || 400).json({ message: result.message });
     res.json(result.event);
   } catch (err) {

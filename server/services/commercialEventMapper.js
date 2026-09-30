@@ -10,6 +10,7 @@
 const {
   enrichExpectedLiabilityReadModel,
 } = require("./commercialEventExpectedLiability");
+const { dateOnly } = require("./paymentCertificateTimetable");
 
 const EXPECTED_LIABILITY_DOCUMENT_KEYS = [
   "expectedTreatment",
@@ -156,9 +157,7 @@ function rowToDocument(row, auditRows = []) {
     value: Number(row.value),
     financialTreatment: row.financial_treatment ?? null,
     vatTreatment: row.vat_treatment,
-    dateRaised: row.date_raised
-      ? row.date_raised.toISOString().slice(0, 10)
-      : null,
+    dateRaised: dateOnly(row.date_raised),
     raisedBy: row.raised_by ?? null,
     status: row.status,
     linkedEventId: row.linked_event_id ?? null,

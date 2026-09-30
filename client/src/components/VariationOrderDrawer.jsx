@@ -5,6 +5,8 @@ import { approveAndIssueVariationOrder, submitVariationOrder, updateVariationOrd
 import { formatVariationOrderReference, variationOrderStatusLabel } from '../variationOrders/variationOrderPresentation';
 import { getCompanySettings } from '../admin/companyStore';
 import { notifyCommercialChanged } from '../commercial/commercialEvents';
+import PrelimsCostCodePicker from './PrelimsCostCodePicker';
+import { listActiveCostCodesForSelect } from '../admin/costCodeMasterStore';
 
 function formFrom(vo) {
   return {
@@ -27,14 +29,37 @@ export default function VariationOrderDrawer({ open, variationOrder, onClose, on
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [issueComment, setIssueComment] = useState('Formal instruction approved and issued.');
+  const [costCodes, setCostCodes] = useState([]);
+  const [costCodeError, setCostCodeError] = useState('');
 
   useEffect(() => { setVo(variationOrder); setForm(formFrom(variationOrder)); setError(''); }, [variationOrder, open]);
+  useEffect(() => {
+    if (!open || variationOrder?.status !== 'draft') return undefined;
+    let current = true;
+    setCostCodeError('');
+    listActiveCostCodesForSelect({ fresh: true })
+      .then((rows) => { if (current) setCostCodes(rows); })
+      .catch(() => { if (current) { setCostCodes([]); setCostCodeError('Active Company Cost Codes could not be loaded.'); } });
+    return () => { current = false; };
+  }, [open, variationOrder?.id, variationOrder?.status]);
   if (!vo) return null;
   const draft = vo.status === 'draft';
   const submitted = vo.status === 'submitted';
 
   function setLine(index, field, value) {
     setForm((current) => ({ ...current, lines: current.lines.map((line, lineIndex) => lineIndex === index ? { ...line, [field]: value } : line) }));
+  }
+
+  function selectLineCostCode(index, code) {
+    const selected = costCodes.find((item) => item.code === code);
+    if (!selected) return;
+    setForm((current) => ({ ...current, lines: current.lines.map((line, lineIndex) => lineIndex === index ? {
+      ...line,
+      costCodeId: selected.id,
+      costCode: selected.code,
+      costCodeDescription: selected.element || selected.description || '',
+      costCodeAuthorityState: 'resolved',
+    } : line) }));
   }
 
   function allocationFor(lineId, commercialEventId) {
@@ -92,8 +117,9 @@ export default function VariationOrderDrawer({ open, variationOrder, onClose, on
         <section className="po-ce-drawer__section"><div className="po-ce-drawer__section-body">
           <label className="po-ce-drawer__field po-ce-drawer__field--wide"><span>Description / scope</span><textarea rows={4} value={form.description} disabled={!draft} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
           <div className="po-table-wrap"><table className="po-data-table vo-lines-table"><colgroup><col className="vo-lines-table__cost" /><col className="vo-lines-table__description" /><col className="vo-lines-table__value" /></colgroup><thead><tr><th>Cost code</th><th>Description</th><th style={{ textAlign: 'right' }}>Signed net value</th></tr></thead><tbody>
-            {form.lines.map((line, index) => <tr key={line.id || index}><td><input value={line.costCode} disabled={!draft} onChange={(e) => setLine(index, 'costCode', e.target.value)} /></td><td><input value={line.description} disabled={!draft} onChange={(e) => setLine(index, 'description', e.target.value)} /></td><td><input type="number" step="0.01" value={line.netValue} disabled={!draft} onChange={(e) => setLine(index, 'netValue', e.target.value)} /></td></tr>)}
+            {form.lines.map((line, index) => <tr key={line.id || index}><td>{draft ? <div className="vo-cost-code-authority">{!line.costCodeId && line.costCodeSourceEvidence ? <p className="vo-cost-code-authority__source">Current/source evidence: {line.costCodeSourceEvidence}</p> : null}<PrelimsCostCodePicker name={`VO line ${index + 1}`} options={costCodes} value={line.costCodeId ? line.costCode : ''} onChange={(code) => selectLineCostCode(index, code)} contextKey={`${vo.id}:${line.id || index}`} overlayClassName="vo-cost-code-picker-overlay" /><span className={`po-status-badge ${line.costCodeId ? 'po-status-badge--success' : 'po-status-badge--warning'}`}>{line.costCodeId ? 'Cost Code confirmed' : 'Needs Cost Code confirmation'}</span></div> : <span>{line.costCode}{line.costCodeDescription ? ` — ${line.costCodeDescription}` : ''}</span>}</td><td><input value={line.description} disabled={!draft} onChange={(e) => setLine(index, 'description', e.target.value)} /></td><td><input type="number" step="0.01" value={line.netValue} disabled={!draft} onChange={(e) => setLine(index, 'netValue', e.target.value)} /></td></tr>)}
           </tbody><tfoot><tr><th colSpan="2">Total Variation Order</th><th style={{ textAlign: 'right' }}>£{formatMoney(total)}</th></tr></tfoot></table></div>
+          {costCodeError ? <p className="po-ce-drawer__errors" role="alert">{costCodeError}</p> : null}
           <p>VAT treatment: {form.vatTreatment === 'inherit' ? 'Inherited from the original order' : form.vatTreatment}. Retention and terms: {form.retentionTreatment === 'inherit' ? 'Inherited from the original order' : form.retentionTreatment}.</p>
           {vo.sourceCommercialEvents?.length && (form.lines.length > 1 || vo.sourceCommercialEvents.length > 1) ? <div className="vo-allocation-readiness vo-screen-actions"><h3>Issue authority allocation</h3><p>Allocate each source CE explicitly to VO lines. Where historic certification exists, allocate that separately; BuildLite will not infer a distribution.</p>{vo.sourceCommercialEvents.map((source) => <div key={source.id} className="vo-allocation-source"><p><strong>{source.eventNumber}</strong> · CE authority £{formatMoney(source.approvedValue)} · Historic certified £{formatMoney(source.historicCertifiedValue || 0)}</p><div className="po-table-wrap"><table className="po-data-table"><thead><tr><th>VO line</th><th>Line value</th><th>CE authority allocated</th><th>Historic certified allocated</th></tr></thead><tbody>{form.lines.map((line) => { const allocation = allocationFor(line.id, source.id); return <tr key={`${source.id}-${line.id}`}><td>{line.costCode} · {line.description}</td><td>£{formatMoney(Number(line.netValue) || 0)}</td><td><input type="number" step="0.01" disabled={!draft} value={allocation?.allocatedValue ?? ''} onChange={(event) => setAllocation(line.id, source.id, 'allocatedValue', event.target.value)} /></td><td><input type="number" step="0.01" disabled={!draft || !(Number(source.historicCertifiedValue) || 0)} value={allocation?.historicCertifiedValue ?? '0'} onChange={(event) => setAllocation(line.id, source.id, 'historicCertifiedValue', event.target.value)} /></td></tr>; })}</tbody></table></div></div>)}</div> : null}
         </div></section>

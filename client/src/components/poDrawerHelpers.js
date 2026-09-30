@@ -29,12 +29,17 @@ export function formatApprovalAction(action) {
 
 export function formatPoDate(value) {
   if (!value) return '—';
-  const d = new Date(value);
+  const text = String(value);
+  const isCalendarDate = /^\d{4}-\d{2}-\d{2}/.test(text);
+  const d = isCalendarDate
+    ? new Date(`${text.slice(0, 10)}T12:00:00Z`)
+    : new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
+    timeZone: isCalendarDate ? 'UTC' : undefined,
   });
 }
 

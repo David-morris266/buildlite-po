@@ -20,7 +20,6 @@ import {
 } from '../commercialEvents/commercialEventDevelopmentRegister';
 import { formatRecoveryPackageOptionLabel } from '../commercialEvents/commercialEventRecoveryPackages';
 import { formatMoney } from './poDrawerHelpers';
-import { getLinkedEventNavigationLabel } from '../commercialEvents/commercialEventNavigation';
 import { getCommercialEventLinkBadges } from '../commercialEvents/commercialEventRegisterBadges';
 import { getCommercialEventCertificationBadges } from '../commercialEvents/commercialEventCertificationOverlay';
 import { getCommercialEventRecoveryPresentation, getRecoveryCommercialStatusForPresentation } from '../commercialEvents/commercialEventRecoveryOverlay';
@@ -686,6 +685,7 @@ export default function DevelopmentCommercialEvents({
         order={drawerOrder}
         onClose={closeDrawer}
         onSaved={handleSaved}
+        onEdit={() => setDrawerMode('edit')}
         onLinkedRecoveryCreated={handleLinkedRecoveryCreated}
         onNavigateToLinkedEvent={handleNavigateToLinkedEvent}
         onOpenPackage={selectedEvent?.packageId ? handleOpenPackageFromDrawer : null}

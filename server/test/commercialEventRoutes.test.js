@@ -230,7 +230,7 @@ if (!isDbConfigured()) {
   test("1. new CE creates server id + eventNumber", async () => {
     const active = await getActiveClient();
     const { development, orderKeyA } = await setupDevWithTwoPackages(active);
-    const res = await createCe(baseCePayload(development, orderKeyA));
+    const res = await createCe(baseCePayload(development, orderKeyA, { dateRaised: "2026-09-29" }));
     assert.equal(res.status, 201);
     assert.match(res.body.id, COMMERCIAL_EVENT_ID_PATTERN);
     assert.match(res.body.eventNumber, /^CE-\d{4,}$/);
@@ -239,6 +239,15 @@ if (!isDbConfigured()) {
     assert.equal(res.body.orderKey, orderKeyA);
     assert.equal(res.body.certificateStatus, "notIncluded");
     assert.equal(res.body.recoveredAmount, 0);
+    assert.equal(res.body.dateRaised, "2026-09-29");
+    const stored = (await pool.query("SELECT status,date_raised,value FROM commercial_events WHERE id=$1", [res.body.id])).rows[0];
+    assert.equal(stored.status, "draft");
+    assert.equal(`${stored.date_raised.getFullYear()}-${String(stored.date_raised.getMonth()+1).padStart(2,'0')}-${String(stored.date_raised.getDate()).padStart(2,'0')}`, "2026-09-29");
+    const listed = await request(app).get(`/api/commercial-events?developmentId=${development.id}`);
+    assert.equal(listed.body.find((event) => event.id === res.body.id).dateRaised, "2026-09-29");
+    const detail = await request(app).get(`/api/commercial-events/${res.body.id}`);
+    assert.equal(detail.body.dateRaised, "2026-09-29");
+    assert.equal(Number((await pool.query("SELECT count(*) n FROM variation_order_commercial_events WHERE commercial_event_id=$1", [res.body.id])).rows[0].n), 0);
   });
 
   test("2. imported supplied ce-* id preserved", async () => {

@@ -93,6 +93,15 @@ test('certificate Return to Draft requires certificate.lock rather than a role n
   assert.match(response.body.message, /certificate\.lock/);
 });
 
+test('Commercial Event approve and reject decisions both require ce.approve', async () => {
+  const app = createApp({authAdapter:createTestAuthAdapter({...principal,roleKey:'qs',roleName:'QS',permissions:[]})});
+  for (const action of ['approve','reject']) {
+    const response = await request(app).post(`/api/commercial-events/ce-test/${action}`).send({comment:'Forged decision'});
+    assert.equal(response.status, 403);
+    assert.match(response.body.message, /ce\.approve/);
+  }
+});
+
 test('critical-route manifest covers the pilot high-risk boundary', () => {
   const values = Object.values(CRITICAL_ROUTE_PERMISSIONS).join('|');
   for (const permission of [PERMISSIONS.PO_APPROVE,PERMISSIONS.CE_APPROVE,PERMISSIONS.VO_ISSUE,PERMISSIONS.CVR_LOCK,PERMISSIONS.CERTIFICATE_SUBMIT,PERMISSIONS.CERTIFICATE_LOCK,PERMISSIONS.INTENDED_PAYMENT_CONFIRM,PERMISSIONS.PAYMENT_NOTICE_ISSUE,PERMISSIONS.PAY_LESS_ISSUE,PERMISSIONS.DOCUMENT_GENERATE,PERMISSIONS.DOCUMENT_ISSUE,PERMISSIONS.DOCUMENT_VIEW,PERMISSIONS.TERMS_PUBLISH,PERMISSIONS.PAYMENT_RELEASE_EXECUTE]) assert.match(values, new RegExp(permission.replace('.','\\.')));
@@ -101,4 +110,5 @@ test('critical-route manifest covers the pilot high-risk boundary', () => {
 test('critical-route manifest protects certificate Return to Draft with certificate.lock', () => {
   assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/packages/:packageId/certificates/:certificateId/reject'], PERMISSIONS.CERTIFICATE_LOCK);
   assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/subcontract-terms/purchase-orders/:poNumber/confirm-legacy'], PERMISSIONS.TERMS_ASSIGN_OVERRIDE);
+  assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/commercial-events/:id/reject'], PERMISSIONS.CE_APPROVE);
 });

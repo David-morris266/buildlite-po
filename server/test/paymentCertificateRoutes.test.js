@@ -1231,12 +1231,18 @@ if (!isDbConfigured()) {
   test("25. Issued VO line persists as frozen valueInclusion and revalidates through Submit and Approve", async () => {
     const active = await getActiveClient();
     const setup = await setupPackage(active, { vatRateDefault: 0.2, retentionRateDefault: 0.05 });
-    await pool.query("INSERT INTO cost_codes(client_id,code,is_active) VALUES($1,'5218',true) ON CONFLICT (client_id,code) DO UPDATE SET is_active=true", [active.id]);
+    const costCode = (await pool.query("INSERT INTO cost_codes(client_id,code,is_active) VALUES($1,'5218',true) ON CONFLICT (client_id,code) DO UPDATE SET is_active=true RETURNING id", [active.id])).rows[0];
     assert.ok([200, 201].includes((await putMatrix(setup.pkg.id, validMatrixBody())).status));
     const ce = await createApprovedCe(setup.development, setup.orderKey, { value: 4500, description: "Formal VO certificate test" });
     let response = await request(app).post(`/api/variation-orders/from-commercial-event/${ce.id}`).send({ actor: "QS" });
     assert.equal(response.status, 201, response.body.message);
     let vo = response.body;
+    response = await request(app).put(`/api/variation-orders/${vo.id}`).send({
+      version: vo.version, reference: vo.reference, description: vo.description,
+      lines: vo.lines.map((line) => ({ ...line, costCodeId: costCode.id })), actor: "QS",
+    });
+    assert.equal(response.status, 200, response.body.message);
+    vo = response.body;
     response = await request(app).post(`/api/variation-orders/${vo.id}/submit`).send({ version: vo.version, actor: "QS" });
     assert.equal(response.status, 200, response.body.message);
     vo = response.body;

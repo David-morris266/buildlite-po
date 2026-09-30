@@ -14,6 +14,54 @@ let b;
 let ceA;
 let ceB;
 let workflowCe;
+let migrationFixture;
+
+async function seedMixedLegacyMigrationFixture() {
+  const client = (await pool.query(
+    "INSERT INTO clients(code,name,is_active) VALUES($1,$2,false) RETURNING *",
+    [`VO_MIGRATION_${randomUUID().slice(0, 8)}`, "VO migration mixed-state tenant"]
+  )).rows[0];
+  clients.push(client.id);
+  const descriptions = { 4120: "Brickwork", 3640: "Planting", 4330: "Mastic & Sealing" };
+  for (const [code, description] of Object.entries(descriptions)) {
+    await pool.query(
+      "INSERT INTO cost_codes(client_id,code,description,is_active) VALUES($1,$2,$3,true)",
+      [client.id, code, description]
+    );
+  }
+  const development = `dev-vo-migration-${randomUUID()}`;
+  await pool.query(
+    "INSERT INTO developments(id,client_id,job_number,development_name,status,payload) VALUES($1,$2,$3,$4,'live','{}')",
+    [development, client.id, `JOB-MIG-${randomUUID().slice(0, 6)}`, "VO migration mixed state"]
+  );
+  const pkg = (await pool.query(
+    "INSERT INTO packages(client_id,development_id,supplier_id,cost_code,order_key) VALUES($1,$2,'supplier-migration','4120',$3) RETURNING *",
+    [client.id, development, `subcontract:${randomUUID()}`]
+  )).rows[0];
+  const lines = [];
+  for (const [index, fixture] of [
+    { code: "4120", value: 5000, status: "issued" },
+    { code: "3640", value: 4500, status: "issued" },
+    { code: "4330", value: 12000, status: "issued" },
+    { code: "3000 — groundworks general", value: 9600, status: "draft" },
+  ].entries()) {
+    const issued = fixture.status === "issued";
+    const vo = (await pool.query(
+      `INSERT INTO variation_orders
+       (client_id,development_id,package_id,order_key,source_po_number,supplier_id,variation_order_number,description,status,approved_at,issued_at)
+       VALUES($1,$2,$3,$4,'S-MIG','supplier-migration',$5,$6,$7,$8,$9) RETURNING *`,
+      [client.id, development, pkg.id, pkg.order_key, `VO-MIG-${index + 1}`, `Migration ${fixture.code}`,
+        fixture.status, issued ? new Date("2026-01-01T00:00:00Z") : null, issued ? new Date("2026-01-02T00:00:00Z") : null]
+    )).rows[0];
+    const line = (await pool.query(
+      `INSERT INTO variation_order_lines(client_id,variation_order_id,line_number,cost_code,description,net_value)
+       VALUES($1,$2,1,$3,$4,$5) RETURNING *`,
+      [client.id, vo.id, fixture.code, `Migration line ${fixture.code}`, fixture.value]
+    )).rows[0];
+    lines.push({ ...fixture, voId: vo.id, lineId: line.id });
+  }
+  return { client, lines, descriptions };
+}
 
 async function seed(label) {
   const client = (await pool.query(
@@ -21,10 +69,9 @@ async function seed(label) {
     [`VO_${label}_${randomUUID().slice(0, 8)}`, `VO Tenant ${label}`]
   )).rows[0];
   clients.push(client.id);
-  await pool.query(
-    "INSERT INTO cost_codes(client_id,code,is_active) VALUES($1,'5218',true),($1,'5219',true) ON CONFLICT DO NOTHING",
-    [client.id]
-  );
+  await pool.query("INSERT INTO cost_codes(client_id,code,is_active) VALUES($1,'5218',true),($1,'5219',true) ON CONFLICT DO NOTHING", [client.id]);
+  const costCodes = (await pool.query("SELECT id,code FROM cost_codes WHERE client_id=$1 AND code IN('5218','5219')", [client.id])).rows;
+  const costCodeIds = Object.fromEntries(costCodes.map((row) => [row.code, row.id]));
   const development = `dev-vo-${label}-${randomUUID()}`;
   await pool.query(
     "INSERT INTO developments(id,client_id,job_number,development_name,status,payload) VALUES($1,$2,$3,$4,'live','{}')",
@@ -36,7 +83,7 @@ async function seed(label) {
   )).rows[0];
   const po = `S-${label}-${randomUUID().slice(0, 8)}`;
   await pool.query("INSERT INTO package_purchase_orders(package_id,client_id,po_number) VALUES($1,$2,$3)", [pkg.id, client.id, po]);
-  return { client, development, pkg, po };
+  return { client, development, pkg, po, costCodeIds };
 }
 
 function body(seed, overrides = {}) {
@@ -47,8 +94,8 @@ function body(seed, overrides = {}) {
     supplierId: seed.pkg.supplier_id,
     description: "Foundation VO",
     lines: [
-      { costCode: "5218", description: "Addition", netValue: 1500 },
-      { costCode: "5219", description: "Credit", netValue: -300 },
+      { costCodeId: seed.costCodeIds['5218'], costCode: "5218", description: "Addition", netValue: 1500 },
+      { costCodeId: seed.costCodeIds['5219'], costCode: "5219", description: "Credit", netValue: -300 },
     ],
     sourceCommercialEvents: [{ commercialEventId: ceA, allocatedValue: 1200 }],
     actor: "VO Test",
@@ -62,6 +109,8 @@ test.before(async () => {
   for (const name of ["004_developments.sql", "005_packages.sql", "006_commercial_events.sql", "021_commercial_event_expected_liability.sql", "023_variation_orders.sql", "024_variation_order_normal_source.sql", "025_variation_order_line_ce_allocations.sql"]) {
     await pool.query(sql(name));
   }
+  migrationFixture = await seedMixedLegacyMigrationFixture();
+  await pool.query(sql("062_variation_order_line_cost_code_authority.sql"));
   a = await seed("A");
   b = await seed("B");
   ceA = `ce-vo-${randomUUID()}`;
@@ -84,6 +133,43 @@ test.before(async () => {
      (id,client_id,development_id,package_id,order_key,event_number,event_type,category,responsibility,description,value,status,supplier_id,cost_code)
      VALUES($1,$2,$3,$4,$5,$6,'variation','commercial','commercial','Workflow scope',2750,'approved',$7,'5218')`,
     [workflowCe, a.client.id, a.development, a.pkg.id, a.pkg.order_key, `CE-${randomUUID().slice(0, 8)}`, a.pkg.supplier_id]
+  );
+});
+
+test("Migration 062 resolves exact historic lines while preserving an unresolved Draft review state", async (t) => {
+  if (!isDbConfigured()) return t.skip("TEST_DATABASE_URL not configured");
+  const rows = (await pool.query(
+    `SELECT line.id,vo.status,line.cost_code_id,line.cost_code,line.cost_code_description,
+            line.cost_code_source_evidence,line.net_value,code.code canonical_code
+       FROM variation_order_lines line
+       JOIN variation_orders vo ON vo.id=line.variation_order_id AND vo.client_id=line.client_id
+       LEFT JOIN cost_codes code ON code.id=line.cost_code_id AND code.client_id=line.client_id
+      WHERE line.client_id=$1 ORDER BY line.created_at,line.id`,
+    [migrationFixture.client.id]
+  )).rows;
+  assert.equal(rows.length, 4);
+  for (const fixture of migrationFixture.lines.filter((line) => line.status === "issued")) {
+    const row = rows.find((candidate) => candidate.cost_code === fixture.code);
+    assert.equal(row.status, "issued");
+    assert.ok(row.cost_code_id);
+    assert.equal(row.canonical_code, fixture.code);
+    assert.equal(row.cost_code_description, migrationFixture.descriptions[fixture.code]);
+    assert.equal(row.cost_code_source_evidence, fixture.code);
+    assert.equal(Number(row.net_value), fixture.value);
+  }
+  const unresolved = rows.find((row) => row.cost_code === "3000 — groundworks general");
+  assert.equal(unresolved.status, "draft");
+  assert.equal(unresolved.cost_code_id, null);
+  assert.equal(unresolved.cost_code_description, null);
+  assert.equal(unresolved.cost_code_source_evidence, "3000 — groundworks general");
+  assert.equal(Number(unresolved.net_value), 9600);
+
+  await assert.rejects(
+    pool.query(
+      "UPDATE variation_order_lines SET cost_code_id=$1,cost_code_description=NULL WHERE id=$2",
+      [rows.find((row) => row.cost_code === "4120").cost_code_id, unresolved.id]
+    ),
+    /resolved_cost_code_evidence|check constraint/i
   );
 });
 
@@ -114,9 +200,46 @@ test("cross-tenant/package/development/CE relationships fail closed", async (t) 
   assert.equal((await repository.createDraftVariationOrder(a.client.id, body(a, { sourcePoNumber: b.po }))).status, 400);
 });
 
+test("stable Cost Code identity is tenant-active authority while legacy text remains review evidence", async (t) => {
+  if (!isDbConfigured()) return t.skip("TEST_DATABASE_URL not configured");
+  const legacy = await repository.createDraftVariationOrder(a.client.id, body(a, {
+    description: "Legacy review",
+    lines: [{ costCode: "5218 — Legacy label", costCodeSourceEvidence: "5218 — Legacy label", description: "Legacy line", netValue: 1200 }],
+  }));
+  assert.equal(legacy.ok, true, legacy.message);
+  assert.equal(legacy.variationOrder.lines[0].costCodeId, null);
+  assert.equal(legacy.variationOrder.lines[0].costCodeAuthorityState, "review_required");
+  assert.equal((await repository.transitionVariationOrder(a.client.id, legacy.variationOrder.id, "submit", { version: legacy.variationOrder.version })).status, 400);
+
+  const selected = await repository.updateDraftVariationOrder(a.client.id, legacy.variationOrder.id, {
+    version: legacy.variationOrder.version,
+    reference: legacy.variationOrder.reference,
+    description: legacy.variationOrder.description,
+    lines: [{ ...legacy.variationOrder.lines[0], costCodeId: a.costCodeIds['5218'], costCode: "stale display" }],
+  });
+  assert.equal(selected.ok, true, selected.message);
+  assert.equal(selected.variationOrder.lines[0].costCodeId, a.costCodeIds['5218']);
+  assert.equal(selected.variationOrder.lines[0].costCode, "5218");
+  assert.equal(selected.variationOrder.lines[0].costCodeSourceEvidence, "5218 — Legacy label");
+  assert.equal((await repository.transitionVariationOrder(a.client.id, selected.variationOrder.id, "submit", { version: selected.variationOrder.version })).ok, true);
+
+  const foreign = await repository.createDraftVariationOrder(a.client.id, body(a, {
+    description: "Foreign identity",
+    lines: [{ costCodeId: b.costCodeIds['5218'], costCode: "5218", description: "Wrong tenant", netValue: 1200 }],
+  }));
+  assert.equal(foreign.status, 400);
+  const inactive = (await pool.query("INSERT INTO cost_codes(client_id,code,is_active) VALUES($1,'INACTIVE-VO',false) RETURNING id", [a.client.id])).rows[0];
+  assert.equal((await repository.createDraftVariationOrder(a.client.id, body(a, {
+    description: "Inactive identity", lines: [{ costCodeId: inactive.id, costCode: "INACTIVE-VO", description: "Inactive", netValue: 1200 }],
+  }))).status, 400);
+  assert.equal((await repository.createDraftVariationOrder(a.client.id, body(a, {
+    description: "Missing identity", lines: [{ costCodeId: randomUUID(), costCode: "MISSING", description: "Missing", netValue: 1200 }],
+  }))).status, 400);
+});
+
 test("lifecycle, optimistic version, rejection and issued immutability", async (t) => {
   if (!isDbConfigured()) return t.skip("TEST_DATABASE_URL not configured");
-  const lifecycleBody = { description: "Lifecycle", lines: [{ costCode: "5218", description: "Addition", netValue: 1200 }] };
+  const lifecycleBody = { description: "Lifecycle", lines: [{ costCodeId: a.costCodeIds['5218'], costCode: "5218", description: "Addition", netValue: 1200 }] };
   let vo = (await repository.createDraftVariationOrder(a.client.id, body(a, lifecycleBody))).variationOrder;
   assert.equal((await repository.transitionVariationOrder(a.client.id, vo.id, "approve", { version: 1 })).status, 409);
   vo = (await repository.transitionVariationOrder(a.client.id, vo.id, "submit", { version: 1, actor: "QS" })).variationOrder;
@@ -166,7 +289,7 @@ test("approved CE creates one pre-populated editable VO without rewriting its so
     version: vo.version,
     reference: vo.reference,
     description: "Reviewed formal scope",
-    lines: [{ costCode: "5218", description: "Reviewed line", netValue: 2500 }],
+    lines: [{ costCodeId: a.costCodeIds['5218'], costCode: "5218", description: "Reviewed line", netValue: 2500 }],
   }, { actor: "QS" });
   assert.equal(result.ok, true, result.message);
   vo = result.variationOrder;
@@ -203,6 +326,10 @@ test("ineligible CE creation and atomic approve-and-issue fail closed", async (t
     [ce, a.client.id, a.development, a.pkg.id, a.pkg.order_key, `CE-${randomUUID().slice(0, 8)}`, a.pkg.supplier_id]
   );
   let vo = (await repository.createDraftVariationOrderFromCommercialEvent(a.client.id, ce)).variationOrder;
+  vo = (await repository.updateDraftVariationOrder(a.client.id, vo.id, {
+    version: vo.version, reference: vo.reference, description: vo.description,
+    lines: vo.lines.map((line) => ({ ...line, costCodeId: a.costCodeIds['5218'] })),
+  })).variationOrder;
   vo = (await repository.transitionVariationOrder(a.client.id, vo.id, "submit", { version: vo.version })).variationOrder;
   await pool.query(`CREATE OR REPLACE FUNCTION bl_vo_fail_issue() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='issue' THEN RAISE EXCEPTION 'forced issue failure'; END IF; RETURN NEW; END $$`);
   await pool.query(`CREATE TRIGGER bl_vo_fail_issue_trigger BEFORE INSERT ON variation_order_audit FOR EACH ROW EXECUTE FUNCTION bl_vo_fail_issue()`);
@@ -277,7 +404,7 @@ test("single-line allocation and historic certification map automatically, inclu
   await lockHistoricCeLine(s, ce, 2000);
   let vo = (await repository.createDraftVariationOrder(s.client.id, body(s, {
     description: "Single line VO",
-    lines: [{ costCode: "5218", description: "Formal line", netValue: 4500 }],
+    lines: [{ costCodeId: s.costCodeIds['5218'], costCode: "5218", description: "Formal line", netValue: 4500 }],
     sourceCommercialEvents: [{ commercialEventId: ce, allocatedValue: 5000 }],
   }))).variationOrder;
   vo = (await repository.transitionVariationOrder(s.client.id, vo.id, "submit", { version: vo.version })).variationOrder;
@@ -304,8 +431,8 @@ test("multi-line authority is explicit; zero historic certification is automatic
   const ce = await createApprovedCe(s, 2000, "Split authority");
   let vo = (await repository.createDraftVariationOrder(s.client.id, body(s, {
     description: "Split VO", lines: [
-      { costCode: "5218", description: "Line one", netValue: 1500 },
-      { costCode: "5219", description: "Line two", netValue: 500 },
+      { costCodeId: s.costCodeIds['5218'], costCode: "5218", description: "Line one", netValue: 1500 },
+      { costCodeId: s.costCodeIds['5219'], costCode: "5219", description: "Line two", netValue: 500 },
     ], sourceCommercialEvents: [{ commercialEventId: ce, allocatedValue: 2000 }],
   }))).variationOrder;
   assert.equal((await repository.transitionVariationOrder(s.client.id, vo.id, "submit", { version: vo.version })).status, 409);
@@ -327,8 +454,8 @@ test("multi-line partial historic certification requires explicit signed line al
   await lockHistoricCeLine(s, ce, 1000);
   let vo = (await repository.createDraftVariationOrder(s.client.id, body(s, {
     description: "Certified split VO", lines: [
-      { costCode: "5218", description: "First", netValue: 1200 },
-      { costCode: "5219", description: "Second", netValue: 800 },
+      { costCodeId: s.costCodeIds['5218'], costCode: "5218", description: "First", netValue: 1200 },
+      { costCodeId: s.costCodeIds['5219'], costCode: "5219", description: "Second", netValue: 800 },
     ], sourceCommercialEvents: [{ commercialEventId: ce, allocatedValue: 2000 }],
   }))).variationOrder;
   let saved = await saveAllocations(s, vo, [
@@ -353,8 +480,8 @@ test("multiple sources allocate explicitly without inference; sign, over-allocat
   const credit = await createApprovedCe(s, -500, "Credit source");
   let vo = (await repository.createDraftVariationOrder(s.client.id, body(s, {
     description: "Many-to-many VO", lines: [
-      { costCode: "5218", description: "Net addition", netValue: 1200 },
-      { costCode: "5219", description: "Net credit", netValue: -200 },
+      { costCodeId: s.costCodeIds['5218'], costCode: "5218", description: "Net addition", netValue: 1200 },
+      { costCodeId: s.costCodeIds['5219'], costCode: "5219", description: "Net credit", netValue: -200 },
     ], sourceCommercialEvents: [{ commercialEventId: positive }, { commercialEventId: credit }],
   }))).variationOrder;
   let saved = await saveAllocations(s, vo, [
@@ -367,7 +494,7 @@ test("multiple sources allocate explicitly without inference; sign, over-allocat
   assert.equal(vo.status, "submitted");
 
   const invalidVo = (await repository.createDraftVariationOrder(s.client.id, body(s, {
-    description: "Invalid allocation", lines: [{ costCode: "5218", description: "Line", netValue: 1600 }],
+    description: "Invalid allocation", lines: [{ costCodeId: s.costCodeIds['5218'], costCode: "5218", description: "Line", netValue: 1600 }],
     sourceCommercialEvents: [{ commercialEventId: positive }],
   }))).variationOrder;
   const invalid = await saveAllocations(s, invalidVo, [{ variationOrderLineId: invalidVo.lines[0].id, commercialEventId: positive, allocatedValue: 1600, historicCertifiedValue: 0 }]);
@@ -381,8 +508,8 @@ test("multi-line historically over-certified authority issues with explicit capp
   await lockHistoricCeLine(s, ce, 1200);
   let vo = (await repository.createDraftVariationOrder(s.client.id, body(s, {
     description: "Over-certified VO", lines: [
-      { costCode: "5218", description: "First authority", netValue: 600 },
-      { costCode: "5219", description: "Second authority", netValue: 400 },
+      { costCodeId: s.costCodeIds['5218'], costCode: "5218", description: "First authority", netValue: 600 },
+      { costCodeId: s.costCodeIds['5219'], costCode: "5219", description: "Second authority", netValue: 400 },
     ], sourceCommercialEvents: [{ commercialEventId: ce, allocatedValue: 1000 }],
   }))).variationOrder;
   const saved = await saveAllocations(s, vo, [

@@ -297,6 +297,7 @@ export default function PackageCommercialEvents({
         order={order}
         onClose={() => setDrawerOpen(false)}
         onSaved={handleSaved}
+        onEdit={() => setDrawerMode('edit')}
         onLinkedRecoveryCreated={handleLinkedRecoveryCreated}
         onNavigateToLinkedEvent={handleNavigateToLinkedEvent}
       />

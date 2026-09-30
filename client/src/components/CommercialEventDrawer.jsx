@@ -16,9 +16,7 @@ import {
   listCommercialEventResponsibilityOptions,
   listCommercialEventTypeOptions,
   listCommercialEventVatTreatmentOptions,
-  canApproveCommercialEvent,
   canCloseCommercialEvent,
-  canRejectCommercialEvent,
   canSubmitCommercialEvent,
   isDirectRecoveryCommercialEvent,
 } from '../commercialEvents/commercialEventTypes';
@@ -65,6 +63,7 @@ import {
   getCommercialEventRecoveryPresentation,
   getRecoveryCommercialStatusForPresentation,
 } from '../commercialEvents/commercialEventRecoveryOverlay';
+import { useBuildLitePrincipal } from '../auth/BuildLiteAuthProvider';
 
 const EMPTY_FORM = {
   eventType: COMMERCIAL_EVENT_TYPES.variation.key,
@@ -97,6 +96,9 @@ function RecoveryStatusBadge({ recoveryStatusKey }) {
 }
 
 function lockedEventMessage(event) {
+  if (event?.status === COMMERCIAL_EVENT_STATUSES.draft.key) {
+    return 'Draft event details can be corrected before submission.';
+  }
   if (event?.status === COMMERCIAL_EVENT_STATUSES.submitted.key) {
     return 'Submitted event details are locked. Continue the event through the available workflow actions.';
   }
@@ -206,11 +208,13 @@ export default function CommercialEventDrawer({
   order,
   onClose,
   onSaved,
+  onEdit = null,
   onLinkedRecoveryCreated = null,
   onNavigateToLinkedEvent = null,
   onOpenPackage = null,
   openPackageLabel = 'Open Package',
 }) {
+  const principal = useBuildLitePrincipal();
   const [form, setForm] = useState(EMPTY_FORM);
   const [workflowComment, setWorkflowComment] = useState('');
   const [errors, setErrors] = useState([]);
@@ -235,6 +239,7 @@ export default function CommercialEventDrawer({
   const [variationAccountError, setVariationAccountError] = useState('');
 
   const isCreate = mode === 'create';
+  const canDecideCommercialEvent = !principal || principal.permissions?.includes('ce.approve');
 
   const liveEvent = useMemo(() => {
     if (!event || !order?.developmentId) return event;
@@ -859,6 +864,11 @@ export default function CommercialEventDrawer({
         {liveEvent && !editable && !isRecoveryEvent ? (
           <section className="po-ce-drawer__readonly-banner">
             {lockedEventMessage(liveEvent)}
+            {liveEvent.status === COMMERCIAL_EVENT_STATUSES.draft.key && onEdit ? (
+              <button type="button" className="po-list-btn-secondary" onClick={onEdit}>
+                Edit draft
+              </button>
+            ) : null}
           </section>
         ) : null}
 
@@ -1159,10 +1169,31 @@ export default function CommercialEventDrawer({
 
         {liveEvent && !isCreate && !createContraStep && !dismissStep ? (
           <>
-            {!isCreate &&
+            {liveEvent.status === COMMERCIAL_EVENT_STATUSES.submitted.key ? (
+              <section className="po-ce-drawer__section po-ce-drawer__section--workflow po-ce-drawer__workflow-decision" aria-labelledby="commercial-event-decision-heading">
+                <div className="po-ce-drawer__section-heading po-ce-drawer__section-heading--static">
+                  <h3 id="commercial-event-decision-heading">Submitted decision</h3>
+                </div>
+                <div className="po-ce-drawer__section-body">
+                  {canDecideCommercialEvent ? (
+                    <>
+                      <p className="po-ce-drawer__helper">Approve this Commercial Event as uninstructed commercial authority, or reject it for correction. Approval adds its value to Current Contract but does not issue a Variation Order.</p>
+                      <label className="po-ce-drawer__field po-ce-drawer__field--wide">
+                        <span>Decision comment (optional)</span>
+                        <textarea rows={2} value={workflowComment} onChange={(e) => setWorkflowComment(e.target.value)} />
+                      </label>
+                      <div className="po-ce-drawer__actions">
+                        <button type="button" className="po-btn-primary" onClick={() => runWorkflow('approve')}>Approve Commercial Event</button>
+                        <button type="button" className="po-list-btn-secondary" onClick={() => runWorkflow('reject')}>Reject</button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="po-ce-drawer__helper">This Commercial Event is awaiting a user with Commercial Event approval authority.</p>
+                  )}
+                </div>
+              </section>
+            ) : !isCreate &&
             (canSubmitCommercialEvent(liveEvent.status) ||
-              canApproveCommercialEvent(liveEvent.status) ||
-              canRejectCommercialEvent(liveEvent.status) ||
               (canCloseCommercialEvent(liveEvent.status) && !isRecoveryEvent)) ? (
               <DrawerSection title="Workflow" tone="workflow">
                 <label className="po-ce-drawer__field po-ce-drawer__field--wide">
@@ -1181,24 +1212,6 @@ export default function CommercialEventDrawer({
                       onClick={() => runWorkflow('submit')}
                     >
                       Submit
-                    </button>
-                  ) : null}
-                  {canApproveCommercialEvent(liveEvent.status) ? (
-                    <button
-                      type="button"
-                      className="po-btn-primary"
-                      onClick={() => runWorkflow('approve')}
-                    >
-                      Approve
-                    </button>
-                  ) : null}
-                  {canRejectCommercialEvent(liveEvent.status) ? (
-                    <button
-                      type="button"
-                      className="po-list-btn-secondary"
-                      onClick={() => runWorkflow('reject')}
-                    >
-                      Reject
                     </button>
                   ) : null}
                   {canCloseCommercialEvent(liveEvent.status) && !isRecoveryEvent ? (

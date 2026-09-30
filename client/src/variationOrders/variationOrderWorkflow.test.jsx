@@ -7,6 +7,13 @@ import { canCreateVariationOrder, formatVariationOrderReference } from './variat
 import { createVariationOrderFromCommercialEvent } from '../api/variationOrders';
 import { COMMERCIAL_CHANGED } from '../commercial/commercialEvents';
 
+vi.mock('../admin/costCodeMasterStore', () => ({
+  listActiveCostCodesForSelect: vi.fn(async () => [
+    { id: 'cc-5218', code: '5218', element: 'Groundworks' },
+    { id: 'cc-5219', code: '5219', element: 'Drainage' },
+  ]),
+}));
+
 const approved = {
   id: 'ce-1', status: 'approved', eventType: 'variation',
   relationshipType: 'origin', financialTreatment: 'contractAmendment',
@@ -86,6 +93,26 @@ describe('Variation Order CE workflow', () => {
     const [, options] = fetch.mock.calls[0];
     expect(options.method).toBe('POST');
     expect(JSON.parse(options.body).actor).toBe('Test QS');
+  });
+
+  it('requires deliberate stable Cost Code selection for a legacy Draft line and saves UUID authority', async () => {
+    const draft = {
+      ...vo('draft'), version: 1,
+      lines: [{ id: 'line-1', costCodeId: null, costCode: '5218 — legacy label', costCodeSourceEvidence: '5218 — legacy label', costCodeAuthorityState: 'review_required', description: 'Works', netValue: 1200 }],
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: async () => JSON.stringify({ ...draft, version: 2, lines: [{ ...draft.lines[0], costCodeId: 'cc-5218', costCode: '5218', costCodeDescription: 'Groundworks' }] }) }));
+    await act(async () => root.render(<VariationOrderDrawer open variationOrder={draft} onClose={() => {}} />));
+    await act(async () => Promise.resolve());
+    expect(container.textContent).toContain('Current/source evidence: 5218 — legacy label');
+    expect(container.textContent).toContain('Needs Cost Code confirmation');
+    const search = container.querySelector('[aria-label="VO line 1 cost code search"]');
+    await act(async () => search.focus());
+    const option = document.body.querySelector('[role="option"][data-cost-code="5218"]');
+    await act(async () => option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+    expect(container.textContent).toContain('Cost Code confirmed');
+    await act(async () => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Save Draft').click());
+    const payload = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(payload.lines[0]).toMatchObject({ costCodeId: 'cc-5218', costCode: '5218', costCodeDescription: 'Groundworks', costCodeSourceEvidence: '5218 — legacy label' });
   });
 
   it('shows compact explicit authority and historic allocation inputs for multi-line Draft VOs', async () => {

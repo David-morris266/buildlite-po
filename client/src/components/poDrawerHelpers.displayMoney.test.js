@@ -4,9 +4,14 @@ import {
   formatExactDisplayMoney,
   formatSignedExactDisplayMoney,
   formatSignedDisplayMoney,
+  formatPoDate,
 } from './poDrawerHelpers';
 
 describe('display money formatting', () => {
+  it('keeps semantic calendar dates stable for display', () => {
+    expect(formatPoDate('2026-09-29')).toBe('29 Sept 2026');
+    expect(formatPoDate('2026-09-29T00:00:00.000Z')).toBe('29 Sept 2026');
+  });
   it('removes pence for sub-thousand values', () => {
     expect(formatDisplayMoney(999.99)).toBe('£1,000');
     expect(formatDisplayMoney(250)).toBe('£250');

@@ -789,7 +789,8 @@ async function approveCommercialEvent(clientId, id, { actor = null, comment = ""
   });
 }
 
-async function rejectCommercialEvent(clientId, id, { actor = null, comment = "" } = {}) {
+async function rejectCommercialEvent(clientId, id, { actor = null, comment = "" } = {}, options = {}) {
+  assertServicePermission(options.auth, PERMISSIONS.CE_APPROVE);
   return applyWorkflowAction(clientId, id, {
     validate: (status) =>
       canRejectCommercialEvent(status) ? null : "Only submitted events can be rejected",

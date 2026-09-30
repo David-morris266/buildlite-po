@@ -39,7 +39,11 @@ function rowToVariationOrder(row, lines = [], sources = [], audit = [], allocati
     lines: lines.map((line) => ({
       id: line.id,
       lineNumber: line.line_number,
+      costCodeId: line.cost_code_id || null,
       costCode: line.cost_code,
+      costCodeDescription: line.cost_code_description || '',
+      costCodeSourceEvidence: line.cost_code_source_evidence || line.cost_code || '',
+      costCodeAuthorityState: line.cost_code_id ? 'resolved' : 'review_required',
       description: line.description,
       netValue: money(line.net_value),
       vatTreatment: line.vat_treatment,
