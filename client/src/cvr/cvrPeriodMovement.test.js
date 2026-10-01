@@ -20,6 +20,7 @@ const row = (key, finalForecast, values = {}) => ({
   expectedLiability: values.expectedLiability ?? 0,
   expectedLiabilityCaptured: values.expectedLiabilityCaptured ?? true,
   vaExposureUplift: values.vaExposureUplift ?? 0,
+  changeExposure: values.changeExposure,
   commercialAdjustment: values.commercialAdjustment ?? 0,
   adjustmentReason: values.adjustmentReason || '', variance: (values.currentBudget ?? 100) - finalForecast,
 });
@@ -30,6 +31,22 @@ const model = (rows, extra = {}) => ({
 });
 
 describe('CVR period movement comparison', () => {
+  it('uses the canonical current component keys for the P02 movement bridge', () => {
+    const previous = row('3000', 90000, { systemForecast: 90000, changeExposure: 0 });
+    const current = row('3000', 167200, { systemForecast: 163200, changeExposure: 4000 });
+    const docs = [evidence('3000')];
+    const report = buildCvrPeriodComparison({
+      currentModel: model([current]), previousModel: model([previous], { historic: true, snapshot: {} }),
+      currentPeriod: hierarchy(docs, 'live'), previousPeriod: hierarchy(docs),
+    });
+    expect(report.rows[0].components.map(({ key, label, movement }) => ({ key, label, movement }))).toEqual([
+      { key: 'systemForecast', label: 'System Forecast', movement: 73200 },
+      { key: 'changeExposure', label: 'Change Exposure', movement: 4000 },
+      { key: 'commercialAdjustment', label: 'Commercial Adjustment', movement: 0 },
+    ]);
+    expect(report.rows[0]).toMatchObject({ movement: 77200, residual: 0, awaitingExplanation: 77200 });
+  });
+
   it('uses exact-pence current-minus-previous and reconciles the four authoritative components', () => {
     const previous = row('4120', 100.01, { systemForecast: 90.01, expectedLiability: 5, vaExposureUplift: 2, commercialAdjustment: 3 });
     const current = row('4120', 110.04, { systemForecast: 95.02, expectedLiability: 7.01, vaExposureUplift: 3, commercialAdjustment: 5.01, adjustmentReason: 'Revised QS risk' });

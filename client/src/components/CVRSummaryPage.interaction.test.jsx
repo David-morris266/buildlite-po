@@ -5,10 +5,15 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const summaryState = vi.hoisted(() => ({ current: null }));
+const saveCommentary = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 
 vi.mock('../api', () => ({ listPOs: vi.fn(async () => []) }));
 vi.mock('../commercial/commercialEvents', () => ({ subscribeCommercialChanged: () => () => {} }));
 vi.mock('../cvr/cvrSummaryHelpers', () => ({ buildCvrSummaryModel: () => summaryState.current }));
+vi.mock('../cvr/cvrPeriodStore', async (importOriginal) => ({
+  ...(await importOriginal()),
+  saveCvrPeriodCommentary: saveCommentary,
+}));
 vi.mock('../cvr/cvrPeriodAuthority', () => ({ isCvrServerAuthorityEnabled: () => false }));
 vi.mock('../ledger/ledgerAuthority', () => ({ isLedgerServerAuthorityEnabled: () => false }));
 vi.mock('../revenue/revenueAuthority', () => ({ isRevenueServerAuthorityEnabled: () => false }));
@@ -62,6 +67,7 @@ describe('CVR Summary Cost Code interaction', () => {
   let root;
 
   beforeEach(() => {
+    saveCommentary.mockClear();
     summaryState.current = model();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -79,6 +85,61 @@ describe('CVR Summary Cost Code interaction', () => {
       await Promise.resolve();
     });
   }
+
+  it('saves a second component explanation with the complete authoritative collection', async () => {
+    const systemExplanation = {
+      costCodeKey: '3640', component: 'systemForecast', previousPeriodId: 'period-p01',
+      previousSnapshotId: 'snapshot-p01', fingerprint: 'p01|snapshot|3640|systemForecast|7320000',
+      unexplainedAmount: 73200, reason: 'Explanation A',
+    };
+    const movement = movementRow({
+      unexplained: true,
+      components: [
+        {
+          key: 'systemForecast', label: 'System Forecast', available: true,
+          previousLabel: '£90,000.00', currentLabel: '£163,200.00', movementLabel: '+£73,200.00',
+          unattributed: 0, fingerprint: systemExplanation.fingerprint,
+          explanation: { ...systemExplanation, stale: false },
+        },
+        {
+          key: 'changeExposure', label: 'Change Exposure', available: true,
+          previousLabel: '£0.00', currentLabel: '£4,000.00', movementLabel: '+£4,000.00',
+          unattributed: 4000, fingerprint: 'p01|snapshot|3640|changeExposure|400000',
+        },
+      ],
+    });
+    summaryState.current = model([canonicalRow], movement);
+    summaryState.current.commentary.movementExplanations = [systemExplanation];
+    summaryState.current.movementReport.previousPeriodId = 'period-p01';
+    summaryState.current.movementReport.previousSnapshotId = 'snapshot-p01';
+
+    await render();
+    const textarea = container.querySelector('.cvr-movement__explanation textarea');
+    expect(textarea).not.toBeNull();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(textarea, 'Explanation B');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      await Promise.resolve();
+    });
+    const saveButton = [...container.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Save explanation');
+    expect(saveButton.disabled).toBe(false);
+    await act(async () => {
+      saveButton.click();
+      await Promise.resolve();
+    });
+
+    expect(saveCommentary).toHaveBeenCalledWith('hawthorn', 'P04', {
+      movementExplanations: [
+        systemExplanation,
+        {
+          costCodeKey: '3640', component: 'changeExposure', previousPeriodId: 'period-p01',
+          previousSnapshotId: 'snapshot-p01', fingerprint: 'p01|snapshot|3640|changeExposure|400000',
+          unexplainedAmount: 4000, reason: 'Explanation B',
+        },
+      ],
+    });
+  });
 
   it('keeps the Summary landing focused and routes review work to dedicated views', async () => {
     const onSelectSubview = vi.fn();

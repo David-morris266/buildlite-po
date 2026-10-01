@@ -583,6 +583,31 @@ describe('commentary draft-only editing', () => {
     }, 'P01');
     expect(lockedAttempt.ok).toBe(false);
   });
+
+  it('preserves movement explanations alongside all narrative commentary fields', () => {
+    createOrOpenDraftPeriod(DEV_ID);
+    const movementExplanation = {
+      costCodeKey: '3000', component: 'systemForecast', unexplainedAmount: 73200,
+      fingerprint: 'p01|snapshot|3000|systemForecast|7320000', reason: 'Explanation A',
+    };
+    const saved = updateCvrPeriodCommentary(DEV_ID, {
+      keyCommercialIssues: 'Key issue',
+      commercialOpportunities: 'Opportunity',
+      financialRisks: 'Risk',
+      actionsBeforeNextCvr: 'Action',
+      movementExplanations: [movementExplanation],
+    }, 'P01');
+    expect(saved.ok).toBe(true);
+
+    const summary = buildCvrSummaryModel(development, { pos: [], periodKey: 'P01' });
+    expect(summary.commentary).toMatchObject({
+      keyCommercialIssues: 'Key issue',
+      commercialOpportunities: 'Opportunity',
+      financialRisks: 'Risk',
+      actionsBeforeNextCvr: 'Action',
+      movementExplanations: [movementExplanation],
+    });
+  });
 });
 
 describe('buildCommercialCostSummary empty state', () => {

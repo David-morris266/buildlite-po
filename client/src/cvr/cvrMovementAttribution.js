@@ -1,5 +1,6 @@
 const COMPONENT_LABELS = {
   systemForecast: 'System Forecast',
+  changeExposure: 'Change Exposure',
   expectedLiability: 'Expected Liability',
   vaExposureUplift: 'Variation Account exposure',
   commercialAdjustment: 'Commercial Adjustment',
@@ -173,7 +174,9 @@ export function attributeCvrMovementRow({ row, current, previous, currentPeriod,
     let attributions = [];
     if (component.available && component.key === 'systemForecast') attributions = systemTransitionAttributions(component, current, previous);
     if (component.available && component.key === 'expectedLiability') attributions = ceAttributions(component, current, previous);
-    if (component.available && component.key === 'vaExposureUplift') attributions = vaAttributions(component, current, previous);
+    if (component.available && ['changeExposure', 'vaExposureUplift'].includes(component.key)) {
+      attributions = vaAttributions(component, current, previous);
+    }
     if (component.available && component.key === 'commercialAdjustment') attributions = adjustmentAttributions(component, current, previous);
     const attributedPence = attributions.reduce((sum, item) => sum + item.amountPence, 0);
     const movementPence = component.available ? toPence(component.movement) : 0;

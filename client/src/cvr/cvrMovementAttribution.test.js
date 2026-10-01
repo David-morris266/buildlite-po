@@ -68,6 +68,41 @@ describe('deterministic CVR movement attribution', () => {
     });
   });
 
+  it('recognises canonical Change Exposure and attributes it only from exact immutable VA history', () => {
+    const previous = { variationExposureItems: [{
+      variationAccountItemId: 'va-1', itemVersion: 1, qsForecast: 7000,
+      effectiveVaExposure: 7000, authorityAlreadyInCurrentContract: 7000, vaExposureUplift: 0,
+    }] };
+    const current = { variationExposureItems: [{
+      variationAccountItemId: 'va-1', itemVersion: 2, qsForecast: 8000,
+      effectiveVaExposure: 8000, authorityAlreadyInCurrentContract: 7000, vaExposureUplift: 1000,
+      forecastHistory: [{ itemVersion: 2, priorValue: 7000, newValue: 8000, reason: 'Forecast revised' }],
+    }] };
+    const result = attributeCvrMovementRow({
+      row: row([component('changeExposure', 1000)]), previous, current,
+      currentPeriod: period(), previousPeriod,
+    });
+    expect(result.components[0]).toMatchObject({
+      key: 'changeExposure', label: 'Change Exposure', attributed: 1000, unattributed: 0,
+    });
+  });
+
+  it('leaves a new canonical Change Exposure item awaiting explanation when P01 has no item evidence', () => {
+    const result = attributeCvrMovementRow({
+      row: row([component('changeExposure', 4000)]),
+      previous: { variationExposureItems: [] },
+      current: { variationExposureItems: [{
+        variationAccountItemId: 'va-2', itemVersion: 2, qsForecast: 4000,
+        effectiveVaExposure: 4000, authorityAlreadyInCurrentContract: 0, vaExposureUplift: 4000,
+        forecastHistory: [{ itemVersion: 2, priorValue: null, newValue: 4000, reason: 'New forecast' }],
+      }] },
+      currentPeriod: period(), previousPeriod,
+    });
+    expect(result.components[0]).toMatchObject({
+      key: 'changeExposure', attributions: [], unattributed: 4000, requiresExplanation: true,
+    });
+  });
+
   it.each([
     ['missing previous item', [], [{ itemVersion: 2, priorValue: 7000, newValue: 8000 }]],
     ['missing history', null, []],
@@ -203,5 +238,32 @@ describe('deterministic CVR movement attribution', () => {
       automaticallyAttributed: 1000, qsExplained: 500, awaitingExplanation: 0,
       managementMovement: 1500, managementReconciles: true,
     });
+  });
+
+  it('keeps dual canonical component explanations current and detects a stale Change Exposure fingerprint', () => {
+    const system = component('systemForecast', 73200);
+    const exposure = component('changeExposure', 4000);
+    const movementRow = { ...row([system, exposure]), movement: 77200, residual: 0 };
+    const explanations = [system, exposure].map((item) => ({
+      costCodeKey: '4120', component: item.key,
+      fingerprint: movementExplanationFingerprint({ previousPeriod, row: movementRow, component: item }),
+      unexplainedAmount: item.movement, reason: `${item.key} explanation`,
+    }));
+    const current = attributeCvrMovementRow({
+      row: movementRow, current: { variationExposureItems: [] }, previous: { variationExposureItems: [] },
+      currentPeriod: period(explanations), previousPeriod,
+    });
+    expect(current).toMatchObject({ qsExplained: 77200, awaitingExplanation: 0 });
+    expect(current.components.map((item) => item.explanation.stale)).toEqual([false, false]);
+
+    const changedExposure = component('changeExposure', 5000);
+    const changedRow = { ...row([system, changedExposure]), movement: 78200, residual: 0 };
+    const changed = attributeCvrMovementRow({
+      row: changedRow, current: { variationExposureItems: [] }, previous: { variationExposureItems: [] },
+      currentPeriod: period(explanations), previousPeriod,
+    });
+    expect(changed.components[0].explanation.stale).toBe(false);
+    expect(changed.components[1].explanation.stale).toBe(true);
+    expect(changed).toMatchObject({ qsExplained: 73200, awaitingExplanation: 5000 });
   });
 });

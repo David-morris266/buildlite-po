@@ -88,7 +88,13 @@ function normaliseCommentary(value, errors) {
     ? value.movementExplanations.map((item, index) => {
       const reason = trimText(item?.reason, 2000);
       const component = String(item?.component || '');
-      if (!item?.costCodeKey || !['systemForecast', 'expectedLiability', 'vaExposureUplift', 'commercialAdjustment'].includes(component)) {
+      if (!item?.costCodeKey || ![
+        'systemForecast',
+        'changeExposure',
+        'expectedLiability',
+        'vaExposureUplift',
+        'commercialAdjustment',
+      ].includes(component)) {
         errors.push(`movementExplanations[${index}] has invalid Cost Code/component identity.`);
       }
       if (!reason) errors.push(`movementExplanations[${index}].reason is required.`);

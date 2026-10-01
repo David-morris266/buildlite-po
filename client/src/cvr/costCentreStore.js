@@ -95,10 +95,14 @@ function emptyCommentary() {
 function normaliseCommentary(value) {
   const base = value && typeof value === 'object' ? value : {};
   return {
+    ...base,
     keyCommercialIssues: String(base.keyCommercialIssues || ''),
     commercialOpportunities: String(base.commercialOpportunities || ''),
     financialRisks: String(base.financialRisks || ''),
     actionsBeforeNextCvr: String(base.actionsBeforeNextCvr || ''),
+    movementExplanations: Array.isArray(base.movementExplanations)
+      ? base.movementExplanations.map((item) => ({ ...item }))
+      : [],
   };
 }
 

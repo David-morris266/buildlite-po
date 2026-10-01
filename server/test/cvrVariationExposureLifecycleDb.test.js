@@ -6,6 +6,7 @@ const { prepareIntegrationTestDatabase } = require('./integrationTestSetup');
 const {
   approveCvrPeriod,
   getCvrPeriod,
+  patchCvrPeriod,
   rejectCvrPeriod,
   submitCvrPeriod,
 } = require('../services/cvrPeriodRepository');
@@ -131,4 +132,61 @@ test('same-direction acknowledgement is immutable, authenticated and attempt-spe
   assert.equal(rows[0].membershipId, fixture.membership.id);
   assert.equal(rows[0].effectiveFloor, 18000);
   await assert.rejects(pool.query(`UPDATE cvr_variation_exposure_acknowledgements SET reason='changed' WHERE id=$1`, [rows[0].id]), /immutable/i);
+
+  const returnedToDraft = await rejectCvrPeriod(
+    fixture.client.id, fixture.developmentId, acknowledgementPeriod.id,
+    { comment: 'Refresh movement explanation evidence' }, { actor: fixture.user.display_name }
+  );
+  assert.equal(returnedToDraft.ok, true, returnedToDraft.message);
+
+  const systemExplanation = {
+    costCodeKey: '3000', component: 'systemForecast', previousPeriodId: fixture.period.id,
+    previousSnapshotId: fixture.period.id, fingerprint: `${fixture.period.id}|snapshot|3000|systemForecast|7320000`,
+    unexplainedAmount: 73200, reason: 'Approved order and issued VO movement',
+  };
+  const firstSave = await patchCvrPeriod(
+    fixture.client.id, fixture.developmentId, acknowledgementPeriod.id,
+    { version: returnedToDraft.period.version, commentary: { movementExplanations: [systemExplanation] } },
+    { actor: fixture.user.display_name, auth: fixture.auth }
+  );
+  assert.equal(firstSave.ok, true, firstSave.message);
+  const changeExplanation = {
+    costCodeKey: '3000', component: 'changeExposure', previousPeriodId: fixture.period.id,
+    previousSnapshotId: fixture.period.id, fingerprint: `${fixture.period.id}|snapshot|3000|changeExposure|400000`,
+    unexplainedAmount: 4000, reason: 'Variation remains outside Current Contract',
+  };
+  const secondSave = await patchCvrPeriod(
+    fixture.client.id, fixture.developmentId, acknowledgementPeriod.id,
+    { version: firstSave.period.version, commentary: {
+      movementExplanations: [...firstSave.period.commentary.movementExplanations, changeExplanation],
+    } },
+    { actor: fixture.user.display_name, auth: fixture.auth }
+  );
+  assert.equal(secondSave.ok, true, secondSave.message);
+  assert.equal(secondSave.period.commentary.movementExplanations.length, 2);
+  assert.deepEqual(secondSave.period.commentary.movementExplanations.map((entry) => [entry.component, entry.unexplainedAmount]), [
+    ['systemForecast', 73200], ['changeExposure', 4000],
+  ]);
+  assert.ok(secondSave.period.commentary.movementExplanations.every((entry) =>
+    entry.userId === fixture.user.id && entry.membershipId === fixture.membership.id && entry.recordedAt));
+
+  const staleSave = await patchCvrPeriod(
+    fixture.client.id, fixture.developmentId, acknowledgementPeriod.id,
+    { version: firstSave.period.version, commentary: secondSave.period.commentary },
+    { actor: fixture.user.display_name, auth: fixture.auth }
+  );
+  assert.equal(staleSave.ok, false);
+  assert.equal(staleSave.status, 409);
+  assert.match(staleSave.message, /version conflict/i);
+
+  const refreshed = await getCvrPeriod(fixture.client.id, fixture.developmentId, acknowledgementPeriod.id);
+  assert.deepEqual(refreshed.period.commentary.movementExplanations, secondSave.period.commentary.movementExplanations);
+  assert.equal(refreshed.period.status, 'draft');
+  const resubmitted = await submitCvrPeriod(
+    fixture.client.id, fixture.developmentId, acknowledgementPeriod.id, {},
+    { actor: fixture.user.display_name, auth: fixture.auth }
+  );
+  assert.equal(resubmitted.ok, true, resubmitted.message);
+  assert.equal(resubmitted.period.status, 'submitted');
+  assert.deepEqual(resubmitted.period.commentary.movementExplanations, secondSave.period.commentary.movementExplanations);
 });
