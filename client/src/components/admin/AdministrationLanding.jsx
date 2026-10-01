@@ -23,9 +23,9 @@ const CARD_META = {
   users: {
     icon: '🛡️',
     title: 'Users',
-    description: 'User directory for roles and approval rights.',
+    description: 'Authenticated company memberships, roles and bounded capabilities.',
     accent: 'company',
-    status: 'Placeholder',
+    status: 'Live',
   },
   clients: {
     icon: '👥',

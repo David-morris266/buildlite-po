@@ -270,7 +270,7 @@ function ApplicationContent() {
         onFocusHandled={() => setListFocusPo(null)} onCreateFirstPO={() => navigateCanonical({ ...homeApplicationRoute(), view: 'form' })}
         onCreateDevelopment={handleOpenDevelopments} onOpenPackage={handleOpenPackage} /></CommercialWorkspace> : null}
       {tab === 'archive' ? <CommercialWorkspace><POArchive onOpenPackage={handleOpenPackage} /></CommercialWorkspace> : null}
-      {tab === 'payment-approval' ? <CommercialWorkspace><PaymentApprovalRun /></CommercialWorkspace> : null}
+      {tab === 'payment-approval' ? <CommercialWorkspace><PaymentApprovalRun onOpenAccounts={() => handleHomeNavigate({ view: 'payment-release' })} /></CommercialWorkspace> : null}
       {tab === 'payment-release' ? <CommercialWorkspace><PaymentReleaseWorklist /></CommercialWorkspace> : null}
     </main>
   </div></CommercialAssistantProvider></NavigationProvider>;

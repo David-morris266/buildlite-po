@@ -14,4 +14,5 @@ function createAuthenticationMiddleware(adapter) {
     } catch (error) { res.status(error.status || 500).json({ message: error.message, code: error.code, memberships:error.memberships }); }
   }];
 }
-module.exports = { createAuthenticationMiddleware };
+function createInvitationAuthenticationMiddleware(adapter){return [adapter.middleware,async function invitationIdentity(req,res,next){try{const identity=await adapter.invitationIdentity?.(req);if(!identity?.providerUserId||!identity?.email)return res.status(401).json({message:'Authenticated invitation identity is required.'});req.invitationIdentity=identity;next();}catch(error){res.status(error.status||500).json({message:error.message||'Invitation identity could not be verified.'});}}];}
+module.exports = { createAuthenticationMiddleware,createInvitationAuthenticationMiddleware };

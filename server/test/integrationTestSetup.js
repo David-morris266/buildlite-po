@@ -94,6 +94,14 @@ async function prepareIntegrationTestDatabase(pool) {
   if (!hasCommercialDirectorStructureAuthority.rowCount) await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '060_commercial_director_structure_authority.sql'), 'utf8'));
   const hasLedgerResolution = await pool.query("SELECT 1 FROM information_schema.columns WHERE table_name='ledger_transactions' AND column_name='source_cost_code_key'");
   if (!hasLedgerResolution.rowCount) await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '061_ledger_cost_code_resolution.sql'), 'utf8'));
+  const hasMembershipCapabilities = await pool.query("SELECT 1 FROM information_schema.tables WHERE table_name='client_user_membership_capabilities'");
+  const membershipMigration=fs.readFileSync(path.join(__dirname, '..', 'migrations', '063_tenant_membership_administration.sql'), 'utf8');
+  if (!hasMembershipCapabilities.rowCount) await pool.query(membershipMigration);
+  else {const actorGuard=membershipMigration.match(/CREATE OR REPLACE FUNCTION validate_payment_release_batch_actor\(\)[\s\S]*?\$\$ LANGUAGE plpgsql;/i)?.[0];if(actorGuard)await pool.query(actorGuard);}
+  const cancellationAudit = await pool.query("SELECT pg_get_constraintdef(oid) definition FROM pg_constraint WHERE conname='tenant_membership_authority_audit_operation_check'");
+  if (!cancellationAudit.rows[0]?.definition?.includes('invitation_cancelled')) {
+    await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '064_membership_invitation_cancellation_audit.sql'), 'utf8'));
+  }
   const activeClientId = await ensureActiveTestClient(pool);
   await ensureDefaultTestPrincipal(pool, activeClientId);
 }

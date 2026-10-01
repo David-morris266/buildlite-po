@@ -168,3 +168,7 @@ Adds dedicated Plot Master authority for Admin, Commercial Director, Commercial 
 `060_commercial_director_structure_authority.sql` grants Commercial Directors the existing tenant Commercial Structure and Cost Code onboarding authority without granting platform or user administration.
 
 `061_ledger_cost_code_resolution.sql` separates immutable accounting-source Cost Code evidence from resolved Company Cost Code authority, backfills only safe historic matches, adds append-only resolution audit evidence, and introduces `ledger.manage`.
+
+`063_tenant_membership_administration.sql` retains one primary operational role per tenant membership and adds the bounded Company Administration and Finance Operations capability catalogue, expiring tenant invitations, optimistic membership versioning, immutable membership-authority audit, orphan-safe Admin compatibility, and capability-aware Accounts release authority. It does not infer Company Administration for Commercial Directors or alter commercial facts.
+
+`064_membership_invitation_cancellation_audit.sql` extends only the immutable membership-authority audit operation allowlist with `invitation_cancelled`. It rewrites no audit, invitation, membership, capability or commercial row.

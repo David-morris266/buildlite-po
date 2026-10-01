@@ -15,7 +15,7 @@ router.get('/me', async (req, res) => {
     res.json({
       user: { id: req.buildliteAuth.userId, displayName: req.buildliteAuth.displayName, email: req.buildliteAuth.email },
       activeTenant: { clientId: req.buildliteAuth.clientId, membershipId: req.buildliteAuth.membershipId, roleKey: req.buildliteAuth.roleKey, roleName: req.buildliteAuth.roleName,
-        code: tenantReadiness.tenant?.code || null, name: tenantReadiness.tenant?.name || null },
+        membershipVersion:req.buildliteAuth.membershipVersion,capabilityKeys:req.buildliteAuth.capabilityKeys||[],code: tenantReadiness.tenant?.code || null, name: tenantReadiness.tenant?.name || null },
       permissions: req.buildliteAuth.permissions || [], platformPermissions:req.buildliteAuth.platformPermissions||[], memberships: req.buildliteAuth.memberships || [],
       tenantReadiness,
     });

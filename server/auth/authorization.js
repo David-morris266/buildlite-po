@@ -9,9 +9,12 @@ async function resolveBuildLitePrincipal(identity, requestedClientId = null, db 
   const userResult = await run(`SELECT * FROM buildlite_users WHERE auth_provider=$1 AND provider_user_id=$2`, [identity.provider || 'clerk', identity.providerUserId]);
   const user = userResult.rows[0];
   if (!user || user.status !== 'active') throw forbidden('BuildLite user is inactive or not provisioned.');
-  const membershipResult = await run(`SELECT m.id membership_id,m.client_id,m.is_active,r.key role_key,r.name role_name,c.code client_code,c.name client_name,
-    COALESCE(array_agg(rp.permission_key) FILTER (WHERE rp.permission_key IS NOT NULL),'{}') permissions
-    FROM client_user_memberships m JOIN clients c ON c.id=m.client_id JOIN roles r ON r.id=m.role_id LEFT JOIN role_permissions rp ON rp.role_id=r.id
+  const membershipResult = await run(`SELECT m.id membership_id,m.client_id,m.is_active,m.version,r.key role_key,r.name role_name,c.code client_code,c.name client_name,
+    COALESCE(array_agg(DISTINCT effective.permission_key) FILTER (WHERE effective.permission_key IS NOT NULL),'{}') permissions,
+    COALESCE(array_agg(DISTINCT mc.capability_key) FILTER (WHERE mc.is_active),'{}') capability_keys
+    FROM client_user_memberships m JOIN clients c ON c.id=m.client_id JOIN roles r ON r.id=m.role_id
+    LEFT JOIN LATERAL (SELECT rp.permission_key FROM role_permissions rp WHERE rp.role_id=r.id UNION SELECT cp.permission_key FROM client_user_membership_capabilities cm JOIN membership_capability_permissions cp ON cp.capability_key=cm.capability_key WHERE cm.client_id=m.client_id AND cm.membership_id=m.id AND cm.is_active) effective ON true
+    LEFT JOIN client_user_membership_capabilities mc ON mc.client_id=m.client_id AND mc.membership_id=m.id
     WHERE m.user_id=$1 GROUP BY m.id,r.id,c.id ORDER BY m.created_at,m.id`, [user.id]);
   const active = membershipResult.rows.filter(row => row.is_active);
   let membership = requestedClientId ? active.find(row => String(row.client_id) === String(requestedClientId)) : active.length === 1 ? active[0] : null;
@@ -22,7 +25,7 @@ async function resolveBuildLitePrincipal(identity, requestedClientId = null, db 
   }
   return { userId:user.id,provider:identity.provider||'clerk',providerUserId:identity.providerUserId,displayName:user.display_name,
     email:user.email_snapshot,clientId:membership.client_id,membershipId:membership.membership_id,roleKey:membership.role_key,
-    roleName:membership.role_name,permissions:[...membership.permissions],platformPermissions:platformPermissions(identity.providerUserId),memberships:active.map(row=>({id:row.membership_id,clientId:row.client_id,clientCode:row.client_code,clientName:row.client_name,roleKey:row.role_key,roleName:row.role_name})) };
+    roleName:membership.role_name,membershipVersion:Number(membership.version||1),capabilityKeys:[...(membership.capability_keys||[])],permissions:[...(membership.permissions||[])],platformPermissions:platformPermissions(identity.providerUserId),memberships:active.map(row=>({id:row.membership_id,clientId:row.client_id,clientCode:row.client_code,clientName:row.client_name,roleKey:row.role_key,roleName:row.role_name,capabilityKeys:[...(row.capability_keys||[])]})) };
 }
 function platformPermissions(providerUserId){return String(process.env.BUILDLITE_PLATFORM_OPERATOR_IDS||'').split(',').map(x=>x.trim()).filter(Boolean).includes(String(providerUserId||''))?['platform.tenant_provision']:[];}
 function assertPlatformPermission(auth,permission){if(!auth?.platformPermissions?.includes(permission))throw forbidden(`Platform permission required: ${permission}`);}

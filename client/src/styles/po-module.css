@@ -8188,6 +8188,30 @@
   align-self: center;
 }
 
+.admin-users__identity,
+.admin-users__capability span {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.admin-users__identity small,
+.admin-users__capability small {
+  color: var(--po-text-muted, #64748b);
+}
+
+.admin-users__capabilities {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.admin-users__capability,
+.admin-users__risk {
+  align-items: start;
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: auto 1fr;
+}
+
 .admin-record-list__badges .admin-chip {
   white-space: nowrap;
 }

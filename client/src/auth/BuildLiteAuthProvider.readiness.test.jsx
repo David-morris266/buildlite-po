@@ -9,7 +9,9 @@ vi.mock('@clerk/react', () => ({
   ClerkProvider: ({ children }) => children,
   Show: ({ when, children }) => when === 'signed-in' ? children : null,
   SignIn: () => null,
+  SignUp: () => null,
   useAuth: () => ({ getToken }),
+  useClerk: () => ({ signOut: vi.fn() }),
 }));
 
 import BuildLiteAuthProvider, { useBuildLitePrincipal } from './BuildLiteAuthProvider';

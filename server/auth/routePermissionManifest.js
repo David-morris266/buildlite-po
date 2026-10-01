@@ -41,6 +41,10 @@ const CRITICAL_ROUTE_PERMISSIONS = Object.freeze({
   'POST /api/clients/active': P.TENANT_CONFIGURE,
   'POST /api/developments': P.DEVELOPMENT_CREATE,
   'PUT /api/company-settings': P.COMPANY_SETTINGS_MANAGE,
+  'GET /api/memberships': P.USERS_MANAGE,
+  'POST /api/memberships/invitations': `${P.USERS_MANAGE}&${P.ROLES_MANAGE}`,
+  'POST /api/memberships/invitations/:invitationId/cancel': P.USERS_MANAGE,
+  'PATCH /api/memberships/:membershipId': `${P.USERS_MANAGE}&${P.ROLES_MANAGE}`,
   'POST /api/commercial-structure/recommended-template/adopt': P.COMMERCIAL_STRUCTURE_MANAGE,
 });
 module.exports = { CRITICAL_ROUTE_PERMISSIONS };

@@ -1,91 +1,25 @@
-import { useMemo, useState } from 'react';
-import { addUser, listUsers, updateUser } from '../../admin/userStore';
+import {useCallback,useEffect,useState} from 'react';
+import {useBuildLitePrincipal} from '../../auth/BuildLiteAuthProvider';
+import {cancelTenantInvitation,inviteTenantMember,loadMembershipAdministration,updateTenantMember} from '../../admin/membershipAdminService';
 import AdminPageShell from './AdminPageShell';
 
-const EMPTY_FORM = {
-  name: '',
-  role: 'Viewer',
-  approvalRights: 'None',
-  active: true,
-};
-
-export default function AdminUsersPage({ onBack }) {
-  const [refresh, setRefresh] = useState(0);
-  const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState(EMPTY_FORM);
-
-  const users = useMemo(() => {
-    void refresh;
-    return listUsers();
-  }, [refresh]);
-
-  function saveUser() {
-    const result = editingId === 'new' ? addUser(form) : updateUser(editingId, form);
-    if (!result.ok) {
-      window.alert(result.errors?.[0]);
-      return;
-    }
-    setEditingId(null);
-    setForm(EMPTY_FORM);
-    setRefresh((value) => value + 1);
-  }
-
-  return (
-    <AdminPageShell
-      eyebrow="Administration"
-      title="Users"
-      lead="Placeholder user directory. Authentication and permissions will be added in a future sprint."
-      onBack={onBack}
-    >
-      <div className="admin-toolbar">
-        <button type="button" className="po-btn-primary" onClick={() => { setEditingId('new'); setForm(EMPTY_FORM); }}>
-          Add User
-        </button>
-      </div>
-
-      <div className="po-table-wrap po-module-card">
-        <table className="po-data-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Role</th>
-              <th>Approval Rights</th>
-              <th>Active</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user) => (
-              <tr key={user.id}>
-                <td>{user.name}</td>
-                <td>{user.role}</td>
-                <td>{user.approvalRights}</td>
-                <td>{user.active ? 'Yes' : 'No'}</td>
-                <td>
-                  <button type="button" className="cvr-summary__link-btn" onClick={() => { setEditingId(user.id); setForm(user); }}>
-                    Edit
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {editingId ? (
-        <form className="admin-form po-module-card" onSubmit={(e) => { e.preventDefault(); saveUser(); }}>
-          <div className="admin-form__grid">
-            <label className="dev-form__field"><span className="dev-form__label">Name</span><input className="input" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} /></label>
-            <label className="dev-form__field"><span className="dev-form__label">Role</span><input className="input" value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))} /></label>
-            <label className="dev-form__field admin-form__field--wide"><span className="dev-form__label">Approval Rights</span><input className="input" value={form.approvalRights} onChange={(e) => setForm((p) => ({ ...p, approvalRights: e.target.value }))} /></label>
-            <label className="dev-form__field"><span className="dev-form__label">Active</span><select className="input" value={form.active ? 'yes' : 'no'} onChange={(e) => setForm((p) => ({ ...p, active: e.target.value === 'yes' }))}><option value="yes">Yes</option><option value="no">No</option></select></label>
-          </div>
-          <div className="admin-form__actions">
-            <button type="submit" className="po-btn-primary">Save User</button>
-            <button type="button" className="po-list-btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
-          </div>
-        </form>
-      ) : null}
-    </AdminPageShell>
-  );
+const HIGH_RISK='This user can both authorise payments and accept them into Accounts.';
+const EMPTY={email:'',roleKey:'',capabilities:[],riskAcknowledged:false};
+const toggle=(items,key)=>items.includes(key)?items.filter(value=>value!==key):[...items,key];
+export default function AdminUsersPage({onBack}){
+ const principal=useBuildLitePrincipal(),canManage=principal?.permissions?.includes('users.manage')&&principal?.permissions?.includes('roles.manage');
+ const [data,setData]=useState({members:[],invitations:[],roles:[],capabilities:[]}),[loading,setLoading]=useState(true),[error,setError]=useState(''),[form,setForm]=useState(null),[editing,setEditing]=useState(null),[busy,setBusy]=useState(false);
+ const load=useCallback(async()=>{if(!canManage){setLoading(false);return;}setLoading(true);setError('');try{setData(await loadMembershipAdministration());}catch(e){setError(e.message);}finally{setLoading(false);}},[canManage]);useEffect(()=>{load();},[load]);
+ const highRisk=value=>value.roleKey==='commercial_director'&&value.capabilities.includes('finance_operations');
+ async function invite(event){event.preventDefault();if(!form.roleKey||highRisk(form)&&!form.riskAcknowledged)return;setBusy(true);setError('');try{await inviteTenantMember(form);setForm(null);await load();}catch(e){setError(e.message);}finally{setBusy(false);}}
+ async function save(event){event.preventDefault();if(highRisk(editing)&&!editing.riskAcknowledged)return;setBusy(true);setError('');try{await updateTenantMember(editing.id,{version:editing.version,roleKey:editing.roleKey,capabilities:editing.capabilities,isActive:editing.isActive,reason:editing.reason,riskAcknowledged:editing.riskAcknowledged});setEditing(null);await load();}catch(e){setError(e.message);}finally{setBusy(false);}}
+ async function cancelInvitation(item){if(!window.confirm(`Cancel the invitation for ${item.email}?`))return;setBusy(true);setError('');try{const result=await cancelTenantInvitation(item.id,item.version);if(result.providerCleanupPending)setError('Invitation cancelled in BuildLite. Provider cleanup still requires attention.');await load();}catch(e){setError(e.message);}finally{setBusy(false);}}
+ const capabilityFields=(value,setValue)=><fieldset className="admin-users__capabilities"><legend>Additional capabilities</legend>{data.capabilities.map(item=><label className="admin-users__capability" key={item.key}><input type="checkbox" checked={value.capabilities.includes(item.key)} onChange={()=>setValue(current=>({...current,capabilities:toggle(current.capabilities,item.key),riskAcknowledged:false}))}/><span><strong>{item.label}</strong><small>{item.description}</small></span></label>)}{highRisk(value)?<label className="admin-users__risk"><input type="checkbox" checked={value.riskAcknowledged} onChange={event=>setValue(current=>({...current,riskAcknowledged:event.target.checked}))}/><span>{HIGH_RISK}</span></label>:null}</fieldset>;
+ return <AdminPageShell eyebrow="Administration" title="Users" lead="Authenticated company memberships and bounded access authority." onBack={onBack}>
+  {error?<div role="alert" className="po-message po-message--error">{error}</div>:null}
+  {!canManage?<p>You do not have Company Administration authority. Ask an active Company Administrator to manage access.</p>:<button type="button" className="po-btn-primary" onClick={()=>setForm(EMPTY)}>Invite user</button>}
+  {loading?<p>Loading company users…</p>:<div className="po-table-wrap po-module-card"><table className="po-data-table"><thead><tr><th>User</th><th>Primary role</th><th>Capabilities</th><th>Status</th><th/></tr></thead><tbody>{data.members.map(member=><tr key={member.id}><td><span className="admin-users__identity"><strong>{member.display_name}</strong><small>{member.email_snapshot}</small></span></td><td>{member.role_name}</td><td>{member.capabilities.length?member.capabilities.map(key=><span key={key} className="po-status-badge">{data.capabilities.find(item=>item.key===key)?.label||key}</span>):'None'}</td><td>{member.status==='active'?'Active':'Inactive'}</td><td>{canManage&&member.id!==principal.activeTenant?.membershipId?<button type="button" onClick={()=>setEditing({...member,roleKey:member.role_key,isActive:member.is_active,reason:'',riskAcknowledged:false})}>Manage</button>:null}</td></tr>)}{data.invitations.map(item=><tr key={item.id}><td><span className="admin-users__identity"><strong>{item.email}</strong><small>Invitation</small></span></td><td>{item.role_name}</td><td>{item.capabilities.map(key=>data.capabilities.find(value=>value.key===key)?.label||key).join(', ')||'None'}</td><td>{item.status==='cancelled'?'Cancelled':item.status==='expired'?'Expired':`Pending · expires ${new Date(item.expires_at).toLocaleDateString('en-GB')}`}</td><td>{canManage&&item.status==='pending'?<button type="button" disabled={busy} onClick={()=>cancelInvitation(item)}>Cancel invitation</button>:null}</td></tr>)}</tbody></table></div>}
+  {form?<form className="admin-form po-module-card" onSubmit={invite}><h3>Invite user</h3><label>Email<input className="input" type="email" required value={form.email} onChange={event=>setForm(current=>({...current,email:event.target.value}))}/></label><label>Primary role<select className="input" required value={form.roleKey} onChange={event=>setForm(current=>({...current,roleKey:event.target.value,riskAcknowledged:false}))}><option value="">Select role</option>{data.roles.map(role=><option key={role.key} value={role.key}>{role.name}</option>)}</select></label>{capabilityFields(form,setForm)}<div className="admin-form__actions"><button disabled={busy||!form.roleKey||highRisk(form)&&!form.riskAcknowledged}>Send invitation</button><button type="button" onClick={()=>setForm(null)}>Cancel</button></div></form>:null}
+  {editing?<form className="admin-form po-module-card" onSubmit={save}><h3>Manage {editing.display_name}</h3><label>Primary role<select className="input" value={editing.roleKey} onChange={event=>setEditing(current=>({...current,roleKey:event.target.value,riskAcknowledged:false}))}>{data.roles.map(role=><option key={role.key} value={role.key}>{role.name}</option>)}</select></label>{capabilityFields(editing,setEditing)}<label>Status<select className="input" value={editing.isActive?'active':'inactive'} onChange={event=>setEditing(current=>({...current,isActive:event.target.value==='active'}))}><option value="active">Active</option><option value="inactive">Inactive</option></select></label><label>Reason<input className="input" required value={editing.reason} onChange={event=>setEditing(current=>({...current,reason:event.target.value}))}/></label><div className="admin-form__actions"><button disabled={busy||highRisk(editing)&&!editing.riskAcknowledged}>Save access</button><button type="button" onClick={()=>setEditing(null)}>Cancel</button></div></form>:null}
+ </AdminPageShell>;
 }

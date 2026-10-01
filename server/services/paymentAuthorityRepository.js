@@ -161,7 +161,11 @@ async function listQueue(clientId, auth) {
     const facts = await loadLockedFacts({ query }, clientId, id);
     const ready = eligibility(facts);
     const authorityDecision = (await query(`SELECT d.id,d.run_id,r.run_reference,d.signed_cash_amount,d.reason,d.certificate_version,
-      d.approved_by_user_id,d.approved_by_membership_id,d.approved_by_provider_user_id,d.approved_by_display_name,d.approved_role_key,d.approved_at
+      d.approved_by_user_id,d.approved_by_membership_id,d.approved_by_provider_user_id,d.approved_by_display_name,d.approved_role_key,d.approved_at,
+      COALESCE((SELECT SUM(i.signed_released_cash) FROM payment_release_items i
+        WHERE i.client_id=d.client_id AND i.payment_authority_decision_id=d.id),0) released_cash,
+      (SELECT i.external_status FROM payment_release_items i
+        WHERE i.client_id=d.client_id AND i.payment_authority_decision_id=d.id ORDER BY i.created_at DESC,i.id DESC LIMIT 1) external_status
       FROM payment_authority_decisions d JOIN payment_authority_runs r ON r.id=d.run_id AND r.client_id=d.client_id
       WHERE d.client_id=$1 AND d.certificate_id=$2 AND d.decision_kind='authority' ORDER BY d.approved_at DESC,d.id DESC LIMIT 1`,[clientId,id])).rows[0]||null;
     const exceptionalRows=(await query(`SELECT l.assessment_id,l.variation_account_item_id,l.signed_unapproved_at_lock,l.signed_new_commercial_authority,l.basis,
@@ -209,7 +213,9 @@ async function listQueue(clientId, auth) {
       priorCashAuthority: facts.priorCash, authorisedCashAmount: facts.priorCash,
       authorisedNewCommercialAuthority: facts.priorCommercialAuthority, unapprovedAtLock,
       newCommercialAuthorityProposed: unapprovedAtLock,
-      cashAmountProposed: fromPence(toPence(ready.intendedPayment) - toPence(facts.priorCash)), releaseStatus: 'not_released',
+      cashAmountProposed: fromPence(toPence(ready.intendedPayment) - toPence(facts.priorCash)),
+      releaseStatus: toPence(authorityDecision?.released_cash) ? 'released' : 'ready_for_finance',
+      externalStatus: authorityDecision?.external_status || null,
       workflowState, statusSummary: 'Payment Authorised', paymentAuthority:authorityDecision?{decisionId:authorityDecision.id,runId:authorityDecision.run_id,runReference:authorityDecision.run_reference,authorisedCash:money(authorityDecision.signed_cash_amount),reason:authorityDecision.reason,certificateVersion:Number(authorityDecision.certificate_version),approvedBy:{userId:authorityDecision.approved_by_user_id,membershipId:authorityDecision.approved_by_membership_id,providerUserId:authorityDecision.approved_by_provider_user_id,displayName:authorityDecision.approved_by_display_name,roleKey:authorityDecision.approved_role_key},approvedAt:authorityDecision.approved_at}:null,
       severity: workflowState, ...ready, lines });
   }

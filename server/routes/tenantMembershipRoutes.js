@@ -1,0 +1,10 @@
+const express=require('express');
+const {assertPermission}=require('../auth/authorization');
+const {catalogue,list,invite,cancelInvitation,updateMembership}=require('../services/tenantMembershipService');
+const router=express.Router();
+const respond=(res,error)=>res.status(error.status||500).json({message:error.message||'Membership administration failed.',code:error.code});
+router.get('/',async(req,res)=>{try{assertPermission(req.buildliteAuth,'users.manage');res.json({...await catalogue(),...await list(req.buildliteAuth.clientId)});}catch(error){respond(res,error);}});
+router.post('/invitations',async(req,res)=>{try{assertPermission(req.buildliteAuth,'users.manage');assertPermission(req.buildliteAuth,'roles.manage');const invitation=await invite({clientId:req.buildliteAuth.clientId,email:req.body?.email,roleKey:req.body?.roleKey,capabilities:req.body?.capabilities,riskAcknowledged:req.body?.riskAcknowledged===true,auth:req.buildliteAuth,provider:req.app.locals.authAdapter});res.status(201).json({invitation});}catch(error){respond(res,error);}});
+router.post('/invitations/:invitationId/cancel',async(req,res)=>{try{assertPermission(req.buildliteAuth,'users.manage');const result=await cancelInvitation({clientId:req.buildliteAuth.clientId,invitationId:req.params.invitationId,version:req.body?.version,auth:req.buildliteAuth,provider:req.app.locals.authAdapter});res.json(result);}catch(error){respond(res,error);}});
+router.patch('/:membershipId',async(req,res)=>{try{assertPermission(req.buildliteAuth,'users.manage');assertPermission(req.buildliteAuth,'roles.manage');await updateMembership({clientId:req.buildliteAuth.clientId,membershipId:req.params.membershipId,version:req.body?.version,roleKey:req.body?.roleKey,capabilities:req.body?.capabilities,isActive:req.body?.isActive,reason:req.body?.reason,riskAcknowledged:req.body?.riskAcknowledged===true,auth:req.buildliteAuth});res.json({ok:true});}catch(error){respond(res,error);}});
+module.exports=router;

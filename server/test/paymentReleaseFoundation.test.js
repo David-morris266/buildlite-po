@@ -45,8 +45,7 @@ test('permission-bearing membership releases exact full authority once without c
   await prepareIntegrationTestDatabase(pool);
   if (!(await pool.query("SELECT to_regclass('payment_authority_runs') name")).rows[0].name) await pool.query(sql038);
   if (!(await pool.query("SELECT 1 FROM information_schema.columns WHERE table_name='payment_authority_decisions' AND column_name='source_snapshot_hash_scheme'")).rowCount) await pool.query(sql039);
-  await pool.query('DROP TABLE IF EXISTS payment_release_audit,payment_release_items,payment_release_batches CASCADE');
-  await pool.query(migration);
+  if (!(await pool.query("SELECT to_regclass('payment_release_batches') name")).rows[0].name) await pool.query(migration);
   const ids = { client: randomUUID(), dev: `dev-release-${randomUUID()}`, supplier: `sup-${randomUUID()}`, pkg: randomUUID(), user: randomUUID(), membership: randomUUID(), cert: randomUUID(), va: randomUUID(), assessment: randomUUID(), run: randomUUID(), decision: randomUUID(), line: randomUUID() };
   await pool.query("INSERT INTO clients(id,code,name,is_active) VALUES($1,$2,'Release test',false)", [ids.client, `REL_${randomUUID().slice(0, 6)}`]);
   await pool.query("INSERT INTO developments(id,client_id,job_number,development_name,status,payload) VALUES($1,$2,'REL','Release Development','live','{}')", [ids.dev, ids.client]);
@@ -80,9 +79,9 @@ test('permission-bearing membership releases exact full authority once without c
   await assert.rejects(release.listQueue(ids.client, { ...financeAuth, permissions: [] }), /payment_release\.execute/);
   await assert.rejects(release.listQueue(ids.client, { ...financeAuth, roleKey: 'finance', permissions: [] }), /payment_release\.execute/);
 
-  // Tenant policy can grant execution to another role without changing Release domain code.
-  await pool.query("INSERT INTO role_permissions(role_id,permission_key) VALUES($1,'payment_release.execute') ON CONFLICT DO NOTHING", [qsRole.id]);
+  // A bounded Finance Operations capability is genuine server/database authority without changing the primary role.
   await pool.query('UPDATE client_user_memberships SET role_id=$1 WHERE id=$2', [qsRole.id, ids.membership]);
+  await pool.query(`INSERT INTO client_user_membership_capabilities(client_id,membership_id,capability_key,granted_by_user_id,granted_by_membership_id,granted_by_provider_user_id,granted_by_display_name) VALUES($1,$2,'finance_operations',$3,$2,'provider','Finance User')`,[ids.client,ids.membership,ids.user]);
   const auth = { ...financeAuth, roleKey: 'qs' };
   const releaseKey = `release-${randomUUID()}`;
   const result = await release.executeBatch(ids.client, { idempotencyKey: releaseKey, reason: 'Release to Accounts', paymentAuthorityDecisionIds: [ids.decision] }, auth);
@@ -111,7 +110,6 @@ test('permission-bearing membership releases exact full authority once without c
   await assert.rejects(pool.query("UPDATE payment_release_items SET supplier_label='Changed' WHERE id=$1", [item.id]), /append-only/);
   for (const table of ['payment_release_audit','payment_release_items','payment_release_batches','package_variation_account_authority_allocations','payment_authority_decision_lines','payment_authority_decisions','payment_authority_runs','package_variation_account_certificate_assessment_audit','package_variation_account_certificate_assessments','package_variation_account_lifecycle_audit','package_variation_account_forecast_history','package_variation_account_contractor_positions','package_variation_account_items']) await pool.query(`ALTER TABLE ${table} DISABLE TRIGGER USER`);
   for (const table of ['payment_release_audit','payment_release_items','payment_release_batches','package_variation_account_authority_allocations','payment_authority_decision_lines','payment_authority_decisions','payment_authority_runs','package_variation_account_certificate_assessment_audit','package_variation_account_certificate_assessments','package_variation_account_lifecycle_audit','package_variation_account_forecast_history','package_variation_account_contractor_positions','package_variation_account_items']) await pool.query(`DELETE FROM ${table} WHERE client_id=$1`, [ids.client]);
-  await pool.query('DELETE FROM package_payment_certificates WHERE client_id=$1', [ids.client]); await pool.query('DELETE FROM packages WHERE client_id=$1', [ids.client]); await pool.query('DELETE FROM suppliers WHERE client_id=$1', [ids.client]); await pool.query('DELETE FROM client_user_memberships WHERE client_id=$1', [ids.client]); await pool.query('DELETE FROM clients WHERE id=$1', [ids.client]); await pool.query('DELETE FROM buildlite_users WHERE id=$1', [ids.user]);
-  await pool.query("DELETE FROM role_permissions WHERE role_id=$1 AND permission_key='payment_release.execute'", [qsRole.id]);
+  await pool.query('DELETE FROM package_payment_certificates WHERE client_id=$1', [ids.client]); await pool.query('DELETE FROM packages WHERE client_id=$1', [ids.client]); await pool.query('DELETE FROM suppliers WHERE client_id=$1', [ids.client]); await pool.query('DELETE FROM client_user_membership_capabilities WHERE client_id=$1',[ids.client]);await pool.query('DELETE FROM client_user_memberships WHERE client_id=$1', [ids.client]); await pool.query('DELETE FROM clients WHERE id=$1', [ids.client]); await pool.query('DELETE FROM buildlite_users WHERE id=$1', [ids.user]);
   for (const table of ['payment_release_audit','payment_release_items','payment_release_batches','package_variation_account_authority_allocations','payment_authority_decision_lines','payment_authority_decisions','payment_authority_runs','package_variation_account_certificate_assessment_audit','package_variation_account_certificate_assessments','package_variation_account_lifecycle_audit','package_variation_account_forecast_history','package_variation_account_contractor_positions','package_variation_account_items']) await pool.query(`ALTER TABLE ${table} ENABLE TRIGGER USER`);
 });
