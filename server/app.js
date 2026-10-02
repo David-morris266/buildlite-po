@@ -40,6 +40,9 @@ const platformProvisioningRoutes=require('./routes/platformProvisioningRoutes');
 const companySettingsRoutes=require('./routes/companySettingsRoutes');
 const tenantMembershipRoutes=require('./routes/tenantMembershipRoutes');
 const membershipInvitationRoutes=require('./routes/membershipInvitationRoutes');
+const db = require('./db');
+const { checkMigrationReadiness } = require('./services/migrationReadiness');
+const { randomUUID } = require('crypto');
 
 function allowedOrigins() {
   const configured = String(process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean);
@@ -52,6 +55,7 @@ function defaultTestPrincipal(req) {
 
 function createApp(options = {}) {
   const app = express();
+  const errorLogger = options.errorLogger || console.error;
   const authAdapter = options.authAdapter || ((process.env.BUILDLITE_SERVER_TEST === '1' || process.env.NODE_ENV === 'test') ? createTestAuthAdapter(options.testPrincipal || defaultTestPrincipal) : createClerkAuthAdapter());
   const origins = allowedOrigins();
 
@@ -64,7 +68,25 @@ function createApp(options = {}) {
     })
   );
   app.use(express.json({ limit: "2mb" }));
+  app.use((req, res, next) => {
+    if (!isProduction() || req.path === '/health') return next();
+    const sendJson = res.json.bind(res);
+    res.json = (body) => {
+      if (res.statusCode < 500 || body?.referenceId) return sendJson(body);
+      const referenceId = randomUUID();
+      errorLogger('[unexpected-error-response]', { referenceId, status: res.statusCode, body });
+      return sendJson({ message: 'An unexpected server error occurred.', referenceId });
+    };
+    next();
+  });
   app.locals.authAdapter=authAdapter;
+  const readinessCheck = options.readinessCheck || (() => checkMigrationReadiness(db));
+  app.get('/health', async (_req, res) => {
+    const result = await readinessCheck();
+    if (result.ready) return res.status(200).json({ status: 'ready', database: 'ready', migrations: 'ready', requiredFrontier: result.requiredFrontier });
+    console.error('[health] BuildLite is not ready.', { category: result.category, error: result.error });
+    return res.status(503).json({ status: 'not_ready', database: 'not_ready', reason: result.category });
+  });
   app.use('/api/membership-invitations',...createInvitationAuthenticationMiddleware(authAdapter),membershipInvitationRoutes);
   app.use('/api', ...createAuthenticationMiddleware(authAdapter));
   app.use('/api/auth', authRoutes);
@@ -105,10 +127,21 @@ function createApp(options = {}) {
     app.use("/api/developer", developerRoutes);
   }
 
+  if (options.configureRoutes) options.configureRoutes(app);
+
   app.use((req, res) => {
     res
       .status(404)
       .json({ message: `Route not found: ${req.method} ${req.originalUrl}` });
+  });
+
+  app.use((error, _req, res, _next) => {
+    const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 500 ? error.status : 500;
+    if (status < 500) return res.status(status).json({ message: error.message, code: error.code });
+    const referenceId = randomUUID();
+    errorLogger('[unexpected-error]', { referenceId, error });
+    const message = isProduction() ? 'An unexpected server error occurred.' : (error?.message || 'An unexpected server error occurred.');
+    return res.status(500).json({ message, referenceId });
   });
 
   return app;
