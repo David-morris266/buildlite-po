@@ -619,8 +619,7 @@ export default function CommercialEventDrawer({
       wide
       ariaLabel={drawerTitle}
     >
-      <div className="po-ce-drawer-shell" data-testid="commercial-event-drawer-shell">
-        <header className="po-ce-drawer__header po-ce-drawer__header--fixed">
+      <header className="po-ce-drawer__header po-ce-drawer__header--fixed">
           <div>
             <p className="po-ce-drawer__eyebrow">Commercial Events</p>
             <h2 className="po-ce-drawer__title">{drawerTitle}</h2>
@@ -636,9 +635,9 @@ export default function CommercialEventDrawer({
           <button type="button" className="po-drawer-close" onClick={onClose}>
             Close
           </button>
-        </header>
+      </header>
 
-        <div className="po-drawer-body po-ce-drawer" data-testid="commercial-event-drawer-body">
+      <div className="po-drawer-body po-ce-drawer" data-testid="commercial-event-drawer-body">
 
         {liveEvent &&
         !createContraStep &&
@@ -1319,7 +1318,6 @@ export default function CommercialEventDrawer({
             ) : null}
           </>
         ) : null}
-        </div>
       </div>
       <VariationOrderDrawer open={variationOrderOpen} variationOrder={variationOrder} onClose={() => setVariationOrderOpen(false)} onChanged={setVariationOrder} />
     </PODrawerShell>

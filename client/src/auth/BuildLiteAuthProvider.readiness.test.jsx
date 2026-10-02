@@ -5,13 +5,14 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getToken = vi.hoisted(() => vi.fn(async () => 'test-token'));
+const signOut = vi.hoisted(() => vi.fn());
 vi.mock('@clerk/react', () => ({
   ClerkProvider: ({ children }) => children,
   Show: ({ when, children }) => when === 'signed-in' ? children : null,
   SignIn: () => null,
   SignUp: () => null,
   useAuth: () => ({ getToken }),
-  useClerk: () => ({ signOut: vi.fn() }),
+  useClerk: () => ({ signOut }),
 }));
 
 import BuildLiteAuthProvider, { useBuildLitePrincipal } from './BuildLiteAuthProvider';
@@ -39,6 +40,7 @@ describe('BuildLite tenant readiness refresh', () => {
   beforeEach(() => {
     vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test');
     localStorage.clear();
+    signOut.mockReset();
     calls = [];
     nativeFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(async input => {
@@ -65,5 +67,16 @@ describe('BuildLite tenant readiness refresh', () => {
     expect(calls.filter(url => url.endsWith('/api/auth/readiness'))).toHaveLength(1);
     expect(container.textContent).toContain('5');
     expect(observed.at(-1).activeTenant.clientId).toBe('willow');
+  });
+
+  it('exposes Clerk-supported sign out in the normal authenticated shell', async () => {
+    await act(async () => {
+      root.render(<BuildLiteAuthProvider><span>Protected BuildLite</span></BuildLiteAuthProvider>);
+      await new Promise(resolve => setTimeout(resolve, 20));
+    });
+    const button = [...container.querySelectorAll('button')].find(item => item.textContent === 'Sign out');
+    expect(button).not.toBeNull();
+    act(() => button.click());
+    expect(signOut).toHaveBeenCalledWith({ redirectUrl: '/sign-in' });
   });
 });

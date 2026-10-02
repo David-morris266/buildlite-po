@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const summaryState = vi.hoisted(() => ({ current: null }));
 const saveCommentary = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
+const submitPeriod = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
+const approvePeriod = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 
 vi.mock('../api', () => ({ listPOs: vi.fn(async () => []) }));
 vi.mock('../commercial/commercialEvents', () => ({ subscribeCommercialChanged: () => () => {} }));
@@ -13,6 +15,8 @@ vi.mock('../cvr/cvrSummaryHelpers', () => ({ buildCvrSummaryModel: () => summary
 vi.mock('../cvr/cvrPeriodStore', async (importOriginal) => ({
   ...(await importOriginal()),
   saveCvrPeriodCommentary: saveCommentary,
+  submitCvrPeriod: submitPeriod,
+  approveCvrPeriod: approvePeriod,
 }));
 vi.mock('../cvr/cvrPeriodAuthority', () => ({ isCvrServerAuthorityEnabled: () => false }));
 vi.mock('../ledger/ledgerAuthority', () => ({ isLedgerServerAuthorityEnabled: () => false }));
@@ -45,7 +49,7 @@ function model(rows = [canonicalRow], movement = movementRow()) {
   return {
     unavailable: false, historic: false, historicUnavailable: false, readOnly: false, loadState: 'ready',
     periodKey: 'P04', period: { status: 'draft' }, rows,
-    header: { developmentName: 'Hawthorn Gardens UAT', developmentNumber: 'HG01', createdLabel: '1 Sep 2026', submittedLabel: '—', approvedLabel: '—', approvedBy: '—', lastUpdatedLabel: '18 Sep 2026', commercialManager: 'David Morris' },
+    header: { developmentName: 'Hawthorn Gardens UAT', developmentNumber: 'HG01', reportingPeriodLabel: 'September 2026', createdLabel: '1 Sep 2026', submittedLabel: '—', approvedLabel: '—', approvedBy: '—', lastUpdatedLabel: '18 Sep 2026', commercialManager: 'David Morris' },
     status: { label: 'Draft', modifier: 'draft' },
     workflow: { showContinue: true, continueLabel: 'Open CVR Worksheet', showSubmit: false, showApprove: false, showReject: false, showCreateNext: false },
     kpis: [], commercialCostSummary: { available: false, emptyMessage: 'No hierarchy.' },
@@ -68,6 +72,8 @@ describe('CVR Summary Cost Code interaction', () => {
 
   beforeEach(() => {
     saveCommentary.mockClear();
+    submitPeriod.mockReset(); submitPeriod.mockResolvedValue({ ok: true });
+    approvePeriod.mockReset(); approvePeriod.mockResolvedValue({ ok: true });
     summaryState.current = model();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -217,5 +223,45 @@ describe('CVR Summary Cost Code interaction', () => {
     await render();
     act(() => [...container.querySelectorAll('.dev-cvr__row-link')].find((button) => button.textContent === '3640').click());
     expect(container.querySelector('.cvr-movement-inspection__bridge')?.textContent).toContain('Expected Liability———');
+  });
+
+  it('confirms Approve & Lock with current values and invokes authority once', async () => {
+    summaryState.current = model();
+    summaryState.current.period = { status: 'submitted' };
+    summaryState.current.status = { label: 'Submitted', modifier: 'submitted' };
+    summaryState.current.workflow = { showApprove: true, showReject: true };
+    summaryState.current.movementReport.executive = { labels: {
+      forecastRevenue: '£4,525,000.00', currentForecastCost: '£3,083,000.00',
+      grossProfit: '£1,442,000.00', grossMargin: '31.9%', netMovement: '+£77,200.00',
+    } };
+    await render({ activeSubview: 'summary' });
+    act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Approve & Lock').click());
+    let dialog = container.querySelector('[role="dialog"][aria-labelledby="cvr-approve-lock-title"]');
+    expect(dialog.textContent).toContain('Approve and lock P04 — September 2026?');
+    expect(dialog.textContent).toContain('£4,525,000.00');
+    expect(approvePeriod).not.toHaveBeenCalled();
+    act(() => [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Cancel').click());
+    expect(approvePeriod).not.toHaveBeenCalled();
+    act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Approve & Lock').click());
+    dialog = container.querySelector('[role="dialog"][aria-labelledby="cvr-approve-lock-title"]');
+    await act(async () => { [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Approve & Lock').click(); await Promise.resolve(); });
+    expect(approvePeriod).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains actionable Variation Account blockers and opens the affected item', async () => {
+    const onOpenVariationAccount = vi.fn();
+    summaryState.current = model();
+    summaryState.current.workflow = { showSubmit: true };
+    submitPeriod.mockResolvedValue({ ok: false, errors: ['Variation exposure is not ready to submit.'], blockers: [
+      { variationAccountItemId: 'va-1', reference: 'VA-0001', reason: 'forecast_unassessed' },
+      { variationAccountItemId: 'va-2', reference: 'VA-0002', reason: 'forecast_unassessed' },
+    ] });
+    await render({ activeSubview: 'summary', onOpenVariationAccount });
+    await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === 'Submit for Approval').click(); await Promise.resolve(); });
+    const dialog = container.querySelector('[role="dialog"][aria-labelledby="cvr-submission-blockers-title"]');
+    expect(dialog.textContent).toContain('2 Variation Account items require QS Forecast assessment');
+    expect(dialog.textContent).toContain('VA-0001');
+    act(() => [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Review Variation Account').click());
+    expect(onOpenVariationAccount).toHaveBeenCalledWith({ id: 'va-1', reference: 'VA-0001' });
   });
 });

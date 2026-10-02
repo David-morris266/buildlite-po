@@ -13,6 +13,7 @@ import PackageCommercialHistory from './PackageCommercialHistory';
 import { usePackageWorkspaceAssistantScope } from '../commercialAssistant/usePackageWorkspaceAssistantScope';
 import { mergeHydratedPackageIntoOrder, usePaymentCertificateServerHydration } from '../payments/usePaymentCertificateServerHydration';
 import PackageVariationAccount from './PackageVariationAccount';
+import { subscribeCommercialChanged } from '../commercial/commercialEvents';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -50,6 +51,7 @@ export default function SubcontractPackageWorkspace({
   const [matrixRefresh, setMatrixRefresh] = useState(0);
   const [certRefresh, setCertRefresh] = useState(0);
   const [commercialEventRefresh, setCommercialEventRefresh] = useState(0);
+  const [packageProjectionRefresh, setPackageProjectionRefresh] = useState(0);
   const [certificateDetailActive, setCertificateDetailActive] = useState(false);
   const [termsRefresh, setTermsRefresh] = useState(0);
 
@@ -59,7 +61,7 @@ export default function SubcontractPackageWorkspace({
     certificatesError,
     governingTerms,
     hydratedPackage,
-  } = usePaymentCertificateServerHydration(order, termsRefresh);
+  } = usePaymentCertificateServerHydration(order, termsRefresh + packageProjectionRefresh);
 
   const authoritativeOrder = useMemo(
     () => mergeHydratedPackageIntoOrder(order, hydratedPackage),
@@ -69,6 +71,19 @@ export default function SubcontractPackageWorkspace({
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
+
+  useEffect(() => subscribeCommercialChanged((event) => {
+    const detail = event?.detail || {};
+    const action = String(detail.action || '').toLowerCase();
+    const status = String(detail.status || '').toLowerCase();
+    const affectsPackageProjection = action === 'approve' || action === 'approved' ||
+      (detail.source === 'variation-order' && status === 'issued');
+    if (!affectsPackageProjection) return;
+    const packageId = order?.packageUuid || order?.packageId || order?.id || null;
+    if (detail.developmentId && order?.developmentId && detail.developmentId !== order.developmentId) return;
+    if (detail.packageId && packageId && detail.packageId !== packageId) return;
+    setPackageProjectionRefresh((value) => value + 1);
+  }), [order?.developmentId, order?.id, order?.packageId, order?.packageUuid]);
 
   useEffect(() => {
     if (activeTab !== 'certificates') setCertificateDetailActive(false);

@@ -64,9 +64,14 @@ describe('Submitted Commercial Event Variation Account forecast workflow', () =>
     const shell=host.querySelector('[data-testid="commercial-event-drawer-shell"]');
     expect(body.classList.contains('po-drawer-body')).toBe(true);
     expect(body.classList.contains('po-ce-drawer')).toBe(true);
-    expect(shell.parentElement.classList.contains('po-drawer')).toBe(true);
-    expect(body.parentElement).toBe(shell);
-    expect(shell.querySelector('.po-ce-drawer__header--fixed')).not.toBeNull();
+    expect(shell).toBeNull();
+    const drawer=body.parentElement;
+    expect(drawer.classList.contains('po-drawer')).toBe(true);
+    const header=drawer.querySelector('.po-ce-drawer__header--fixed');
+    expect(header).not.toBeNull();
+    expect(header.parentElement).toBe(drawer);
+    expect(body.parentElement).toBe(drawer);
+    expect(body.contains(header)).toBe(false);
     const action=[...body.querySelectorAll('button')].find(button=>button.textContent==='Forecast in Variation Account');
     expect(action).toBeTruthy();
     await act(async()=>action.click());
@@ -98,9 +103,14 @@ describe('Submitted Commercial Event Variation Account forecast workflow', () =>
 
   it('defines one explicit zero-minimum scroll owner beneath the fixed drawer header',async()=>{
     const css=readFileSync(resolve('src/styles/po-module.css'),'utf8');
-    expect(css).toMatch(/\.po-ce-drawer-shell\s*\{[^}]*flex:\s*1 1 0;[^}]*min-height:\s*0;[^}]*display:\s*flex;/s);
+    const ceBodyRule=css.match(/\.po-ce-drawer\s*\{([^}]*)\}/s)?.[1] || '';
+    expect(css).not.toMatch(/\.po-ce-drawer-shell\s*\{/);
+    expect(css).toMatch(/\.po-drawer\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*height:\s*100vh;/s);
+    expect(css).toMatch(/\.po-drawer-body\s*\{[^}]*flex:\s*1;[^}]*overflow:\s*auto;[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/s);
     expect(css).toMatch(/\.po-ce-drawer__header--fixed\s*\{[^}]*flex:\s*0 0 auto;/s);
     expect(css).toMatch(/\.po-ce-drawer\s*\{[^}]*min-height:\s*0;[^}]*overflow-x:\s*hidden;[^}]*overflow-y:\s*auto;[^}]*overscroll-behavior:\s*contain;/s);
+    expect(ceBodyRule).not.toMatch(/display:\s*grid/);
+    expect(css).toMatch(/\.po-ce-drawer\s*>\s*\*\s*\{[^}]*flex-shrink:\s*0;/s);
   });
 
   it.each([

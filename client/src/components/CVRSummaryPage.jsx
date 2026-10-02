@@ -6,6 +6,7 @@ import { listPOs } from '../api';
 import { subscribeCommercialChanged } from '../commercial/commercialEvents';
 import { buildCvrSummaryModel } from '../cvr/cvrSummaryHelpers';
 import { formatSignedMovement } from '../cvr/cvrPeriodMovement';
+import { formatCvrSubmissionBlockers } from '../cvr/cvrSubmissionBlockerPresentation';
 import {
   approveCvrPeriod,
   createNextCvrPeriod,
@@ -113,6 +114,28 @@ function SummaryPanel({ title, children, className = '' }) {
 
 function EmptyState({ message }) {
   return <p className="cvr-summary__empty">{message}</p>;
+}
+
+function ApproveLockDialog({ open, summary, busy, onCancel, onConfirm }) {
+  if (!open) return null;
+  const labels = summary.movementReport?.executive?.labels || {};
+  return <div className="dev-cvr-add-backdrop" role="presentation">
+    <div className="dev-cvr-add modal" role="dialog" aria-modal="true" aria-labelledby="cvr-approve-lock-title">
+      <h3 id="cvr-approve-lock-title">Approve and lock {summary.periodKey} — {summary.header.reportingPeriodLabel}?</h3>
+      <dl className="cvr-summary__meta-grid">
+        <div><dt>Forecast Revenue</dt><dd>{labels.forecastRevenue || '—'}</dd></div>
+        <div><dt>Forecast Cost</dt><dd>{labels.currentForecastCost || '—'}</dd></div>
+        <div><dt>Gross Profit</dt><dd>{labels.grossProfit || '—'}</dd></div>
+        <div><dt>Gross Margin</dt><dd>{labels.grossMargin || '—'}</dd></div>
+        <div><dt>Movement</dt><dd>{labels.netMovement || '—'}</dd></div>
+      </dl>
+      <p>This will freeze the approved commercial position as immutable historic CVR evidence.</p>
+      <div className="dev-cvr-add__actions modal-actions">
+        <button type="button" className="po-list-btn-secondary" disabled={busy} onClick={onCancel}>Cancel</button>
+        <button type="button" className="po-btn-primary" disabled={busy} onClick={onConfirm}>{busy ? 'Approving…' : 'Approve & Lock'}</button>
+      </div>
+    </div>
+  </div>;
 }
 
 export function CommercialCostSummaryTable({ summary, onOpen }) {
@@ -287,6 +310,9 @@ export default function CVRSummaryPage({
   const [rejectOpen, setRejectOpen] = useState(false);
   const [reportingMonthPrompt, setReportingMonthPrompt] = useState(null);
   const [reportingMonthBusy, setReportingMonthBusy] = useState(false);
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [approveBusy, setApproveBusy] = useState(false);
+  const [submissionBlockers, setSubmissionBlockers] = useState([]);
   const movementReportRef = useRef(null);
   const movementOriginRef = useRef(null);
   const [commentary, setCommentary] = useState({
@@ -400,19 +426,31 @@ export default function CVRSummaryPage({
   async function handleSubmit() {
     const result = await Promise.resolve(submitCvrPeriod(development.id, periodKey));
     if (!result.ok) {
+      if (result.blockers?.length) {
+        setSubmissionBlockers(result.blockers);
+        return;
+      }
       window.alert(result.errors?.[0] || 'Could not submit CVR.');
       return;
     }
+    setSubmissionBlockers([]);
     refresh();
   }
 
   async function handleApprove() {
-    const result = await Promise.resolve(approveCvrPeriod(development.id, periodKey));
-    if (!result.ok) {
-      window.alert(result.errors?.[0] || 'Could not approve CVR.');
-      return;
+    if (approveBusy) return;
+    setApproveBusy(true);
+    try {
+      const result = await Promise.resolve(approveCvrPeriod(development.id, periodKey));
+      if (!result.ok) {
+        window.alert(result.errors?.[0] || 'Could not approve CVR.');
+        return;
+      }
+      setApproveOpen(false);
+      refresh();
+    } finally {
+      setApproveBusy(false);
     }
-    refresh();
   }
 
   async function handleReject(comment) {
@@ -576,7 +614,7 @@ export default function CVRSummaryPage({
               </button>
             ) : null}
             {summary.workflow.showApprove ? (
-              <button type="button" className="po-btn-primary" onClick={handleApprove}>
+              <button type="button" className="po-btn-primary" onClick={() => setApproveOpen(true)}>
                 Approve &amp; Lock
               </button>
             ) : null}
@@ -839,6 +877,24 @@ export default function CVRSummaryPage({
         open={rejectOpen}
         onCancel={() => setRejectOpen(false)}
         onConfirm={handleReject}
+      />
+      {submissionBlockers.length ? <div className="dev-cvr-add-backdrop" role="presentation">
+        <div className="dev-cvr-add modal" role="dialog" aria-modal="true" aria-labelledby="cvr-submission-blockers-title">
+          <h3 id="cvr-submission-blockers-title">Variation Account review required</h3>
+          <p>{submissionBlockers.length} Variation Account {submissionBlockers.length === 1 ? 'item requires' : 'items require'} QS Forecast assessment before this CVR can be submitted.</p>
+          <p className="dev-cvr-add__lead">{formatCvrSubmissionBlockers(submissionBlockers)}</p>
+          <div className="dev-cvr-add__actions modal-actions">
+            <button type="button" className="po-list-btn-secondary" onClick={() => setSubmissionBlockers([])}>Close</button>
+            <button type="button" className="po-btn-primary" onClick={() => onOpenVariationAccount?.({ id: submissionBlockers[0]?.variationAccountItemId, reference: submissionBlockers[0]?.reference })}>Review Variation Account</button>
+          </div>
+        </div>
+      </div> : null}
+      <ApproveLockDialog
+        open={approveOpen}
+        summary={summary}
+        busy={approveBusy}
+        onCancel={() => { if (!approveBusy) setApproveOpen(false); }}
+        onConfirm={handleApprove}
       />
       <CvrReportingMonthDialog
         open={Boolean(reportingMonthPrompt)}
