@@ -46,8 +46,8 @@ Production must never set `BUILDLITE_SERVER_TEST`, `TEST_DATABASE_URL`, or relax
 5. **Do not run `npm run seed`.** It is the legacy generic-client/Cost Code bootstrap and is not the modern tenant provisioning path.
 6. Start the API with validated production configuration.
 7. Verify public `GET /health` returns HTTP 200 and `status: ready`.
-8. Configure a reviewed platform operator provider ID when assisted provisioning is required.
-9. Provision the first company through the supported Administration workflow.
+8. Create the reviewed operator in the production Clerk instance, then configure that production provider user ID in `BUILDLITE_PLATFORM_OPERATOR_IDS`. On first authenticated access BuildLite establishes one audited platform-only identity; it creates no tenant or membership.
+9. Sign in as that operator and provision the first company through the supported Administration workflow. Until this succeeds, the platform-only identity has no tenant RBAC or commercial-data access.
 10. Invite users through normal membership administration.
 
 Before real customer data, prove a logical backup can be restored into a disposable database and verify the migration frontier, representative row counts and authenticated read-only application access.

@@ -1,4 +1,4 @@
-const { query } = require('../db');
+const { query, pool } = require('../db');
 
 function forbidden(message = 'Forbidden') { const error = new Error(message); error.status = 403; return error; }
 function unauthenticated(message = 'Authentication required') { const error = new Error(message); error.status = 401; return error; }
@@ -28,6 +28,29 @@ async function resolveBuildLitePrincipal(identity, requestedClientId = null, db 
     roleName:membership.role_name,membershipVersion:Number(membership.version||1),capabilityKeys:[...(membership.capability_keys||[])],permissions:[...(membership.permissions||[])],platformPermissions:platformPermissions(identity.providerUserId),memberships:active.map(row=>({id:row.membership_id,clientId:row.client_id,clientCode:row.client_code,clientName:row.client_name,roleKey:row.role_key,roleName:row.role_name,capabilityKeys:[...(row.capability_keys||[])]})) };
 }
 function platformPermissions(providerUserId){return String(process.env.BUILDLITE_PLATFORM_OPERATOR_IDS||'').split(',').map(x=>x.trim()).filter(Boolean).includes(String(providerUserId||''))?['platform.tenant_provision']:[];}
+function isPlatformOperator(providerUserId){return platformPermissions(providerUserId).includes('platform.tenant_provision');}
+async function resolvePlatformBootstrapPrincipal(identity,requestedClientId=null){
+  if(!identity?.providerUserId||identity.provider!=='clerk'||!identity.email||!identity.displayName)throw forbidden('Verified Clerk identity is required for platform bootstrap.');
+  if(!isPlatformOperator(identity.providerUserId))throw forbidden('BuildLite user is inactive or not provisioned.');
+  if(requestedClientId)throw forbidden('You do not have an active membership for this tenant.');
+  const email=String(identity.email).trim().toLowerCase(),displayName=String(identity.displayName).trim();
+  if(!email.includes('@')||!displayName)throw forbidden('Verified Clerk identity is required for platform bootstrap.');
+  const c=await pool.connect();let user;
+  try{
+    await c.query('BEGIN');
+    await c.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`platform-bootstrap:${identity.providerUserId}`]);
+    user=(await c.query(`SELECT * FROM buildlite_users WHERE auth_provider='clerk' AND provider_user_id=$1 FOR UPDATE`,[identity.providerUserId])).rows[0];
+    const emailUsers=(await c.query(`SELECT * FROM buildlite_users WHERE lower(email_snapshot)=$1 FOR UPDATE`,[email])).rows;
+    if(emailUsers.some(item=>item.auth_provider!=='clerk'||item.provider_user_id!==identity.providerUserId))throw Object.assign(new Error('Verified Clerk identity conflicts with an existing BuildLite identity.'),{status:409});
+    if(user&&user.status!=='active')throw forbidden('BuildLite user is inactive or not provisioned.');
+    if(!user)user=(await c.query(`INSERT INTO buildlite_users(auth_provider,provider_user_id,email_snapshot,display_name,status) VALUES('clerk',$1,$2,$3,'active') RETURNING *`,[identity.providerUserId,email,displayName])).rows[0];
+    await c.query(`INSERT INTO platform_identity_bootstrap_audit(user_id,auth_provider,provider_user_id,email_snapshot,display_name,authority) VALUES($1,'clerk',$2,$3,$4,'platform.tenant_provision') ON CONFLICT(user_id) DO NOTHING`,[user.id,identity.providerUserId,email,displayName]);
+    await c.query('COMMIT');
+  }catch(error){await c.query('ROLLBACK');throw error;}finally{c.release();}
+  const active=Number((await query('SELECT count(*)::int count FROM client_user_memberships WHERE user_id=$1 AND is_active',[user.id])).rows[0].count);
+  if(active)return resolveBuildLitePrincipal({provider:'clerk',providerUserId:identity.providerUserId},null);
+  return {userId:user.id,provider:'clerk',providerUserId:identity.providerUserId,displayName:user.display_name,email:user.email_snapshot,clientId:null,membershipId:null,roleKey:null,roleName:null,membershipVersion:null,capabilityKeys:[],permissions:[],platformPermissions:['platform.tenant_provision'],memberships:[],platformOnly:true};
+}
 function assertPlatformPermission(auth,permission){if(!auth?.platformPermissions?.includes(permission))throw forbidden(`Platform permission required: ${permission}`);}
 
 function hasPermission(auth, permission) { return Boolean(auth?.permissions?.includes(permission)); }
@@ -50,4 +73,4 @@ function requirePermission(permission) { return async (req,res,next)=>{ try { as
 function requireAuthenticated(req,res,next) { if(!req.buildliteAuth)return res.status(401).json({message:'Authentication required'}); next(); }
 function actorFromAuth(auth, permission = null) { if(!auth?.userId)throw unauthenticated(); return { actor:auth.displayName, actorEnvelope:{userId:auth.userId,displayName:auth.displayName,membershipId:auth.membershipId,roleKey:auth.roleKey,permission:permission||null,providerUserId:auth.providerUserId} }; }
 
-module.exports={resolveBuildLitePrincipal,hasPermission,assertPermission,assertPlatformPermission,platformPermissions,assertServicePermission,requirePermission,requireAuthenticated,actorFromAuth,unauthenticated,forbidden};
+module.exports={resolveBuildLitePrincipal,resolvePlatformBootstrapPrincipal,hasPermission,assertPermission,assertPlatformPermission,platformPermissions,isPlatformOperator,assertServicePermission,requirePermission,requireAuthenticated,actorFromAuth,unauthenticated,forbidden};

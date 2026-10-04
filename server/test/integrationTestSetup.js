@@ -102,6 +102,10 @@ async function prepareIntegrationTestDatabase(pool) {
   if (!cancellationAudit.rows[0]?.definition?.includes('invitation_cancelled')) {
     await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '064_membership_invitation_cancellation_audit.sql'), 'utf8'));
   }
+  const hasPlatformBootstrapAudit = await pool.query("SELECT 1 FROM information_schema.tables WHERE table_name='platform_identity_bootstrap_audit'");
+  if (!hasPlatformBootstrapAudit.rowCount) {
+    await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '065_first_platform_operator_bootstrap.sql'), 'utf8'));
+  }
   const activeClientId = await ensureActiveTestClient(pool);
   await ensureDefaultTestPrincipal(pool, activeClientId);
 }

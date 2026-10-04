@@ -11,6 +11,10 @@ router.get('/readiness', async (req, res) => {
 });
 router.get('/me', async (req, res) => {
   try {
+    if(req.buildliteAuth.platformOnly)return res.json({
+      user:{id:req.buildliteAuth.userId,displayName:req.buildliteAuth.displayName,email:req.buildliteAuth.email},
+      activeTenant:null,permissions:[],platformPermissions:req.buildliteAuth.platformPermissions||[],memberships:[],tenantReadiness:null,platformOnly:true,
+    });
     const tenantReadiness = await getTenantReadiness(req.buildliteAuth.clientId);
     res.json({
       user: { id: req.buildliteAuth.userId, displayName: req.buildliteAuth.displayName, email: req.buildliteAuth.email },

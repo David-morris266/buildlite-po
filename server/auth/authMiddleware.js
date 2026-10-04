@@ -1,4 +1,4 @@
-const { resolveBuildLitePrincipal } = require('./authorization');
+const { resolveBuildLitePrincipal,resolvePlatformBootstrapPrincipal,isPlatformOperator } = require('./authorization');
 const { enterAuthContext } = require('./requestContext');
 
 function createAuthenticationMiddleware(adapter) {
@@ -8,7 +8,14 @@ function createAuthenticationMiddleware(adapter) {
       if (direct) { req.buildliteAuth = direct; enterAuthContext(direct); return next(); }
       const identity = adapter.identity(req);
       if (!identity) return res.status(401).json({ message: 'Authentication required' });
-      req.buildliteAuth = await resolveBuildLitePrincipal(identity, req.get('X-BuildLite-Client-Id') || null);
+      const requestedClientId=req.get('X-BuildLite-Client-Id')||null;
+      try{req.buildliteAuth=await resolveBuildLitePrincipal(identity,requestedClientId);}
+      catch(error){
+        if(error.status!==403||!isPlatformOperator(identity.providerUserId))throw error;
+        const verified=await adapter.verifiedIdentity?.(req);
+        req.buildliteAuth=await resolvePlatformBootstrapPrincipal(verified,requestedClientId);
+      }
+      if(req.buildliteAuth.platformOnly&&!(/^\/auth\/me\/?$/.test(req.path)||req.path.startsWith('/platform/')))return res.status(403).json({message:'An active company membership is required.'});
       enterAuthContext(req.buildliteAuth);
       next();
     } catch (error) { res.status(error.status || 500).json({ message: error.message, code: error.code, memberships:error.memberships }); }
