@@ -36,17 +36,19 @@ describe('BuildLite tenant readiness refresh', () => {
   let root;
   let nativeFetch;
   let calls;
+  let principalResponse;
 
   beforeEach(() => {
     vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test');
     localStorage.clear();
     signOut.mockReset();
     calls = [];
+    principalResponse = { user: { id: 'david', displayName: 'David' }, activeTenant: { clientId: 'willow', roleName: 'Commercial Director' }, memberships: [], permissions: [], tenantReadiness: { tenant: { name: 'Willow' }, counts: { allocatedCostCodes: 4 } } };
     nativeFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(async input => {
       const url = String(input);
       calls.push(url);
-      if (url.endsWith('/api/auth/me')) return new Response(JSON.stringify({ user: { id: 'david', displayName: 'David' }, activeTenant: { clientId: 'willow', roleName: 'Commercial Director' }, memberships: [], permissions: [], tenantReadiness: { tenant: { name: 'Willow' }, counts: { allocatedCostCodes: 4 } } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (url.endsWith('/api/auth/me')) return new Response(JSON.stringify(principalResponse), { status: 200, headers: { 'Content-Type': 'application/json' } });
       if (url.endsWith('/api/auth/readiness')) return new Response(JSON.stringify({ clientId: 'willow', tenantReadiness: { tenant: { name: 'Willow' }, counts: { allocatedCostCodes: 5, notReviewedCostCodes: 24 } } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       throw new Error(`Unexpected request: ${url}`);
     });
@@ -78,5 +80,33 @@ describe('BuildLite tenant readiness refresh', () => {
     expect(button).not.toBeNull();
     act(() => button.click());
     expect(signOut).toHaveBeenCalledWith({ redirectUrl: '/sign-in' });
+  });
+
+  it('establishes a platform-only principal without dereferencing a missing active company', async () => {
+    principalResponse = {
+      user: { id: 'david', displayName: 'David' }, activeTenant: null, memberships: [], permissions: [],
+      platformPermissions: ['platform.tenant_provision'], tenantReadiness: null, platformOnly: true,
+    };
+    await act(async () => {
+      root.render(<BuildLiteAuthProvider><span>Provisioning route</span></BuildLiteAuthProvider>);
+      await new Promise(resolve => setTimeout(resolve, 20));
+    });
+    expect(container.textContent).toContain('Signed in as David');
+    expect(container.textContent).not.toContain('Company unavailable');
+    expect(container.textContent).toContain('Provisioning route');
+  });
+
+  it('retains the access-unavailable boundary for a non-platform user with no membership', async () => {
+    globalThis.fetch = vi.fn(async input => {
+      if (String(input).endsWith('/api/auth/me')) return new Response(JSON.stringify({ message: 'No active membership' }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+      throw new Error(`Unexpected request: ${input}`);
+    });
+    await act(async () => {
+      root.render(<BuildLiteAuthProvider><span>Must not render</span></BuildLiteAuthProvider>);
+      await new Promise(resolve => setTimeout(resolve, 20));
+    });
+    expect(container.textContent).toContain('BuildLite access unavailable');
+    expect(container.textContent).toContain('Your BuildLite account has no active company membership.');
+    expect(container.textContent).not.toContain('Must not render');
   });
 });

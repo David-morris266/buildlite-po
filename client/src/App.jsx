@@ -7,11 +7,12 @@ import PaymentReleaseWorklist from './components/PaymentReleaseWorklist';
 import Developments from './components/Developments';
 import CVRPortfolio from './components/CVRPortfolio';
 import AdministrationModule from './components/admin/AdministrationModule';
+import AdminPlatformProvisioningPage from './components/admin/AdminPlatformProvisioningPage';
 import BrandHeader from './components/Brandheader';
 import BuildLiteHome from './components/BuildLiteHome';
 import { CommercialAssistantProvider } from './commercialAssistant/CommercialAssistantContext';
 import CommercialAssistantDrawer from './commercialAssistant/CommercialAssistantDrawer';
-import { CommercialWorkspace } from './components/layout/WorkspaceShell';
+import { AdministrationWorkspace, CommercialWorkspace } from './components/layout/WorkspaceShell';
 import { NavigationProvider } from './navigation/NavigationContext';
 import { UnsavedChangesProvider } from './navigation/UnsavedChangesProvider.jsx';
 import { useOptionalUnsavedChanges } from './navigation/UnsavedChangesContext.js';
@@ -30,7 +31,22 @@ import './styles/po-module.css';
 
 const HOME_VIEW = 'home';
 
-function ApplicationContent() {
+function PlatformProvisioningApplication() {
+  return <div id="app" className="platform-provisioning-app">
+    <main className="po-app-main">
+      <AdministrationWorkspace>
+        <section className="po-module-card">
+          <p className="po-eyebrow">Company setup</p>
+          <h1>No company has been provisioned yet</h1>
+          <p>Create the first company and its initial authorised administrator to begin using BuildLite.</p>
+        </section>
+        <AdminPlatformProvisioningPage />
+      </AdministrationWorkspace>
+    </main>
+  </div>;
+}
+
+function TenantApplicationContent() {
   const principal = useBuildLitePrincipal();
   const unsavedChanges = useOptionalUnsavedChanges();
   const [initialRoute] = useState(() => parseApplicationRoute());
@@ -274,6 +290,15 @@ function ApplicationContent() {
       {tab === 'payment-release' ? <CommercialWorkspace><PaymentReleaseWorklist /></CommercialWorkspace> : null}
     </main>
   </div></CommercialAssistantProvider></NavigationProvider>;
+}
+
+function ApplicationContent() {
+  const principal = useBuildLitePrincipal();
+  const canProvision = principal?.platformPermissions?.includes('platform.tenant_provision') === true;
+  if (principal?.platformOnly === true && !principal.activeTenant && canProvision) {
+    return <PlatformProvisioningApplication />;
+  }
+  return <TenantApplicationContent />;
 }
 
 export default function App() {

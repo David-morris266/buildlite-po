@@ -30,7 +30,7 @@ vi.mock('./admin/commercialStructureStore', () => ({ getCommercialStructure: vi.
 vi.mock('./commercialAssistant/CommercialAssistantContext', () => ({ CommercialAssistantProvider: ({ children }) => children }));
 vi.mock('./commercialAssistant/CommercialAssistantDrawer', () => ({ default: () => null }));
 vi.mock('./navigation/NavigationContext', () => ({ NavigationProvider: ({ children }) => children }));
-vi.mock('./components/layout/WorkspaceShell', () => ({ CommercialWorkspace: ({ children }) => children }));
+vi.mock('./components/layout/WorkspaceShell', () => ({ CommercialWorkspace: ({ children }) => children, AdministrationWorkspace: ({ children }) => children }));
 vi.mock('./components/POForm', () => ({ default: () => <div>PO form</div> }));
 vi.mock('./components/POList', () => ({ default: ({ onOpenPackage }) => <div>PO list<button onClick={() => onOpenPackage?.('dev-hawthorn::supplier-1::3640')}>Open package</button></div> }));
 vi.mock('./components/POArchive', () => ({ default: () => <div>Archive</div> }));
@@ -46,6 +46,7 @@ vi.mock('./components/admin/AdministrationModule', () => ({ default: (props) => 
   <button onClick={() => props.onViewChange?.('landing')}>Administration landing</button>
   {props.returnDevelopment ? <button onClick={() => props.onReturnToDevelopment(props.returnDevelopment)}>Return to {props.returnDevelopment.name}</button> : null}
 </div> }));
+vi.mock('./components/admin/AdminPlatformProvisioningPage', () => ({ default: () => <div data-testid="platform-provisioning">Provision company form</div> }));
 vi.mock('./setup/setupDraft', () => ({ buildPoFormSeedFromSetup: vi.fn(), loadSetupDraft: vi.fn() }));
 
 import App from './App';
@@ -65,6 +66,39 @@ afterEach(() => {
 });
 
 describe('GP-1 salvaged application entry', () => {
+  it('routes a provisioning-only operator directly to company setup without mounting tenant navigation', () => {
+    principal = {
+      user: { displayName: 'David' },
+      activeTenant: null,
+      memberships: [],
+      permissions: [],
+      platformPermissions: ['platform.tenant_provision'],
+      platformOnly: true,
+    };
+    act(() => root.render(<App />));
+    expect(container.textContent).toContain('No company has been provisioned yet');
+    expect(container.querySelector('[data-testid="platform-provisioning"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="header"]')).toBeNull();
+    expect(container.textContent).not.toContain('Developments & Packages');
+  });
+
+  it('returns a former provisioning-only operator to the normal tenant shell after membership resolves', () => {
+    principal = {
+      user: { displayName: 'David' }, activeTenant: null, memberships: [], permissions: [],
+      platformPermissions: ['platform.tenant_provision'], platformOnly: true,
+    };
+    act(() => root.render(<App />));
+    expect(container.querySelector('[data-testid="platform-provisioning"]')).not.toBeNull();
+    principal = {
+      user: { displayName: 'David' }, activeTenant: { clientId: 'first-company', roleName: 'Commercial Director' },
+      memberships: [{ clientId: 'first-company', roleName: 'Commercial Director' }], permissions: [],
+      platformPermissions: ['platform.tenant_provision'], platformOnly: false, tenantReadiness: { configured: true },
+    };
+    act(() => root.render(<App />));
+    expect(container.querySelector('[data-testid="header"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="platform-provisioning"]')).toBeNull();
+  });
+
   it('lands a configured tenant on Home and uses established local development navigation', () => {
     act(() => root.render(<App />));
     expect(container.textContent).toContain('Developments & Packages');
@@ -145,7 +179,10 @@ describe('GP-1 salvaged application entry', () => {
 
     principal = { tenantReadiness: { configured: false } };
     window.history.replaceState({}, '', '/?setup=1');
-    await act(async () => window.dispatchEvent(new PopStateEvent('popstate')));
+    await act(async () => {
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
     expect(container.querySelector('[data-testid="admin"]').dataset.view).toBe('company-readiness');
   });
 
