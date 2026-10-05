@@ -18,6 +18,7 @@ function validateProductionConfig(env = process.env) {
   const errors = [];
   requireValue(env, 'DATABASE_URL', errors);
   requireValue(env, 'CLERK_SECRET_KEY', errors);
+  requireValue(env, 'CLERK_PUBLISHABLE_KEY', errors);
   const appUrl = requireValue(env, 'BUILDLITE_APP_URL', errors);
   const corsValue = requireValue(env, 'CORS_ALLOWED_ORIGINS', errors);
   if (env.BUILDLITE_SERVER_TEST === '1') errors.push('BUILDLITE_SERVER_TEST must not be enabled in production.');

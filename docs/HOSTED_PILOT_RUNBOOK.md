@@ -29,7 +29,10 @@ Required production variable names:
 - `DATABASE_SSL` (`true` or `false`; hosted Render PostgreSQL normally uses `true`)
 - `CORS_ALLOWED_ORIGINS` (explicit comma-separated HTTPS origins; no wildcard)
 - `CLERK_SECRET_KEY`
+- `CLERK_PUBLISHABLE_KEY`
 - `BUILDLITE_APP_URL` (canonical HTTPS frontend origin)
+
+`CLERK_PUBLISHABLE_KEY` on the Render API and `VITE_CLERK_PUBLISHABLE_KEY` on the Netlify frontend use the publishable key from the same Clerk production instance. `CLERK_SECRET_KEY` is server-only and must never be exposed through a `VITE_*` variable.
 
 `BUILDLITE_PLATFORM_OPERATOR_IDS` is optional for server availability. When absent, assisted tenant provisioning is disabled because nobody receives `platform.tenant_provision`. Configure only reviewed Clerk provider user IDs when provisioning is required.
 

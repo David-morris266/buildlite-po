@@ -12,6 +12,7 @@ const production = {
   DATABASE_URL: 'postgresql://pilot.invalid/buildlite',
   DATABASE_SSL: 'true',
   CLERK_SECRET_KEY: 'test-only-secret',
+  CLERK_PUBLISHABLE_KEY: 'pk_test_only',
   CORS_ALLOWED_ORIGINS: 'https://pilot.example.com',
   BUILDLITE_APP_URL: 'https://pilot.example.com',
 };
@@ -23,6 +24,7 @@ test('production configuration accepts the hosted contract with optional platfor
 for (const [name, change, expected] of [
   ['DATABASE_URL', { DATABASE_URL: '' }, /DATABASE_URL/],
   ['Clerk secret', { CLERK_SECRET_KEY: '' }, /CLERK_SECRET_KEY/],
+  ['blank Clerk publishable key', { CLERK_PUBLISHABLE_KEY: '   ' }, /CLERK_PUBLISHABLE_KEY/],
   ['CORS origins', { CORS_ALLOWED_ORIGINS: '' }, /CORS_ALLOWED_ORIGINS/],
   ['wildcard CORS origin', { CORS_ALLOWED_ORIGINS: '*' }, /explicit origins/],
   ['canonical app URL', { BUILDLITE_APP_URL: 'http://pilot.example.com' }, /HTTPS origin/],
@@ -35,6 +37,14 @@ for (const [name, change, expected] of [
   assert.match(result.errors.join(' '), expected);
 });
 
+test('production configuration rejects a missing Clerk publishable key', () => {
+  const withoutPublishableKey = { ...production };
+  delete withoutPublishableKey.CLERK_PUBLISHABLE_KEY;
+  const result = validateProductionConfig(withoutPublishableKey);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(' '), /CLERK_PUBLISHABLE_KEY/);
+});
+
 test('development and test configuration remain outside the production gate', () => {
   assert.deepEqual(validateProductionConfig({ NODE_ENV: 'development' }), { ok: true, errors: [] });
   assert.deepEqual(validateProductionConfig({ NODE_ENV: 'test', BUILDLITE_SERVER_TEST: '1' }), { ok: true, errors: [] });
@@ -44,10 +54,11 @@ test('production server fails before listening when required configuration is ab
   const result = spawnSync(process.execPath, ['server.js'], {
     cwd: path.join(__dirname, '..'),
     encoding: 'utf8',
-    env: { ...process.env, NODE_ENV: 'production', DATABASE_URL: '', CLERK_SECRET_KEY: '', CORS_ALLOWED_ORIGINS: '', BUILDLITE_APP_URL: '', TEST_DATABASE_URL: '', BUILDLITE_SERVER_TEST: '' },
+    env: { ...process.env, NODE_ENV: 'production', DATABASE_URL: '', CLERK_SECRET_KEY: '', CLERK_PUBLISHABLE_KEY: '', CORS_ALLOWED_ORIGINS: '', BUILDLITE_APP_URL: '', TEST_DATABASE_URL: '', BUILDLITE_SERVER_TEST: '' },
   });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Production configuration is invalid/);
+  assert.match(result.stderr, /CLERK_PUBLISHABLE_KEY/);
   assert.doesNotMatch(result.stdout, /Server running/);
 });
 
