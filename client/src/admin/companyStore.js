@@ -61,10 +61,6 @@ function defaultCompanySettings() {
 
     website: '',
 
-    logoUrl: '',
-
-    logoPlaceholder: 'Company logo upload will be available in a future sprint.',
-
     currency: 'GBP',
 
     financialYearStart: '04-01',

@@ -12,6 +12,7 @@ const poRoutes = require("./routes/poRoutes");
 const jobRoutes = require("./routes/jobRoutes");
 const clientRoutes = require("./routes/clientRoutes");
 const brandRoutes = require("./routes/brandRoutes");
+const companyBrandingRoutes = require('./routes/companyBrandingRoutes');
 const paymentRoutes = require("./routes/paymentRoutes");
 const developmentRoutes = require("./routes/developmentRoutes");
 const packageRoutes = require("./routes/packageRoutes");
@@ -63,7 +64,7 @@ function createApp(options = {}) {
     cors({
       origin(origin, callback) { if (!origin || origins.has(origin)) return callback(null, true); return callback(new Error('Origin not allowed by BuildLite CORS policy.')); },
       methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-      allowedHeaders: "Content-Type, Authorization, X-BuildLite-Client-Id",
+      allowedHeaders: "Content-Type, Authorization, X-BuildLite-Client-Id, X-BuildLite-Branding-Version, X-BuildLite-File-Name",
       credentials: true,
     })
   );
@@ -92,6 +93,7 @@ function createApp(options = {}) {
   app.use('/api/auth', authRoutes);
   app.use('/api/platform',platformProvisioningRoutes);
   app.use('/api/company-settings',companySettingsRoutes);
+  app.use('/api/company-branding',companyBrandingRoutes);
   app.use('/api/memberships',tenantMembershipRoutes);
 
   app.use("/api", poRoutes);

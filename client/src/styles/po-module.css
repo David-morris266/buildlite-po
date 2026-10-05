@@ -8188,6 +8188,15 @@
   align-self: center;
 }
 
+.admin-branding { display: grid; gap: 12px; max-width: 680px; }
+.admin-branding__preview { min-height: 150px; display: grid; place-items: center; padding: 18px; border: 1px dashed var(--line); border-radius: var(--radius-sm); background: rgba(255,255,255,.015); }
+.admin-branding__preview img { display: block; max-width: min(100%, 520px); max-height: 180px; object-fit: contain; }
+.admin-branding__preview span { display: grid; gap: 5px; text-align: center; font-weight: 700; }
+.admin-branding__preview small,.admin-branding>small { color: var(--muted); font-weight: 400; }
+.admin-branding__pending { margin: 0; color: #facc15; font-size: .8125rem; }
+.admin-branding__file { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.admin-branding__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
 .admin-users__identity,
 .admin-users__capability span {
   display: grid;

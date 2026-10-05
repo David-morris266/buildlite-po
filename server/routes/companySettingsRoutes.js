@@ -3,13 +3,16 @@ const db = require('../db');
 const { requirePermission } = require('../auth/authorization');
 const { PERMISSIONS } = require('../auth/permissions');
 const { DEFAULTS } = require('../services/tenantProvisioning');
+const tenantBranding = require('../services/tenantBranding');
 const router = express.Router();
 
 router.get('/', async (req, res) => {
   try {
     const row = (await db.query('SELECT c.name,s.settings,s.version FROM clients c LEFT JOIN tenant_company_settings s ON s.client_id=c.id WHERE c.id=$1', [req.buildliteAuth.clientId])).rows[0];
     if (!row) return res.status(404).json({ message: 'Company not found.' });
-    return res.json({ settings: { ...DEFAULTS, ...(row.settings || {}), companyName: row.name }, version: row.version || 0 });
+    const settings = { ...DEFAULTS, ...(row.settings || {}), companyName: row.name };
+    delete settings.logoUrl;
+    return res.json({ settings, version: row.version || 0, branding: await tenantBranding.getState(req.buildliteAuth.clientId) });
   } catch (error) {
     return res.status(500).json({ message: error.message || 'Failed to load Company settings.' });
   }
@@ -23,6 +26,7 @@ router.put('/', requirePermission(PERMISSIONS.COMPANY_SETTINGS_MANAGE), async (r
     const company = (await db.query('SELECT name FROM clients WHERE id=$1', [req.buildliteAuth.clientId])).rows[0];
     if (!company) return res.status(404).json({ message: 'Company not found.' });
     const settings = { ...supplied, companyName: company.name };
+    delete settings.logoUrl;
     const actor = [req.buildliteAuth.userId, req.buildliteAuth.membershipId, req.buildliteAuth.providerUserId, req.buildliteAuth.displayName];
     let result;
     if (version === 0) {

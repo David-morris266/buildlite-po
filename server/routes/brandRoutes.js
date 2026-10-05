@@ -14,7 +14,9 @@ router.get("/active", async (_req, res) => {
       [active.id]
     );
 
-    res.json({ client: active, brand: rows[0] || {} });
+    const brand = { ...(rows[0] || {}) };
+    delete brand.logo_url;
+    res.json({ client: active, brand });
   } catch (err) {
     console.error("GET /brand/active failed:", err);
     res.status(500).json({ error: "Server error" });

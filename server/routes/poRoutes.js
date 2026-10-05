@@ -7,8 +7,7 @@ const {
 } = require("../services/packageMaterialisation");
 const { isSubcontractPoType } = require("../services/packagePoExtract");
 const {
-  getBrandProfileForClient,
-  mapBrandToPdfContext,
+  getBrandContextForClient,
 } = require("../services/brandProfile");
 const { isProduction } = require("../utils/env");
 const { mapPOToContext, renderPOToPDF } = require("../services/pdf");
@@ -473,8 +472,7 @@ router.get("/po/:poNumber/pdf", async (req, res) => {
       return res.status(404).type("text/plain").send(`PO ${poNumber} not found`);
     }
 
-    const brandRow = await getBrandProfileForClient(active.id);
-    const brandCtx = mapBrandToPdfContext(brandRow, active);
+    const brandCtx = await getBrandContextForClient(active.id, active);
     const ctx = mapPOToContext(po, brandCtx);
     const pdfBuffer = await renderPOToPDF(ctx);
 

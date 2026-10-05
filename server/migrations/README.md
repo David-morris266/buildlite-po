@@ -173,3 +173,7 @@ Adds dedicated Plot Master authority for Admin, Commercial Director, Commercial 
 `063_tenant_membership_administration.sql` retains one primary operational role per tenant membership and adds the bounded Company Administration and Finance Operations capability catalogue, expiring tenant invitations, optimistic membership versioning, immutable membership-authority audit, orphan-safe Admin compatibility, and capability-aware Accounts release authority. It does not infer Company Administration for Commercial Directors or alter commercial facts.
 
 `064_membership_invitation_cancellation_audit.sql` extends only the immutable membership-authority audit operation allowlist with `invitation_cancelled`. It rewrites no audit, invitation, membership, capability or commercial row.
+
+`065_first_platform_operator_bootstrap.sql` records the first configured platform operator identity through an append-only bootstrap audit without granting tenant authority.
+
+`066_tenant_branding_assets.sql` adds immutable tenant-owned company-logo assets, an optimistic current-branding reference and append-only authenticated branding audit. It performs no legacy URL/path import, no customer-logo backfill and no commercial-document rewrite. PostgreSQL stores the pilot binary behind a storage-provider boundary that can later point the same asset UUID at object storage.

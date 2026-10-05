@@ -1,4 +1,4 @@
-const { mapBrandToPdfContext } = require('./brandProfile');
+const { getBrandContextForClient } = require('./brandProfile');
 const { dateOnly } = require('./paymentCertificateTimetable');
 
 const money=value=>value==null?null:Number(value);
@@ -21,7 +21,6 @@ async function buildPaymentCertificateRenderPayload(db, client, packageId, certi
   const supplier=(await db.query(`SELECT * FROM suppliers WHERE client_id=$1 AND id=$2`,[client.id,pkg.supplier_id])).rows[0]||null;
   const po=(await db.query(`SELECT po.po_number,po.payload FROM package_purchase_orders ppo JOIN purchase_orders po
     ON po.client_id=ppo.client_id AND po.po_number=ppo.po_number WHERE ppo.client_id=$1 AND ppo.package_id=$2 ORDER BY po.po_number LIMIT 1`,[client.id,packageId])).rows[0]||null;
-  const brandRow=(await db.query(`SELECT * FROM client_brand_profiles WHERE client_id=$1`,[client.id])).rows[0]||null;
   const timetable=(await db.query(`SELECT * FROM package_payment_certificate_deadline_snapshots
     WHERE client_id=$1 AND certificate_id=$2 AND stage='locked' ORDER BY captured_at DESC LIMIT 1`,[client.id,certificateId])).rows[0]||null;
   const payload=object(certificate.payload),valuation=object(payload.valuationSnapshot),cells=Array.isArray(valuation.cells)?valuation.cells:[];
@@ -30,7 +29,7 @@ async function buildPaymentCertificateRenderPayload(db, client, packageId, certi
     WHERE client_id=$1 AND package_id=$2 AND status='locked' AND certificate_number<$3`,[client.id,packageId,certificate.certificate_number])).rows[0].value)||0;
   const certifiedToDate=previousCertified+(money(certificate.gross_value)||0);
   const supplierData={...object(supplier?.payload),name:supplier?.name||pkg.supplier_label||pkg.supplier_id};
-  const poData=object(po?.payload),developmentData=object(development?.payload),brand=mapBrandToPdfContext(brandRow,client);
+  const poData=object(po?.payload),developmentData=object(development?.payload),brand=await getBrandContextForClient(client.id,client,db);
   const application=object(payload.lockedApplicationSnapshot),terms=object(payload.lockedGoverningTermsSnapshot);
   const applicationAmount=money(application.comparison?.applicationCurrentGross??application.application?.currentPeriodGrossClaimed);
   const assessedGross=money(certificate.gross_value);

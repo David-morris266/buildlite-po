@@ -106,6 +106,10 @@ async function prepareIntegrationTestDatabase(pool) {
   if (!hasPlatformBootstrapAudit.rowCount) {
     await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '065_first_platform_operator_bootstrap.sql'), 'utf8'));
   }
+  const hasTenantBranding = await pool.query("SELECT 1 FROM information_schema.tables WHERE table_name='tenant_brand_assets'");
+  if (!hasTenantBranding.rowCount) {
+    await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '066_tenant_branding_assets.sql'), 'utf8'));
+  }
   const activeClientId = await ensureActiveTestClient(pool);
   await ensureDefaultTestPrincipal(pool, activeClientId);
 }
