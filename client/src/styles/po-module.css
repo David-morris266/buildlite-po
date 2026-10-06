@@ -10755,6 +10755,13 @@
   height: 2rem;
 }
 
+.dev-prelims-setup__detail .dev-prelims-time__basis {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 11.5rem;
+  max-width: none;
+}
+
 .dev-prelims-setup__detail .dev-prelims-time__chips,
 .dev-prelims-setup__detail .dev-prelims-setup__chips {
   margin-top: 0.45rem;

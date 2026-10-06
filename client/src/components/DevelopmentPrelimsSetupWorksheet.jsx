@@ -39,7 +39,13 @@ function moneyLabel(value) {
   return formatCvrMoney(value);
 }
 
-export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCancel, onApplied, onSetUpCompanyTemplate = null }) {
+export default function DevelopmentPrelimsSetupWorksheet({
+  developmentId,
+  persistedItems = [],
+  onCancel,
+  onApplied,
+  onSetUpCompanyTemplate = null,
+}) {
   const [templates, setTemplates] = useState([]);
   const [templateId, setTemplateId] = useState('');
   const [preview, setPreview] = useState(null);
@@ -178,6 +184,40 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
     return map;
   }, [drafts]);
 
+  const persistedById = useMemo(
+    () => new Map(persistedItems.map((item) => [item.id, item])),
+    [persistedItems]
+  );
+  const displayDrafts = useMemo(
+    () =>
+      (preview?.lines || []).map((line) => {
+        const draft = draftById.get(line.templateLineId);
+        const item = line.alreadyAppliedItemId
+          ? persistedById.get(line.alreadyAppliedItemId)
+          : null;
+        if (!line.alreadyApplied || !item) return draft;
+        return {
+          ...draft,
+          costCodeKey: item.costCodeKey,
+          forecastDriver: item.forecastDriver,
+          monthlyRate: item.monthlyRate == null ? '' : String(item.monthlyRate),
+          lumpSumAmount: item.lumpSumAmount == null ? '' : String(item.lumpSumAmount),
+          startBasis: item.startBasis,
+          startOffsetMonths: item.startOffsetMonths ?? 0,
+          startFixedDate: item.startFixedDate || '',
+          endBasis: item.endBasis,
+          endOffsetMonths: item.endOffsetMonths ?? 0,
+          endFixedDate: item.endFixedDate || '',
+        };
+      })
+      .filter(Boolean),
+    [preview, draftById, persistedById]
+  );
+  const displayDraftById = useMemo(
+    () => new Map(displayDrafts.map((draft) => [draft.templateLineId, draft])),
+    [displayDrafts]
+  );
+
   const saveableCount = useMemo(() => {
     if (!preview) return 0;
     return preview.lines.filter((line) =>
@@ -186,8 +226,8 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
   }, [preview, draftById]);
 
   const activeGroups = useMemo(
-    () => groupSetupLines(preview?.lines || [], drafts),
-    [preview, drafts]
+    () => groupSetupLines(preview?.lines || [], displayDrafts),
+    [preview, displayDrafts]
   );
   const activeLines = useMemo(() => activeGroups.flatMap((group) => group.lines), [activeGroups]);
   const groupByLineId = useMemo(() => {
@@ -205,6 +245,14 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
   }, [budget]);
 
   const progress = useMemo(() => setupProgress(preview, drafts), [preview, drafts]);
+  const alreadyAppliedCount = useMemo(
+    () => (preview?.lines || []).filter((line) => line.alreadyApplied).length,
+    [preview]
+  );
+  const availableCount = useMemo(
+    () => (preview?.lines || []).filter((line) => line.enabled && !line.alreadyApplied).length,
+    [preview]
+  );
   const dirty = useMemo(
     () => setupDraftsAreDirty(drafts, baselineDrafts),
     [drafts, baselineDrafts]
@@ -372,7 +420,7 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
         </label>
         <p className="dev-prelims-setup__meta">
           {preview
-            ? `${preview.lines.length} template lines · ${saveableCount} configured · CVR ${
+            ? `${preview.lines.length} template lines · ${alreadyAppliedCount} already on this development · ${availableCount} available to add · CVR ${
                 preview.reportingMonth || 'no reporting month'
               }`
             : 'Loading worksheet…'}
@@ -389,7 +437,7 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
 
       {preview ? (
         <p className="dev-prelims-setup__progress" role="status">
-          {progress.selected} selected · {progress.configured} configured · {progress.resolved} forecast resolved ·{' '}
+          Current setup: {progress.selected} selected · {progress.configured} new configured · {progress.resolved} new forecast resolved ·{' '}
           {progress.needsAttention} needs attention
         </p>
       ) : null}
@@ -428,7 +476,7 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
             </thead>
             <tbody>
               {activeLines.map((line, lineIndex) => {
-                const draft = draftById.get(line.templateLineId) || {
+                const draft = displayDraftById.get(line.templateLineId) || {
                   templateLineId: line.templateLineId,
                   selected: false,
                   costCodeKey: '',
@@ -576,7 +624,7 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
                             </span>
                           ) : null}
                         </span>
-                        {!searchFirst ? (
+                        {!searchFirst && !line.alreadyApplied ? (
                           <div className="dev-prelims-setup__mapping-actions">
                             {editingMapping ? (
                               <button

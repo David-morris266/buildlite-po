@@ -407,6 +407,7 @@ export default function DevelopmentPrelimsWorkspace({ developmentId, onSetUpComp
       {workspaceView === 'setup' ? (
         <DevelopmentPrelimsSetupWorksheet
           developmentId={developmentId}
+          persistedItems={collection?.items || []}
           onSetUpCompanyTemplate={onSetUpCompanyTemplate}
           onCancel={() => setWorkspaceView('lines')}
           onApplied={async () => {

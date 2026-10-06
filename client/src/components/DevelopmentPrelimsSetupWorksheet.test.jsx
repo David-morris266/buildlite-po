@@ -192,12 +192,18 @@ describe('Development Prelims setup worksheet', () => {
     }
   }
 
-  async function renderSheet({ onCancel = () => {}, onApplied = () => {}, onSetUpCompanyTemplate = null } = {}) {
+  async function renderSheet({
+    onCancel = () => {},
+    onApplied = () => {},
+    onSetUpCompanyTemplate = null,
+    persistedItems = [],
+  } = {}) {
     await act(async () => {
       root.render(
         <UnsavedChangesProvider>
           <DevelopmentPrelimsSetupWorksheet
             developmentId="dev-1"
+            persistedItems={persistedItems}
             onCancel={onCancel}
             onApplied={onApplied}
             onSetUpCompanyTemplate={onSetUpCompanyTemplate}
@@ -319,7 +325,7 @@ describe('Development Prelims setup worksheet', () => {
     });
     expect(container.textContent.match(/Programme dates are not available/g)).toHaveLength(1);
     expect(container.textContent).toContain('Pending programme');
-    expect(container.textContent).toContain('1 configured · 0 forecast resolved');
+    expect(container.textContent).toContain('1 new configured · 0 new forecast resolved');
     const add = Array.from(container.querySelectorAll('button')).find((button) =>
       button.textContent.includes('Add 1 configured line')
     );
@@ -458,6 +464,81 @@ describe('Development Prelims setup worksheet', () => {
       /\.dev-prelims-setup__primary td::before\s*\{[\s\S]*content: attr\(data-label\)/
     );
     expect(css).toMatch(/@media \(max-width: 640px\)[\s\S]*dev-prelims-setup__primary/);
+    expect(css).toMatch(
+      /\.dev-prelims-setup__detail \.dev-prelims-time__basis\s*\{[\s\S]*width:\s*100%;[\s\S]*min-width:\s*11\.5rem;[\s\S]*max-width:\s*none;/
+    );
+    expect(css).toMatch(
+      /\.dev-prelims-setup__detail \.dev-prelims-time--compact\s*\{[\s\S]*grid-template-columns:\s*minmax\(13\.5rem, 1fr\) minmax\(13\.5rem, 1fr\)/
+    );
+  });
+
+  it('shows an already-instantiated TIME assumption read-only and labels counts as new setup work', async () => {
+    const next = previewBody();
+    next.programme = { exists: false, siteStart: null, firstCompletion: null, finalCompletion: null };
+    next.lines[0] = {
+      ...next.lines[0],
+      alreadyApplied: true,
+      alreadyAppliedItemId: 'item-sm',
+      selectable: false,
+    };
+    previewDevelopmentPrelimsSetup.mockResolvedValueOnce(next);
+    await renderSheet({
+      persistedItems: [{
+        id: 'item-sm',
+        costCodeKey: '5210',
+        forecastDriver: 'TIME',
+        monthlyRate: 5000,
+        lumpSumAmount: null,
+        startBasis: 'SITE_START',
+        startOffsetMonths: 0,
+        startFixedDate: null,
+        endBasis: 'FINAL_COMPLETION',
+        endOffsetMonths: 0,
+        endFixedDate: null,
+      }],
+    });
+
+    const row = Array.from(container.querySelectorAll('.dev-prelims-setup__primary')).find((item) =>
+      item.textContent.includes('Site Manager')
+    );
+    expect(container.textContent).toContain('1 already on this development');
+    expect(container.textContent).toContain('Current setup: 0 selected · 0 new configured');
+    expect(container.textContent).not.toContain('0 configured · CVR');
+    expect(row.textContent).toContain('Already on this development');
+    expect(row.querySelector('[aria-label="Site Manager monthly rate"]').value).toBe('5000');
+    expect(row.querySelector('[aria-label="Site Manager monthly rate"]').disabled).toBe(true);
+    expect(container.querySelector('[aria-label="Site Manager start basis"]').value).toBe('SITE_START');
+    expect(container.querySelector('[aria-label="Site Manager start offset months"]').value).toBe('0');
+    expect(container.querySelector('[aria-label="Site Manager end basis"]').value).toBe('FINAL_COMPLETION');
+    expect(container.querySelector('[aria-label="Site Manager end offset months"]').value).toBe('0');
+    expect(row.textContent).toContain('Pending programme');
+    expect(row.querySelector('[aria-label="Select Site Manager"]').disabled).toBe(true);
+    expect(Array.from(row.querySelectorAll('button')).some((button) => button.textContent.includes('Change'))).toBe(false);
+    expect(applyDevelopmentPrelimsSetup).not.toHaveBeenCalled();
+  });
+
+  it('shows an already-instantiated LUMP_SUM amount read-only', async () => {
+    const next = previewBody();
+    next.lines[3] = {
+      ...next.lines[3],
+      alreadyApplied: true,
+      alreadyAppliedItemId: 'item-custom',
+      selectable: false,
+    };
+    previewDevelopmentPrelimsSetup.mockResolvedValueOnce(next);
+    await renderSheet({
+      persistedItems: [{
+        id: 'item-custom',
+        costCodeKey: '5305',
+        forecastDriver: 'LUMP_SUM',
+        monthlyRate: null,
+        lumpSumAmount: 18000,
+      }],
+    });
+    const amount = container.querySelector('[aria-label="BL-033D.x.2 CUSTOM UAT lump-sum amount"]');
+    expect(amount.value).toBe('18000');
+    expect(amount.disabled).toBe(true);
+    expect(container.textContent).toContain('£18,000.00');
   });
 
   it('creates only selected ready lines once, including a preview-only mapped custom line', async () => {
