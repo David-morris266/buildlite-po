@@ -34,6 +34,20 @@ describe('canonical application routes', () => {
     });
   });
 
+  it('round-trips allowlisted Company tabs and rejects unknown tabs', () => {
+    const branding = serializeApplicationRoute({ view: 'administration', administrationSection: 'company', companyTab: 'branding' }, { pathname: '/', hash: '' });
+    expect(branding).toBe('/?view=administration&section=company&companyTab=branding');
+    expect(parseApplicationRoute({ search: branding.slice(1) })).toMatchObject({ administrationSection: 'company', companyTab: 'branding' });
+    expect(parseApplicationRoute({ search: '?view=administration&section=company&companyTab=unknown' })).toMatchObject({ administrationSection: 'company', companyTab: 'identity' });
+    expect(serializeApplicationRoute({ view: 'administration', administrationSection: 'company', companyTab: 'identity' }, { pathname: '/', hash: '' })).toBe('/?view=administration&section=company');
+  });
+
+  it('round-trips the Cost Code hierarchy Administration subsection', () => {
+    const route = parseApplicationRoute({ search: '?view=administration&section=cost-code-hierarchy' });
+    expect(route).toMatchObject({ view: 'administration', administrationSection: 'cost-code-hierarchy' });
+    expect(serializeApplicationRoute(route, { pathname: '/', hash: '' })).toBe('/?view=administration&section=cost-code-hierarchy');
+  });
+
   it('round-trips CVR and package workspace identity', () => {
     expect(parseApplicationRoute({
       search: '?view=developments&development=dev-1&workspace=cvr&period=P04',

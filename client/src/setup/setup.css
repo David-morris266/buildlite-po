@@ -1917,11 +1917,25 @@
 }
 
 .setup-import-summary-grid article {
+  display: grid;
+  gap: 6px;
   flex: 1;
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
 }
+
+.setup-import-summary-grid article span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.setup-import-summary-grid article strong { font-size: 1.25rem; }
+.setup-import-details { margin-top: 14px; }
+.setup-import-details dl { display: grid; gap: 6px; }
+.setup-import-details dl div { display: flex; justify-content: space-between; gap: 16px; }
 
 .admin-setup-section-list {
   display: grid;

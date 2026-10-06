@@ -29,7 +29,7 @@ function isAcceptedFile(file) {
   return isAcceptedCsvFile(file) || isAcceptedExcelFile(file);
 }
 
-export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
+export default function SetupCostCodeImportWizard({ onComplete, onCancel, onReviewCostCodeHierarchy }) {
   const principal = useBuildLitePrincipal();
   const fileInputRef = useRef(null);
   const [stepIndex, setStepIndex] = useState(0);
@@ -300,8 +300,8 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
             <article><span>Valid rows</span><strong>{validation.summary.validCount}</strong></article>
             <article><span>Errors</span><strong>{validation.summary.errorCount}</strong></article>
             <article><span>Warnings</span><strong>{validation.summary.warningCount}</strong></article>
-            <article><span>Hierarchy mode</span><strong>{validation.hierarchyModeLabel}</strong></article>
           </div>
+          <p className="setup-step__hint">Commercial Head is required. Commercial Family and Reporting Group are optional.</p>
           {validation.missingMappings.length ? (
             <p className="setup-step__error">Missing mappings: {validation.missingMappings.join(', ')}</p>
           ) : null}
@@ -372,22 +372,22 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
 
       {stepIndex === 5 && summary ? (
         <div className="setup-import-panel">
-          <h3>Import Summary</h3>
+          <h3>{summary.imported} Cost Codes imported successfully</h3>
           {readinessRefreshWarning ? <div className="setup-step__error" role="alert">{readinessRefreshWarning}</div> : null}
           <div className="setup-import-summary-grid">
-            <article><span>Rows read</span><strong>{summary.rowsRead}</strong></article>
-            <article><span>Cost codes imported</span><strong>{summary.imported}</strong></article>
-            <article><span>Cost codes updated</span><strong>{summary.updated}</strong></article>
-            <article><span>Cost codes rejected</span><strong>{summary.rejected}</strong></article>
-            <article><span>Commercial Heads created</span><strong>{summary.headsCreated}</strong></article>
-            <article><span>Commercial Heads matched</span><strong>{summary.headsMatched}</strong></article>
-            <article><span>Commercial Families created</span><strong>{summary.familiesCreated}</strong></article>
-            <article><span>Commercial Families matched</span><strong>{summary.familiesMatched}</strong></article>
-            <article><span>Reporting Groups created</span><strong>{summary.reportingGroupsCreated}</strong></article>
-            <article><span>Reporting Groups matched</span><strong>{summary.reportingGroupsMatched}</strong></article>
-            <article><span>Hierarchy mode</span><strong>{summary.hierarchyModeLabel}</strong></article>
-            <article><span>Skipped duplicates</span><strong>{summary.skipped}</strong></article>
+            <article><span>Imported</span><strong>{summary.imported}</strong></article>
+            <article><span>Updated</span><strong>{summary.updated}</strong></article>
+            <article><span>Rejected</span><strong>{summary.rejected}</strong></article>
+            <article><span>Duplicates</span><strong>{summary.skipped}</strong></article>
           </div>
+          {[summary.headsCreated,summary.headsMatched,summary.familiesCreated,summary.familiesMatched,summary.reportingGroupsCreated,summary.reportingGroupsMatched].some(Number) ? <details className="setup-import-details"><summary>Import details</summary><dl>
+            {summary.headsCreated ? <div><dt>Commercial Heads created</dt><dd>{summary.headsCreated}</dd></div> : null}
+            {summary.headsMatched ? <div><dt>Commercial Heads matched</dt><dd>{summary.headsMatched}</dd></div> : null}
+            {summary.familiesCreated ? <div><dt>Commercial Families created</dt><dd>{summary.familiesCreated}</dd></div> : null}
+            {summary.familiesMatched ? <div><dt>Commercial Families matched</dt><dd>{summary.familiesMatched}</dd></div> : null}
+            {summary.reportingGroupsCreated ? <div><dt>Reporting Groups created</dt><dd>{summary.reportingGroupsCreated}</dd></div> : null}
+            {summary.reportingGroupsMatched ? <div><dt>Reporting Groups matched</dt><dd>{summary.reportingGroupsMatched}</dd></div> : null}
+          </dl></details> : null}
           {summary.warnings?.length ? (
             <div className="setup-step__hint">
               <strong>Warnings</strong>
@@ -409,7 +409,8 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
             </div>
           ) : null}
           <div className="setup-import-actions">
-            <button type="button" className="po-btn-primary" onClick={() => onComplete?.(summary)}>Continue</button>
+            {onReviewCostCodeHierarchy ? <button type="button" className="po-btn-primary" onClick={onReviewCostCodeHierarchy}>Review Cost Code hierarchy</button> : null}
+            <button type="button" className={onReviewCostCodeHierarchy ? 'po-list-btn-secondary' : 'po-btn-primary'} onClick={() => onComplete?.(summary)}>Back to Setup &amp; Data Import</button>
           </div>
         </div>
       ) : null}

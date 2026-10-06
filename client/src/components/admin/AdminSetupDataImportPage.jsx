@@ -4,7 +4,7 @@ import AdminPageShell from './AdminPageShell';
 import { createBreadcrumb } from '../../navigation/navigationTypes';
 import { AdminButton } from './adminUi';
 
-export default function AdminSetupDataImportPage({ onBack, initialCostCodeImport = false }) {
+export default function AdminSetupDataImportPage({ onBack, initialCostCodeImport = false, onReviewCostCodeHierarchy }) {
   const [showCostCodeImport, setShowCostCodeImport] = useState(initialCostCodeImport);
 
   if (showCostCodeImport) {
@@ -21,6 +21,7 @@ export default function AdminSetupDataImportPage({ onBack, initialCostCodeImport
       >
         <SetupCostCodeImportWizard
           onComplete={() => setShowCostCodeImport(false)}
+          onReviewCostCodeHierarchy={onReviewCostCodeHierarchy}
           onCancel={() => setShowCostCodeImport(false)}
         />
       </AdminPageShell>
@@ -48,21 +49,6 @@ export default function AdminSetupDataImportPage({ onBack, initialCostCodeImport
             </AdminButton>
           </article>
 
-          <article className="admin-setup-section-item">
-            <div>
-              <strong>Import Suppliers</strong>
-              <p className="admin-page-header__lead">Bulk supplier import from Excel.</p>
-            </div>
-            <span className="admin-chip admin-chip--muted">Coming soon</span>
-          </article>
-
-          <article className="admin-setup-section-item">
-            <div>
-              <strong>Import Customers</strong>
-              <p className="admin-page-header__lead">Bulk client import from Excel.</p>
-            </div>
-            <span className="admin-chip admin-chip--muted">Coming soon</span>
-          </article>
         </div>
       </section>
 

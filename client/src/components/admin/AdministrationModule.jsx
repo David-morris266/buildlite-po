@@ -38,6 +38,8 @@ export default function AdministrationModule({
   onReturnToDevelopment,
   onViewChange = null,
   onViewReplace = null,
+  initialCompanyTab = 'identity',
+  onCompanyTabChange = null,
 }) {
   const principal = useBuildLitePrincipal();
   const canManageCommercialTemplates = principal?.permissions?.includes(COMMERCIAL_TEMPLATES_PERMISSION) === true;
@@ -133,6 +135,7 @@ export default function AdministrationModule({
         <AdminSetupDataImportPage
           onBack={goToDashboard}
           initialCostCodeImport={view === 'cost-code-import'}
+          onReviewCostCodeHierarchy={() => openView('cost-code-hierarchy')}
         />
       </AdministrationWorkspace>
     );
@@ -141,14 +144,14 @@ export default function AdministrationModule({
   if (view === 'company') {
     return (
       <AdministrationWorkspace>
-        <AdminCompanyPage onBack={goToDashboard} />
+        <AdminCompanyPage onBack={goToDashboard} initialSection={initialCompanyTab || 'identity'} onSectionChange={onCompanyTabChange} />
       </AdministrationWorkspace>
     );
   }
   if (view === 'commercial-structure') {
     return (
       <AdministrationWorkspace>
-        <AdminCommercialStructurePage onBack={goToDashboard} onReviewCostCodeHierarchy={()=>openView('cost-codes',{openHierarchySetup:true})} />
+        <AdminCommercialStructurePage onBack={goToDashboard} onReviewCostCodeHierarchy={()=>openView('cost-code-hierarchy')} />
       </AdministrationWorkspace>
     );
   }
@@ -221,6 +224,9 @@ export default function AdministrationModule({
         <AdminPrelimsTemplatesPage onBack={goToDashboard} onSetUpCommercialStructure={()=>openView('commercial-structure')} />
       </AdministrationWorkspace>
     );
+  }
+  if (view === 'cost-code-hierarchy') {
+    return <AdministrationWorkspace><AdminCostCodesPage onBack={goToDashboard} initialHierarchySetup hierarchyOnly onHierarchyExit={() => openView('cost-codes')} /></AdministrationWorkspace>;
   }
   if(view==='platform-provisioning'){if(!canProvision){return <AdministrationWorkspace><AdministrationLanding onOpen={openView} showDeveloperTools={showDeveloperTools} canManageCommercialTemplates={canManageCommercialTemplates}/></AdministrationWorkspace>}return <AdministrationWorkspace><AdminPlatformProvisioningPage onBack={goToDashboard}/></AdministrationWorkspace>}
   if (view === 'cost-code-classification') {

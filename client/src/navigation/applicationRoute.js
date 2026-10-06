@@ -29,6 +29,7 @@ const PACKAGE_TABS = new Set([
 ]);
 
 const CVR_SUBVIEWS = new Set(['summary', 'worksheet', 'movements', 'exceptions', 'commentary']);
+const COMPANY_TABS = new Set(['identity', 'financial', 'commercial-defaults', 'numbering', 'branding']);
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,199}$/;
 
@@ -57,6 +58,7 @@ export function homeApplicationRoute() {
     packageKey: null,
     packageTab: null,
     administrationSection: null,
+    companyTab: null,
     plotMasterView: null,
   };
 }
@@ -71,6 +73,9 @@ export function parseApplicationRoute(locationLike = globalThis.location) {
 
   if (view === 'administration') {
     route.administrationSection = safeValue(params.get('section'));
+    route.companyTab = route.administrationSection === 'company' && COMPANY_TABS.has(params.get('companyTab'))
+      ? params.get('companyTab')
+      : route.administrationSection === 'company' ? 'identity' : null;
   }
 
   if (view !== 'developments') return route;
@@ -111,6 +116,9 @@ export function serializeApplicationRoute(route, locationLike = globalThis.locat
     safeValue(route?.administrationSection)
   ) {
     params.set('section', route.administrationSection);
+    if (route.administrationSection === 'company' && COMPANY_TABS.has(route.companyTab) && route.companyTab !== 'identity') {
+      params.set('companyTab', route.companyTab);
+    }
   }
   if (view === 'developments' && safeValue(route?.developmentId)) {
     params.set('development', route.developmentId);

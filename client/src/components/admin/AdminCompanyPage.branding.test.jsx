@@ -45,4 +45,9 @@ describe('authoritative Company branding UX',()=>{
     await act(async()=>[...container.querySelectorAll('button')].find(x=>x.textContent==='Save logo').click());await settle();
     expect(container.textContent).toContain('Company logo is malformed');expect(mocks.remove).not.toHaveBeenCalled();expect(mocks.load).toHaveBeenCalledWith('/api/company-branding/assets/old');
   });
+  it('hydrates a canonical Branding tab and reports deliberate tab changes',async()=>{
+    const onSectionChange=vi.fn();await act(async()=>root.render(<AdminCompanyPage initialSection="branding" onSectionChange={onSectionChange}/>));await settle();
+    expect(container.textContent).toContain('No logo uploaded');act(()=>[...container.querySelectorAll('button')].find(x=>x.textContent==='Financial').click());
+    expect(onSectionChange).toHaveBeenCalledWith('financial');expect(container.textContent).toContain('Financial Settings');
+  });
 });

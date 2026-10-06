@@ -26,7 +26,7 @@ vi.mock('../../auth/BuildLiteAuthProvider', () => ({
     },
   }),
 }));
-vi.mock('./AdminCostCodesPage', () => ({ default: ({ onBack }) => <div data-testid="cost-codes">Cost Codes<button onClick={onBack}>Back to Administration</button></div> }));
+vi.mock('./AdminCostCodesPage', () => ({ default: ({ onBack, hierarchyOnly, onHierarchyExit }) => <div data-testid={hierarchyOnly ? 'cost-code-hierarchy' : 'cost-codes'}>{hierarchyOnly ? 'Cost Code Commercial Hierarchy' : 'Cost Codes'}<button onClick={hierarchyOnly ? onHierarchyExit : onBack}>{hierarchyOnly ? 'Back to Cost Codes' : 'Back to Administration'}</button></div> }));
 
 import AdministrationModule from './AdministrationModule';
 
@@ -53,14 +53,16 @@ describe('Company Readiness Administration round trip', () => {
     const click = async label => act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === label).click(); await Promise.resolve(); });
     const openReadiness = async () => act(async () => { [...container.querySelectorAll('.admin-module-card')].find(card => card.textContent.includes('Company Readiness')).click(); await Promise.resolve(); });
     await click('Review Cost Code hierarchy');
+    expect(container.querySelector('[data-testid="cost-code-hierarchy"]')).toBeTruthy();
+    await click('Back to Cost Codes');
     expect(container.querySelector('[data-testid="cost-codes"]')).toBeTruthy();
     await click('Back to Administration');
-    expect(container.textContent).toContain('Administration');
     await openReadiness();
     expect(container.textContent).toContain('5 Allocated');
     expect(auth.refreshReadiness).not.toHaveBeenCalled();
 
     await click('Review Cost Code hierarchy');
+    await click('Back to Cost Codes');
     await click('Back to Administration');
     await openReadiness();
     expect(container.textContent).toContain('5 Allocated');

@@ -25,6 +25,7 @@ export default function AdminCostCodeHierarchySetup({ records = [], onCancel, on
   const [drafts, setDrafts] = useState(() => Object.fromEntries(activeRecords.map((record) => [record.id, { ...hierarchyOf(record), reviewDisposition: record.hierarchyReviewDisposition || null }])));
   const [selected, setSelected] = useState(new Set());
   const [query, setQuery] = useState('');
+  const [codePrefix, setCodePrefix] = useState('');
   const [filter, setFilter] = useState('not_reviewed');
   const [page, setPage] = useState(1);
   const [bulkHead, setBulkHead] = useState('');
@@ -55,10 +56,12 @@ export default function AdminCostCodeHierarchySetup({ records = [], onCancel, on
   const visible = useMemo(() => activeRecords.filter((record) => {
     const evidence = (record.importEvidence || []).flatMap((item) => Object.entries(item.hierarchyEvidence || {}).flatMap(([key, value]) => [key, value?.value]));
     const needle = query.trim().toLowerCase();
+    const prefix = codePrefix.trim().toLowerCase();
     const matches = !needle || [record.code, record.description, record.legacy?.subHeading, record.legacy?.trade, record.legacy?.element, ...evidence]
       .some((value) => String(value || '').toLowerCase().includes(needle));
-    return matches && (filter === 'all' || stateOf(record) === filter);
-  }), [activeRecords, query, filter]);
+    const matchesPrefix = !prefix || String(record.code || '').toLowerCase().startsWith(prefix);
+    return matches && matchesPrefix && (filter === 'all' || stateOf(record) === filter);
+  }), [activeRecords, query, codePrefix, filter]);
 
   const changes = activeRecords.filter((record) => !equal({ ...hierarchyOf(record), reviewDisposition: record.hierarchyReviewDisposition || null }, drafts[record.id]));
   const update = (id, patch) => setDrafts((current) => {
@@ -138,6 +141,7 @@ export default function AdminCostCodeHierarchySetup({ records = [], onCancel, on
       </section>
       <section className="po-module-card cost-code-hierarchy__tools">
         <label><span>Search codes or import evidence</span><input className="input" aria-label="Search cost codes" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} /></label>
+        <label><span>Cost Code starts with</span><input className="input" aria-label="Cost Code starts with" value={codePrefix} onChange={(event) => { setCodePrefix(event.target.value); setPage(1); }} /></label>
         <label><span>Show</span><select className="input" aria-label="Show cost codes" value={filter} onChange={(event) => setFilter(event.target.value)}><option value="not_reviewed">Not reviewed</option><option value="needs_attention">Needs attention</option><option value="not_applicable">Not applicable</option><option value="allocated">Allocated</option><option value="all">All</option></select></label>
         <AdminButton variant="secondary" disabled={!visible.length} onClick={() => setSelected(new Set(visible.map((record) => record.id)))}>Select all filtered ({visible.length})</AdminButton>
         <label><span>Bulk Commercial Head</span><select className="input" aria-label="Bulk Commercial Head" value={bulkHead} onChange={(event) => { setBulkHead(event.target.value); setBulkFamily(''); setBulkGroup(''); }}><option value="">Choose Head</option>{activeHeads(catalogue).map((head) => <option key={head.id} value={head.id}>{head.name}</option>)}</select></label>
@@ -146,6 +150,7 @@ export default function AdminCostCodeHierarchySetup({ records = [], onCancel, on
         <AdminButton variant="secondary" disabled={!selected.size || !bulkHead} onClick={applyBulk}>Assign hierarchy to {selected.size}</AdminButton>
         <AdminButton variant="secondary" disabled={!selected.size} onClick={markNotApplicable}>Mark {selected.size} Not applicable</AdminButton>
       </section>
+      {changes.length ? <aside className="cost-code-hierarchy__staged" role="status"><strong>{changes.length} hierarchy {changes.length === 1 ? 'change' : 'changes'} staged for review</strong><AdminButton onClick={() => setReviewing(true)}>Review changes</AdminButton></aside> : null}
       <div className="cost-code-hierarchy__rows" role="list">{visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((record) => {
         const draft = drafts[record.id]; const head = catalogue.heads.find((item) => item.id === draft.commercialHeadId);
         const families = familiesFor(catalogue, draft.commercialHeadId, { includeId: draft.commercialFamilyId });

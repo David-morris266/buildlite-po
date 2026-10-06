@@ -70,7 +70,7 @@ function TenantApplicationContent() {
   const [adminDashboardReset, setAdminDashboardReset] = useState(0);
   const [adminLaunch, setAdminLaunch] = useState(
     initialRoute.administrationSection
-      ? { section: initialRoute.administrationSection, returnDevelopment: null }
+      ? { section: initialRoute.administrationSection, companyTab: initialRoute.companyTab, returnDevelopment: null }
       : null
   );
   const [navigationOrigin, setNavigationOrigin] = useState(null);
@@ -87,6 +87,7 @@ function TenantApplicationContent() {
     setAdminLaunch(next.view === 'administration' && next.administrationSection
       ? {
           section: next.administrationSection,
+          companyTab: next.companyTab,
           returnDevelopment: next.returnDevelopment || null,
         }
       : null);
@@ -134,24 +135,30 @@ function TenantApplicationContent() {
     writeApplicationRoute(route, options);
   }, []);
 
-  const writeAdministrationRoute = useCallback((administrationSection, options) => {
+  const writeAdministrationRoute = useCallback((administrationSection, options = {}) => {
+    const companyTab = options.companyTab ?? (administrationSection === 'company' ? currentRouteRef.current?.companyTab || 'identity' : null);
     setAdminLaunch((current) => ({
       section: administrationSection || 'landing',
+      companyTab,
       returnDevelopment: current?.returnDevelopment || null,
     }));
     const route = {
       ...homeApplicationRoute(),
       view: 'administration',
       administrationSection,
+      companyTab,
     };
     currentRouteRef.current = route;
-    writeApplicationRoute(route, options);
+    writeApplicationRoute(route, { replace: options.replace === true });
   }, []);
   const handleAdministrationViewChange = useCallback((administrationSection) => {
     writeAdministrationRoute(administrationSection);
   }, [writeAdministrationRoute]);
   const handleAdministrationViewReplace = useCallback((administrationSection) => {
     writeAdministrationRoute(administrationSection, { replace: true });
+  }, [writeAdministrationRoute]);
+  const handleCompanyTabChange = useCallback((companyTab, options) => {
+    writeAdministrationRoute('company', { companyTab, replace: options?.replace === true });
   }, [writeAdministrationRoute]);
 
   useEffect(() => {
@@ -228,8 +235,10 @@ function TenantApplicationContent() {
       {tab === 'home' ? <CommercialWorkspace><BuildLiteHome onNavigate={handleHomeNavigate} /></CommercialWorkspace> : null}
       {tab === 'administration' ? <AdministrationModule dashboardResetToken={adminDashboardReset}
         initialView={adminLaunch?.section} returnDevelopment={adminLaunch?.returnDevelopment}
+        initialCompanyTab={adminLaunch?.companyTab}
         onViewChange={handleAdministrationViewChange}
         onViewReplace={handleAdministrationViewReplace}
+        onCompanyTabChange={handleCompanyTabChange}
         onReturnToDevelopment={(target) => {
           setAdminLaunch(null);
           setCvrNav({ developmentId: target.id, periodKey: null, workspaceTab: target.workspaceTab || 'overview' });

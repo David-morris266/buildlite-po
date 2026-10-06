@@ -16,17 +16,17 @@ const NUMBERING_FIELDS = [
 const SECTIONS = [
   { id: 'identity', label: 'Company Identity' },
   { id: 'financial', label: 'Financial' },
-  { id: 'commercial', label: 'Commercial Defaults' },
+  { id: 'commercial-defaults', label: 'Commercial Defaults' },
   { id: 'numbering', label: 'Numbering' },
   { id: 'branding', label: 'Branding' },
 ];
 
-export default function AdminCompanyPage({ onBack }) {
+export default function AdminCompanyPage({ onBack, initialSection = 'identity', onSectionChange }) {
   const [form, setForm] = useState({companyName:'',tradingName:'',companyNumber:'',vatRegistrationNumber:'',registeredOffice:'',website:'',currency:'GBP',financialYearStart:'04-01',vatRate:20,defaultRetentionPercent:5,defaultCvrPeriod:'Monthly',defaultForecastBehaviour:'Committed',numberingPrefixes:{}});
   const [version,setVersion]=useState(0);
   const [error,setError]=useState('');
   const [saved, setSaved] = useState(false);
-  const [activeSection, setActiveSection] = useState('identity');
+  const [activeSection, setActiveSection] = useState(initialSection);
   const [branding,setBranding]=useState({version:0,logo:null});
   const [logoFile,setLogoFile]=useState(null);
   const [logoPreview,setLogoPreview]=useState('');
@@ -38,6 +38,7 @@ export default function AdminCompanyPage({ onBack }) {
   useEffect(() => {
     getCompanySettings().then(result=>{cacheAuthoritativeCompanySettings(result.settings);setForm(result.settings);setVersion(result.version);setBranding(result.branding||{version:0,logo:null});}).catch(e=>setError(e.message));
   }, []);
+  useEffect(() => { setActiveSection(initialSection); }, [initialSection]);
 
   useEffect(()=>{let active=true,objectUrl='';if(!branding.logo?.displayUrl){setSavedLogoPreview('');return()=>{active=false;};}loadCompanyLogo(branding.logo.displayUrl).then(blob=>{if(!active)return;objectUrl=URL.createObjectURL(blob);setSavedLogoPreview(objectUrl);}).catch(()=>{if(active)setLogoMessage('The saved company logo could not be displayed.');});return()=>{active=false;if(objectUrl)URL.revokeObjectURL(objectUrl);};},[branding.logo?.displayUrl]);
 
@@ -87,7 +88,7 @@ export default function AdminCompanyPage({ onBack }) {
       />
       {error?<div role="alert" className="po-list-feedback po-list-feedback--error">{error}</div>:null}
 
-      <AdminSectionNav sections={SECTIONS} active={activeSection} onChange={setActiveSection} />
+      <AdminSectionNav sections={SECTIONS} active={activeSection} onChange={(section) => { setActiveSection(section); onSectionChange?.(section); }} />
 
       <form id="admin-company-form" className="admin-form-stack" onSubmit={handleSave}>
         {activeSection === 'identity' ? (
@@ -147,7 +148,7 @@ export default function AdminCompanyPage({ onBack }) {
           </section>
         ) : null}
 
-        {activeSection === 'commercial' ? (
+        {activeSection === 'commercial-defaults' ? (
           <section className="po-module-card admin-panel admin-fade-in">
             <h2 className="admin-panel__title">Commercial Defaults</h2>
             <div className="admin-form__grid">

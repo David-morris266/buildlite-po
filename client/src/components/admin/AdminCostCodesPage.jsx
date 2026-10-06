@@ -66,7 +66,7 @@ function boolSelect(value, onChange) {
   );
 }
 
-export default function AdminCostCodesPage({ onBack, issueFilter = null, onClearIssueFilter, onOpenBulkClassification = null, initialHierarchySetup = false }) {
+export default function AdminCostCodesPage({ onBack, issueFilter = null, onClearIssueFilter, onOpenBulkClassification = null, initialHierarchySetup = false, hierarchyOnly = false, onHierarchyExit }) {
   const serverAuthority = isAdminCostCodeServerAuthority();
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -277,7 +277,7 @@ export default function AdminCostCodesPage({ onBack, issueFilter = null, onClear
   const codeLocked = serverAuthority && !isNew;
 
   if (hierarchySetup) {
-    return <AdminCostCodeHierarchySetup records={allRecords || []} onCancel={() => setHierarchySetup(false)} onApplied={() => { setSelectedId(null); setForm(EMPTY_FORM); setRefresh((value) => value + 1); }} />;
+    return <AdminCostCodeHierarchySetup records={allRecords || []} onCancel={() => hierarchyOnly ? onHierarchyExit?.() : setHierarchySetup(false)} onApplied={() => { setSelectedId(null); setForm(EMPTY_FORM); setRefresh((value) => value + 1); }} />;
   }
 
   return (

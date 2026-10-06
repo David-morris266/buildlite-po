@@ -27,7 +27,7 @@ describe('modern Company Readiness', () => {
     click('Open Company Settings'); expect(onOpen).toHaveBeenLastCalledWith('company');
     click('Set up / Review Commercial Structure'); expect(onOpen).toHaveBeenLastCalledWith('commercial-structure');
     click('Import Cost Codes'); expect(onOpen).toHaveBeenLastCalledWith('cost-code-import');
-    click('Review Cost Code hierarchy'); expect(onOpen).toHaveBeenLastCalledWith('cost-codes');
+    click('Review Cost Code hierarchy'); expect(onOpen).toHaveBeenLastCalledWith('cost-code-hierarchy');
     click('Create Development'); expect(onOpenDevelopments).toHaveBeenCalledOnce();
   });
 
