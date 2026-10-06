@@ -276,6 +276,33 @@ export default function AdminCostCodesPage({ onBack, issueFilter = null, onClear
 
   const codeLocked = serverAuthority && !isNew;
 
+  if (hierarchySetup && (showLoading || masterUnresolved || showError)) {
+    return (
+      <AdminPageShell
+        title="Cost Code Commercial Hierarchy"
+        lead="Review each active Cost Code against the company Commercial Structure."
+        onBack={() => hierarchyOnly ? onHierarchyExit?.() : setHierarchySetup(false)}
+      >
+        {showLoading || (masterUnresolved && !showError) ? <AdminSkeleton rows={6} /> : null}
+        {showError ? (
+          <AdminEmptyState
+            icon="⚠"
+            title="Could not load cost codes"
+            message={masterError || readiness.error?.message || COST_CODE_MASTER_UNAVAILABLE_MESSAGE}
+            tone="warning"
+          />
+        ) : null}
+        {showError ? (
+          <div className="admin-form__actions">
+            <AdminButton variant="primary" onClick={() => retryAdminCostCodes().then(loadMaster).catch((err) => setMasterError(err?.message || 'Could not load cost codes.'))}>
+              Retry
+            </AdminButton>
+          </div>
+        ) : null}
+      </AdminPageShell>
+    );
+  }
+
   if (hierarchySetup) {
     return <AdminCostCodeHierarchySetup records={allRecords || []} onCancel={() => hierarchyOnly ? onHierarchyExit?.() : setHierarchySetup(false)} onApplied={() => { setSelectedId(null); setForm(EMPTY_FORM); setRefresh((value) => value + 1); }} />;
   }

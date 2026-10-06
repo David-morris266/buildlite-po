@@ -111,6 +111,16 @@ export function getCostCodesCallCounts() {
   };
 }
 
+export async function getCostCodeOnboardingSummary() {
+  const active = store.costCodes.filter((row) => row.active !== false);
+  return {
+    total: active.length,
+    allocated: active.filter((row) => row.hierarchyReviewState === 'allocated').length,
+    notReviewed: active.filter((row) => row.hierarchyReviewState === 'not_reviewed').length,
+    needsAttention: active.filter((row) => row.hierarchyReviewState === 'needs_attention').length,
+  };
+}
+
 export async function listServerCostCodes() {
   store.getCallCount += 1;
   await delay();

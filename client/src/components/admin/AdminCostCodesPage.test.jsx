@@ -48,6 +48,7 @@ import {
   getCostCodesCallCounts,
   resetCostCodesApiStore,
   seedMockCostCodes,
+  setCostCodesGetDelay,
   setCostCodesGetReject,
   setCostCodesPutDelay,
 } from '../../test/mockCostCodesApi';
@@ -148,6 +149,73 @@ describe('AdminCostCodesPage (BL-033D.x.2A.2)', () => {
     expect(container.textContent).toContain('No cost codes');
     expect(container.textContent).toMatch(/genuine empty master/i);
     expect(container.textContent).not.toMatch(/Could not load cost codes/i);
+  });
+
+  it('waits for the authoritative Cost Code master before mounting a direct-route hierarchy editor', async () => {
+    authorityEnabled.value = true;
+    setCostCodesGetDelay(25);
+    seedMockCostCodes([
+      ...Array.from({ length: 5 }, (_, index) => ({
+        id: `cc-land-${index}`,
+        code: `10${index}0`,
+        description: `Allocated Land ${index + 1}`,
+        commercialHeadId: 'head-land',
+        commercialHead: 'Land',
+        hierarchyReviewState: 'allocated',
+      })),
+      ...Array.from({ length: 54 }, (_, index) => ({
+        id: `cc-review-${index}`,
+        code: `2${String(index).padStart(3, '0')}`,
+        description: `Needs review ${index + 1}`,
+        commercialHeadId: null,
+        commercialHead: null,
+        hierarchyReviewState: 'not_reviewed',
+      })),
+    ]);
+
+    await renderPage({ initialHierarchySetup: true, hierarchyOnly: true });
+    expect(container.textContent).toContain('Cost Code Commercial Hierarchy');
+    expect(container.querySelector('.admin-skeleton')).toBeTruthy();
+    expect(container.textContent).not.toContain('Needs review 1');
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 35));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('59 active · 5 Allocated · 54 Not reviewed');
+    expect(container.textContent).toContain('Needs review 1');
+    expect(container.querySelector('[aria-label="2000 Commercial Head"]').value).toBe('');
+  });
+
+  it('still opens hierarchy setup from the loaded Cost Codes master', async () => {
+    authorityEnabled.value = true;
+    seedMockCostCodes([{
+      id: 'cc-2000',
+      code: '2000',
+      description: 'Site Management',
+      commercialHeadId: 'head-land',
+      commercialHead: 'Land',
+      hierarchyReviewState: 'allocated',
+    }]);
+    await renderPage();
+
+    await act(async () => {
+      [...container.querySelectorAll('button')].find((item) => item.textContent === 'Set up Commercial Hierarchy').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Cost Code Commercial Hierarchy');
+    const show = [...container.querySelectorAll('label')].find((item) => item.textContent.startsWith('Show')).querySelector('select');
+    await act(async () => {
+      show.value = 'all';
+      show.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const head = container.querySelector('[aria-label="2000 Commercial Head"]');
+    expect(head.value).toBe('head-land');
+    expect(head.selectedOptions[0].textContent).toBe('Land');
   });
 
   it('ON lists server codes, keeps code locked, and saves classification separately', async () => {
