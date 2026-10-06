@@ -87,14 +87,15 @@ export function normalizeRevenueStrategy(strategy = {}) {
 }
 
 export function normalizeHouseTypePricingRecord(record = {}) {
+  const representativeNia = Number(record.representativeNiaFt2);
   return {
     garage: ['None', 'Single', 'Double'].includes(record.garage) ? record.garage : 'None',
     sellingBasis: record.sellingBasis === 'Manual' ? 'Manual' : 'Auto',
     manualForecastValue: roundPlotMoney(record.manualForecastValue || 0),
     representativeNiaFt2:
-      record.representativeNiaFt2 == null || record.representativeNiaFt2 === ''
-        ? null
-        : roundPlotMoney(record.representativeNiaFt2),
+      Number.isFinite(representativeNia) && representativeNia > 0
+        ? roundPlotMoney(representativeNia)
+        : null,
   };
 }
 

@@ -8,6 +8,7 @@ import {
 } from '../revenue/revenueStrategy';
 import { RevenueProgressPanel, RevenueToast } from './revenue/RevenueWorkflowUi';
 import { useRevenueWorkflowState } from './revenue/useRevenueWorkflow';
+import { validateRepresentativeNia } from '../revenue/houseTypePricingAuthority';
 
 export default function HouseTypeRevenueTable({
   developmentId,
@@ -22,6 +23,7 @@ export default function HouseTypeRevenueTable({
   }, [developmentId, refreshToken]);
 
   const [draft, setDraft] = useState(houseTypePricing);
+  const [niaErrors, setNiaErrors] = useState({});
   const { toast, progress, busyActionKey, clearToast, runAction } = useRevenueWorkflowState();
   const isBusy = busyActionKey === 'save-house-types';
 
@@ -43,11 +45,43 @@ export default function HouseTypeRevenueTable({
     }));
   }
 
+  function updateRepresentativeNia(houseType, value) {
+    updateHouseType(houseType, { representativeNiaFt2: value });
+    setNiaErrors((current) => ({
+      ...current,
+      [houseType]: validateRepresentativeNia(value),
+    }));
+  }
+
   async function handleSave() {
+    const errors = Object.fromEntries(
+      houseTypeRows
+        .map((row) => [
+          row.houseType,
+          validateRepresentativeNia(draft[row.houseType]?.representativeNiaFt2),
+        ])
+        .filter(([, message]) => message)
+    );
+    setNiaErrors(errors);
+    if (Object.keys(errors).length) return;
+
+    const normalizedDraft = Object.fromEntries(
+      Object.entries(draft).map(([houseType, record]) => [
+        houseType,
+        {
+          ...record,
+          representativeNiaFt2:
+            record.representativeNiaFt2 == null
+            || String(record.representativeNiaFt2).trim() === ''
+              ? null
+              : Number(record.representativeNiaFt2),
+        },
+      ])
+    );
     await runAction('save-house-types', {
       progressLabel: 'Saving House Type Pricing...',
       execute: async () => {
-        const saveResult = await Promise.resolve(saveHouseTypePricing(developmentId, draft));
+        const saveResult = await Promise.resolve(saveHouseTypePricing(developmentId, normalizedDraft));
         if (!saveResult?.ok) {
           throw new Error(saveResult?.errors?.[0] || 'Could not save house type pricing.');
         }
@@ -99,6 +133,9 @@ export default function HouseTypeRevenueTable({
         <p className="revenue-workspace__lead">
           Base values per house type. Forecast = NIA × development £/ft² + garage premium unless manually overridden.
         </p>
+        <p className="revenue-workspace__lead">
+          Enter the development House Type pricing NIA once. It prices matching plots but is not copied into Plot Master.
+        </p>
       </header>
 
       <div className="po-table-wrap">
@@ -106,7 +143,7 @@ export default function HouseTypeRevenueTable({
           <thead>
             <tr>
               <th>House Type</th>
-              <th>NIA</th>
+              <th>NIA (ft²)</th>
               <th>Garage</th>
               <th>Selling Basis</th>
               <th>Forecast Value</th>
@@ -119,7 +156,36 @@ export default function HouseTypeRevenueTable({
               return (
                 <tr key={row.houseType}>
                   <td>{row.houseType}</td>
-                  <td>{row.niaFt2 ? `${row.niaFt2.toLocaleString('en-GB')} ft²` : '—'}</td>
+                  <td>
+                    <input
+                      className="input revenue-house-types__inline-input"
+                      type="number"
+                      min="1"
+                      max="100000"
+                      step="1"
+                      inputMode="decimal"
+                      aria-label={`${row.houseType} NIA (ft²)`}
+                      aria-invalid={Boolean(niaErrors[row.houseType])}
+                      aria-describedby={`house-type-nia-${row.houseType}`}
+                      disabled={isBusy}
+                      value={record.representativeNiaFt2 ?? ''}
+                      placeholder={row.niaSource === 'plot_master' ? String(row.derivedNiaFt2) : ''}
+                      onChange={(event) => updateRepresentativeNia(row.houseType, event.target.value)}
+                    />
+                    <small id={`house-type-nia-${row.houseType}`} className="dev-selling-costs__destination-provenance">
+                      {niaErrors[row.houseType]
+                        || (row.niaSource === 'explicit'
+                          ? 'Explicit House Type pricing NIA'
+                          : row.niaSource === 'plot_master'
+                            ? `Derived from Plot Master: ${row.derivedNiaFt2.toLocaleString('en-GB')} ft²`
+                            : 'Unresolved — enter NIA for automatic pricing')}
+                    </small>
+                    {row.hasPlotAreaConflict ? (
+                      <small className="admin-inline-warning" role="alert">
+                        Review Plot Master areas: matching plots contain {row.distinctPlotNiaValues.map((value) => value.toLocaleString('en-GB')).join(', ')} ft².
+                      </small>
+                    ) : null}
+                  </td>
                   <td>
                     <select
                       className="input revenue-house-types__inline-input"

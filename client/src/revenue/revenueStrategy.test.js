@@ -20,14 +20,20 @@ import {
   calculateHouseTypeForecast,
   calculateOpenMarketBase,
   enrichPlotsWithPricing,
+  getHouseTypeNiaEvidence,
   getGaragePremium,
+  recalculateHouseTypePricing,
   resolvePlotForecastPrice,
 } from './revenueStrategyCalculations';
 import {
+  bulkRecalculateHouseTypeValues,
   emptyRevenueStrategy,
+  getHouseTypePricing,
   getRevenuePricingContext,
   getRevenueStrategy,
+  saveHouseTypePricing,
   saveRevenueStrategy,
+  syncPlotForecastPrices,
 } from './revenueStrategy';
 
 const strategy = emptyRevenueStrategy();
@@ -125,6 +131,48 @@ describe('revenueStrategyCalculations', () => {
     expect(rows.find((row) => row.houseType === 'Oak')?.forecastValue).toBe(425500);
   });
 
+  it('builds eight pricing rows from repeated Plot House Type strings', () => {
+    const names = ['Ashford', 'Bramley', 'Cedar', 'Dunham', 'Elm', 'Farley', 'Grafton', 'Hawley'];
+    const plots = names.flatMap((houseType, index) => [
+      { id: `${index}-a`, houseType, niaFt2: 700 + index * 50 },
+      { id: `${index}-b`, houseType, niaFt2: 700 + index * 50 },
+    ]);
+    expect(buildHouseTypePricingRows(plots, strategy, {})).toHaveLength(8);
+  });
+
+  it('distinguishes explicit, Plot Master-derived and unresolved NIA evidence', () => {
+    expect(getHouseTypeNiaEvidence('Ash', samplePlots, 1000)).toMatchObject({
+      source: 'explicit', niaFt2: 1000, matchingPlotCount: 2,
+    });
+    expect(getHouseTypeNiaEvidence('Ash', samplePlots)).toMatchObject({
+      source: 'plot_master', niaFt2: 950,
+    });
+    expect(getHouseTypeNiaEvidence('Missing', samplePlots)).toMatchObject({
+      source: 'unresolved', niaFt2: 0,
+    });
+  });
+
+  it('flags differing positive Plot NIAs while explicit NIA remains authoritative', () => {
+    const plots = [
+      { houseType: 'Ash', niaFt2: 900 },
+      { houseType: 'Ash', niaFt2: 1000 },
+    ];
+    const evidence = getHouseTypeNiaEvidence('Ash', plots, 975);
+    expect(evidence).toMatchObject({
+      source: 'explicit', niaFt2: 975, derivedNiaFt2: 950, hasPlotAreaConflict: true,
+    });
+    expect(evidence.distinctPlotValues).toEqual([900, 1000]);
+  });
+
+  it('does not replace explicit representative NIA during House Type recalculation', () => {
+    const next = recalculateHouseTypePricing(
+      { Ash: { sellingBasis: 'Auto', representativeNiaFt2: 975 } },
+      [{ houseType: 'Ash', niaFt2: 900 }, { houseType: 'Ash', niaFt2: 1000 }],
+      strategy
+    );
+    expect(next.Ash.representativeNiaFt2).toBe(975);
+  });
+
   it('enriches plots with strategy-driven effective prices', () => {
     const enriched = enrichPlotsWithPricing(samplePlots, strategy, houseTypePricing);
     expect(enriched[0].effectivePrice).toBe(332500);
@@ -201,6 +249,39 @@ describe('revenueStrategy store', () => {
     expect(context.pricedPlots).toHaveLength(1);
     expect(context.pricedPlots[0].effectivePrice).toBe(332500);
     expect(context.strategyMetrics.autoPricedPlotCount).toBe(1);
+  });
+
+  it('saves one House Type NIA and recalculates only forecast fields without copying physical area', async () => {
+    const development = await createDevelopment({ jobNumber: 'NIA-1', developmentName: 'NIA Test' });
+    saveRevenueStrategy(development.id, emptyRevenueStrategy());
+    await addPlot(development.id, {
+      plotNumber: '1', houseType: 'Ash', tenure: 'Affordable Rent', tenureCode: 'AFFORDABLE_RENT',
+      revenueSource: 'House Type', niaFt2: '', gia: '', revenueStatus: 'Available',
+    });
+    await addPlot(development.id, {
+      plotNumber: '2', houseType: 'Ash', tenure: 'Open Market', tenureCode: 'OPEN_MARKET',
+      revenueSource: 'Manual Value', manualForecastValue: 300000, manualOverrideExplicit: true,
+      revenueStatus: 'Reserved', sellingPrice: 310000, reservedAt: '2026-10-01',
+    });
+
+    expect(saveHouseTypePricing(development.id, {
+      Ash: { garage: 'None', sellingBasis: 'Auto', representativeNiaFt2: 1000 },
+    }).ok).toBe(true);
+    await syncPlotForecastPrices(development.id);
+
+    const plots = getDevelopment(development.id).plotMaster.plots;
+    expect(getHouseTypePricing(development.id).Ash.representativeNiaFt2).toBe(1000);
+    expect(plots[0]).toMatchObject({
+      niaFt2: 0, niaM2: 0, gia: null, tenureCode: 'AFFORDABLE_RENT', revenueStatus: 'Available',
+    });
+    expect(plots[0].forecastSellingPrice).toBeGreaterThan(0);
+    expect(plots[1]).toMatchObject({
+      revenueSource: 'Manual Value', manualForecastValue: 300000, sellingPrice: 310000,
+      revenueStatus: 'Reserved', reservedAt: '2026-10-01', tenureCode: 'OPEN_MARKET',
+    });
+
+    await bulkRecalculateHouseTypeValues(development.id);
+    expect(getHouseTypePricing(development.id).Ash.representativeNiaFt2).toBe(1000);
   });
 
   it('defaults imported plots with engine forecasts to House Type pricing', async () => {

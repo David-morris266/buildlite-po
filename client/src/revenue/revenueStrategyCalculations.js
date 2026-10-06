@@ -22,14 +22,15 @@ import {
 } from './revenueTypes';
 
 function normalizeHouseTypePricingRecord(record = {}) {
+  const representativeNia = Number(record.representativeNiaFt2);
   return {
     garage: GARAGE_TYPES.includes(record.garage) ? record.garage : 'None',
     sellingBasis: record.sellingBasis === 'Manual' ? 'Manual' : 'Auto',
     manualForecastValue: roundPlotMoney(record.manualForecastValue || 0),
     representativeNiaFt2:
-      record.representativeNiaFt2 == null || record.representativeNiaFt2 === ''
-        ? null
-        : roundPlotMoney(record.representativeNiaFt2),
+      Number.isFinite(representativeNia) && representativeNia > 0
+        ? roundPlotMoney(representativeNia)
+        : null,
   };
 }
 
@@ -101,6 +102,30 @@ export function getRepresentativeNiaForHouseType(houseType, plots = [], override
   return roundPlotMoney(total / values.length);
 }
 
+export function getHouseTypeNiaEvidence(houseType, plots = [], explicitNia = null) {
+  const matches = plots.filter(
+    (plot) => String(plot.houseType || '').trim().toLowerCase() === String(houseType || '').trim().toLowerCase()
+  );
+  const plotValues = matches
+    .map((plot) => getPlotNiaFt2(plot))
+    .filter((value) => value > 0);
+  const distinctPlotValues = [...new Set(plotValues)].sort((a, b) => a - b);
+  const explicit = Number(explicitNia);
+  const hasExplicit = Number.isFinite(explicit) && explicit > 0;
+  const derivedNiaFt2 = plotValues.length
+    ? roundPlotMoney(plotValues.reduce((sum, value) => sum + value, 0) / plotValues.length)
+    : 0;
+
+  return {
+    source: hasExplicit ? 'explicit' : derivedNiaFt2 > 0 ? 'plot_master' : 'unresolved',
+    niaFt2: hasExplicit ? roundPlotMoney(explicit) : derivedNiaFt2,
+    derivedNiaFt2,
+    matchingPlotCount: matches.length,
+    distinctPlotValues,
+    hasPlotAreaConflict: distinctPlotValues.length > 1,
+  };
+}
+
 export function calculateHouseTypeForecast(
   houseType,
   houseTypeRecord = {},
@@ -147,7 +172,7 @@ export function buildHouseTypePricingRows(plots = [], strategy = {}, houseTypePr
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
     .map((houseType) => {
       const record = map[houseType];
-      const niaFt2 = getRepresentativeNiaForHouseType(
+      const niaEvidence = getHouseTypeNiaEvidence(
         houseType,
         plots,
         record.representativeNiaFt2
@@ -155,7 +180,12 @@ export function buildHouseTypePricingRows(plots = [], strategy = {}, houseTypePr
       const forecastValue = calculateHouseTypeForecast(houseType, record, strategy, plots);
       return {
         houseType,
-        niaFt2,
+        niaFt2: niaEvidence.niaFt2,
+        niaSource: niaEvidence.source,
+        derivedNiaFt2: niaEvidence.derivedNiaFt2,
+        matchingPlotCount: niaEvidence.matchingPlotCount,
+        distinctPlotNiaValues: niaEvidence.distinctPlotValues,
+        hasPlotAreaConflict: niaEvidence.hasPlotAreaConflict,
         garage: record.garage,
         sellingBasis: record.sellingBasis,
         manualForecastValue: record.manualForecastValue,
@@ -167,18 +197,9 @@ export function buildHouseTypePricingRows(plots = [], strategy = {}, houseTypePr
 
 export function recalculateHouseTypePricing(houseTypePricing = {}, plots = [], strategy = {}) {
   void strategy;
-  const map = buildHouseTypePricingMap(plots, houseTypePricing);
-  const next = { ...map };
-
-  for (const [houseType, record] of Object.entries(next)) {
-    if (record.sellingBasis === 'Manual') continue;
-    next[houseType] = {
-      ...record,
-      representativeNiaFt2: getRepresentativeNiaForHouseType(houseType, plots, null),
-    };
-  }
-
-  return next;
+  // Plot-derived NIA remains live evidence. It must not be persisted over an
+  // explicitly saved House Type pricing NIA.
+  return buildHouseTypePricingMap(plots, houseTypePricing);
 }
 
 export function resolvePlotOpenMarketBase(plot = {}, strategy = {}, houseTypePricing = {}, plots = []) {
