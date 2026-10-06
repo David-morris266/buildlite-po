@@ -226,7 +226,7 @@ export default function AdministrationModule({
     );
   }
   if (view === 'cost-code-hierarchy') {
-    return <AdministrationWorkspace><AdminCostCodesPage onBack={goToDashboard} initialHierarchySetup hierarchyOnly onHierarchyExit={() => openView('cost-codes')} /></AdministrationWorkspace>;
+    return <AdministrationWorkspace><AdminCostCodesPage onBack={goToDashboard} initialHierarchySetup hierarchyOnly onHierarchyExit={() => openView('company-readiness')} /></AdministrationWorkspace>;
   }
   if(view==='platform-provisioning'){if(!canProvision){return <AdministrationWorkspace><AdministrationLanding onOpen={openView} showDeveloperTools={showDeveloperTools} canManageCommercialTemplates={canManageCommercialTemplates}/></AdministrationWorkspace>}return <AdministrationWorkspace><AdminPlatformProvisioningPage onBack={goToDashboard}/></AdministrationWorkspace>}
   if (view === 'cost-code-classification') {

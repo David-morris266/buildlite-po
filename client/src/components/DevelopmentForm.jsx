@@ -7,6 +7,8 @@ import {
   ensureDevelopmentsReady,
 } from '../developments/developmentStore';
 import { generateNextDevelopmentNumber } from '../admin/numberingService';
+import { useBuildLitePrincipal } from '../auth/BuildLiteAuthProvider';
+import { convergeTenantReadinessAfterMutation } from '../auth/tenantReadinessConvergence';
 
 const EMPTY_FORM = {
   jobNumber: '',
@@ -21,6 +23,7 @@ const EMPTY_FORM = {
 };
 
 export default function DevelopmentForm({ onCancel, onCreated }) {
+  const principal = useBuildLitePrincipal();
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -75,7 +78,8 @@ export default function DevelopmentForm({ onCancel, onCreated }) {
     setError('');
     try {
       const development = await createDevelopment(form);
-      onCreated?.(development.id);
+      const convergence = await convergeTenantReadinessAfterMutation(principal);
+      onCreated?.(development.id, { readinessRefreshed: convergence.readinessRefreshed });
     } catch (submitError) {
       setError(submitError.message || 'Could not create development.');
     } finally {

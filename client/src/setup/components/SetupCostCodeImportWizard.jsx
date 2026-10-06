@@ -22,6 +22,7 @@ import { formatFamilyDisplay } from '../../admin/costCodeHierarchy';
 import { isAcceptedCsvFile } from '../../ledger/csvImport';
 import { isAcceptedExcelFile } from '../../payments/excelImport';
 import { useBuildLitePrincipal } from '../../auth/BuildLiteAuthProvider';
+import { convergeTenantReadinessAfterMutation } from '../../auth/tenantReadinessConvergence';
 
 const STEPS = ['Upload', 'Preview', 'Map Columns', 'Validate', 'Import', 'Summary'];
 
@@ -116,9 +117,8 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel, onRevi
         return;
       }
       if (serverAuthority) {
-        principal?.markTenantReadinessStale?.();
-        try { await principal?.refreshTenantReadiness?.(); }
-        catch { setReadinessRefreshWarning('Cost Codes were imported, but company readiness could not be refreshed. Refresh readiness before continuing.'); }
+        const convergence = await convergeTenantReadinessAfterMutation(principal);
+        if (!convergence.readinessRefreshed) setReadinessRefreshWarning('Cost Codes were imported, but company readiness could not be refreshed. Refresh readiness before continuing.');
       }
       setSummary(result);
       setStepIndex(5);

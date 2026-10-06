@@ -13,7 +13,8 @@ import {
   ensureAdminCostCodesReady,
   listAdminCostCodeRecords,
 } from "../../admin/costCodeAdminService";
-import { useBuildLitePermission } from "../../auth/BuildLiteAuthProvider";
+import { useBuildLitePermission, useBuildLitePrincipal } from "../../auth/BuildLiteAuthProvider";
+import { convergeTenantReadinessAfterMutation } from "../../auth/tenantReadinessConvergence";
 import AdminPageShell from "./AdminPageShell";
 import { AdminButton, AdminKpiGrid, AdminStatusBadge } from "./adminUi";
 const types = {
@@ -89,6 +90,7 @@ export default function AdminCommercialStructurePage({
   onBack,
   onReviewCostCodeHierarchy,
 }) {
+  const principal = useBuildLitePrincipal();
   const canManageCategories = useBuildLitePermission(
     "commercial_head_categories.manage",
   );
@@ -106,7 +108,8 @@ export default function AdminCommercialStructurePage({
     [newFamily, setNewFamily] = useState({}),
     [newGroup, setNewGroup] = useState({}),
     [confirmAdoption, setConfirmAdoption] = useState(false),
-    [adoptionResult, setAdoptionResult] = useState(null);
+    [adoptionResult, setAdoptionResult] = useState(null),
+    [readinessWarning, setReadinessWarning] = useState("");
   const reload = useCallback(async () => {
     setBusy(true);
     setError("");
@@ -147,12 +150,19 @@ export default function AdminCommercialStructurePage({
     }),
     [catalogue, codes],
   );
-  async function mutate(work) {
+  async function mutate(work, { affectsReadiness = false } = {}) {
     setBusy(true);
     setError("");
+    setReadinessWarning("");
     try {
       await work();
-      await reload();
+      if (affectsReadiness) {
+        const convergence = await convergeTenantReadinessAfterMutation(principal, { refreshAuthority: reload });
+        if (convergence.authorityError) throw convergence.authorityError;
+        if (!convergence.readinessRefreshed) setReadinessWarning("Commercial Structure saved, but Company Readiness could not be refreshed and will be retried when next opened.");
+      } else {
+        await reload();
+      }
     } catch (e) {
       setError(
         e.status === 409
@@ -166,9 +176,11 @@ export default function AdminCommercialStructurePage({
     mutate(async () => {
       await addStructureNode(type, payload);
       clear();
-    });
+    }, { affectsReadiness: type === "head" });
   const update = (type, node, patch) =>
-    mutate(() => saveStructureNode(type, node, patch));
+    mutate(() => saveStructureNode(type, node, patch), {
+      affectsReadiness: Object.prototype.hasOwnProperty.call(patch, "active") && ["head", "family", "reporting_group"].includes(type),
+    });
   const move = (type, node, direction) => {
     const rows = siblings(catalogue, type, node),
       i = rows.findIndex((x) => x.id === node.id),
@@ -180,11 +192,14 @@ export default function AdminCommercialStructurePage({
   async function adoptRecommended() {
     setBusy(true);
     setError("");
+    setReadinessWarning("");
     try {
       const result = await adoptRecommendedStructure();
       setAdoptionResult(result);
       setConfirmAdoption(false);
-      await reload();
+      const convergence = await convergeTenantReadinessAfterMutation(principal, { refreshAuthority: reload });
+      if (convergence.authorityError) throw convergence.authorityError;
+      if (!convergence.readinessRefreshed) setReadinessWarning("Recommended structure was created, but Company Readiness could not be refreshed and will be retried when next opened.");
     } catch (e) {
       setError(
         e.message || "Could not adopt the recommended Commercial Structure.",
@@ -228,7 +243,7 @@ export default function AdminCommercialStructurePage({
             variant="secondary"
             disabled={!dirty || busy}
             onClick={() =>
-              mutate(() => saveCommercialHeadCategory(head, draft))
+              mutate(() => saveCommercialHeadCategory(head, draft), { affectsReadiness: true })
             }
           >
             Save category
@@ -352,6 +367,7 @@ export default function AdminCommercialStructurePage({
           {error}
         </p>
       ) : null}
+      {readinessWarning ? <p className="admin-inline-warning" role="alert">{readinessWarning}</p> : null}
       <details className="po-module-card">
         <summary>BuildLite recommended structure preview</summary>
         <p>{recommendedTemplate?.name}</p>

@@ -9,11 +9,13 @@ import { invalidateCostCodes, refreshCostCodes } from '../../admin/costCodeServe
 
 const HEAD_ID = '11111111-1111-4111-8111-111111111110';
 const GROUP_ID = '11111111-1111-4111-8111-111111111120';
+const auth = vi.hoisted(() => ({ markStale: vi.fn(), refreshReadiness: vi.fn() }));
 
 vi.mock('../../api/costCodes', () => ({ getCostCodeOnboardingSummary: vi.fn(), getCostCodeHierarchyWorksheet: vi.fn(), previewCostCodeHierarchyWorksheet: vi.fn(), applyCostCodeHierarchyWorksheet: vi.fn() }));
 vi.mock('../../admin/costCodeHierarchyWorksheet', () => ({ downloadHierarchyWorksheet: vi.fn(), parseHierarchyWorksheet: vi.fn() }));
 vi.mock('../../admin/costCodeServerCache', () => ({ invalidateCostCodes: vi.fn(), refreshCostCodes: vi.fn() }));
 vi.mock('../../admin/costCodeServerMutations', () => ({ bulkUpdateCostCodeHierarchyOnServer: vi.fn() }));
+vi.mock('../../auth/BuildLiteAuthProvider', () => ({ useBuildLitePrincipal: () => ({ markTenantReadinessStale: auth.markStale, refreshTenantReadiness: auth.refreshReadiness }) }));
 vi.mock('../../admin/commercialStructureService', async () => {
   const actual = await vi.importActual('../../admin/commercialStructureService');
   return {
@@ -40,6 +42,7 @@ const settle = () => act(async () => { await Promise.resolve(); await Promise.re
 
 describe('Cost Code onboarding state convergence', () => {
   beforeEach(() => {
+    auth.refreshReadiness.mockResolvedValue({});
     getCostCodeOnboardingSummary.mockResolvedValue({ total: 3, allocated: 1, notReviewed: 1, notApplicable: 0, needsAttention: 1 });
     refreshCostCodes.mockResolvedValue([]);
     container = document.createElement('div');
@@ -91,6 +94,7 @@ describe('Cost Code onboarding state convergence', () => {
     await act(async () => apply.click()); await settle();
     expect(applyCostCodeHierarchyWorksheet).toHaveBeenCalledWith({ rows: worksheetRows, sourceFilename: 'mapping.xlsx', catalogueRevision: 'revision', reviewToken: 'token' });
     expect(invalidateCostCodes).toHaveBeenCalledOnce(); expect(refreshCostCodes).toHaveBeenCalledOnce();
+    expect(auth.markStale).toHaveBeenCalledOnce(); expect(auth.refreshReadiness).toHaveBeenCalledOnce();
     expect(container.textContent).toContain('Mapping applied.');
   });
 });

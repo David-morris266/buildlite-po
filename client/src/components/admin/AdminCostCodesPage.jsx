@@ -25,6 +25,8 @@ import {
 } from '../../api/costCodeClassifications';
 import AdminPageShell from './AdminPageShell';
 import AdminCostCodeHierarchySetup from './AdminCostCodeHierarchySetup';
+import { useBuildLitePrincipal } from '../../auth/BuildLiteAuthProvider';
+import { convergeTenantReadinessAfterMutation, costCodeMutationAffectsTenantReadiness } from '../../auth/tenantReadinessConvergence';
 import { COST_CODE_MASTER_UNAVAILABLE_MESSAGE } from '../../admin/costCodeMessages';
 import {
   AdminButton,
@@ -67,6 +69,7 @@ function boolSelect(value, onChange) {
 }
 
 export default function AdminCostCodesPage({ onBack, issueFilter = null, onClearIssueFilter, onOpenBulkClassification = null, initialHierarchySetup = false, hierarchyOnly = false, onHierarchyExit }) {
+  const principal = useBuildLitePrincipal();
   const serverAuthority = isAdminCostCodeServerAuthority();
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -86,6 +89,7 @@ export default function AdminCostCodesPage({ onBack, issueFilter = null, onClear
   const [masterError, setMasterError] = useState('');
   const [partialSaveMessage, setPartialSaveMessage] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
+  const [readinessWarning, setReadinessWarning] = useState('');
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [conflict, setConflict] = useState(false);
@@ -177,6 +181,7 @@ export default function AdminCostCodesPage({ onBack, issueFilter = null, onClear
     setClassification(lookupClassification(classificationsByKey, record.code));
     setPartialSaveMessage('');
     setSaveMessage('');
+    setReadinessWarning('');
     setConflict(false);
     setMasterError('');
   }
@@ -269,6 +274,11 @@ export default function AdminCostCodesPage({ onBack, issueFilter = null, onClear
       setPartialSaveMessage(message);
       if (!serverAuthority) window.alert(classified.message);
     }
+    const readinessAffected = costCodeMutationAffectsTenantReadiness({ isNew, previous, next: result.record });
+    if (serverAuthority && readinessAffected) {
+      const convergence = await convergeTenantReadinessAfterMutation(principal);
+      if (!convergence.readinessRefreshed) setReadinessWarning('Cost Code saved, but Company Readiness could not be refreshed and will be retried when next opened.');
+    }
     setSaveMessage('Cost code saved.');
     savingRef.current = false;
     setSaving(false);
@@ -322,6 +332,7 @@ export default function AdminCostCodesPage({ onBack, issueFilter = null, onClear
         <p className="admin-inline-warning" role="status">{partialSaveMessage}</p>
       ) : null}
       {saveMessage ? <p className="admin-inline-success" role="status">{saveMessage}</p> : null}
+      {readinessWarning ? <p className="admin-inline-warning" role="alert">{readinessWarning}</p> : null}
       {masterError ? (
         <p className="admin-inline-warning" role="alert">{masterError}</p>
       ) : null}

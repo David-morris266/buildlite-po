@@ -10,6 +10,7 @@ const storage = vi.hoisted(() => new Map());
 const authorityEnabled = vi.hoisted(() => ({ value: false }));
 const putClassification = vi.hoisted(() => vi.fn());
 const listClassifications = vi.hoisted(() => vi.fn());
+const auth = vi.hoisted(() => ({ markStale: vi.fn(), refreshReadiness: vi.fn() }));
 const structure = { heads:[{id:'head-land',name:'Land',active:true,displayOrder:0}],families:[],reportingGroups:[{id:'group-land',headId:'head-land',familyId:null,name:'Land Cost',active:true,displayOrder:0}],adoptionIssues:[] };
 
 vi.stubGlobal('localStorage', {
@@ -21,6 +22,9 @@ vi.stubGlobal('localStorage', {
 
 vi.mock('../../admin/costCodeAuthority', () => ({
   isCostCodeServerAuthorityEnabled: () => authorityEnabled.value,
+}));
+vi.mock('../../auth/BuildLiteAuthProvider', () => ({
+  useBuildLitePrincipal: () => ({ markTenantReadinessStale: auth.markStale, refreshTenantReadiness: auth.refreshReadiness }),
 }));
 
 vi.mock('../../api/costCodes', () => import('../../test/mockCostCodesApi'));
@@ -59,6 +63,7 @@ describe('AdminCostCodesPage (BL-033D.x.2A.2)', () => {
   let networkGuard;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     networkGuard = installNetworkGuard();
     authorityEnabled.value = false;
     __resetCostCodeServerCacheForTests();
@@ -76,6 +81,7 @@ describe('AdminCostCodesPage (BL-033D.x.2A.2)', () => {
       forecastDriver: 'STANDARD_CVR',
       version: 1,
     });
+    auth.refreshReadiness.mockResolvedValue({});
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -149,6 +155,22 @@ describe('AdminCostCodesPage (BL-033D.x.2A.2)', () => {
     expect(container.textContent).toContain('No cost codes');
     expect(container.textContent).toMatch(/genuine empty master/i);
     expect(container.textContent).not.toMatch(/Could not load cost codes/i);
+  });
+
+  it('converges Company Readiness after creating a Cost Code', async () => {
+    authorityEnabled.value = true;
+    seedMockCostCodes([]);
+    await renderPage();
+    await act(async () => [...container.querySelectorAll('button')].find((item) => item.textContent === 'Add Cost Code').click());
+    const fields = [...container.querySelectorAll('label')];
+    const setField = async (label, value) => {
+      const input = fields.find((item) => item.textContent.startsWith(label)).querySelector('input');
+      await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); });
+    };
+    await setField('Cost Code', '2000'); await setField('Description', 'Site Management');
+    await act(async () => { container.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await Promise.resolve(); await Promise.resolve(); });
+    expect(auth.markStale).toHaveBeenCalledOnce();
+    expect(auth.refreshReadiness).toHaveBeenCalledOnce();
   });
 
   it('waits for the authoritative Cost Code master before mounting a direct-route hierarchy editor', async () => {

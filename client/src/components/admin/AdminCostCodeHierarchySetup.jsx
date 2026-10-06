@@ -6,6 +6,8 @@ import { getCostCodeOnboardingSummary } from '../../api/costCodes';
 import { applyCostCodeHierarchyWorksheet, getCostCodeHierarchyWorksheet, previewCostCodeHierarchyWorksheet } from '../../api/costCodes';
 import { downloadHierarchyWorksheet, parseHierarchyWorksheet } from '../../admin/costCodeHierarchyWorksheet';
 import { invalidateCostCodes, refreshCostCodes } from '../../admin/costCodeServerCache';
+import { useBuildLitePrincipal } from '../../auth/BuildLiteAuthProvider';
+import { convergeTenantReadinessAfterMutation } from '../../auth/tenantReadinessConvergence';
 import AdminPageShell from './AdminPageShell';
 import { AdminButton } from './adminUi';
 
@@ -15,6 +17,7 @@ const equal = (a, b) => KEYS.every((key) => (a?.[key] || null) === (b?.[key] || 
 const stateOf = (record) => record.hierarchyReviewState || 'needs_attention';
 
 export default function AdminCostCodeHierarchySetup({ records = [], onCancel, onApplied }) {
+  const principal = useBuildLitePrincipal();
   const worksheetInput = useRef(null);
   const [worksheetRecords, setWorksheetRecords] = useState(null);
   const activeRecords = useMemo(() => (worksheetRecords || records).filter((record) => record.active !== false), [records, worksheetRecords]);
@@ -39,6 +42,7 @@ export default function AdminCostCodeHierarchySetup({ records = [], onCancel, on
   const [worksheetPreview, setWorksheetPreview] = useState(null);
   const [worksheetResult, setWorksheetResult] = useState(null);
   const [applyResult, setApplyResult] = useState(null);
+  const [readinessWarning, setReadinessWarning] = useState('');
 
   useEffect(() => {
     let live = true;
@@ -76,16 +80,21 @@ export default function AdminCostCodeHierarchySetup({ records = [], onCancel, on
   const markNotApplicable = () => { for (const id of selected) update(id, { commercialHeadId: null, commercialFamilyId: null, reportingGroupId: null, reviewDisposition: 'not_applicable' }); };
 
   async function save() {
-    setSaving(true); setError(''); setApplyResult(null);
+    setSaving(true); setError(''); setApplyResult(null); setReadinessWarning('');
     const result = await bulkUpdateCostCodeHierarchyOnServer(changes.map((record) => ({ id: record.id, version: record.version, ...drafts[record.id] })));
     if (!result.ok) { setSaving(false); setError(result.errors?.[0] || 'Could not apply hierarchy changes.'); return; }
     try {
       invalidateCostCodes();
-      const [freshRecords, freshStructure, freshSummary] = await Promise.all([refreshCostCodes(), loadCommercialStructure(), getCostCodeOnboardingSummary()]);
+      const convergence = await convergeTenantReadinessAfterMutation(principal, {
+        refreshAuthority: () => Promise.all([refreshCostCodes(), loadCommercialStructure(), getCostCodeOnboardingSummary()]),
+      });
+      if (convergence.authorityError) throw convergence.authorityError;
+      const [freshRecords, freshStructure, freshSummary] = convergence.authorityResult;
       setWorksheetRecords(freshRecords);
       setDrafts(Object.fromEntries(freshRecords.filter((record) => record.active !== false).map((record) => [record.id, { ...hierarchyOf(record), reviewDisposition: record.hierarchyReviewDisposition || null }])));
       setSelected(new Set()); setCatalogue(freshStructure); setSummary(freshSummary); setReviewing(false);
-      setApplyResult({ updated: result.costCodes.length, refreshFailed: false });
+      setApplyResult({ updated: result.costCodes.length, refreshFailed: false, readinessRefreshed: convergence.readinessRefreshed });
+      if (!convergence.readinessRefreshed) setReadinessWarning('Hierarchy applied successfully. Company Readiness could not be refreshed and will be retried when next opened.');
       onApplied?.(freshRecords);
     } catch (cause) {
       setReviewing(false);
@@ -113,13 +122,18 @@ export default function AdminCostCodeHierarchySetup({ records = [], onCancel, on
   }
 
   async function applyWorksheet() {
-    setWorksheetBusy(true); setError('');
+    setWorksheetBusy(true); setError(''); setReadinessWarning('');
     try {
       const response = await applyCostCodeHierarchyWorksheet({ rows: worksheetRows, sourceFilename: worksheetFilename, catalogueRevision: worksheetPreview.catalogueRevision, reviewToken: worksheetPreview.reviewToken });
       invalidateCostCodes();
-      const [freshRecords, freshStructure, freshSummary] = await Promise.all([refreshCostCodes(), loadCommercialStructure(), getCostCodeOnboardingSummary()]);
+      const convergence = await convergeTenantReadinessAfterMutation(principal, {
+        refreshAuthority: () => Promise.all([refreshCostCodes(), loadCommercialStructure(), getCostCodeOnboardingSummary()]),
+      });
+      if (convergence.authorityError) throw convergence.authorityError;
+      const [freshRecords, freshStructure, freshSummary] = convergence.authorityResult;
       setWorksheetRecords(freshRecords); setDrafts(Object.fromEntries(freshRecords.filter((record) => record.active !== false).map((record) => [record.id, { ...hierarchyOf(record), reviewDisposition: record.hierarchyReviewDisposition || null }]))); setSelected(new Set()); setCatalogue(freshStructure); setSummary(freshSummary);
-      setWorksheetResult(response.summary); setWorksheetPreview(null); setWorksheetRows(null);
+      setWorksheetResult({ ...response.summary, readinessRefreshed: convergence.readinessRefreshed }); setWorksheetPreview(null); setWorksheetRows(null);
+      if (!convergence.readinessRefreshed) setReadinessWarning('Hierarchy applied successfully. Company Readiness could not be refreshed and will be retried when next opened.');
     } catch (cause) { setError(cause.message || 'Could not apply the reviewed mapping.'); }
     finally { setWorksheetBusy(false); }
   }
@@ -130,7 +144,8 @@ export default function AdminCostCodeHierarchySetup({ records = [], onCancel, on
   const separator = <span aria-hidden="true"> {'\u00B7'} </span>;
   return <AdminPageShell title="Cost Code Commercial Hierarchy" lead="Review and apply the company reporting hierarchy. Source evidence is never applied automatically." onBack={onCancel} actions={<><AdminButton variant="secondary" onClick={onCancel}>Cancel</AdminButton><AdminButton onClick={() => setReviewing(true)} disabled={!changes.length}>Review {changes.length} changes</AdminButton></>}>
     {error ? <p className="admin-inline-warning" role="alert">{error}</p> : null}
-    {applyResult && !applyResult.refreshFailed ? <p className="admin-inline-success" role="status">Hierarchy applied. {applyResult.updated} Cost Codes updated. Authoritative hierarchy and readiness have been refreshed.</p> : null}
+    {applyResult && !applyResult.refreshFailed ? <p className="admin-inline-success" role="status">Hierarchy applied. {applyResult.updated} Cost Codes updated.{applyResult.readinessRefreshed ? ' Company Readiness has been refreshed.' : ''}</p> : null}
+    {readinessWarning ? <p className="admin-inline-warning" role="alert">{readinessWarning}</p> : null}
     {!reviewing ? <>
       <section className="po-module-card"><h2>Onboarding review</h2><p>{summary.total} active{separator}{summary.allocated} Allocated{separator}{summary.notReviewed} Not reviewed{separator}{summary.notApplicable} Not applicable{separator}{summary.needsAttention} Needs attention</p></section>
       <section className="po-module-card">
