@@ -21,6 +21,7 @@ import { ensureAdminCostCodesReady, listAdminCostCodeRecords } from '../../admin
 import { formatFamilyDisplay } from '../../admin/costCodeHierarchy';
 import { isAcceptedCsvFile } from '../../ledger/csvImport';
 import { isAcceptedExcelFile } from '../../payments/excelImport';
+import { useBuildLitePrincipal } from '../../auth/BuildLiteAuthProvider';
 
 const STEPS = ['Upload', 'Preview', 'Map Columns', 'Validate', 'Import', 'Summary'];
 
@@ -29,6 +30,7 @@ function isAcceptedFile(file) {
 }
 
 export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
+  const principal = useBuildLitePrincipal();
   const fileInputRef = useRef(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [parsed, setParsed] = useState(null);
@@ -38,6 +40,7 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState(false);
   const [summary, setSummary] = useState(null);
+  const [readinessRefreshWarning, setReadinessRefreshWarning] = useState('');
   const serverAuthority = isCostCodeServerAuthorityEnabled();
   const [authoritativeRecords, setAuthoritativeRecords] = useState(null);
   const [serverPreview, setServerPreview] = useState(null);
@@ -111,6 +114,11 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
       if (!result.ok) {
         setError(result.errors?.[0] || 'Import failed.');
         return;
+      }
+      if (serverAuthority) {
+        principal?.markTenantReadinessStale?.();
+        try { await principal?.refreshTenantReadiness?.(); }
+        catch { setReadinessRefreshWarning('Cost Codes were imported, but company readiness could not be refreshed. Refresh readiness before continuing.'); }
       }
       setSummary(result);
       setStepIndex(5);
@@ -365,6 +373,7 @@ export default function SetupCostCodeImportWizard({ onComplete, onCancel }) {
       {stepIndex === 5 && summary ? (
         <div className="setup-import-panel">
           <h3>Import Summary</h3>
+          {readinessRefreshWarning ? <div className="setup-step__error" role="alert">{readinessRefreshWarning}</div> : null}
           <div className="setup-import-summary-grid">
             <article><span>Rows read</span><strong>{summary.rowsRead}</strong></article>
             <article><span>Cost codes imported</span><strong>{summary.imported}</strong></article>

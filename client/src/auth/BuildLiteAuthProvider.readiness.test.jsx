@@ -77,6 +77,8 @@ describe('BuildLite tenant readiness refresh', () => {
       await new Promise(resolve => setTimeout(resolve, 20));
     });
     const button = [...container.querySelectorAll('button')].find(item => item.textContent === 'Sign out');
+    expect(calls.filter(url => url.endsWith('/api/auth/me'))).toHaveLength(1);
+    expect(calls.filter(url => url.endsWith('/api/auth/readiness'))).toHaveLength(0);
     expect(button).not.toBeNull();
     act(() => button.click());
     expect(signOut).toHaveBeenCalledWith({ redirectUrl: '/sign-in' });

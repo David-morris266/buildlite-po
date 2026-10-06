@@ -1,6 +1,8 @@
 function createClerkAuthAdapter() {
   const { clerkMiddleware, getAuth, clerkClient } = require('@clerk/express');
-  const middleware = clerkMiddleware();
+  const clerk = clerkMiddleware();
+  const { timingStart, recordTiming } = require('../utils/safeTiming');
+  const middleware = (req,res,next)=>{const measured=/^\/api\/auth\/me\/?$/.test(req.originalUrl);const started=measured?timingStart():null;if(measured)req.buildliteTimingStarted=started;clerk(req,res,error=>{if(measured)recordTiming('server_clerk_middleware',started);next(error);});};
   return { middleware, identity(req) { const auth=getAuth(req); return auth?.isAuthenticated ? {provider:'clerk',providerUserId:auth.userId,sessionId:auth.sessionId} : null; },
     async verifiedIdentity(req){const identity=this.identity(req);if(!identity)return null;const user=await clerkClient.users.getUser(identity.providerUserId);const primary=user.emailAddresses?.find(item=>item.id===user.primaryEmailAddressId)||user.emailAddresses?.[0];if(primary?.verification?.status!=='verified')return null;return {...identity,email:String(primary?.emailAddress||'').trim().toLowerCase(),displayName:[user.firstName,user.lastName].filter(Boolean).join(' ')||primary?.emailAddress||'BuildLite user'};},
     async invitationIdentity(req){return this.verifiedIdentity(req);},

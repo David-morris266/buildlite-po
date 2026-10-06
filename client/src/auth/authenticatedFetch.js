@@ -1,3 +1,5 @@
+import { recordAuthTiming, timingStart } from './authTiming';
+
 const API_BASE=(import.meta.env.VITE_API_URL||'http://localhost:3001').replace(/\/+$/,'');
 let tokenProvider=null;
 let installed=false;
@@ -10,7 +12,10 @@ export function configureAuthenticatedFetch(getToken){
   globalThis.fetch=async(input,init={})=>{
     const raw=typeof input==='string'?input:input?.url||'';
     if(!raw.startsWith(API_BASE))return nativeFetch(input,init);
+    const recordTokenTiming=raw.endsWith('/api/auth/me')||raw.endsWith('/api/auth/readiness');
+    const tokenStarted=recordTokenTiming?timingStart():null;
     const token=await tokenProvider?.();
+    if(recordTokenTiming)recordAuthTiming('clerk_token_acquisition',tokenStarted);
     const headers=new Headers(init.headers||(typeof input!=='string'?input.headers:undefined));
     if(token)headers.set('Authorization',`Bearer ${token}`);
     const clientId=globalThis.localStorage?.getItem('buildlite_active_client_id');

@@ -47,7 +47,7 @@ describe('Company Readiness Administration round trip', () => {
   it('returns promptly through repeated Readiness → Cost Codes → Readiness transitions in one mounted shell', async () => {
     await act(async () => { root.render(<Harness />); await Promise.resolve(); });
     expect(container.textContent).toContain('Company Readiness');
-    expect(auth.refreshReadiness).toHaveBeenCalledTimes(1);
+    expect(auth.refreshReadiness).not.toHaveBeenCalled();
     expect(auth.refreshPrincipal).not.toHaveBeenCalled();
 
     const click = async label => act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === label).click(); await Promise.resolve(); });
@@ -58,13 +58,13 @@ describe('Company Readiness Administration round trip', () => {
     expect(container.textContent).toContain('Administration');
     await openReadiness();
     expect(container.textContent).toContain('5 Allocated');
-    expect(auth.refreshReadiness).toHaveBeenCalledTimes(2);
+    expect(auth.refreshReadiness).not.toHaveBeenCalled();
 
     await click('Review Cost Code hierarchy');
     await click('Back to Administration');
     await openReadiness();
     expect(container.textContent).toContain('5 Allocated');
-    expect(auth.refreshReadiness).toHaveBeenCalledTimes(3);
+    expect(auth.refreshReadiness).not.toHaveBeenCalled();
     expect(auth.refreshPrincipal).not.toHaveBeenCalled();
   });
 });
