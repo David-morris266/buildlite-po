@@ -10331,6 +10331,39 @@
   margin: 0 0 0.35rem;
 }
 
+.admin-prelims-proposal-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.75rem 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-prelims-proposal-list li {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(14rem, 1.4fr) auto;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--po-border, #334155);
+  border-radius: 0.5rem;
+}
+
+.admin-prelims-proposal-list small {
+  grid-column: 1 / -1;
+  color: var(--muted, #9aa4b2);
+}
+
+@media (max-width: 760px) {
+  .admin-prelims-proposal-list li {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-prelims-proposal-list small {
+    grid-column: auto;
+  }
+}
+
 .admin-prelims-mapping-table th:nth-child(1) {
   width: 34%;
 }

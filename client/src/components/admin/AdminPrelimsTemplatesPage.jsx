@@ -233,6 +233,8 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
   const [mappingNotice, setMappingNotice] = useState('');
   const [mappingError, setMappingError] = useState('');
   const [proposalRows, setProposalRows] = useState(null);
+  const [showProposedMappings, setShowProposedMappings] = useState(false);
+  const [showFullProposalReview, setShowFullProposalReview] = useState(false);
   const lineFormRef = useRef(null);
   const isAddForm = Boolean(form && !form.id);
   const editingLineId = form?.id || null;
@@ -263,6 +265,18 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
       ),
     [selected, mappingFilter]
   );
+
+  const proposalReview = useMemo(() => {
+    const rows = proposalRows || [];
+    const proposed = rows.filter((row) => row.proposalStatus.startsWith('proposed'));
+    const exceptions = rows.filter((row) => row.proposalStatus === 'needs-review');
+    const existing = rows.filter((row) => row.proposalStatus === 'existing');
+    const unresolved = rows.filter((row) => row.proposedEnabled !== false && (
+      !String(row.proposedCostCodeKey || '').trim()
+      || (row.proposalStatus.startsWith('proposed') && !row.proposalAccepted)
+    ));
+    return { proposed, exceptions, existing, unresolved };
+  }, [proposalRows]);
 
   async function refresh(selectId = selected?.id) {
     const listed = await listPrelimsTemplates();
@@ -431,11 +445,25 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
     setMappingMode(false);
     setMappingNotice('');
     setMappingError('');
+    setShowProposedMappings(false);
+    setShowFullProposalReview(false);
     setProposalRows(proposePrelimsMappings(selected?.lines || [], discovery.suggested || []));
   }
 
   function updateProposal(lineId, patch) {
-    setProposalRows((rows) => rows?.map((row) => row.id === lineId ? { ...row, ...patch, proposalStatus: 'owner-reviewed' } : row));
+    setProposalRows((rows) => rows?.map((row) => row.id === lineId ? {
+      ...row,
+      ...patch,
+      proposalStatus: 'owner-reviewed',
+      proposalConfidence: 'owner-reviewed',
+      proposalAccepted: true,
+    } : row));
+  }
+
+  function acceptProposedMappings() {
+    setProposalRows((rows) => rows?.map((row) => row.proposalStatus.startsWith('proposed')
+      ? { ...row, proposalAccepted: true }
+      : row));
   }
 
   async function applyProposals() {
@@ -669,43 +697,70 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
               {mappingError ? <p role="alert" className="admin-prelims-mapping-error">{mappingError}</p> : null}
               <p className="admin-prelims-mapping-summary" aria-label="Proposal review summary">
                 {proposalRows.filter((row) => row.enabled !== false).length} enabled lines &middot;{' '}
-                {proposalRows.filter((row) => row.proposalStatus.startsWith('proposed')).length} proposed &middot;{' '}
-                {proposalRows.filter((row) => row.proposalStatus === 'needs-review').length} need review &middot;{' '}
-                {proposalRows.filter((row) => row.proposalStatus === 'existing').length} existing mappings &middot;{' '}
+                {proposalReview.proposed.length} confidently proposed &middot;{' '}
+                {proposalReview.exceptions.length} require owner review &middot;{' '}
+                {proposalReview.existing.length} existing mappings &middot;{' '}
                 {proposalRows.filter((row) => row.proposedEnabled === false).length} disabled
               </p>
-              <AdminDataTable className="admin-prelims-mapping-table">
-                <thead><tr><th>Prelim</th><th>Driver</th><th>Reviewed treatment</th><th>Basis / guidance</th><th>Status</th></tr></thead>
-                <tbody>
-                  {proposalRows.map((line) => (
-                    <tr key={line.id}>
-                      <td><strong>{line.name}</strong></td>
-                      <td>{driverLabel(line.forecastDriver)}</td>
-                      <td>
-                        <CommercialHeadCostCodePicker
-                          category="PRELIMINARIES"
-                          structure={commercialStructure}
-                          codes={costCodes}
-                          identity="code"
-                          name={`${line.name} reviewed mapping`}
-                          contextKey={`proposal-${line.id}`}
-                          valueCode={line.proposedCostCodeKey || ''}
-                          disabled={busy || line.proposedEnabled === false}
-                          onSetUpCommercialStructure={onSetUpCommercialStructure}
-                          onChange={(code) => updateProposal(line.id, { proposedCostCodeKey: code || '' })}
-                        />
-                        <label className="admin-form__hint">
-                          <input type="checkbox" checked={line.proposedEnabled === false} onChange={(event) => updateProposal(line.id, { proposedEnabled: !event.target.checked })} /> Disable line
-                        </label>
-                      </td>
-                      <td className="admin-table__guidance">{line.proposalBasis}</td>
-                      <td><AdminStatusBadge tone={line.proposalStatus === 'needs-review' ? 'neutral' : line.proposalStatus === 'existing' ? 'accent' : 'success'}>{line.proposalStatus === 'needs-review' ? 'Needs owner review' : line.proposalStatus === 'existing' ? 'Existing mapping' : line.proposalStatus === 'owner-reviewed' ? 'Owner reviewed' : 'Proposed'}</AdminStatusBadge></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </AdminDataTable>
+
+              {proposalReview.proposed.length ? <section aria-label="Proposed Prelims mappings">
+                <div className="admin-prelims-mapping-workspace__header">
+                  <div><h4>Proposed mappings</h4><p>Review the summary, then accept these proposals into the pending reviewed set. Nothing is saved yet.</p></div>
+                  <div className="dev-prelims__actions">
+                    <AdminButton variant="primary" disabled={busy || proposalReview.proposed.every((row) => row.proposalAccepted)} onClick={acceptProposedMappings}>Accept proposed mappings</AdminButton>
+                    <AdminButton variant="secondary" onClick={() => setShowProposedMappings((value) => !value)}>{showProposedMappings ? 'Hide proposed mappings' : 'Show proposed mappings'}</AdminButton>
+                  </div>
+                </div>
+                {showProposedMappings ? <ul className="admin-prelims-proposal-list">
+                  {proposalReview.proposed.map((line) => <li key={line.id}>
+                    <strong>{line.name}</strong><span>{mappingContext(line.proposedCostCodeKey)}</span>
+                    <AdminStatusBadge tone={line.proposalAccepted ? 'success' : 'accent'}>{line.proposalAccepted ? 'Accepted' : `${line.proposalConfidence === 'high' ? 'High' : 'Medium'} confidence`}</AdminStatusBadge>
+                    <small>{line.proposalBasis}</small>
+                  </li>)}
+                </ul> : null}
+              </section> : null}
+
+              {proposalReview.exceptions.length ? <section aria-label="Prelims mappings needing owner review">
+                <h4>Needs owner review</h4>
+                <p>Resolve or deliberately disable these exceptions before applying the reviewed set.</p>
+                <AdminDataTable className="admin-prelims-mapping-table">
+                  <thead><tr><th>Prelim</th><th>Reviewed treatment</th><th>Basis / guidance</th><th>Status</th></tr></thead>
+                  <tbody>{proposalReview.exceptions.map((line) => <tr key={line.id}>
+                    <td><strong>{line.name}</strong><span className="admin-prelims-mapping-guidance">{driverLabel(line.forecastDriver)}</span></td>
+                    <td>
+                      {line.suggestedCostCodeKey && !line.proposedCostCodeKey ? <p className="admin-form__hint">Possible match: {mappingContext(line.suggestedCostCodeKey)}</p> : null}
+                      <CommercialHeadCostCodePicker category="PRELIMINARIES" structure={commercialStructure} codes={costCodes} identity="code" name={`${line.name} reviewed mapping`} contextKey={`exception-${line.id}`} valueCode={line.proposedCostCodeKey || ''} disabled={busy || line.proposedEnabled === false} onSetUpCommercialStructure={onSetUpCommercialStructure} onChange={(code) => updateProposal(line.id, { proposedCostCodeKey: code || '' })} />
+                      <label className="admin-form__hint"><input type="checkbox" checked={line.proposedEnabled === false} onChange={(event) => updateProposal(line.id, { proposedEnabled: !event.target.checked })} /> Disable line</label>
+                    </td>
+                    <td className="admin-table__guidance">{line.proposalBasis}</td>
+                    <td><AdminStatusBadge tone="neutral">Needs owner review</AdminStatusBadge></td>
+                  </tr>)}</tbody>
+                </AdminDataTable>
+              </section> : null}
+
               <div className="dev-prelims__actions">
-                <AdminButton variant="primary" disabled={busy} onClick={applyProposals}>Apply reviewed mappings</AdminButton>
+                <AdminButton variant="secondary" onClick={() => setShowFullProposalReview((value) => !value)}>{showFullProposalReview ? 'Hide full review' : 'Full review'}</AdminButton>
+              </div>
+              {showFullProposalReview ? <AdminDataTable className="admin-prelims-mapping-table">
+                <thead><tr><th>Prelim</th><th>Driver</th><th>Pending destination</th><th>Basis</th><th>Status</th></tr></thead>
+                <tbody>{proposalRows.map((line) => <tr key={line.id}>
+                  <td><strong>{line.name}</strong></td><td>{driverLabel(line.forecastDriver)}</td>
+                  <td>
+                    <CommercialHeadCostCodePicker category="PRELIMINARIES" structure={commercialStructure} codes={costCodes} identity="code" name={`${line.name} full-review mapping`} contextKey={`full-review-${line.id}`} valueCode={line.proposedCostCodeKey || ''} disabled={busy || line.proposedEnabled === false} onSetUpCommercialStructure={onSetUpCommercialStructure} onChange={(code) => updateProposal(line.id, { proposedCostCodeKey: code || '' })} />
+                    <label className="admin-form__hint"><input type="checkbox" checked={line.proposedEnabled === false} onChange={(event) => updateProposal(line.id, { proposedEnabled: !event.target.checked })} /> Disable line</label>
+                  </td>
+                  <td className="admin-table__guidance">{line.proposalBasis}</td>
+                  <td><AdminStatusBadge tone={line.proposalStatus === 'needs-review' ? 'neutral' : line.proposalAccepted ? 'success' : 'accent'}>{line.proposalStatus === 'existing' ? 'Existing mapping' : line.proposalStatus === 'needs-review' ? 'Needs owner review' : line.proposalAccepted ? 'Reviewed' : 'Pending acceptance'}</AdminStatusBadge></td>
+                </tr>)}</tbody>
+              </AdminDataTable> : null}
+
+              <p className="admin-prelims-mapping-summary" role="status">
+                {proposalRows.filter((row) => row.proposedEnabled !== false && String(row.proposedCostCodeKey || '').trim()).length} mapped &middot;{' '}
+                {proposalRows.filter((row) => row.proposedEnabled === false).length} disabled &middot;{' '}
+                {proposalReview.unresolved.length} require review
+              </p>
+              <div className="dev-prelims__actions">
+                <AdminButton variant="primary" disabled={busy || proposalReview.unresolved.length > 0} onClick={applyProposals}>Apply reviewed mappings</AdminButton>
                 <AdminButton variant="secondary" disabled={busy} onClick={() => setProposalRows(null)}>Cancel</AdminButton>
               </div>
             </section>

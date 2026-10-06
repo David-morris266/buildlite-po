@@ -281,11 +281,59 @@ describe('Admin Prelims Templates', () => {
     expect(updatePrelimsTemplateLine).not.toHaveBeenCalled();
     expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
 
+    const applyButton = Array.from(review.querySelectorAll('button')).find((button) => button.textContent.includes('Apply reviewed mappings'));
+    expect(applyButton.disabled).toBe(true);
+    await clickNamed(review, 'Accept proposed mappings');
+    expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
+    expect(applyButton.disabled).toBe(false);
+
     await clickNamed(review, 'Apply reviewed mappings');
     await flush();
     expect(applyReviewedPrelimsMappings).toHaveBeenCalledWith('tpl-1', expect.objectContaining({
       version: 1,
       changes: [expect.objectContaining({ lineId: 'line-1', costCodeKey: 'P100-SM' })],
+    }));
+  });
+
+  it('focuses normal review on unresolved exceptions and keeps bulk acceptance browser-local', async () => {
+    getPrelimsTemplate.mockResolvedValue({
+      ...HOUSEBUILDING,
+      lines: [
+        HOUSEBUILDING.lines[0],
+        {
+          ...HOUSEBUILDING.lines[0], id: 'line-skips', templateKey: 'bl.prelims.v1.skips',
+          name: 'Skips / Waste', description: 'Regular skip exchange and site waste.', displayOrder: 150,
+        },
+      ],
+    });
+    await act(async () => root.render(<AdminPrelimsTemplatesPage onBack={() => {}} />));
+    await flush();
+    await clickNamed(container, 'Housebuilding Prelims');
+    await flush();
+    await clickNamed(container, 'Propose mappings');
+
+    const review = container.querySelector('[aria-label="Review proposed Prelims mappings"]');
+    expect(review.textContent).toContain('1 confidently proposed');
+    expect(review.textContent).toContain('1 require owner review');
+    expect(review.querySelector('[aria-label="Prelims mappings needing owner review"]').textContent).toContain('Skips / Waste');
+    expect(review.querySelector('[aria-label="Proposed Prelims mappings"]').textContent).not.toContain('Site Manager —');
+    expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
+
+    await clickNamed(review, 'Accept proposed mappings');
+    expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
+    const exception = review.querySelector('[aria-label="Prelims mappings needing owner review"]');
+    const disable = exception.querySelector('input[type="checkbox"]');
+    await act(async () => disable.click());
+    expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
+
+    await clickNamed(review, 'Apply reviewed mappings');
+    await flush();
+    expect(applyReviewedPrelimsMappings).toHaveBeenCalledWith('tpl-1', expect.objectContaining({
+      version: 1,
+      changes: expect.arrayContaining([
+        expect.objectContaining({ lineId: 'line-1', costCodeKey: 'P100-SM', enabled: true }),
+        expect.objectContaining({ lineId: 'line-skips', costCodeKey: null, enabled: false }),
+      ]),
     }));
   });
 
