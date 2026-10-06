@@ -26,6 +26,8 @@ import {
   sortPlotRevenueRows,
 } from './plotRevenueEngine';
 import { enrichPlotsWithPricing } from './revenueStrategyCalculations';
+import { buildStrategyInsights, buildStrategySummaryMetrics } from './revenueStrategyCalculations';
+import { buildRevenueHouseTypeSummary } from './revenueHouseTypeSummary';
 import { emptyRevenueStrategy } from './revenueStrategy';
 import { getRevenueRecord, saveRevenueRecord } from './revenueStore';
 
@@ -61,6 +63,32 @@ const samplePlots = [
     revenueStatus: 'Completed',
   },
 ];
+
+const OAKFIELD_NIA = {
+  Ashford: 750,
+  Bramley: 950,
+  Cedar: 1050,
+  Dunham: 1250,
+  Elm: 1400,
+  Farley: 700,
+  Grafton: 900,
+  Hawley: 725,
+};
+
+function oakfieldShape() {
+  const houseTypes = Object.keys(OAKFIELD_NIA);
+  return Array.from({ length: 60 }, (_, index) => ({
+    id: `oakfield-${index + 1}`,
+    plotNumber: String(index + 1),
+    houseType: houseTypes[index % houseTypes.length],
+    tenure: index < 45 ? 'Open Market' : index < 55 ? 'Affordable Rent' : 'Shared Ownership',
+    revenueCategory: 'Open Market',
+    revenueStatus: 'Available',
+    revenueSource: 'House Type',
+    niaFt2: 0,
+    gia: 0,
+  }));
+}
 
 describe('revenueCalculations', () => {
   it('calculates plot-driven GDV from forecast or selling prices', () => {
@@ -288,5 +316,81 @@ describe('revenueStore', () => {
     expect(getRevenueRecord('dev-1').recognitionSettings).toMatchObject({
       method: 'completion',
     });
+  });
+});
+
+describe('source-aware effective Revenue NIA', () => {
+  it('uses explicit House Type NIA across Oakfield-shaped pricing, KPIs, register and insights', () => {
+    const plots = oakfieldShape();
+    const strategy = {
+      ...emptyRevenueStrategy(),
+      openMarket: { ratePerFt2: 350, effectiveDate: '' },
+    };
+    const houseTypePricing = Object.fromEntries(
+      Object.entries(OAKFIELD_NIA).map(([houseType, representativeNiaFt2]) => [
+        houseType,
+        { sellingBasis: 'Auto', representativeNiaFt2, garage: 'None' },
+      ])
+    );
+    const priced = enrichPlotsWithPricing(plots, strategy, houseTypePricing);
+    const expectedNia = priced.reduce((sum, plot) => sum + OAKFIELD_NIA[plot.houseType], 0);
+    const expectedRevenue = priced.reduce((sum, plot) => sum + plot.effectivePrice, 0);
+    const salesMetrics = calculateSalesMetrics(priced);
+    const register = buildPlotRevenueRegisterRows(priced);
+    const houseTypes = buildRevenueHouseTypeSummary(priced);
+    const strategyMetrics = buildStrategySummaryMetrics(plots, strategy, houseTypePricing);
+    const insights = buildStrategyInsights(plots, strategy, houseTypePricing);
+
+    expect(priced).toHaveLength(60);
+    expect(priced.every((plot) => plot.effectivePrice > 0)).toBe(true);
+    expect(priced.every((plot) => plot.effectiveRevenueNiaSource === 'explicit_house_type')).toBe(true);
+    expect(buildRevenueExceptions(priced).filter((item) => item.type === 'missingNia')).toEqual([]);
+    expect(insights.items.find((item) => item.key === 'missing-nia')).toBeUndefined();
+    expect(register.every((row) => row.perFt2 > 0 && row.perM2 > 0)).toBe(true);
+    expect(register.every((row) => row.niaSource === 'explicit_house_type')).toBe(true);
+    expect(salesMetrics.totalNiaFt2).toBe(expectedNia);
+    expect(salesMetrics.averagePerFt2).toBe(Math.round((expectedRevenue / expectedNia) * 100) / 100);
+    expect(salesMetrics.averagePerM2).toBeGreaterThan(0);
+    expect(houseTypes.rows.every((row) => row.averagePerFt2 > 0 && row.averagePerM2 > 0)).toBe(true);
+    expect(houseTypes.totals.averagePerFt2).toBe(salesMetrics.averagePerFt2);
+    expect(strategyMetrics.averageOmPerFt2).toBeGreaterThan(0);
+    expect(insights.items.find((item) => item.key === 'highest-ft2')).toBeTruthy();
+    expect(insights.items.find((item) => item.key === 'lowest-ft2')).toBeTruthy();
+    expect(plots.every((plot) => plot.niaFt2 === 0 && plot.gia === 0)).toBe(true);
+  });
+
+  it('keeps Development Strategy Plot-area authority separate from House Type NIA', () => {
+    const plot = {
+      id: 'development-strategy-no-area', plotNumber: '1', houseType: 'Ashford',
+      tenure: 'Open Market', revenueStatus: 'Available', revenueSource: 'Development Strategy',
+      niaFt2: 0, gia: 0,
+    };
+    const priced = enrichPlotsWithPricing(
+      [plot],
+      { ...emptyRevenueStrategy(), openMarket: { ratePerFt2: 350, effectiveDate: '' } },
+      { Ashford: { sellingBasis: 'Auto', representativeNiaFt2: 750, garage: 'None' } }
+    );
+
+    expect(priced[0]).toMatchObject({
+      effectivePrice: 0,
+      effectiveRevenueNiaFt2: 0,
+      effectiveRevenueNiaSource: 'unresolved',
+      pricingRequiresArea: true,
+      revenueNiaResolved: false,
+    });
+    expect(buildRevenueExceptions(priced).some((item) => item.type === 'missingNia')).toBe(true);
+  });
+
+  it('does not make area a prerequisite for manual or secured monetary authority', () => {
+    const plots = [
+      { id: 'manual', plotNumber: '1', houseType: 'Unknown', revenueSource: 'Manual Value', manualForecastValue: 200000, revenueStatus: 'Available', niaFt2: 0, gia: 0 },
+      { id: 'reserved', plotNumber: '2', houseType: 'Unknown', revenueSource: 'House Type', sellingPrice: 210000, revenueStatus: 'Reserved', niaFt2: 0, gia: 0 },
+      { id: 'secured', plotNumber: '3', houseType: 'Unknown', revenueSource: 'House Type', sellingPrice: 220000, revenueStatus: 'Exchanged', niaFt2: 0, gia: 0 },
+    ];
+    const priced = enrichPlotsWithPricing(plots, emptyRevenueStrategy(), {});
+
+    expect(priced.map((plot) => plot.effectivePrice)).toEqual([200000, 210000, 220000]);
+    expect(priced.every((plot) => plot.pricingRequiresArea === false)).toBe(true);
+    expect(buildRevenueExceptions(priced).some((item) => item.type === 'missingNia')).toBe(false);
   });
 });

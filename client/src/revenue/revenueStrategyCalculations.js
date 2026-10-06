@@ -126,6 +126,55 @@ export function getHouseTypeNiaEvidence(houseType, plots = [], explicitNia = nul
   };
 }
 
+export function resolveEffectiveRevenueNia(
+  plot = {},
+  houseTypePricing = {},
+  plots = []
+) {
+  const pricingSource = plot.revenueSource || DEFAULT_REVENUE_SOURCE;
+  const plotNiaFt2 = getPlotNiaFt2(plot);
+  const houseType = String(plot.houseType || '').trim();
+  const houseTypeRecord = houseTypePricing[houseType] || {};
+  const houseTypeEvidence = getHouseTypeNiaEvidence(
+    houseType,
+    plots,
+    houseTypeRecord.representativeNiaFt2
+  );
+  const houseTypeAuto =
+    pricingSource === DEFAULT_REVENUE_SOURCE && houseTypeRecord.sellingBasis !== 'Manual';
+  const areaRequired = pricingSource === 'Development Strategy' || houseTypeAuto;
+
+  let niaFt2 = 0;
+  let source = 'unresolved';
+  if (pricingSource === 'Development Strategy') {
+    niaFt2 = plotNiaFt2;
+    source = niaFt2 > 0 ? 'plot' : 'unresolved';
+  } else if (houseTypeAuto) {
+    niaFt2 = houseTypeEvidence.niaFt2;
+    source = houseTypeEvidence.source === 'explicit'
+      ? 'explicit_house_type'
+      : houseTypeEvidence.source === 'plot_master'
+        ? 'plot_derived_house_type'
+        : 'unresolved';
+  } else if (plotNiaFt2 > 0) {
+    niaFt2 = plotNiaFt2;
+    source = 'plot';
+  } else if (houseTypeEvidence.niaFt2 > 0) {
+    niaFt2 = houseTypeEvidence.niaFt2;
+    source = houseTypeEvidence.source === 'explicit'
+      ? 'explicit_house_type'
+      : 'plot_derived_house_type';
+  }
+
+  return {
+    niaFt2: roundPlotMoney(niaFt2),
+    niaM2: niaFt2 > 0 ? roundPlotMoney(niaFt2 * FT2_TO_M2) : 0,
+    source,
+    areaRequired,
+    resolved: niaFt2 > 0,
+  };
+}
+
 export function calculateHouseTypeForecast(
   houseType,
   houseTypeRecord = {},
@@ -253,12 +302,9 @@ export function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing
   const contractPrice = roundPlotMoney(plot.sellingPrice || 0);
   const reservedSellingPriceAuthority =
     String(plot.revenueStatus || '').trim() === 'Reserved' && contractPrice > 0;
-  const source = plot.revenueSource || DEFAULT_REVENUE_SOURCE;
-  const houseTypeRecord = houseTypePricing[String(plot.houseType || '').trim()] || {};
-  const pricingRequiresArea = !secured && !cancelled && !reservedSellingPriceAuthority && (
-    source === 'Development Strategy' ||
-    (source === DEFAULT_REVENUE_SOURCE && houseTypeRecord.sellingBasis !== 'Manual')
-  );
+  const effectiveRevenueNia = resolveEffectiveRevenueNia(plot, houseTypePricing, plots);
+  const pricingRequiresArea =
+    !secured && !cancelled && !reservedSellingPriceAuthority && effectiveRevenueNia.areaRequired;
 
   let forecastRevenue = derivedForecast;
   let securedRevenue = 0;
@@ -272,8 +318,12 @@ export function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing
   }
 
   const effectivePrice = forecastRevenue;
-  const niaFt2 = getPlotNiaFt2(plot);
-  const perFt2 = niaFt2 > 0 && effectivePrice > 0 ? roundPlotMoney(effectivePrice / niaFt2) : 0;
+  const perFt2 = effectiveRevenueNia.niaFt2 > 0 && effectivePrice > 0
+    ? roundPlotMoney(effectivePrice / effectiveRevenueNia.niaFt2)
+    : 0;
+  const perM2 = effectiveRevenueNia.niaM2 > 0 && effectivePrice > 0
+    ? roundPlotMoney(effectivePrice / effectiveRevenueNia.niaM2)
+    : 0;
 
   return {
     ...plot,
@@ -286,6 +336,11 @@ export function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing
     remainingForecastRevenue: roundPlotMoney(forecastRevenue - securedRevenue),
     effectivePrice,
     perFt2,
+    perM2,
+    effectiveRevenueNiaFt2: effectiveRevenueNia.niaFt2,
+    effectiveRevenueNiaM2: effectiveRevenueNia.niaM2,
+    effectiveRevenueNiaSource: effectiveRevenueNia.source,
+    revenueNiaResolved: effectiveRevenueNia.resolved,
     pricingSource: reservedSellingPriceAuthority
       ? 'Reserved Selling Price'
       : plot.revenueSource || DEFAULT_REVENUE_SOURCE,
@@ -348,10 +403,12 @@ export function buildStrategySummaryMetrics(plots = [], strategy = {}, houseType
     0
   );
 
+  const openMarketPlotsWithRate = openMarketPlots.filter((plot) => plot.perFt2 > 0);
   const averageOmPerFt2 =
-    openMarketPlots.length > 0
+    openMarketPlotsWithRate.length > 0
       ? roundPlotMoney(
-          openMarketPlots.reduce((sum, plot) => sum + (plot.perFt2 || 0), 0) / openMarketPlots.length
+          openMarketPlotsWithRate.reduce((sum, plot) => sum + plot.perFt2, 0)
+            / openMarketPlotsWithRate.length
         )
       : roundPlotMoney(strategy.openMarket?.ratePerFt2 || 0);
 
@@ -441,7 +498,9 @@ export function buildStrategyInsights(plots = [], strategy = {}, houseTypePricin
     });
   }
 
-  const missingNia = enriched.filter((plot) => !getPlotNiaFt2(plot));
+  const missingNia = enriched.filter(
+    (plot) => plot.pricingRequiresArea && !plot.revenueNiaResolved
+  );
   if (missingNia.length) {
     items.push({
       key: 'missing-nia',

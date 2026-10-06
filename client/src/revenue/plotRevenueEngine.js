@@ -30,8 +30,9 @@ export function buildPlotRevenueRegisterRows(plots = []) {
     effectivePrice: roundPlotMoney(plot.effectivePrice),
     perFt2: plot.perFt2 ?? getPlotPerFt2(plot),
     perM2: plot.perM2 ?? getPlotPerM2(plot),
-    niaFt2: getPlotNiaFt2(plot),
-    niaM2: plot.niaM2,
+    niaFt2: plot.effectiveRevenueNiaFt2 ?? getPlotNiaFt2(plot),
+    niaM2: plot.effectiveRevenueNiaM2 ?? plot.niaM2,
+    niaSource: plot.effectiveRevenueNiaSource || (getPlotNiaFt2(plot) > 0 ? 'plot' : 'unresolved'),
   }));
 }
 
@@ -136,7 +137,7 @@ export function buildRevenueExceptions(plots = []) {
     const price = getPlotEffectivePrice(plot);
     const selling = roundPlotMoney(plot.sellingPrice);
     const forecast = roundPlotMoney(plot.forecastSellingPrice);
-    const niaFt2 = getPlotNiaFt2(plot);
+    const niaFt2 = plot.effectiveRevenueNiaFt2 ?? getPlotNiaFt2(plot);
     const status = String(plot.revenueStatus || 'Available');
 
     if (!price) {
@@ -155,7 +156,7 @@ export function buildRevenueExceptions(plots = []) {
         id: `missing-nia:${plot.id}`,
         type: 'missingNia',
         label: 'Missing NIA',
-        message: `Plot ${plot.plotNumber} has no NIA ft² recorded.`,
+        message: `Plot ${plot.plotNumber} has no NIA available for its active Revenue pricing source.`,
         plotId: plot.id,
         plotNumber: plot.plotNumber,
       });

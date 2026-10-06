@@ -12,6 +12,7 @@ const {
   summarizePricedPlots,
   defaultStrategy,
   roundPlotMoney,
+  resolveEffectiveRevenueNia,
 } = require("../services/cvrRevenueCloseFormulas");
 const { DEFAULT_AFFORDABLE_PERCENTAGES, DEFAULT_GARAGE_PREMIUMS } = require(
   "../services/revenueSettingsConstants"
@@ -182,6 +183,55 @@ test("Plot Override, House Type, Development Strategy, AH, garage and premium", 
     {}
   );
   assert.equal(ah.forecastRevenue, roundPlotMoney(350000 * 0.72));
+});
+
+test("House Type Auto freezes explicit effective Revenue NIA without changing Plot area", () => {
+  const plot = {
+    id: "ht-no-plot-area",
+    plotNumber: "1",
+    houseType: "Ashford",
+    niaFt2: 0,
+    gia: 0,
+    revenueSource: "House Type",
+    revenueCategory: "Open Market",
+    revenueStatus: "Available",
+  };
+  const houseTypes = {
+    Ashford: { garage: "None", sellingBasis: "Auto", representativeNiaFt2: 750 },
+  };
+  const priced = enrichPlotWithPricing(plot, strategy(), houseTypes, [plot]);
+
+  assert.equal(priced.forecastRevenue, 262500);
+  assert.equal(priced.niaFt2, 750);
+  assert.equal(priced.effectiveRevenueNiaSource, "explicit_house_type");
+  assert.equal(plot.niaFt2, 0);
+  assert.equal(plot.gia, 0);
+});
+
+test("Development Strategy remains unresolved without Plot NIA despite House Type NIA", () => {
+  const plot = {
+    id: "ds-no-plot-area",
+    plotNumber: "2",
+    houseType: "Ashford",
+    niaFt2: 0,
+    gia: 0,
+    revenueSource: "Development Strategy",
+    revenueStatus: "Available",
+  };
+  const houseTypes = {
+    Ashford: { garage: "None", sellingBasis: "Auto", representativeNiaFt2: 750 },
+  };
+  const evidence = resolveEffectiveRevenueNia(plot, houseTypes, [plot]);
+  const priced = enrichPlotWithPricing(plot, strategy(), houseTypes, [plot]);
+
+  assert.deepEqual(evidence, {
+    niaFt2: 0,
+    source: "unresolved",
+    areaRequired: true,
+    resolved: false,
+  });
+  assert.equal(priced.forecastRevenue, 0);
+  assert.equal(priced.niaFt2, 0);
 });
 
 test("summarize remaining, plots sold, and no completion double-count", () => {

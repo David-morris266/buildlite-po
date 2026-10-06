@@ -46,8 +46,8 @@ export function buildRevenueHouseTypeSummary(displayPricedPlots = []) {
     row.totalRevenue += revenue;
 
     if (revenue > 0) {
-      row.pricedNiaFt2 += getPlotNiaFt2(plot);
-      row.pricedNiaM2 += getPlotNiaM2(plot);
+      row.pricedNiaFt2 += plot.effectiveRevenueNiaFt2 ?? getPlotNiaFt2(plot);
+      row.pricedNiaM2 += plot.effectiveRevenueNiaM2 ?? getPlotNiaM2(plot);
     }
 
     const bucket = classifyPlotRevenueBucket(plot);

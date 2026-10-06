@@ -88,10 +88,16 @@ export function calculateSalesMetrics(plots = []) {
     )
   );
   const totalNiaFt2 = roundMoney(
-    pricedPlots.reduce((sum, plot) => sum + getPlotNiaFt2(plot), 0)
+    pricedPlots.reduce(
+      (sum, plot) => sum + (plot.effectiveRevenueNiaFt2 ?? getPlotNiaFt2(plot)),
+      0
+    )
   );
   const totalNiaM2 = roundMoney(
-    pricedPlots.reduce((sum, plot) => sum + getPlotNiaM2(plot), 0)
+    pricedPlots.reduce(
+      (sum, plot) => sum + (plot.effectiveRevenueNiaM2 ?? getPlotNiaM2(plot)),
+      0
+    )
   );
 
   return {

@@ -9,6 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
+const { snapshotPlotToDocument } = require("../services/cvrSnapshotMapper");
 
 const MIGRATION_004 = path.join(__dirname, "..", "migrations", "004_developments.sql");
 const MIGRATION_009 = path.join(__dirname, "..", "migrations", "009_cvr_and_purchase_ledger.sql");
@@ -198,12 +199,24 @@ if (!isDbConfigured()) {
     await pool.query(
       `
         INSERT INTO cvr_period_snapshot_plots (
-          client_id, snapshot_id, plot_id, plot_number, forecast_revenue
+          client_id, snapshot_id, plot_id, plot_number, forecast_revenue,
+          nia_ft2, display_metadata
         )
-        VALUES ($1, $2, 'plot-31', '31', 255100)
+        VALUES (
+          $1, $2, 'plot-31', '31', 255100,
+          750, '{"effectiveRevenueNiaSource":"explicit_house_type"}'::jsonb
+        )
       `,
       [client.id, snapshotId]
     );
+
+    const frozenPlot = await pool.query(
+      `SELECT * FROM cvr_period_snapshot_plots WHERE snapshot_id = $1 AND plot_id = 'plot-31'`,
+      [snapshotId]
+    );
+    const hydrated = snapshotPlotToDocument(frozenPlot.rows[0]);
+    assert.equal(hydrated.niaFt2, 750);
+    assert.equal(hydrated.displayMetadata.effectiveRevenueNiaSource, "explicit_house_type");
 
     await assert.rejects(
       () =>

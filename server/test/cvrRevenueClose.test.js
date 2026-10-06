@@ -116,6 +116,29 @@ test("Reserved Selling Price is frozen as unsecured Forecast Revenue", async () 
   assert.equal(candidate.plots[0].securedRevenue, 0);
 });
 
+test("House Type close freezes effective Revenue NIA and provenance", async () => {
+  const candidate = await buildCvrRevenueCloseCandidate({
+    clientId: "client-1",
+    developmentId: "dev-close",
+    loadDevelopment: async () => ({ id: "dev-close", plotMaster: { plots: [{
+      id: "plot-effective-nia", plotNumber: "8", houseType: "Ashford", niaFt2: 0, gia: 0,
+      revenueStatus: "Available", revenueSource: "House Type", sellingPrice: 0,
+    }] } }),
+    loadSettingsRow: async () => settingsRow({
+      house_type_pricing: {
+        Ashford: { garage: "None", sellingBasis: "Auto", representativeNiaFt2: 750 },
+      },
+    }),
+  });
+
+  assert.equal(candidate.canLock, true);
+  assert.equal(candidate.plots[0].forecastRevenue, 262500);
+  assert.equal(candidate.plots[0].niaFt2, 750);
+  assert.deepEqual(candidate.plots[0].displayMetadata, {
+    effectiveRevenueNiaSource: "explicit_house_type",
+  });
+});
+
 test("Test Site 1 fixture close matches characterisation", async () => {
   const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, "utf8"));
   const candidate = await buildCvrRevenueCloseCandidate({

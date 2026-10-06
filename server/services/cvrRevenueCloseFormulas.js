@@ -132,6 +132,57 @@ function getRepresentativeNiaForHouseType(houseType, plots = [], override = null
   return roundPlotMoney(total / values.length);
 }
 
+function getHouseTypeNiaEvidence(houseType, plots = [], explicitNia = null) {
+  const explicit = Number(explicitNia);
+  if (Number.isFinite(explicit) && explicit > 0) {
+    return { niaFt2: roundPlotMoney(explicit), source: "explicit_house_type" };
+  }
+  const derived = getRepresentativeNiaForHouseType(houseType, plots);
+  return {
+    niaFt2: derived,
+    source: derived > 0 ? "plot_derived_house_type" : "unresolved",
+  };
+}
+
+function resolveEffectiveRevenueNia(plot = {}, houseTypePricing = {}, plots = []) {
+  const pricingSource = plot.revenueSource || DEFAULT_REVENUE_SOURCE;
+  const plotNiaFt2 = getPlotNiaFt2(plot);
+  const houseType = String(plot.houseType || "").trim();
+  const houseTypeRecord = houseTypePricing[houseType] || {};
+  const houseTypeEvidence = getHouseTypeNiaEvidence(
+    houseType,
+    plots,
+    houseTypeRecord.representativeNiaFt2
+  );
+  const houseTypeAuto =
+    pricingSource === DEFAULT_REVENUE_SOURCE && houseTypeRecord.sellingBasis !== "Manual";
+  const areaRequired = pricingSource === "Development Strategy" || houseTypeAuto;
+
+  if (pricingSource === "Development Strategy") {
+    return {
+      niaFt2: plotNiaFt2,
+      source: plotNiaFt2 > 0 ? "plot" : "unresolved",
+      areaRequired,
+      resolved: plotNiaFt2 > 0,
+    };
+  }
+  if (houseTypeAuto) {
+    return {
+      ...houseTypeEvidence,
+      areaRequired,
+      resolved: houseTypeEvidence.niaFt2 > 0,
+    };
+  }
+  if (plotNiaFt2 > 0) {
+    return { niaFt2: plotNiaFt2, source: "plot", areaRequired, resolved: true };
+  }
+  return {
+    ...houseTypeEvidence,
+    areaRequired,
+    resolved: houseTypeEvidence.niaFt2 > 0,
+  };
+}
+
 function calculateHouseTypeForecast(houseType, houseTypeRecord = {}, strategy = {}, plots = []) {
   const record = normalizeHouseTypePricingRecord(houseTypeRecord);
   if (record.sellingBasis === "Manual") {
@@ -204,6 +255,7 @@ function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing = {}, 
   const contractPrice = roundPlotMoney(plot.sellingPrice || 0);
   const reservedSellingPriceAuthority =
     normalizePlotRevenueStatus(plot.revenueStatus) === "Reserved" && contractPrice > 0;
+  const effectiveRevenueNia = resolveEffectiveRevenueNia(plot, houseTypePricing, plots);
 
   let forecastRevenue = derivedForecast;
   let securedRevenue = 0;
@@ -224,7 +276,10 @@ function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing = {}, 
     securedRevenue,
     remainingForecastRevenue: roundPlotMoney(forecastRevenue - securedRevenue),
     sellingPrice: contractPrice,
-    niaFt2: getPlotNiaFt2(plot),
+    niaFt2: effectiveRevenueNia.niaFt2,
+    effectiveRevenueNiaSource: effectiveRevenueNia.source,
+    revenueNiaRequired: effectiveRevenueNia.areaRequired,
+    revenueNiaResolved: effectiveRevenueNia.resolved,
     tenure: getPlotPricingTenure(plot),
     revenueStatus: normalizePlotRevenueStatus(plot.revenueStatus),
     revenueSource: plot.revenueSource || DEFAULT_REVENUE_SOURCE,
@@ -280,6 +335,7 @@ module.exports = {
   isCancelledRevenueStatus,
   isSecuredRevenueStatus,
   getPlotNiaFt2,
+  resolveEffectiveRevenueNia,
   getPlotPricingTenure,
   getAffordablePercentKey,
   resolveEffectivePlotGarage,

@@ -50,7 +50,7 @@ export const REVENUE_BULK_ACTIONS = [
     key: 'recalculate-house-types',
     label: 'Recalculate House Types',
     title: 'Recalculate house types?',
-    message: 'House type NIA and auto forecast values will refresh from Plot Master and strategy defaults.',
+    message: 'Eligible House Type and plot forecasts will be recalculated while preserving explicit House Type pricing NIA.',
     progressLabel: 'Recalculating house types…',
     async run(developmentId) {
       const manualPreserved = countManualOverrides(developmentId);

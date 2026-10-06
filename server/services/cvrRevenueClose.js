@@ -75,7 +75,9 @@ function snapshotPlotFromEnriched(plot, index) {
     reservedAt: dateOrNull(plot.reservedAt),
     exchangedAt: dateOrNull(plot.exchangedAt),
     completedAt: dateOrNull(plot.completedAt),
-    displayMetadata: {},
+    displayMetadata: {
+      effectiveRevenueNiaSource: plot.effectiveRevenueNiaSource || "unresolved",
+    },
   };
 }
 
