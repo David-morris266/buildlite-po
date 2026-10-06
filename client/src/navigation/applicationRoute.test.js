@@ -21,6 +21,15 @@ describe('canonical application routes', () => {
     });
   });
 
+  it('round-trips a Development Prelims workspace using stable identity only', () => {
+    const route = {
+      view: 'developments', developmentId: 'dev-456', workspaceTab: 'prelims',
+    };
+    const url = serializeApplicationRoute(route, { pathname: '/', hash: '' });
+    expect(url).toBe('/?view=developments&development=dev-456&workspace=prelims');
+    expect(parseApplicationRoute({ search: url.slice(1) })).toMatchObject(route);
+  });
+
   it('round-trips stable Administration subsections while keeping landing valid', () => {
     const sellingCosts = serializeApplicationRoute({
       view: 'administration', administrationSection: 'selling-costs-templates',

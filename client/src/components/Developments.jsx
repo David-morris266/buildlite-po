@@ -9,6 +9,11 @@ import {
   refreshDevelopment,
 } from '../developments/developmentStore';
 import {useBuildLitePermission} from '../auth/BuildLiteAuthProvider';
+import { applyDevelopmentWorkspaceTabSelection } from '../developments/developmentWorkspaceTabNavigation';
+
+function canonicalWorkspaceTab(tabId) {
+  return applyDevelopmentWorkspaceTabSelection(tabId)?.activeTab || 'overview';
+}
 
 export default function Developments({
   initialDevelopmentId = null,
@@ -35,6 +40,7 @@ export default function Developments({
   const [cvrHierarchyFilterKey, setCvrHierarchyFilterKey] = useState(null);
   const [packageKey, setPackageKey] = useState(null);
   const [packageTab, setPackageTab] = useState(null);
+  const [plotMasterView, setPlotMasterView] = useState(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -64,7 +70,7 @@ export default function Developments({
   useEffect(() => {
     const routeKey = JSON.stringify([
       initialDevelopmentId, initialWorkspaceTab, initialCvrPeriodKey, initialCvrSubview, initialCvrHierarchyFilterKey,
-      initialPackageKey, initialPackageTab,
+      initialPackageKey, initialPackageTab, initialPlotMasterView,
     ]);
     if (hydratedRouteRef.current === routeKey) return;
     hydratedRouteRef.current = routeKey;
@@ -76,21 +82,23 @@ export default function Developments({
       setCvrHierarchyFilterKey(null);
       setPackageKey(null);
       setPackageTab(null);
+      setPlotMasterView(null);
       setView('list');
       return;
     }
     setActiveDevelopmentId(initialDevelopmentId);
-    setWorkspaceTab(initialWorkspaceTab);
+    setWorkspaceTab(canonicalWorkspaceTab(initialWorkspaceTab));
     setCvrPeriodKey(initialCvrPeriodKey);
     setCvrSubview(initialCvrSubview);
     setCvrHierarchyFilterKey(initialCvrHierarchyFilterKey);
     setPackageKey(initialPackageKey);
     setPackageTab(initialPackageTab);
+    setPlotMasterView(initialPlotMasterView);
     setView('workspace');
     onInitialDevelopmentHandled?.();
   }, [
     initialDevelopmentId, initialWorkspaceTab, initialCvrPeriodKey, initialCvrSubview, initialCvrHierarchyFilterKey,
-    initialPackageKey, initialPackageTab, onInitialDevelopmentHandled,
+    initialPackageKey, initialPackageTab, initialPlotMasterView, onInitialDevelopmentHandled,
   ]);
 
   const activeDevelopment = useMemo(() => {
@@ -135,6 +143,13 @@ export default function Developments({
   function openWorkspace(developmentId) {
     setWorkspaceResolveError('');
     setActiveDevelopmentId(developmentId);
+    setWorkspaceTab('overview');
+    setCvrPeriodKey(null);
+    setCvrSubview(null);
+    setCvrHierarchyFilterKey(null);
+    setPackageKey(null);
+    setPackageTab(null);
+    setPlotMasterView(null);
     setView('workspace');
     onRouteChange?.({ developmentId, workspaceTab: 'overview' });
   }
@@ -144,8 +159,11 @@ export default function Developments({
     setActiveDevelopmentId(null);
     setWorkspaceTab(null);
     setCvrPeriodKey(null);
+    setCvrSubview(null);
+    setCvrHierarchyFilterKey(null);
     setPackageKey(null);
     setPackageTab(null);
+    setPlotMasterView(null);
     setWorkspaceResolveError('');
     setRefreshToken((value) => value + 1);
     onRouteChange?.({ developmentId: null, workspaceTab: null });
@@ -160,6 +178,26 @@ export default function Developments({
       }
     }
     setRefreshToken((value) => value + 1);
+  }
+
+  function convergeWorkspaceRoute(next = {}) {
+    setWorkspaceTab(canonicalWorkspaceTab(next.workspaceTab));
+    setCvrPeriodKey(next.periodKey || null);
+    setCvrSubview(next.cvrSubview || null);
+    setCvrHierarchyFilterKey(next.cvrHierarchyFilterKey || null);
+    setPackageKey(next.packageKey || null);
+    setPackageTab(next.packageTab || null);
+    setPlotMasterView(next.plotMasterView || null);
+  }
+
+  function handleWorkspaceRouteChange(next) {
+    convergeWorkspaceRoute(next);
+    onRouteChange?.({ developmentId: activeDevelopmentId, ...next });
+  }
+
+  function handleWorkspaceRouteReplace(next) {
+    convergeWorkspaceRoute(next);
+    onRouteReplace?.({ developmentId: activeDevelopmentId, ...next });
   }
 
   if (!ready && !loadError) {
@@ -239,21 +277,15 @@ export default function Developments({
         initialCvrHierarchyFilterKey={cvrHierarchyFilterKey}
         initialPackageKey={packageKey}
         initialPackageTab={packageTab}
-        initialPlotMasterView={initialPlotMasterView}
+        initialPlotMasterView={plotMasterView}
         onBackToList={returnToList}
         onPlotsChanged={() => setRefreshToken((value) => value + 1)}
         onLedgerChanged={() => setRefreshToken((value) => value + 1)}
         onCvrChanged={() => setRefreshToken((value) => value + 1)}
         onDevelopmentChanged={handleDevelopmentChanged}
         onOpenPackage={onOpenPackage}
-        onNavigationStateChange={(next) => onRouteChange?.({
-          developmentId: activeDevelopmentId,
-          ...next,
-        })}
-        onNavigationStateReplace={(next) => onRouteReplace?.({
-          developmentId: activeDevelopmentId,
-          ...next,
-        })}
+        onNavigationStateChange={handleWorkspaceRouteChange}
+        onNavigationStateReplace={handleWorkspaceRouteReplace}
         onNavigate={onNavigate}
       />
     );

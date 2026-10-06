@@ -21,7 +21,13 @@ vi.mock('./DevelopmentWorkspace', () => ({
     data-tab={props.initialActiveTab || ''}
     data-period={props.initialCvrPeriodKey || ''}
     data-package={props.initialPackageKey || ''}
-  >Workspace</div>,
+  >
+    Workspace
+    <button type="button" onClick={() => props.onNavigationStateChange?.({ workspaceTab: 'prelims' })}>Open Prelims</button>
+    <button type="button" onClick={() => props.onNavigationStateChange?.({ workspaceTab: 'selling-costs' })}>Open Selling Costs</button>
+    <button type="button" onClick={() => props.onNavigationStateChange?.({ workspaceTab: 'budget' })}>Review Site Start Budget</button>
+    <button type="button" onClick={() => props.onNavigationStateChange?.({ workspaceTab: 'ledger' })}>Review Purchase Ledger</button>
+  </div>,
 }));
 
 vi.mock('./DevelopmentList', () => ({
@@ -137,5 +143,55 @@ describe('Developments workspace resolving guard', () => {
     renderDevelopments({ initialDevelopmentId: null, initialWorkspaceTab: null });
     expect(document.body.textContent).toContain('Open missing');
     expect(document.querySelector('[data-testid="development-workspace"]')).toBeNull();
+  });
+
+  it('converges child workspace navigation into parent state before publishing the route', async () => {
+    const development = { id: 'dev-missing', developmentName: 'Test Site 1' };
+    const onRouteChange = vi.fn();
+    getDevelopment.mockReturnValue(development);
+    renderDevelopments({ initialDevelopmentId: development.id, initialWorkspaceTab: 'overview', onRouteChange });
+    await act(async () => { await Promise.resolve(); });
+
+    act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Open Prelims').click());
+
+    expect(document.querySelector('[data-testid="development-workspace"]').dataset.tab).toBe('prelims');
+    expect(onRouteChange).toHaveBeenLastCalledWith({ developmentId: development.id, workspaceTab: 'prelims' });
+
+    renderDevelopments({ initialDevelopmentId: development.id, initialWorkspaceTab: 'overview', onRouteChange });
+    expect(document.querySelector('[data-testid="development-workspace"]').dataset.tab).toBe('prelims');
+  });
+
+  it.each([
+    ['Review Site Start Budget', 'budget'],
+    ['Review Purchase Ledger', 'ledger'],
+    ['Open Prelims', 'prelims'],
+    ['Open Selling Costs', 'selling-costs'],
+  ])('converges %s to the canonical %s workspace', async (buttonLabel, expectedTab) => {
+    const development = { id: 'dev-missing', developmentName: 'Test Site 1' };
+    getDevelopment.mockReturnValue(development);
+    renderDevelopments({ initialDevelopmentId: development.id, initialWorkspaceTab: 'overview' });
+    await act(async () => { await Promise.resolve(); });
+
+    act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === buttonLabel).click());
+
+    expect(document.querySelector('[data-testid="development-workspace"]').dataset.tab).toBe(expectedTab);
+  });
+
+  it('does not carry Development A workspace state into Development B', async () => {
+    getDevelopment.mockImplementation((id) => ({ id, developmentName: id }));
+    renderDevelopments({ initialDevelopmentId: 'dev-a', initialWorkspaceTab: 'prelims' });
+    await act(async () => { await Promise.resolve(); });
+    expect(document.querySelector('[data-testid="development-workspace"]').dataset.tab).toBe('prelims');
+
+    renderDevelopments({ initialDevelopmentId: 'dev-b', initialWorkspaceTab: 'overview' });
+    expect(document.querySelector('[data-testid="development-workspace"]').dataset.tab).toBe('overview');
+  });
+
+  it('fails an invalid hydrated workspace safely to Overview', async () => {
+    getDevelopment.mockReturnValue({ id: 'dev-missing', developmentName: 'Test Site 1' });
+    renderDevelopments({ initialDevelopmentId: 'dev-missing', initialWorkspaceTab: 'not-a-workspace' });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(document.querySelector('[data-testid="development-workspace"]').dataset.tab).toBe('overview');
   });
 });

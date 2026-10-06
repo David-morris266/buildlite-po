@@ -71,6 +71,9 @@ vi.mock('./DevelopmentOverview', () => ({
     <div>
       <span>Overview panel</span>
       <button type="button" onClick={() => onResolveReadiness?.({ tab: 'budget' })}>Resolve Budget</button>
+      <button type="button" onClick={() => onResolveReadiness?.({ tab: 'ledger' })}>Resolve Purchase Ledger</button>
+      <button type="button" onClick={() => onResolveReadiness?.({ tab: 'prelims' })}>Resolve Prelims</button>
+      <button type="button" onClick={() => onResolveReadiness?.({ tab: 'selling-costs' })}>Resolve Selling Costs</button>
       <button type="button" onClick={onStartFirstCvr}>Start first CVR</button>
       <button
         type="button"
@@ -318,6 +321,23 @@ describe('DevelopmentWorkspace stability guards', () => {
 
     expect(container.querySelector('.dev-workspace-shell')).not.toBeNull();
     expect(document.querySelector('[data-testid="revenue-panel"]')).not.toBeNull();
+  });
+
+  it.each([
+    ['Resolve Budget', 'Budget'],
+    ['Resolve Purchase Ledger', 'Ledger'],
+    ['Resolve Prelims', 'Prelims'],
+    ['Resolve Selling Costs', 'Selling Costs'],
+  ])('opens the canonical %s readiness destination', async (actionLabel, tabLabel) => {
+    renderWorkspace();
+    await act(async () => { await Promise.resolve(); });
+
+    act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === actionLabel).click());
+
+    const selected = [...container.querySelectorAll('.po-package-tabs__tab')]
+      .find((button) => button.textContent === tabLabel);
+    expect(selected?.getAttribute('aria-current')).toBe('page');
+    expect(updateDevelopment).not.toHaveBeenCalled();
   });
 
   it('switches to Selling Costs when selecting the Selling Costs tab', async () => {
