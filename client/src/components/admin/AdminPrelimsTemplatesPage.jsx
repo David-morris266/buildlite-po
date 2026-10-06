@@ -218,7 +218,11 @@ function TemplateLineForm({
 
 export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStructure = null }) {
   const [templates, setTemplates] = useState([]);
+  const [templatesResolved, setTemplatesResolved] = useState(false);
+  const [templatesLoadFailed, setTemplatesLoadFailed] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [showTemplateEditor, setShowTemplateEditor] = useState(false);
+  const [showCreateTemplate, setShowCreateTemplate] = useState(false);
   const [createName, setCreateName] = useState('BuildLite Standard Prelims');
   const [headerName, setHeaderName] = useState('');
   const [error, setError] = useState('');
@@ -271,30 +275,48 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
     const proposed = rows.filter((row) => row.proposalStatus.startsWith('proposed'));
     const exceptions = rows.filter((row) => row.proposalStatus === 'needs-review');
     const existing = rows.filter((row) => row.proposalStatus === 'existing');
-    const unresolved = rows.filter((row) => row.proposedEnabled !== false && (
+    const applyBlockers = rows.filter((row) => row.proposedEnabled !== false && (
       !String(row.proposedCostCodeKey || '').trim()
       || (row.proposalStatus.startsWith('proposed') && !row.proposalAccepted)
     ));
-    return { proposed, exceptions, existing, unresolved };
+    const suggested = proposed.filter((row) => row.proposedEnabled !== false && !row.proposalAccepted);
+    const accepted = proposed.filter((row) => row.proposedEnabled !== false && row.proposalAccepted);
+    const disabled = rows.filter((row) => row.proposedEnabled === false);
+    const saved = rows.filter((row) => row.enabled !== false && String(row.costCodeKey || '').trim());
+    const resolved = rows.filter((row) => row.proposedEnabled === false || (
+      String(row.proposedCostCodeKey || '').trim()
+      && (!row.proposalStatus.startsWith('proposed') || row.proposalAccepted)
+    ));
+    return { proposed, exceptions, existing, applyBlockers, suggested, accepted, disabled, saved, resolved };
   }, [proposalRows]);
 
-  async function refresh(selectId = selected?.id) {
+  async function refresh(preferredId = null) {
     const listed = await listPrelimsTemplates();
     const rows = listed.templates || [];
     setTemplates(rows);
-    if (!selectId) {
+    setTemplatesResolved(true);
+    setTemplatesLoadFailed(false);
+    const selectedStillExists = selected?.id && rows.some((row) => row.id === selected.id);
+    const targetId = preferredId
+      || (selectedStillExists ? selected.id : null)
+      || rows.find((row) => row.isDefault)?.id
+      || rows[0]?.id
+      || null;
+    if (!targetId) {
       setSelected(null);
       setHeaderName('');
       setForm(null);
       return;
     }
-    const detail = await getPrelimsTemplate(selectId);
+    const detail = await getPrelimsTemplate(targetId);
     setSelected(detail);
     setHeaderName(detail.name || '');
   }
 
   useEffect(() => {
     refresh(null).catch((err) => {
+      setTemplatesResolved(true);
+      setTemplatesLoadFailed(true);
       setError(err.message || 'Could not load Prelims templates.');
     });
     listCostCodesForTemplateMapping()
@@ -337,12 +359,20 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
       setCreateName(created.name);
       setForm(null);
       await refresh(created.id);
+      setShowCreateTemplate(false);
+      setShowTemplateEditor(true);
     } catch (err) {
-      const message =
-        err instanceof PrelimsTemplateApiError && err.status === 409
-          ? err.message
-          : err.message || 'Could not create Prelims template.';
-      setError(message);
+      if (err instanceof PrelimsTemplateApiError && err.status === 409) {
+        const existing = templates.find((row) => row.name.trim().toLowerCase() === createName.trim().toLowerCase());
+        setError('No template was created. A company Prelims template with this name already exists. Manage the existing template instead.');
+        if (existing) {
+          await refresh(existing.id);
+          setShowCreateTemplate(false);
+          setShowTemplateEditor(true);
+        }
+      } else {
+        setError(err.message || 'Could not create Prelims template.');
+      }
     } finally {
       setBusy(false);
     }
@@ -450,6 +480,12 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
     setProposalRows(proposePrelimsMappings(selected?.lines || [], discovery.suggested || []));
   }
 
+  function continueTemplateSetup() {
+    setShowTemplateEditor(true);
+    if (selected?.origin === 'buildlite_standard') startProposals();
+    else startMapping();
+  }
+
   function updateProposal(lineId, patch) {
     setProposalRows((rows) => rows?.map((row) => row.id === lineId ? {
       ...row,
@@ -545,43 +581,52 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
         </p>
       ) : null}
 
-      <section className="po-module-card admin-panel">
-        <h2 className="admin-panel__title">Create a company template</h2>
-        <p className="admin-panel__lead">
-          Start with BuildLite&apos;s recommended UK housebuilding Prelims structure. You can
-          tailor names, guidance, drivers and cost-code mapping. BuildLite Standard itself stays
-          unchanged. Development setup comes later.
-        </p>
+      {!templatesResolved ? <section className="po-module-card admin-panel" aria-label="Loading company Prelims templates">
+        <h2 className="admin-panel__title">Company Prelims Templates</h2>
+        <p>Loading company template setup…</p>
+      </section> : templatesLoadFailed ? <section className="po-module-card admin-panel" aria-label="Company Prelims templates unavailable">
+        <h2 className="admin-panel__title">Company Prelims Templates</h2>
+        <p>Company template setup could not be loaded. Refresh the page to try again.</p>
+      </section> : !templates.length ? <section className="po-module-card admin-panel" aria-label="Set up company Prelims template">
+        <h2 className="admin-panel__title">Set up your company Prelims template</h2>
+        <p className="admin-panel__lead">Create the reusable company template that new developments will inherit. You can tailor mappings and assumptions later.</p>
         <div className="admin-form__grid">
           <label className="dev-form__field admin-form__field--wide">
             <span className="dev-form__label">Template name</span>
-            <input
-              className="input"
-              value={createName}
-              onChange={(event) => setCreateName(event.target.value)}
-              aria-label="Prelims template name"
-            />
+            <input className="input" value={createName} onChange={(event) => setCreateName(event.target.value)} aria-label="Prelims template name" />
           </label>
         </div>
         <div className="dev-prelims__actions">
-          <AdminButton
-            variant="primary"
-            disabled={busy}
-            onClick={() => handleCreate('buildlite_standard')}
-          >
-            Use BuildLite Standard
-          </AdminButton>
-          <AdminButton disabled={busy} variant="secondary" onClick={() => handleCreate('blank')}>
-            Start Blank
-          </AdminButton>
+          <AdminButton variant="primary" disabled={busy} onClick={() => handleCreate('buildlite_standard')}>Use BuildLite Standard</AdminButton>
+          <AdminButton disabled={busy} variant="secondary" onClick={() => handleCreate('blank')}>Start Blank</AdminButton>
         </div>
-      </section>
+      </section> : <>
+        <section className="po-module-card admin-panel" aria-label="Company Prelims templates overview">
+          <div className="admin-prelims-mapping-workspace__header">
+            <div>
+              <h2 className="admin-panel__title">Company Prelims Templates</h2>
+              <p className="admin-panel__lead">Continue the default company setup or manage another existing template.</p>
+            </div>
+            <AdminButton variant="secondary" onClick={() => setShowCreateTemplate((value) => !value)}>{showCreateTemplate ? 'Cancel new template' : 'Create another template'}</AdminButton>
+          </div>
 
-      <section className="po-module-card admin-panel">
-        <h2 className="admin-panel__title">Company templates</h2>
-        {!templates.length ? (
-          <p>No company Prelims templates yet.</p>
-        ) : (
+          {selected ? <article className="admin-prelims-template-overview" aria-label="Current company Prelims template">
+            <div>
+              <h3>{selected.name}</h3>
+              <p>{selected.isDefault ? 'Default' : 'Selected'} &middot; {originLabel(selected.origin)}{selected.sourceStandardVersion ? ` · Standard v${selected.sourceStandardVersion}` : ''}</p>
+              <p className="admin-prelims-mapping-summary">
+                {mappingSummary.total} lines &middot; {mappingSummary.enabled} enabled &middot; {mappingSummary.mapped} mapped &middot; {mappingSummary.unmapped} unmapped &middot; {mappingSummary.disabled} disabled
+              </p>
+            </div>
+            <div className="dev-prelims__actions">
+              <AdminStatusBadge tone={mappingSummary.unmapped === 0 ? 'success' : 'neutral'}>{mappingSummary.unmapped === 0 ? 'Ready' : 'Needs setup'}</AdminStatusBadge>
+              <AdminStatusBadge tone="accent">Saved</AdminStatusBadge>
+              {mappingSummary.unmapped > 0
+                ? <AdminButton variant="primary" disabled={busy} onClick={continueTemplateSetup}>Continue setup</AdminButton>
+                : <AdminButton variant="primary" disabled={busy} onClick={() => setShowTemplateEditor(true)}>Manage template</AdminButton>}
+            </div>
+          </article> : <p>Loading the default company template…</p>}
+
           <AdminDataTable>
             <thead>
               <tr>
@@ -604,6 +649,7 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
                         setForm(null);
                         setMappingMode(false);
                         setMappingFilter('all');
+                        setShowTemplateEditor(true);
                         refresh(row.id).catch((err) => setError(err.message));
                       }}
                     >
@@ -618,10 +664,25 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
               ))}
             </tbody>
           </AdminDataTable>
-        )}
-      </section>
+        </section>
 
-      {selected ? (
+        {showCreateTemplate ? <section className="po-module-card admin-panel" aria-label="Create another company Prelims template">
+          <h2 className="admin-panel__title">Create another template</h2>
+          <p className="admin-panel__lead">This creates a new company-owned template. It does not open or replace an existing template.</p>
+          <div className="admin-form__grid">
+            <label className="dev-form__field admin-form__field--wide">
+              <span className="dev-form__label">New template name</span>
+              <input className="input" value={createName} onChange={(event) => setCreateName(event.target.value)} aria-label="Prelims template name" />
+            </label>
+          </div>
+          <div className="dev-prelims__actions">
+            <AdminButton variant="primary" disabled={busy} onClick={() => handleCreate('buildlite_standard')}>Create new template from BuildLite Standard</AdminButton>
+            <AdminButton disabled={busy} variant="secondary" onClick={() => handleCreate('blank')}>Start new blank template</AdminButton>
+          </div>
+        </section> : null}
+      </>}
+
+      {selected && showTemplateEditor ? (
         <section className="po-module-card admin-panel" aria-label="Selected Prelims template">
           <h2 className="admin-panel__title">
             {selected.name}
@@ -696,11 +757,11 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
               </div>
               {mappingError ? <p role="alert" className="admin-prelims-mapping-error">{mappingError}</p> : null}
               <p className="admin-prelims-mapping-summary" aria-label="Proposal review summary">
-                {proposalRows.filter((row) => row.enabled !== false).length} enabled lines &middot;{' '}
-                {proposalReview.proposed.length} confidently proposed &middot;{' '}
-                {proposalReview.exceptions.length} require owner review &middot;{' '}
-                {proposalReview.existing.length} existing mappings &middot;{' '}
-                {proposalRows.filter((row) => row.proposedEnabled === false).length} disabled
+                {proposalReview.suggested.length} suggested &middot;{' '}
+                {proposalReview.accepted.length} accepted &middot;{' '}
+                {proposalReview.exceptions.length} need your review &middot;{' '}
+                {proposalReview.saved.length} saved mapping{proposalReview.saved.length === 1 ? '' : 's'} &middot;{' '}
+                {proposalReview.disabled.length} disabled
               </p>
 
               {proposalReview.proposed.length ? <section aria-label="Proposed Prelims mappings">
@@ -755,12 +816,14 @@ export default function AdminPrelimsTemplatesPage({ onBack, onSetUpCommercialStr
               </AdminDataTable> : null}
 
               <p className="admin-prelims-mapping-summary" role="status">
-                {proposalRows.filter((row) => row.proposedEnabled !== false && String(row.proposedCostCodeKey || '').trim()).length} mapped &middot;{' '}
-                {proposalRows.filter((row) => row.proposedEnabled === false).length} disabled &middot;{' '}
-                {proposalReview.unresolved.length} require review
+                {proposalReview.resolved.length} resolved &middot;{' '}
+                {proposalReview.exceptions.length} need your review &middot;{' '}
+                {proposalReview.disabled.length} disabled
+                {proposalReview.suggested.length ? <> &middot; {proposalReview.suggested.length} suggestion{proposalReview.suggested.length === 1 ? '' : 's'} awaiting acceptance</> : null}
+                {!proposalReview.applyBlockers.length ? ' · Ready to apply' : null}
               </p>
               <div className="dev-prelims__actions">
-                <AdminButton variant="primary" disabled={busy || proposalReview.unresolved.length > 0} onClick={applyProposals}>Apply reviewed mappings</AdminButton>
+                <AdminButton variant="primary" disabled={busy || proposalReview.applyBlockers.length > 0} onClick={applyProposals}>Apply reviewed mappings</AdminButton>
                 <AdminButton variant="secondary" disabled={busy} onClick={() => setProposalRows(null)}>Cancel</AdminButton>
               </div>
             </section>

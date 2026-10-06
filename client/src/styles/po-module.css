@@ -10319,6 +10319,28 @@
   margin-top: 1rem;
 }
 
+.admin-prelims-template-overview {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--po-border, #334155);
+  border-radius: 0.65rem;
+}
+
+.admin-prelims-template-overview h3,
+.admin-prelims-template-overview p {
+  margin: 0 0 0.35rem;
+}
+
+@media (max-width: 760px) {
+  .admin-prelims-template-overview {
+    flex-direction: column;
+  }
+}
+
 .admin-prelims-mapping-workspace__header {
   display: flex;
   align-items: flex-start;

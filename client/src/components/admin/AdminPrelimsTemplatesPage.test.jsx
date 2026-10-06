@@ -45,6 +45,7 @@ vi.mock('../../api/costCodeClassifications', () => ({
 vi.mock('../../admin/commercialStructureService', () => ({ loadCommercialStructure }));
 
 import AdminPrelimsTemplatesPage from './AdminPrelimsTemplatesPage';
+import { PrelimsTemplateApiError } from '../../api/prelimsTemplates';
 
 function flush() {
   return act(async () => {
@@ -109,6 +110,46 @@ const HOUSEBUILDING = {
     },
   ],
 };
+
+const PILOT_STANDARD_KEYS = [
+  'site_manager', 'site_supervisor', 'site_admin', 'welfare',
+  'temp_electrics_standing', 'temp_electrics_connection',
+  'temp_water_standing', 'temp_water_connection', 'temp_compound',
+  'hoarding', 'security_manning', 'security_install', 'cleaning_ongoing',
+  'cleaning_final', 'skips', 'hs_management', 'testing_inspection',
+  'scaffold_inspections', 'small_plant', 'consumables', 'signage', 'ppe',
+  'comms', 'temp_works_recurring', 'demobilisation',
+];
+
+const PILOT_TEMPLATE = {
+  ...HOUSEBUILDING,
+  id: 'tpl-pilot',
+  name: 'BuildLite Standard Prelims',
+  lineCount: 25,
+  lines: PILOT_STANDARD_KEYS.map((key, index) => ({
+    id: `pilot-line-${index + 1}`,
+    version: 1,
+    templateKey: `bl.prelims.v1.${key}`,
+    name: key.replaceAll('_', ' '),
+    description: `${key} company Prelim`,
+    forecastDriver: 'TIME',
+    startBasis: 'SITE_START',
+    endBasis: 'FINAL_COMPLETION',
+    costCodeKey: null,
+    enabled: true,
+    displayOrder: (index + 1) * 10,
+  })),
+};
+
+const PILOT_COST_CODES = [
+  ['1200', 'Site Management Staff'],
+  ['1210', 'Site Accommodation and Welfare'],
+  ['1220', 'Temporary Services'],
+  ['1230', 'Scaffolding and Safety'],
+  ['1240', 'Plant and Small Tools'],
+  ['1250', 'Site Security'],
+  ['1260', 'Temporary Roads and Hardstandings'],
+].map(([code, element]) => ({ code, value: code, description: element, element, active: true, commercialHeadId: 'prelims' }));
 
 describe('Admin Prelims Templates', () => {
   let container;
@@ -179,16 +220,19 @@ describe('Admin Prelims Templates', () => {
     container.remove();
   });
 
-  it('explains BuildLite Standard and lists company templates', async () => {
+  it('leads with the existing default template and its saved readiness', async () => {
     await act(async () => {
       root.render(<AdminPrelimsTemplatesPage onBack={() => {}} />);
     });
     await flush();
 
-    expect(container.textContent).toContain('Start with BuildLite');
-    expect(container.textContent).toContain('recommended UK housebuilding Prelims structure');
-    expect(container.textContent).toContain('Use BuildLite Standard');
-    expect(container.textContent).toContain('Start Blank');
+    expect(container.textContent).toContain('Company Prelims Templates');
+    expect(container.textContent).toContain('Needs setup');
+    expect(container.textContent).toContain('Continue setup');
+    expect(container.textContent).toContain('Saved');
+    expect(container.textContent).not.toContain('Use BuildLite Standard');
+    expect(container.textContent).not.toContain('Start Blank');
+    expect(container.textContent).toContain('Create another template');
     expect(container.textContent).toContain('Housebuilding Prelims');
     expect(container.textContent).not.toContain('Review & Adopt');
     expect(container.textContent).not.toContain('Setup from Template');
@@ -205,6 +249,90 @@ describe('Admin Prelims Templates', () => {
     expect(container.textContent).toContain('Map Cost Codes');
     expect(container.textContent).toContain('Time based');
     expect(container.textContent).toContain('Site start → Final completion');
+  });
+
+  it('makes first-time company template setup primary when no templates exist', async () => {
+    listPrelimsTemplates.mockResolvedValue({ templates: [] });
+    getPrelimsTemplate.mockClear();
+    await act(async () => root.render(<AdminPrelimsTemplatesPage onBack={() => {}} />));
+    await flush();
+
+    const setup = container.querySelector('[aria-label="Set up company Prelims template"]');
+    expect(setup).toBeTruthy();
+    expect(setup.textContent).toContain('Set up your company Prelims template');
+    expect(setup.textContent).toContain('Use BuildLite Standard');
+    expect(setup.textContent).toContain('Start Blank');
+    expect(container.textContent).not.toContain('Create another template');
+    expect(getPrelimsTemplate).not.toHaveBeenCalled();
+  });
+
+  it('shows Ready and a clear management action for a fully mapped default template', async () => {
+    getPrelimsTemplate.mockResolvedValue({
+      ...HOUSEBUILDING,
+      lines: HOUSEBUILDING.lines.map((line) => ({ ...line, costCodeKey: line.costCodeKey || 'P100-SM' })),
+    });
+    await act(async () => root.render(<AdminPrelimsTemplatesPage onBack={() => {}} />));
+    await flush();
+
+    const overview = container.querySelector('[aria-label="Current company Prelims template"]');
+    expect(overview.textContent).toContain('2 mapped');
+    expect(overview.textContent).toContain('0 unmapped');
+    expect(overview.textContent).toContain('Ready');
+    expect(overview.textContent).toContain('Manage template');
+    expect(overview.textContent).not.toContain('Continue setup');
+  });
+
+  it('auto-surfaces the default while preserving access to multiple templates', async () => {
+    listPrelimsTemplates.mockResolvedValue({ templates: [
+      { id: 'tpl-other', name: 'Partnership Prelims', origin: 'blank', sourceStandardVersion: null, isDefault: false, lineCount: 0 },
+      { id: 'tpl-1', name: 'Housebuilding Prelims', origin: 'buildlite_standard', sourceStandardVersion: 1, isDefault: true, lineCount: 2 },
+    ] });
+    getPrelimsTemplate.mockImplementation(async (id) => id === 'tpl-1' ? HOUSEBUILDING : {
+      ...HOUSEBUILDING, id: 'tpl-other', name: 'Partnership Prelims', origin: 'blank', sourceStandardVersion: null, isDefault: false, lines: [],
+    });
+    getPrelimsTemplate.mockClear();
+    await act(async () => root.render(<AdminPrelimsTemplatesPage onBack={() => {}} />));
+    await flush();
+
+    expect(getPrelimsTemplate.mock.calls[0][0]).toBe('tpl-1');
+    expect(container.querySelector('[aria-label="Current company Prelims template"]').textContent).toContain('Housebuilding Prelims');
+    expect(container.textContent).toContain('Partnership Prelims');
+  });
+
+  it('makes additional creation explicit and handles same-name conflict without implying creation', async () => {
+    listPrelimsTemplates.mockResolvedValue({ templates: [{
+      id: 'tpl-1', name: 'BuildLite Standard Prelims', origin: 'buildlite_standard', sourceStandardVersion: 1, isDefault: true, lineCount: 2,
+    }] });
+    getPrelimsTemplate.mockResolvedValue({ ...HOUSEBUILDING, name: 'BuildLite Standard Prelims' });
+    createPrelimsTemplate.mockRejectedValue(new PrelimsTemplateApiError('A Prelims template with this name already exists.', { status: 409 }));
+    await act(async () => root.render(<AdminPrelimsTemplatesPage onBack={() => {}} />));
+    await flush();
+    await clickNamed(container, 'Create another template');
+
+    expect(container.textContent).toContain('This creates a new company-owned template');
+    expect(container.textContent).toContain('Create new template from BuildLite Standard');
+    expect(container.textContent).toContain('Start new blank template');
+    await clickNamed(container, 'Create new template from BuildLite Standard');
+    await flush();
+
+    expect(createPrelimsTemplate).toHaveBeenCalledWith({ origin: 'buildlite_standard', name: 'BuildLite Standard Prelims' });
+    expect(container.textContent).toContain('No template was created');
+    expect(container.textContent).toContain('Manage the existing template instead');
+  });
+
+  it('preserves differently named Standard-derived template creation', async () => {
+    const created = { ...HOUSEBUILDING, id: 'tpl-second', name: 'Small Sites Standard', isDefault: false };
+    createPrelimsTemplate.mockResolvedValue(created);
+    getPrelimsTemplate.mockResolvedValue(created);
+    await act(async () => root.render(<AdminPrelimsTemplatesPage onBack={() => {}} />));
+    await flush();
+    await clickNamed(container, 'Create another template');
+    const name = container.querySelector('[aria-label="Prelims template name"]');
+    await act(async () => setFieldValue(name, 'Small Sites Standard'));
+    await clickNamed(container, 'Create new template from BuildLite Standard');
+    await flush();
+
+    expect(createPrelimsTemplate).toHaveBeenCalledWith({ origin: 'buildlite_standard', name: 'Small Sites Standard' });
   });
 
   it('uses a focused mapping workspace and saves through the existing optimistic line authority', async () => {
@@ -313,14 +441,18 @@ describe('Admin Prelims Templates', () => {
     await clickNamed(container, 'Propose mappings');
 
     const review = container.querySelector('[aria-label="Review proposed Prelims mappings"]');
-    expect(review.textContent).toContain('1 confidently proposed');
-    expect(review.textContent).toContain('1 require owner review');
+    expect(review.textContent).toContain('1 suggested');
+    expect(review.textContent).toContain('0 accepted');
+    expect(review.textContent).toContain('1 need your review');
     expect(review.querySelector('[aria-label="Prelims mappings needing owner review"]').textContent).toContain('Skips / Waste');
     expect(review.querySelector('[aria-label="Proposed Prelims mappings"]').textContent).not.toContain('Site Manager —');
     expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
 
     await clickNamed(review, 'Accept proposed mappings');
     expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
+    expect(review.textContent).toContain('0 suggested');
+    expect(review.textContent).toContain('1 accepted');
+    expect(review.textContent).toContain('1 need your review');
     const exception = review.querySelector('[aria-label="Prelims mappings needing owner review"]');
     const disable = exception.querySelector('input[type="checkbox"]');
     await act(async () => disable.click());
@@ -335,6 +467,62 @@ describe('Admin Prelims Templates', () => {
         expect.objectContaining({ lineId: 'line-skips', costCodeKey: null, enabled: false }),
       ]),
     }));
+  });
+
+  it('shows the complete Pilot 18/7 transition and persists only through explicit Apply', async () => {
+    const persisted = {
+      ...PILOT_TEMPLATE,
+      version: 2,
+      lines: PILOT_TEMPLATE.lines.map((line, index) => index < 18
+        ? { ...line, version: 2, costCodeKey: '1200' }
+        : { ...line, version: 2, enabled: false }),
+    };
+    listPrelimsTemplates.mockResolvedValue({ templates: [{
+      id: 'tpl-pilot', name: 'BuildLite Standard Prelims', origin: 'buildlite_standard', sourceStandardVersion: 1, isDefault: true, lineCount: 25,
+    }] });
+    getPrelimsTemplate.mockResolvedValueOnce(PILOT_TEMPLATE).mockResolvedValue(persisted);
+    listCostCodesForTemplateMapping.mockResolvedValue(PILOT_COST_CODES);
+    applyReviewedPrelimsMappings.mockResolvedValue(persisted);
+
+    await act(async () => root.render(<AdminPrelimsTemplatesPage onBack={() => {}} />));
+    await flush();
+    await clickNamed(container, 'Continue setup');
+    const review = container.querySelector('[aria-label="Review proposed Prelims mappings"]');
+
+    expect(review.textContent).toContain('18 suggested');
+    expect(review.textContent).toContain('0 accepted');
+    expect(review.textContent).toContain('7 need your review');
+    expect(review.textContent).toContain('0 saved mappings');
+    expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
+
+    await clickNamed(review, 'Accept proposed mappings');
+    expect(review.textContent).toContain('0 suggested');
+    expect(review.textContent).toContain('18 accepted');
+    expect(review.textContent).toContain('7 need your review');
+    expect(review.textContent).toContain('0 saved mappings');
+    expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
+
+    for (let index = 0; index < 7; index += 1) {
+      const exceptions = review.querySelector('[aria-label="Prelims mappings needing owner review"]');
+      await act(async () => exceptions.querySelector('input[type="checkbox"]').click());
+    }
+    expect(review.textContent).toContain('25 resolved');
+    expect(review.textContent).toContain('0 need your review');
+    expect(review.textContent).toContain('7 disabled');
+    expect(review.textContent).toContain('Ready to apply');
+    const apply = Array.from(review.querySelectorAll('button')).find((button) => button.textContent.includes('Apply reviewed mappings'));
+    expect(apply.disabled).toBe(false);
+    expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
+
+    await act(async () => apply.click());
+    await flush();
+    expect(applyReviewedPrelimsMappings).toHaveBeenCalledTimes(1);
+    const overview = container.querySelector('[aria-label="Current company Prelims template"]');
+    expect(overview.textContent).toContain('18 mapped');
+    expect(overview.textContent).toContain('0 unmapped');
+    expect(overview.textContent).toContain('7 disabled');
+    expect(overview.textContent).toContain('Ready');
+    expect(overview.textContent).toContain('Saved');
   });
 
   it('keeps disabled template lines out of the routine mapping workspace', async () => {
