@@ -25,7 +25,7 @@ function TimeSideFields({
       <span className={compact ? 'dev-prelims-time__side-label' : 'dev-form__label'}>{label}</span>
       <div className="dev-prelims-time__controls">
         <select
-          className="input"
+          className="input dev-prelims-time__basis"
           value={basis || TIME_BASES.SITE_START}
           disabled={disabled}
           onChange={(event) => onChange(`${side}Basis`, event.target.value)}

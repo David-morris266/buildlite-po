@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getCostCodeClassification } from '../api/costCodeClassifications';
+import { getDevelopmentBudget } from '../api/developmentBudget';
 import {
   applyDevelopmentPrelimsSetup,
   DevelopmentPrelimsApiError,
@@ -14,12 +15,12 @@ import { PRELIMS_DRIVERS, PRELIMS_UNRESOLVED_LABELS } from '../prelims/prelimsCo
 import {
   applyPayloadFromDrafts,
   classificationForDraft,
-  computeOverlap,
   displayPrelimIdentity,
   draftAfterDriverChange,
   draftsFromPreview,
   effectiveDriver,
-  isLineReady,
+  groupSetupLines,
+  isLineSaveable,
   livePreviewCalculation,
   mergeDraftsAfterIncrementalAdd,
   mappingProvenance,
@@ -27,6 +28,7 @@ import {
   setupDraftsAreDirty,
   setupProgress,
   setupStateChips,
+  summarizeSetupGroup,
 } from '../prelims/prelimsSetupWorksheet';
 import { useUnsavedChanges } from '../navigation/UnsavedChangesContext.js';
 import CommercialHeadCostCodePicker from './CommercialHeadCostCodePicker';
@@ -46,6 +48,9 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
   const [classifications, setClassifications] = useState({});
   const [costCodes, setCostCodes] = useState([]);
   const [commercialStructure, setCommercialStructure] = useState(null);
+  const [budget, setBudget] = useState(null);
+  const [budgetLoading, setBudgetLoading] = useState(true);
+  const [budgetError, setBudgetError] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -53,6 +58,19 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
   const [mappingEditOriginals, setMappingEditOriginals] = useState({});
   const creatingRef = useRef(false);
   const { registerUnsavedChanges, requestNavigation } = useUnsavedChanges();
+
+  const loadBudget = useCallback(async () => {
+    setBudgetLoading(true);
+    setBudgetError('');
+    try {
+      setBudget(await getDevelopmentBudget(developmentId));
+    } catch (err) {
+      setBudget(null);
+      setBudgetError(err.message || 'Development Budget is temporarily unavailable.');
+    } finally {
+      setBudgetLoading(false);
+    }
+  }, [developmentId]);
 
   const loadPreview = useCallback(
     async (nextTemplateId, { preserveDrafts = null } = {}) => {
@@ -103,6 +121,10 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
       cancelled = true;
     };
   }, [loadPreview]);
+
+  useEffect(() => {
+    loadBudget();
+  }, [loadBudget]);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,12 +178,31 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
     return map;
   }, [drafts]);
 
-  const readyCount = useMemo(() => {
+  const saveableCount = useMemo(() => {
     if (!preview) return 0;
     return preview.lines.filter((line) =>
-      isLineReady(line, draftById.get(line.templateLineId), preview.programme)
+      isLineSaveable(line, draftById.get(line.templateLineId))
     ).length;
   }, [preview, draftById]);
+
+  const activeGroups = useMemo(
+    () => groupSetupLines(preview?.lines || [], drafts),
+    [preview, drafts]
+  );
+  const activeLines = useMemo(() => activeGroups.flatMap((group) => group.lines), [activeGroups]);
+  const groupByLineId = useMemo(() => {
+    const result = new Map();
+    activeGroups.forEach((group) => group.lines.forEach((line) => result.set(line.templateLineId, group)));
+    return result;
+  }, [activeGroups]);
+  const budgetByCostCodeId = useMemo(() => {
+    const result = new Map();
+    for (const row of budget?.perCostCode || []) {
+      const key = String(row.costCodeId || '').trim();
+      if (key) result.set(key, row);
+    }
+    return result;
+  }, [budget]);
 
   const progress = useMemo(() => setupProgress(preview, drafts), [preview, drafts]);
   const dirty = useMemo(
@@ -256,7 +297,7 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
     if (!preview || creatingRef.current || saving) return;
     const payload = applyPayloadFromDrafts(preview, drafts);
     if (!payload.lines.length) {
-      setError('Select ready lines and enter a cost code plus site assumption before adding.');
+      setError('Select configured lines and enter a Cost Code plus site assumption before adding.');
       return;
     }
     creatingRef.current = true;
@@ -301,7 +342,7 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
       <header className="dev-prelims-setup__intro">
         <h3>Prelims setup worksheet</h3>
         <p>
-          Enter site-specific assumptions against the company template, then add selected ready
+          Enter site-specific assumptions against the company template, then add selected configured
           lines to Site Prelims. Adds these assumptions to the Development Prelims proposal. This
           does not change the CVR. Preview-only cost-code mapping does not change the company
           template.
@@ -331,7 +372,7 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
         </label>
         <p className="dev-prelims-setup__meta">
           {preview
-            ? `${preview.lines.length} template lines · ${readyCount} ready · CVR ${
+            ? `${preview.lines.length} template lines · ${saveableCount} configured · CVR ${
                 preview.reportingMonth || 'no reporting month'
               }`
             : 'Loading worksheet…'}
@@ -348,15 +389,26 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
 
       {preview ? (
         <p className="dev-prelims-setup__progress" role="status">
-          {progress.selected} selected · {progress.ready} ready · {progress.needsAttention} needs
-          attention · {moneyLabel(progress.readyForecast)} ready forecast
-          {progress.unresolved ? ` · ${progress.unresolved} unresolved` : ''}
+          {progress.selected} selected · {progress.configured} configured · {progress.resolved} forecast resolved ·{' '}
+          {progress.needsAttention} needs attention
         </p>
       ) : null}
       {preview && !preview.reportingMonth ? (
         <p className="dev-workspace__section-lead">
           Total Forecast is available now. As-at phasing will become available when a CVR
           reporting month exists.
+        </p>
+      ) : null}
+      {preview && !preview.programme?.siteStart && !preview.programme?.finalCompletion ? (
+        <p className="dev-workspace__section-lead">
+          Programme dates are not available. Time-based assumptions can be saved now and their
+          forecasts will resolve automatically when the programme is configured.
+        </p>
+      ) : null}
+      {budgetError ? (
+        <p className="dev-workspace__section-lead" role="status">
+          Budget context unavailable. Prelims setup remains available.{' '}
+          <button className="btn" type="button" onClick={loadBudget}>Retry budget</button>
         </p>
       ) : null}
 
@@ -371,11 +423,11 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
                 <th>Cost code</th>
                 <th>Assumption</th>
                 <th>Forecast</th>
-                <th>Ready</th>
+                <th>State</th>
               </tr>
             </thead>
             <tbody>
-              {preview.lines.map((line) => {
+              {activeLines.map((line, lineIndex) => {
                 const draft = draftById.get(line.templateLineId) || {
                   templateLineId: line.templateLineId,
                   selected: false,
@@ -385,7 +437,6 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
                   lumpSumAmount: '',
                 };
                 const driver = effectiveDriver(line, draft);
-                const overlapInfo = computeOverlap(line, draft, preview, drafts);
                 const live = livePreviewCalculation(
                   line,
                   draft,
@@ -400,20 +451,19 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
                 const rowClass = [
                   !line.enabled ? 'dev-prelims-setup__row--disabled' : '',
                   line.alreadyApplied ? 'dev-prelims-setup__row--applied' : '',
-                  overlapInfo.overlap ? 'dev-prelims-setup__row--overlap' : '',
                 ]
                   .filter(Boolean)
                   .join(' ');
                 const forecastUnresolved = live.calc.state !== 'resolved';
                 const timeUnresolvedLabel =
                   driver === PRELIMS_DRIVERS.TIME && live.span.state !== 'resolved'
+                    && live.span.reason !== 'MISSING_PROGRAMME'
                     ? live.span.reasonLabel ||
                       PRELIMS_UNRESOLVED_LABELS[live.span.reason] ||
                       'Unresolved programme'
                     : null;
                 const stateChips = setupStateChips({
                   classification,
-                  overlapInfo,
                   outsideProgramme: Boolean(live.span.outsideProgramme),
                   timeUnresolvedLabel,
                 }).filter((chip) => chip.tone !== 'quiet');
@@ -423,8 +473,46 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
                 const editingMapping = editingMappings.has(line.templateLineId);
                 const searchFirst = provenance.state === 'company_unmapped';
                 const showDetail = isTime || stateChips.length > 0;
+                const group = groupByLineId.get(line.templateLineId);
+                const previousGroup = lineIndex ? groupByLineId.get(activeLines[lineIndex - 1].templateLineId) : null;
+                const firstInGroup = previousGroup?.key !== group?.key;
+                const groupSummary = firstInGroup
+                  ? summarizeSetupGroup(group, drafts, preview.programme, preview.reportingMonth)
+                  : null;
+                const groupCostCodeId = canonicalCostCodeOptions.find(
+                  (row) => row.code === group?.costCodeKey
+                )?.id;
+                const budgetPosition = groupCostCodeId ? budgetByCostCodeId.get(groupCostCodeId) : null;
+                const currentBudget = budgetPosition?.currentBudget ?? null;
+                const openingBudget = budgetPosition?.originalBudget ?? budgetPosition?.openingBudget ?? null;
                 return (
                   <Fragment key={line.templateLineId}>
+                    {firstInGroup ? (
+                      <tr className="dev-prelims-setup__group" aria-label={`${group.costCodeKey || 'Unmapped'} Cost Code group`}>
+                        <td colSpan={7}>
+                          <div className="dev-prelims-setup__group-summary">
+                            <div>
+                              <strong>{group.costCodeKey ? costCodeLabel(group.costCodeKey) : 'Cost Code not selected'}</strong>
+                              {group.lines.length > 1 ? <span>{group.lines.length} lines share this Cost Code</span> : null}
+                            </div>
+                            <div>
+                              <span>Current Budget</span>
+                              <strong>{budgetLoading ? 'Loading…' : budgetError ? 'Unavailable' : moneyLabel(currentBudget ?? 0)}</strong>
+                              {openingBudget != null && currentBudget != null && openingBudget !== currentBudget ? (
+                                <small>Opening {moneyLabel(openingBudget)} · Movement {moneyLabel(currentBudget - openingBudget)}</small>
+                              ) : null}
+                            </div>
+                            <div>
+                              <span>Configured forecast</span>
+                              <strong>{groupSummary.forecast == null ? (groupSummary.configuredCount ? 'Pending programme' : '—') : moneyLabel(groupSummary.forecast)}</strong>
+                              {groupSummary.forecast != null && currentBudget != null ? (
+                                <small>Variance {moneyLabel(groupSummary.forecast - currentBudget)}</small>
+                              ) : null}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
                     <tr className={`dev-prelims-setup__primary ${rowClass}`.trim()}>
                       <td data-label="Select">
                         <input
@@ -554,14 +642,17 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
                       </td>
                       <td data-label="Forecast">
                         {forecastUnresolved
-                          ? hasAssumptionDisplay(line, draft)
+                           ? hasAssumptionDisplay(line, draft)
+                             && live.calc.reason === 'MISSING_PROGRAMME'
+                             ? 'Pending programme'
+                             : hasAssumptionDisplay(line, draft)
                             ? live.calc.reasonLabel ||
                               PRELIMS_UNRESOLVED_LABELS[live.calc.reason] ||
                               'Unresolved'
                             : '—'
                           : moneyLabel(live.calc.totalForecast)}
                       </td>
-                      <td data-label="Ready">{readyStateLabel(line, draft, overlapInfo.overlap)}</td>
+                      <td data-label="State">{readyStateLabel(line, draft)}</td>
                     </tr>
                     {showDetail ? (
                       <tr
@@ -613,16 +704,27 @@ export default function DevelopmentPrelimsSetupWorksheet({ developmentId, onCanc
         </div>
       ) : null}
 
+      {preview?.lines.some((line) => !line.enabled) ? (
+        <section className="dev-prelims-setup__disabled" aria-label="Disabled company Prelims lines">
+          <h4>Not instantiated from company template</h4>
+          <ul>
+            {preview.lines.filter((line) => !line.enabled).map((line) => (
+              <li key={line.templateLineId}>{displayPrelimIdentity(line).name}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <div className="dev-prelims__actions">
         <button
           className="btn btn--primary"
           type="button"
           onClick={handleCreate}
-          disabled={saving || loading || readyCount === 0}
+          disabled={saving || loading || saveableCount === 0}
         >
           {saving
             ? 'Adding…'
-            : `Add ${readyCount} ready ${readyCount === 1 ? 'line' : 'lines'} to Site Prelims`}
+            : `Add ${saveableCount} configured ${saveableCount === 1 ? 'line' : 'lines'} to Site Prelims`}
         </button>
         <button
           className="btn"

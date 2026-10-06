@@ -14,6 +14,7 @@ const listPrelimsTemplates = vi.hoisted(() => vi.fn());
 const listCostCodesForTemplateMapping = vi.hoisted(() => vi.fn());
 const getCostCodeClassification = vi.hoisted(() => vi.fn());
 const loadCommercialStructure = vi.hoisted(() => vi.fn());
+const getDevelopmentBudget = vi.hoisted(() => vi.fn());
 const PrelimsApiError = vi.hoisted(() => {
   return class DevelopmentPrelimsApiError extends Error {
     constructor(message, { status = 0 } = {}) {
@@ -42,6 +43,7 @@ vi.mock('../api/costCodeClassifications', () => ({
   getCostCodeClassification,
 }));
 vi.mock('../admin/commercialStructureService', () => ({ loadCommercialStructure }));
+vi.mock('../api/developmentBudget', () => ({ getDevelopmentBudget }));
 
 import DevelopmentPrelimsSetupWorksheet from './DevelopmentPrelimsSetupWorksheet';
 import { UnsavedChangesProvider } from '../navigation/UnsavedChangesProvider.jsx';
@@ -215,6 +217,13 @@ describe('Development Prelims setup worksheet', () => {
     });
     previewDevelopmentPrelimsSetup.mockResolvedValue(previewBody());
     applyDevelopmentPrelimsSetup.mockResolvedValue({ createdCount: 1, skippedCount: 0, created: [] });
+    getDevelopmentBudget.mockResolvedValue({
+      exists: true,
+      perCostCode: [
+        { costCodeId: 'cc-5210', costCode: '5210', originalBudget: 100000, currentBudget: 110000 },
+        { costCodeId: 'cc-5231', costCode: '5231', originalBudget: 0, currentBudget: 0 },
+      ],
+    });
     listCostCodesForTemplateMapping.mockResolvedValue([
       {
         id: 'cc-5210', active: true, commercialHeadId: 'prelims',
@@ -279,7 +288,7 @@ describe('Development Prelims setup worksheet', () => {
     });
 
     expect(container.textContent).toContain('£78,000.00');
-    expect(container.textContent).toContain('1 ready');
+    expect(container.textContent).toContain('1 configured');
     expect(container.textContent).toContain(
       'As-at phasing will become available when a CVR reporting month exists.'
     );
@@ -295,6 +304,50 @@ describe('Development Prelims setup worksheet', () => {
       lines: [expect.objectContaining({ templateLineId: 'sm', monthlyRate: 6000 })],
     });
     expect(applyDevelopmentPrelimsSetup.mock.calls[0][1]).not.toHaveProperty('reportingMonth');
+  });
+
+  it('saves configured TIME assumptions before programme dates exist without inventing a forecast', async () => {
+    previewDevelopmentPrelimsSetup.mockResolvedValueOnce({
+      ...previewBody(),
+      reportingMonth: null,
+      programme: { exists: false, siteStart: null, firstCompletion: null, finalCompletion: null },
+    });
+    await renderSheet();
+    await selectLine('Site Manager');
+    await act(async () => {
+      setInputValue(container.querySelector('[aria-label="Site Manager monthly rate"]'), '6000');
+    });
+    expect(container.textContent.match(/Programme dates are not available/g)).toHaveLength(1);
+    expect(container.textContent).toContain('Pending programme');
+    expect(container.textContent).toContain('1 configured · 0 forecast resolved');
+    const add = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent.includes('Add 1 configured line')
+    );
+    expect(add.disabled).toBe(false);
+    await act(async () => add.click());
+    expect(applyDevelopmentPrelimsSetup.mock.calls[0][1].lines[0]).toMatchObject({
+      templateLineId: 'sm',
+      monthlyRate: 6000,
+      startBasis: 'SITE_START',
+      endBasis: 'FINAL_COMPLETION',
+    });
+  });
+
+  it('shows authoritative budget context by stable Cost Code identity and preserves genuine zero', async () => {
+    await renderSheet();
+    const siteManagerGroup = container.querySelector('[aria-label="5210 Cost Code group"]');
+    const cleaningGroup = container.querySelector('[aria-label="5231 Cost Code group"]');
+    expect(siteManagerGroup.textContent).toContain('Current Budget£110,000.00');
+    expect(siteManagerGroup.textContent).toContain('Opening £100,000.00 · Movement £10,000.00');
+    expect(cleaningGroup.textContent).toContain('Current Budget£0.00');
+  });
+
+  it('keeps setup usable when budget context fails and offers a bounded retry', async () => {
+    getDevelopmentBudget.mockRejectedValueOnce(new Error('Budget unavailable'));
+    await renderSheet();
+    expect(container.textContent).toContain('Budget context unavailable. Prelims setup remains available.');
+    expect(container.querySelector('[aria-label="Select Site Manager"]')).toBeTruthy();
+    expect(Array.from(container.querySelectorAll('button')).some((button) => button.textContent === 'Retry budget')).toBe(true);
   });
 
   it('opens clean with no phantom selections and cancels without an unsaved warning', async () => {
@@ -477,7 +530,7 @@ describe('Development Prelims setup worksheet', () => {
     expect(container.textContent).toContain('1 needs attention');
 
     const add = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent.includes('Add 1 ready line to Site Prelims')
+      button.textContent.includes('Add 1 configured line to Site Prelims')
     );
     await act(async () => {
       add.click();
@@ -488,7 +541,7 @@ describe('Development Prelims setup worksheet', () => {
     expect(container.querySelector('[aria-label="Prelims setup worksheet"]')).toBeTruthy();
     expect(container.querySelector('[aria-label="BL-033D.x.2 CUSTOM UAT cost code search"]')?.getAttribute('data-cost-code')).toBe('UAT-CC-001');
     expect(container.querySelector('[aria-label="Select BL-033D.x.2 CUSTOM UAT"]').checked).toBe(true);
-    expect(document.body.textContent).toContain('0 ready');
+    expect(document.body.textContent).toContain('0 configured');
     await act(async () => {
       Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Cancel').click();
     });
@@ -504,7 +557,7 @@ describe('Development Prelims setup worksheet', () => {
       );
     });
     const addLater = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent.includes('Add 1 ready line to Site Prelims')
+      button.textContent.includes('Add 1 configured line to Site Prelims')
     );
     await act(async () => {
       addLater.click();
@@ -661,7 +714,7 @@ describe('Development Prelims setup worksheet', () => {
     const selected = container.querySelector(`[aria-label="${lineName} cost code search"]`);
     expect(selected.getAttribute('data-cost-code')).toBe('5231');
     expect(container.textContent).not.toMatch(/Expected PRELIMS/);
-    expect(container.textContent).toMatch(/Overlap · 1 existing line/);
+    expect(container.textContent).toMatch(/2 lines share this Cost Code/);
 
     const createBtn = [...container.querySelectorAll('button')].find((btn) =>
       btn.textContent.includes('to Site Prelims')

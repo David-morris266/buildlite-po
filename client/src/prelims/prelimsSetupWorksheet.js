@@ -111,9 +111,9 @@ export function setupProgress(preview, drafts = []) {
       if (!draft.selected || byId.get(draft.templateLineId)?.alreadyApplied) return summary;
       summary.selected += 1;
       const line = byId.get(draft.templateLineId);
-      const ready = isLineReady(line, draft, preview?.programme);
-      if (ready) {
-        summary.ready += 1;
+      const configured = isLineSaveable(line, draft);
+      if (configured) {
+        summary.configured += 1;
         const live = livePreviewCalculation(
           line,
           draft,
@@ -121,7 +121,8 @@ export function setupProgress(preview, drafts = []) {
           preview?.reportingMonth
         );
         if (live.calc.state === 'resolved' && live.calc.totalForecast != null) {
-          summary.readyForecast = roundMoney(summary.readyForecast + live.calc.totalForecast);
+          summary.resolved += 1;
+          summary.resolvedForecast = roundMoney(summary.resolvedForecast + live.calc.totalForecast);
         } else {
           summary.unresolved += 1;
         }
@@ -134,7 +135,7 @@ export function setupProgress(preview, drafts = []) {
       }
       return summary;
     },
-    { selected: 0, ready: 0, needsAttention: 0, readyForecast: 0, unresolved: 0 }
+    { selected: 0, configured: 0, resolved: 0, needsAttention: 0, resolvedForecast: 0, unresolved: 0 }
   );
 }
 
@@ -226,6 +227,22 @@ export function hasValidAssumption(line, draft) {
   return amount != null && amount >= 0;
 }
 
+/** Valid Development configuration, independent of programme forecast resolution. */
+export function isLineConfigured(line, draft) {
+  if (!line?.enabled || line.alreadyApplied || !String(draft?.costCodeKey || '').trim()) return false;
+  if (!hasValidAssumption(line, draft)) return false;
+  if (effectiveDriver(line, draft) !== PRELIMS_DRIVERS.TIME) return true;
+  const startBasis = draft.startBasis || line.startBasis;
+  const endBasis = draft.endBasis || line.endBasis;
+  if (startBasis === TIME_BASES.FIXED_DATE && !String(draft.startFixedDate || '').trim()) return false;
+  if (endBasis === TIME_BASES.FIXED_DATE && !String(draft.endFixedDate || '').trim()) return false;
+  return offsetInRange(draft.startOffsetMonths) && offsetInRange(draft.endOffsetMonths);
+}
+
+export function isLineSaveable(line, draft) {
+  return Boolean(draft?.selected) && isLineConfigured(line, draft);
+}
+
 export function computeOverlap(line, draft, preview, drafts = []) {
   const key = String(draft.costCodeKey || '').trim().toLowerCase();
   if (!key) {
@@ -251,35 +268,55 @@ export function computeOverlap(line, draft, preview, drafts = []) {
 }
 
 export function isLineReady(line, draft, programme = null) {
-  if (!line?.enabled || line.alreadyApplied || !draft?.selected) return false;
-  if (!String(draft.costCodeKey || '').trim()) return false;
-  if (!hasValidAssumption(line, draft)) return false;
+  if (!isLineSaveable(line, draft)) return false;
   if (effectiveDriver(line, draft) === PRELIMS_DRIVERS.TIME) {
-    const startBasis = draft.startBasis || line.startBasis;
-    const endBasis = draft.endBasis || line.endBasis;
-    if (startBasis === TIME_BASES.FIXED_DATE && !String(draft.startFixedDate || '').trim()) {
-      return false;
-    }
-    if (endBasis === TIME_BASES.FIXED_DATE && !String(draft.endFixedDate || '').trim()) {
-      return false;
-    }
-    if (!offsetInRange(draft.startOffsetMonths) || !offsetInRange(draft.endOffsetMonths)) {
-      return false;
-    }
     const span = resolveTimeSpan(timeLineFromDraft(line, draft), programme);
     if (span.state !== 'resolved') return false;
   }
   return true;
 }
 
-export function readyStateLabel(line, draft, overlap) {
+export function groupSetupLines(lines = [], drafts = []) {
+  const draftById = new Map(drafts.map((draft) => [draft.templateLineId, draft]));
+  const groups = new Map();
+  for (const line of lines.filter((candidate) => candidate.enabled)) {
+    const draft = draftById.get(line.templateLineId) || {};
+    const costCodeKey = String(draft.costCodeKey || '').trim();
+    const key = costCodeKey ? costCodeKey.toLowerCase() : `unmapped:${line.templateLineId}`;
+    if (!groups.has(key)) groups.set(key, { key, costCodeKey, lines: [] });
+    groups.get(key).lines.push(line);
+  }
+  return [...groups.values()];
+}
+
+export function summarizeSetupGroup(group, drafts, programme, reportingMonth) {
+  const draftById = new Map(drafts.map((draft) => [draft.templateLineId, draft]));
+  const configured = group.lines.filter((line) =>
+    isLineSaveable(line, draftById.get(line.templateLineId))
+  );
+  if (!configured.length) return { configuredCount: 0, resolvedCount: 0, forecast: null };
+  const calculations = configured.map((line) =>
+    livePreviewCalculation(line, draftById.get(line.templateLineId), programme, reportingMonth)
+  );
+  const resolved = calculations.filter(
+    ({ calc }) => calc.state === 'resolved' && calc.totalForecast != null
+  );
+  return {
+    configuredCount: configured.length,
+    resolvedCount: resolved.length,
+    forecast:
+      resolved.length === configured.length
+        ? roundMoney(resolved.reduce((sum, { calc }) => sum + calc.totalForecast, 0))
+        : null,
+  };
+}
+
+export function readyStateLabel(line, draft) {
   if (!line.enabled) return 'Disabled — not instantiated';
   if (line.alreadyApplied) return 'Already on this development';
   const mapped = Boolean(String(draft.costCodeKey || '').trim());
   const money = hasValidAssumption(line, draft);
-  if (draft.selected && mapped && money) {
-    return overlap ? 'Ready · overlap' : 'Ready';
-  }
+  if (draft.selected && isLineConfigured(line, draft)) return 'Configured';
   if (!mapped) return 'Unmapped';
   if (!money) {
     return effectiveDriver(line, draft) === PRELIMS_DRIVERS.TIME ? 'Enter £/month' : 'Enter amount';
@@ -314,10 +351,9 @@ export function classificationForDraft(draft, semanticGroup, authority) {
   return classifyTemplateMapping(draft.costCodeKey, semanticGroup, authority);
 }
 
-/** Compact State-column chips. Classification/overlap semantics unchanged. */
+/** Compact State-column chips for classification and line-specific timing exceptions. */
 export function setupStateChips({
   classification,
-  overlapInfo,
   outsideProgramme = false,
   timeUnresolvedLabel = null,
 } = {}) {
@@ -331,18 +367,6 @@ export function setupStateChips({
     const group = groupMatch?.[1] || 'UNCLASSIFIED';
     chips.push({ tone: 'warn', text: group });
     chips.push({ tone: 'warn', text: 'Expected PRELIMS' });
-  }
-  if (overlapInfo?.overlap) {
-    const existing = overlapInfo.existingNames?.length || 0;
-    const siblings = overlapInfo.siblingNames?.length || 0;
-    const n = existing + siblings;
-    const noun = n === 1 ? 'line' : 'lines';
-    chips.push({
-      tone: 'info',
-      text: existing
-        ? `Overlap · ${existing} existing ${existing === 1 ? 'line' : 'lines'}`
-        : `Overlap · ${n} ${noun}`,
-    });
   }
   if (outsideProgramme) {
     chips.push({ tone: 'warn', text: 'Outside programme' });
@@ -359,7 +383,7 @@ export function applyPayloadFromDrafts(preview, drafts) {
     templateId: preview.template.id,
     templateVersion: preview.template.version,
     lines: drafts
-      .filter((draft) => isLineReady(byId.get(draft.templateLineId), draft, preview.programme))
+      .filter((draft) => isLineSaveable(byId.get(draft.templateLineId), draft))
       .map((draft) => {
         const line = byId.get(draft.templateLineId);
         const forecastDriver = effectiveDriver(line, draft);

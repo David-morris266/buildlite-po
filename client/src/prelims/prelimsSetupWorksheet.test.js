@@ -183,7 +183,7 @@ describe('Prelims setup worksheet helpers', () => {
     expect(overlap.overlap).toBe(true);
     expect(overlap.existingNames).toContain('BL-033D.1 TIME UAT');
     expect(isLineReady(next.lines[1], drafts[1], PROGRAMME)).toBe(true);
-    expect(readyStateLabel(next.lines[1], drafts[1], true)).toMatch(/overlap/i);
+    expect(readyStateLabel(next.lines[1], drafts[1], true)).toBe('Configured');
   });
 
   it('builds apply payload only from selected ready lines', () => {
@@ -275,11 +275,7 @@ describe('Prelims setup worksheet helpers', () => {
         siblingNames: [],
       },
     });
-    expect(chips.map((row) => row.text)).toEqual([
-      'UNCLASSIFIED',
-      'Expected PRELIMS',
-      'Overlap · 3 existing lines',
-    ]);
+    expect(chips.map((row) => row.text)).toEqual(['UNCLASSIFIED', 'Expected PRELIMS']);
     expect(
       setupStateChips({
         classification: { tone: 'normal', message: null },
@@ -308,9 +304,10 @@ describe('Prelims setup worksheet helpers', () => {
     drafts[2].costCodeKey = 'UAT-CC-001';
     expect(setupProgress(next, drafts)).toEqual({
       selected: 2,
-      ready: 1,
+      configured: 1,
+      resolved: 1,
       needsAttention: 1,
-      readyForecast: 38000,
+      resolvedForecast: 38000,
       unresolved: 1,
     });
   });
@@ -343,8 +340,9 @@ describe('Prelims setup worksheet helpers', () => {
       });
     expect(setupProgress(next, drafts)).toMatchObject({
       selected: 1,
-      ready: 1,
-      readyForecast: 78000,
+      configured: 1,
+      resolved: 1,
+      resolvedForecast: 78000,
       unresolved: 0,
     });
 
@@ -354,6 +352,7 @@ describe('Prelims setup worksheet helpers', () => {
       firstCompletion: null,
       finalCompletion: null,
     })).toBe(false);
+    expect(applyPayloadFromDrafts({ ...next, programme: null }, drafts).lines).toHaveLength(1);
     expect(isLineReady(next.lines[0], { ...drafts[0], monthlyRate: '' }, next.programme)).toBe(false);
   });
 

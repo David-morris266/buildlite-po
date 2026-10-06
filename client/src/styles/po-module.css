@@ -10659,6 +10659,41 @@
   vertical-align: top;
 }
 
+.dev-prelims-setup__group td {
+  padding: 0.7rem 0.8rem;
+  background: rgba(255, 255, 255, 0.035);
+  border-top: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+}
+
+.dev-prelims-setup__group-summary {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) repeat(2, minmax(9rem, auto));
+  gap: 0.75rem 1.25rem;
+  align-items: start;
+}
+
+.dev-prelims-setup__group-summary > div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.dev-prelims-setup__group-summary span,
+.dev-prelims-setup__group-summary small {
+  color: var(--muted, #9aa4b2);
+}
+
+.dev-prelims-setup__disabled {
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  color: var(--muted, #9aa4b2);
+}
+
+.dev-prelims-setup__disabled h4,
+.dev-prelims-setup__disabled ul {
+  margin: 0;
+}
+
 .dev-prelims-setup__primary .input {
   height: 2rem;
   min-height: 2rem;
@@ -10690,7 +10725,7 @@
 
 .dev-prelims-setup__detail .dev-prelims-time__controls {
   display: grid;
-  grid-template-columns: minmax(8.25rem, 1fr) 4.35rem;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.4rem;
   align-items: start;
 }
@@ -10703,6 +10738,8 @@
 
 .dev-prelims-setup__detail .dev-prelims-time__offset {
   display: grid;
+  grid-template-columns: 4.35rem minmax(0, 1fr);
+  align-items: center;
   gap: 0.12rem;
 }
 
