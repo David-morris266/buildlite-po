@@ -411,7 +411,14 @@ describe('Admin Prelims Templates', () => {
 
     const applyButton = Array.from(review.querySelectorAll('button')).find((button) => button.textContent.includes('Apply reviewed mappings'));
     expect(applyButton.disabled).toBe(true);
-    await clickNamed(review, 'Accept proposed mappings');
+    expect(review.textContent).toContain('Review 1 proposed mapping');
+    expect(review.textContent).not.toContain('Accept 1 proposed mapping');
+    await clickNamed(review, 'Review 1 proposed mapping');
+    expect(review.querySelector('[data-proposal-line="line-1"]')).toBeTruthy();
+    expect(review.textContent).toContain('High confidence');
+    expect(review.textContent).toContain('Accept 1 proposed mapping');
+    expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
+    await clickNamed(review, 'Accept 1 proposed mapping');
     expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
     expect(applyButton.disabled).toBe(false);
 
@@ -448,7 +455,13 @@ describe('Admin Prelims Templates', () => {
     expect(review.querySelector('[aria-label="Proposed Prelims mappings"]').textContent).not.toContain('Site Manager —');
     expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
 
-    await clickNamed(review, 'Accept proposed mappings');
+    expect(review.textContent).toContain('Review 1 proposed mapping');
+    expect(review.textContent).not.toContain('Accept 1 proposed mapping');
+    await clickNamed(review, 'Review 1 proposed mapping');
+    expect(review.querySelector('[data-proposal-line="line-1"]')).toBeTruthy();
+    expect(review.textContent).toContain('High confidence');
+    expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
+    await clickNamed(review, 'Accept 1 proposed mapping');
     expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
     expect(review.textContent).toContain('0 suggested');
     expect(review.textContent).toContain('1 accepted');
@@ -495,7 +508,19 @@ describe('Admin Prelims Templates', () => {
     expect(review.textContent).toContain('0 saved mappings');
     expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
 
-    await clickNamed(review, 'Accept proposed mappings');
+    expect(review.textContent).toContain('Review 18 proposed mappings');
+    expect(review.textContent).not.toContain('Accept 18 proposed mappings');
+    await clickNamed(review, 'Review 18 proposed mappings');
+    expect(review.querySelectorAll('[data-proposal-line]').length).toBe(18);
+    const siteManagementGroup = Array.from(review.querySelectorAll('.admin-prelims-proposal-group'))
+      .find((group) => group.textContent.includes('1200') && group.textContent.includes('Site Management Staff'));
+    expect(siteManagementGroup).toBeTruthy();
+    expect(siteManagementGroup.querySelectorAll('[data-proposal-line]').length).toBe(3);
+    expect(siteManagementGroup.textContent).toContain('High confidence');
+    expect(siteManagementGroup.textContent).toContain('Matched site management concept');
+    expect(review.textContent).toContain('Accept 18 proposed mappings');
+    expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
+    await clickNamed(review, 'Accept 18 proposed mappings');
     expect(review.textContent).toContain('0 suggested');
     expect(review.textContent).toContain('18 accepted');
     expect(review.textContent).toContain('7 need your review');
@@ -523,6 +548,63 @@ describe('Admin Prelims Templates', () => {
     expect(overview.textContent).toContain('7 disabled');
     expect(overview.textContent).toContain('Ready');
     expect(overview.textContent).toContain('Saved');
+  });
+
+  it('uses Full review for individual proposal correction and Cancel discards the browser-local review', async () => {
+    getPrelimsTemplate.mockResolvedValue({
+      ...HOUSEBUILDING,
+      lines: [
+        HOUSEBUILDING.lines[0],
+        {
+          ...HOUSEBUILDING.lines[0], id: 'line-admin', templateKey: 'bl.prelims.v1.site_admin',
+          name: 'Site Administration', description: 'Site administration support.', displayOrder: 20,
+        },
+        {
+          ...HOUSEBUILDING.lines[0], id: 'line-skips', templateKey: 'bl.prelims.v1.skips',
+          name: 'Skips / Waste', description: 'Regular skip exchange and site waste.', displayOrder: 150,
+        },
+      ],
+    });
+    await act(async () => root.render(<AdminPrelimsTemplatesPage onBack={() => {}} />));
+    await flush();
+    await clickNamed(container, 'Housebuilding Prelims');
+    await flush();
+    await clickNamed(container, 'Propose mappings');
+
+    let review = container.querySelector('[aria-label="Review proposed Prelims mappings"]');
+    await clickNamed(review, 'Review 2 proposed mappings');
+    await clickNamed(review, 'Accept 2 proposed mappings');
+    await clickNamed(review.querySelector('[data-proposal-line="line-1"]'), 'Change');
+    expect(review.querySelector('#prelims-full-review-line-1')).toBeTruthy();
+    const search = review.querySelector('[aria-label="Site Manager full-review mapping cost code search"]');
+    await act(async () => {
+      search.focus();
+      setFieldValue(search, '5231');
+    });
+    await act(async () => {
+      document.body
+        .querySelector('[aria-label="Site Manager full-review mapping cost code options"] [data-cost-code="5231"]')
+        .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    });
+    expect(search.value).toContain('5231');
+    const exception = review.querySelector('[aria-label="Prelims mappings needing owner review"]');
+    await act(async () => exception.querySelector('input[type="checkbox"]').click());
+    expect(review.textContent).toContain('1 accepted');
+    expect(review.textContent).toContain('1 disabled');
+    expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
+
+    await clickNamed(review, 'Cancel review');
+    expect(container.querySelector('[aria-label="Review proposed Prelims mappings"]')).toBeNull();
+    expect(applyReviewedPrelimsMappings).not.toHaveBeenCalled();
+    expect(updatePrelimsTemplateLine).not.toHaveBeenCalled();
+
+    await clickNamed(container, 'Propose mappings');
+    review = container.querySelector('[aria-label="Review proposed Prelims mappings"]');
+    expect(review.textContent).toContain('2 suggested');
+    expect(review.textContent).toContain('0 accepted');
+    expect(review.textContent).toContain('1 need your review');
+    expect(review.textContent).toContain('Review 2 proposed mappings');
+    expect(review.textContent).not.toContain('Accept 2 proposed mappings');
   });
 
   it('keeps disabled template lines out of the routine mapping workspace', async () => {
