@@ -44,6 +44,38 @@ describe('Development Budget CVR consumption', () => {
     expect(rows.reduce((sum, item) => sum + (item.currentBudget || 0), 0)).toBe(110000);
   });
 
+  it('builds an Oakfield-shaped 59-row baseline from Development Budget with no persisted CVR inputs', () => {
+    fixtures.centres = [];
+    const positions = Array.from({ length: 59 }, (_, index) => {
+      const amount = index === 58 ? 127900000 : 30000000;
+      return {
+        costCodeId: `cost-${index + 1}`,
+        costCode: String(1000 + index * 10),
+        description: `Budget code ${index + 1}`,
+        originalPence: amount,
+        currentPence: amount,
+      };
+    });
+    const period = {
+      budgetSourceMode: 'development_budget',
+      budgetSource: { state: 'live', adopted: true, document: { positions } },
+    };
+
+    const rows = buildCvrRows('dev', { periodKey: 'P01', period });
+
+    expect(rows).toHaveLength(59);
+    expect(rows.reduce((sum, row) => sum + row.originalBudget, 0)).toBe(18679000);
+    expect(rows.reduce((sum, row) => sum + row.currentBudget, 0)).toBe(18679000);
+    expect(rows.reduce((sum, row) => sum + row.recognisedObligation, 0)).toBe(0);
+    expect(rows.reduce((sum, row) => sum + row.uncommittedForecast, 0)).toBe(18679000);
+    expect(rows.reduce((sum, row) => sum + row.systemForecast, 0)).toBe(18679000);
+    expect(rows.reduce((sum, row) => sum + row.finalForecast, 0)).toBe(18679000);
+    expect(rows.reduce((sum, row) => sum + row.currentCost, 0)).toBe(0);
+    expect(rows.reduce((sum, row) => sum + row.costToComplete, 0)).toBe(18679000);
+    expect(new Set(rows.map((row) => row.costCodeKey)).size).toBe(59);
+    expect(rows.every((row) => String(row.id).startsWith('auto-'))).toBe(true);
+  });
+
   it('forwards the hydrated Draft period so Register calculations include Development Budget authority', () => {
     fixtures.centres = [{ id: 'forecast', costCodeKey: '4120', costCodeLabel: '4120 — Brickwork', originalBudget: 0, currentBudget: 0, commercialAdjustment: 5070449, manualAccrual: 0 }];
     fixtures.period = { periodKey: 'P02', status: 'draft', budgetSourceMode: 'development_budget', budgetSource: { state: 'live', adopted: true, document: { positions: [{ costCode: '4120', description: 'Brickwork', originalPence: 19000000, currentPence: 19700000 }] } } };

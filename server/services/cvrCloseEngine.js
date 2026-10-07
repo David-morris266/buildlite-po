@@ -408,7 +408,12 @@ async function buildCvrCloseCandidate({
       certified.labels.get(key) ||
       actuals.labels.get(key) ||
       expectedLiabilities.labels.get(key) ||
-      buildCostCodeLabel(key);
+      buildCostCodeLabel(
+        key,
+        authorityBudget?.description
+          ? `${authorityBudget.costCode || key} — ${authorityBudget.description}`
+          : authorityBudget?.costCode
+      );
 
     const committed = commitments.totals.has(key)
       ? commitments.totals.get(key)
@@ -431,7 +436,7 @@ async function buildCvrCloseCandidate({
     return enrichCvrForecastRow({
       costCodeKey: manual?.costCodeKey || key,
       costCodeLabel: label,
-      description: manual?.description || "",
+      description: manual?.description || authorityBudget?.description || "",
       commercialHead: hierarchy ? (resolvedHierarchy ? hierarchy.head?.name || '' : '') : manual?.commercialHead || "",
       commercialFamily: hierarchy ? (resolvedHierarchy ? hierarchy.family?.name || '' : '') : manual?.commercialFamily || "",
       trade: hierarchy ? (resolvedHierarchy ? hierarchy.reportingGroup?.name || '' : '') : manual?.trade || "",

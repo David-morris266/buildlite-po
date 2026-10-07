@@ -26,6 +26,24 @@ test('genuinely new Development without Budget Authority cannot create P01',asyn
  const result=await cvr.createCvrPeriod(f.client.id,developmentId,{periodKey:'P01',periodLabel:'P01',reportingMonth:'2026-09-01'},{actor:'QS',currentDate:FIXED_CURRENT_DATE});
  assert.equal(result.status,409); assert.equal(result.blockers.some(x=>x.key==='development_budget'),true);
 });
+test('verified Development Budget that becomes unavailable fails closed without a legacy CVR shell',async()=>{
+ const developmentId=`dev-${randomUUID()}`; await pool.query("INSERT INTO developments(id,client_id,job_number,development_name,status,payload) VALUES($1,$2,'BUDGET-RACE','Budget race','live','{}')",[developmentId,f.client.id]);
+ await budget.postEvent(f.client.id,developmentId,{eventType:'opening_budget',effectiveDate:'2026-09-10',reference:'OPEN-RACE',reason:'Opening',idempotencyKey:randomUUID(),lines:[{costCodeId:f.code.id,amount:'50000.00'}]},f.auth);
+ const result=await cvr.createCvrPeriod(f.client.id,developmentId,{periodKey:'P01',periodLabel:'P01',reportingMonth:'2026-09-01'},{actor:'QS',currentDate:FIXED_CURRENT_DATE,loadDevelopmentBudgetDocument:async()=>null});
+ assert.equal(result.ok,false); assert.equal(result.status,409); assert.equal(result.code,'DEVELOPMENT_BUDGET_AUTHORITY_UNAVAILABLE'); assert.match(result.message,/No CVR period was created/);
+ const periods=(await pool.query('SELECT period_key,budget_source FROM cvr_periods WHERE client_id=$1 AND development_id=$2',[f.client.id,developmentId])).rows;
+ assert.deepEqual(periods,[]);
+});
+test('Submit rolls back when a non-empty Development Budget is absent from authoritative close rows',async()=>{
+ const developmentId=`dev-${randomUUID()}`; await pool.query("INSERT INTO developments(id,client_id,job_number,development_name,status,payload) VALUES($1,$2,'MISSING-BASELINE','Missing baseline','live','{}')",[developmentId,f.client.id]);
+ await budget.postEvent(f.client.id,developmentId,{eventType:'opening_budget',effectiveDate:'2026-09-10',reference:'OPEN-BASELINE',reason:'Opening',idempotencyKey:randomUUID(),lines:[{costCodeId:f.code.id,amount:'50000.00'}]},f.auth);
+ const created=await cvr.createCvrPeriod(f.client.id,developmentId,{periodKey:'P01',periodLabel:'P01',reportingMonth:'2026-09-01'},{actor:'QS',currentDate:FIXED_CURRENT_DATE}); assert.equal(created.ok,true,created.message);
+ const submitted=await cvr.submitCvrPeriod(f.client.id,developmentId,created.period.id,{}, {actor:'QS',buildCloseCandidate:async()=>({ready:true,snapshot:{rows:[]}})});
+ assert.equal(submitted.ok,false); assert.equal(submitted.status,409); assert.match(submitted.message,/Development Budget baseline is missing/); assert.equal(submitted.blockers[0].reason,'development_budget_cost_row_missing');
+ const period=(await pool.query('SELECT status FROM cvr_periods WHERE id=$1',[created.period.id])).rows[0]; assert.equal(period.status,'draft');
+ const budgetCaptures=Number((await pool.query('SELECT COUNT(*) count FROM cvr_period_budget_submissions WHERE period_id=$1',[created.period.id])).rows[0].count); assert.equal(budgetCaptures,0);
+ const exposureCaptures=Number((await pool.query('SELECT COUNT(*) count FROM cvr_period_variation_exposure_submissions WHERE period_id=$1',[created.period.id])).rows[0].count); assert.equal(exposureCaptures,0);
+});
 test('established legacy CVR development can continue without retrospective Budget enforcement',async()=>{
  const developmentId=`dev-${randomUUID()}`; await pool.query("INSERT INTO developments(id,client_id,job_number,development_name,status,payload) VALUES($1,$2,'LEGACY-CONTINUE','Legacy Continue','live','{}')",[developmentId,f.client.id]);
  await pool.query("INSERT INTO cvr_periods(client_id,development_id,period_key,period_label,status,commentary,version,budget_source,submitted_at,submitted_by,approved_at,approved_by) VALUES($1,$2,'P01','P01','locked','{}',1,'legacy_cvr',NOW(),'legacy-test',NOW(),'legacy-test')",[f.client.id,developmentId]);

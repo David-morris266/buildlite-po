@@ -293,7 +293,12 @@ export function buildCvrRows(developmentId, options = {}) {
       certified.labels.get(key) ||
       actuals.labels.get(key) ||
       expectedLiabilities.labels.get(key) ||
-      buildCostCodeLabel(key);
+      buildCostCodeLabel(
+        key,
+        authorityBudget?.description
+          ? `${authorityBudget.costCode || key} — ${authorityBudget.description}`
+          : authorityBudget?.costCode
+      );
 
     const hasManualBudget =
       manual &&
@@ -312,7 +317,7 @@ export function buildCvrRows(developmentId, options = {}) {
         id: manual?.id || `auto-${key}`,
         costCodeKey: key,
         costCodeLabel: label,
-        description: manual?.description || '',
+        description: manual?.description || authorityBudget?.description || '',
         originalBudget: usesDevelopmentBudget ? (authorityBudget?.originalPence || 0) / 100 : (manual?.originalBudget ?? null),
         currentBudget: usesDevelopmentBudget ? (authorityBudget?.currentPence || 0) / 100 : (manual?.currentBudget ?? null),
         committed: commitments.unavailable?.has(key)

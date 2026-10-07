@@ -202,7 +202,12 @@ async function getCvrPeriod(clientId, developmentId, periodId, dbClient = null) 
   return { ok: true, period: await hydratePeriod(clientId, row, dbClient) };
 }
 
-async function createCvrPeriod(clientId, developmentId, body = {}, { actor, currentDate } = {}) {
+async function createCvrPeriod(clientId, developmentId, body = {}, {
+  actor,
+  currentDate,
+  loadReadiness = require('./developmentCommercialReadiness').loadDevelopmentCommercialReadiness,
+  loadDevelopmentBudgetDocument = require('./cvrDevelopmentBudgetSnapshot').liveDocument,
+} = {}) {
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
 
@@ -230,20 +235,27 @@ async function createCvrPeriod(clientId, developmentId, body = {}, { actor, curr
     };
   }
 
-  const readinessResult = await require('./developmentCommercialReadiness').loadDevelopmentCommercialReadiness(clientId, developmentId);
-  if (!readinessResult.ok) return readinessResult;
-  if (!readinessResult.readiness.canCreateFirstCvr) {
-    return {
-      ok: false,
-      status: 409,
-      message: 'This Development is not ready to create another CVR period.',
-      blockers: readinessResult.readiness.items.filter(entry => entry.blocksDraftCreation),
-    };
-  }
-
   const dbClient = await pool.connect();
   try {
     await dbClient.query("BEGIN");
+    const readinessResult = await loadReadiness(
+      clientId,
+      developmentId,
+      dbClient.query.bind(dbClient)
+    );
+    if (!readinessResult.ok) {
+      await dbClient.query("ROLLBACK");
+      return readinessResult;
+    }
+    if (!readinessResult.readiness.canCreateFirstCvr) {
+      await dbClient.query("ROLLBACK");
+      return {
+        ok: false,
+        status: 409,
+        message: 'This Development is not ready to create another CVR period.',
+        blockers: readinessResult.readiness.items.filter(entry => entry.blocksDraftCreation),
+      };
+    }
     const existing = await listPeriodRows(clientId, developmentId, dbClient);
     const open = existing.find((row) => !isCvrPeriodLocked(row.status));
     if (open) {
@@ -257,7 +269,29 @@ async function createCvrPeriod(clientId, developmentId, body = {}, { actor, curr
     }
 
     const periodKey = validated.value.periodKey || nextPeriodKey(existing.map((row) => row.period_key));
-    const hasBudgetAuthority = Boolean(await require('./cvrDevelopmentBudgetSnapshot').liveDocument(dbClient, clientId, developmentId));
+    const budgetReadiness = readinessResult.readiness.items.find((entry) => entry.key === 'development_budget');
+    let budgetSource = 'legacy_cvr';
+    if (budgetReadiness?.state === 'ready') {
+      const budgetDocument = await loadDevelopmentBudgetDocument(dbClient, clientId, developmentId);
+      if (!budgetDocument?.positions?.length) {
+        await dbClient.query("ROLLBACK");
+        return {
+          ok: false,
+          status: 409,
+          code: 'DEVELOPMENT_BUDGET_AUTHORITY_UNAVAILABLE',
+          message: 'The verified Development Budget became unavailable. No CVR period was created.',
+        };
+      }
+      budgetSource = 'development_budget';
+    } else if (!readinessResult.readiness.establishedLegacy) {
+      await dbClient.query("ROLLBACK");
+      return {
+        ok: false,
+        status: 409,
+        code: 'DEVELOPMENT_BUDGET_AUTHORITY_UNAVAILABLE',
+        message: 'A verified Development Budget is required. No CVR period was created.',
+      };
+    }
     const periodLabel = validated.value.periodLabel || periodKey;
     const inserted = await runQuery(
       dbClient,
@@ -277,7 +311,7 @@ async function createCvrPeriod(clientId, developmentId, body = {}, { actor, curr
         validated.value.reportingMonth,
         JSON.stringify(validated.value.commentary),
         actor || null,
-        hasBudgetAuthority ? 'development_budget' : 'legacy_cvr',
+        budgetSource,
       ]
     );
 
@@ -426,7 +460,11 @@ async function patchCvrPeriod(clientId, developmentId, periodId, body = {}, { ac
   }
 }
 
-async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, { actor, auth } = {}) {
+async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, {
+  actor,
+  auth,
+  buildCloseCandidate = require('./cvrCloseEngine').buildCvrCloseCandidate,
+} = {}) {
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
   if (!isValidUuid(periodId)) return { ok: false, status: 400, message: "periodId must be a valid UUID." };
@@ -445,6 +483,25 @@ async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, { a
     if (row.budget_source === 'development_budget') {
       const budget = await require('./cvrDevelopmentBudgetSnapshot').appendSubmission(dbClient, { clientId, developmentId, periodId, actor });
       if (!budget.ok) { await dbClient.query('ROLLBACK'); return { ok:false,status:409,message:budget.message }; }
+      const closeCandidate = await buildCloseCandidate({
+        clientId,
+        developmentId,
+        periodId,
+        dbClient,
+        variationExposureDocument: exposure.live?.document || null,
+        developmentBudgetDocument: budget.document,
+      });
+      const baselineBlockers = developmentBudgetBaselineBlockers(budget.document, closeCandidate);
+      if (baselineBlockers.length) {
+        await dbClient.query('ROLLBACK');
+        return {
+          ok: false,
+          status: 409,
+          code: CVR_CLOSE_NOT_READY_CODE,
+          message: 'The authoritative Development Budget baseline is missing from the CVR cost rows.',
+          blockers: baselineBlockers,
+        };
+      }
     }
     await require('./cvrCommercialHierarchySnapshot').appendSubmission(dbClient, {
       clientId, developmentId, periodId, actor, auth,
@@ -454,6 +511,26 @@ async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, { a
     await dbClient.query('COMMIT');
     return { ok: true, period: await hydratePeriod(clientId, updated) };
   } catch (err) { await dbClient.query('ROLLBACK'); throw err; } finally { dbClient.release(); }
+}
+
+function developmentBudgetBaselineBlockers(document, closeCandidate) {
+  const { normaliseCostCodeKey } = require('./cvrCloseFormulas');
+  const positions = Array.isArray(document?.positions) ? document.positions : [];
+  if (!positions.length || closeCandidate?.ready !== true) return [];
+  const rowKeys = new Set((closeCandidate.snapshot?.rows || [])
+    .map((row) => normaliseCostCodeKey(row.costCodeKey))
+    .filter(Boolean));
+  return positions
+    .filter((position) => {
+      const hasBudget = Number(position.originalPence || 0) !== 0 || Number(position.currentPence || 0) !== 0;
+      return hasBudget && !rowKeys.has(normaliseCostCodeKey(position.costCode));
+    })
+    .map((position) => ({
+      source: 'developmentBudget',
+      reason: 'development_budget_cost_row_missing',
+      costCodeId: position.costCodeId || null,
+      costCodeKey: position.costCode || null,
+    }));
 }
 
 async function adoptDevelopmentBudget(clientId, developmentId, periodId, body = {}, { actor } = {}) {
@@ -1359,6 +1436,7 @@ module.exports = {
   createCvrPeriod,
   patchCvrPeriod,
   submitCvrPeriod,
+  developmentBudgetBaselineBlockers,
   rejectCvrPeriod,
   approveCvrPeriod,
   adoptDevelopmentBudget,

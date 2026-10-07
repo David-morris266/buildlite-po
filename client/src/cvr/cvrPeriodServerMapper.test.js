@@ -91,6 +91,36 @@ describe('CVR period/input mappers (BL-031B)', () => {
     });
   });
 
+  it('preserves the live Development Budget document and stable Cost Code identities', () => {
+    const budgetSource = {
+      state: 'live',
+      adopted: true,
+      document: {
+        originalBudgetPence: 1867900000,
+        currentBudgetPence: 1867900000,
+        positions: [{
+          costCodeId: '11111111-2222-4333-8444-555555555555',
+          costCode: '2000',
+          description: 'Site Management',
+          originalPence: 6600000,
+          currentPence: 6600000,
+        }],
+      },
+    };
+
+    const mapped = normalizeServerCvrPeriod({
+      ...buildServerCvrPeriodFixture({ periodKey: 'P01' }),
+      budgetSourceMode: 'development_budget',
+      budgetSource,
+    });
+
+    expect(mapped.budgetSourceMode).toBe('development_budget');
+    expect(mapped.budgetSource).toEqual(budgetSource);
+    expect(mapped.budgetSource.document.positions[0].costCodeId).toBe(
+      '11111111-2222-4333-8444-555555555555'
+    );
+  });
+
   it('maps cost-code inputs including manualAccrual and labels', () => {
     const mapped = normalizeServerCvrCostCodeInput(
       buildServerCvrInputFixture({

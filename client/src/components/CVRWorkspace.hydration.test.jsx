@@ -127,6 +127,41 @@ describe('CVRWorkspace input hydration (BL-031B)', () => {
     expect(container.textContent).toContain('5231');
   });
 
+  it('renders a development-budget baseline without CVR inputs and hides legacy Budget Import', async () => {
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({
+      id: PERIOD_ID,
+      developmentId: DEV.id,
+      budgetSourceMode: 'development_budget',
+      budgetSource: {
+        state: 'live',
+        adopted: true,
+        document: {
+          positions: [
+            { costCodeId: 'cost-2000', costCode: '2000', description: 'Site Management', originalPence: 6600000, currentPence: 6600000 },
+            { costCodeId: 'cost-3010', costCode: '3010', description: 'Foundations', originalPence: 12000000, currentPence: 12000000 },
+          ],
+        },
+      },
+    }));
+    seedMockCvrInputs(PERIOD_ID, []);
+
+    await act(async () => {
+      root.render(<CVRWorkspace development={DEV} periodKey="P01" />);
+    });
+    await flush();
+    await flush();
+
+    expect(container.textContent).toContain('2000');
+    expect(container.textContent).toContain('Site Management');
+    expect(container.textContent).toContain('3010');
+    expect(container.textContent).toContain('Foundations');
+    expect(container.textContent).toContain('Add Cost Code');
+    expect(container.textContent).not.toContain('Import Budget');
+    expect(container.textContent).toContain('Original and Current Budget are controlled by Development Budget');
+    expect(getCvrMutationCallCounts().createInput).toBe(0);
+    expect(getCvrMutationCallCounts().addMember).toBe(0);
+  });
+
   it('uses exactly two workbench panes only while a wide Storyboard is open', async () => {
     const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
       width: 1400, height: 600, top: 0, right: 1400, bottom: 600, left: 0, x: 0, y: 0,
