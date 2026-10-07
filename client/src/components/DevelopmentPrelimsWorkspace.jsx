@@ -158,7 +158,11 @@ function LineCalc({ item }) {
   );
 }
 
-export default function DevelopmentPrelimsWorkspace({ developmentId, onSetUpCompanyTemplate = null }) {
+export default function DevelopmentPrelimsWorkspace({
+  developmentId,
+  onSetUpCompanyTemplate = null,
+  programmeRefreshToken = 0,
+}) {
   const [collection, setCollection] = useState(null);
   const [costCodes, setCostCodes] = useState([]);
   const [mode, setMode] = useState('add');
@@ -187,7 +191,7 @@ export default function DevelopmentPrelimsWorkspace({ developmentId, onSetUpComp
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, programmeRefreshToken]);
 
   useEffect(() => {
     let cancelled = false;

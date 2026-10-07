@@ -10248,6 +10248,10 @@
   .dev-workspace-identity__grid {
     grid-template-columns: 1fr 1fr;
   }
+
+  .dev-workspace-identity__programme-actions {
+    grid-column: 1;
+  }
 }
 
 .dev-prelims {
@@ -10288,6 +10292,20 @@
 
 .admin-prelims-line-form {
   margin: 0;
+}
+
+.dev-workspace-identity__programme-actions {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bl-space-2);
+}
+
+.dev-workspace-identity__programme-status {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--success, #15803d);
 }
 
 .po-ce-drawer__section-heading--static {

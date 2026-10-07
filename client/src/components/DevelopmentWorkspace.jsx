@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import { listPOs } from '../api';
-import { updateDevelopment, VERSION_CONFLICT_MESSAGE } from '../developments/developmentStore';
+import {
+  DevelopmentProgrammeApiError,
+  getDevelopmentProgramme,
+  putDevelopmentProgramme,
+} from '../api/developmentProgramme';
 import { getDevelopmentCommercialReadiness } from '../api/developments';
 import { buildDevelopmentWorkspaceNavigation } from '../navigation/navigationBuilders';
 import {
@@ -85,7 +89,6 @@ export default function DevelopmentWorkspace({
   onPlotsChanged,
   onLedgerChanged,
   onCvrChanged,
-  onDevelopmentChanged,
   initialActiveTab = null,
   initialCvrPeriodKey = null,
   initialCvrSubview = null,
@@ -136,10 +139,15 @@ export default function DevelopmentWorkspace({
   const [commercialNavigationStack, setCommercialNavigationStack] = useState([]);
   const [developmentCommercialTarget, setDevelopmentCommercialTarget] = useState(null);
   const [commercialRegisterError, setCommercialRegisterError] = useState('');
-  const [startDate, setStartDate] = useState(development.startDate || '');
-  const [targetCompletion, setTargetCompletion] = useState(
-    development.targetCompletion || ''
-  );
+  const [programme, setProgramme] = useState(null);
+  const [programmeLoading, setProgrammeLoading] = useState(true);
+  const [programmeLoadError, setProgrammeLoadError] = useState('');
+  const [programmeEditing, setProgrammeEditing] = useState(false);
+  const [programmeSaving, setProgrammeSaving] = useState(false);
+  const [programmeSaved, setProgrammeSaved] = useState(false);
+  const [programmeRefresh, setProgrammeRefresh] = useState(0);
+  const [startDate, setStartDate] = useState('');
+  const [targetCompletion, setTargetCompletion] = useState('');
   const [dateError, setDateError] = useState('');
   const [commercialReadiness, setCommercialReadiness] = useState(null);
   const [commercialReadinessLoading, setCommercialReadinessLoading] = useState(true);
@@ -147,10 +155,30 @@ export default function DevelopmentWorkspace({
   const [firstCvrCreateRequest, setFirstCvrCreateRequest] = useState(0);
 
   useEffect(() => {
-    setStartDate(development.startDate || '');
-    setTargetCompletion(development.targetCompletion || '');
+    let cancelled = false;
+    setProgrammeLoading(true);
+    setProgrammeLoadError('');
+    setProgramme(null);
+    setProgrammeEditing(false);
+    setProgrammeSaved(false);
     setDateError('');
-  }, [development.id, development.startDate, development.targetCompletion]);
+    getDevelopmentProgramme(development.id)
+      .then((loaded) => {
+        if (cancelled) return;
+        setProgramme(loaded);
+        setStartDate(loaded.siteStart || '');
+        setTargetCompletion(loaded.finalCompletion || '');
+      })
+      .catch((error) => {
+        if (!cancelled) setProgrammeLoadError(error.message || 'Could not load programme dates.');
+      })
+      .finally(() => {
+        if (!cancelled) setProgrammeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [development.id]);
 
   useEffect(() => {
     setActiveTab(initialActiveTab || 'overview');
@@ -618,37 +646,57 @@ export default function DevelopmentWorkspace({
     onCvrChanged?.();
   }
 
-  async function saveProgrammeDates(nextStart, nextTarget) {
-    if (nextStart && nextTarget && nextTarget < nextStart) {
+  function beginProgrammeEdit() {
+    setStartDate(programme?.siteStart || '');
+    setTargetCompletion(programme?.finalCompletion || '');
+    setDateError('');
+    setProgrammeSaved(false);
+    setProgrammeEditing(true);
+  }
+
+  function cancelProgrammeEdit() {
+    setStartDate(programme?.siteStart || '');
+    setTargetCompletion(programme?.finalCompletion || '');
+    setDateError('');
+    setProgrammeEditing(false);
+  }
+
+  async function saveProgrammeDates() {
+    if (!startDate || !targetCompletion) {
+      setDateError('Start Date and Target Completion are required.');
+      return;
+    }
+    if (targetCompletion < startDate) {
       setDateError('Target completion must be on or after the start date.');
       return;
     }
 
+    setProgrammeSaving(true);
     setDateError('');
+    setProgrammeSaved(false);
     try {
-      await updateDevelopment(development.id, {
-        startDate: nextStart,
-        targetCompletion: nextTarget,
-        version: development.version,
+      const saved = await putDevelopmentProgramme(development.id, {
+        siteStart: startDate,
+        firstCompletion: programme?.firstCompletion || null,
+        finalCompletion: targetCompletion,
+        totalPlots: Number(programme?.totalPlots || 0),
+        version: Number(programme?.version || 0),
       });
-      onDevelopmentChanged?.();
+      setProgramme(saved);
+      setStartDate(saved.siteStart || '');
+      setTargetCompletion(saved.finalCompletion || '');
+      setProgrammeEditing(false);
+      setProgrammeSaved(true);
+      setProgrammeRefresh((value) => value + 1);
     } catch (error) {
       setDateError(
-        error.code === 'VERSION_CONFLICT'
-          ? VERSION_CONFLICT_MESSAGE
+        error instanceof DevelopmentProgrammeApiError && error.status === 409
+          ? 'Programme dates were updated elsewhere. Reload and try again.'
           : error.message || 'Could not save programme dates.'
       );
+    } finally {
+      setProgrammeSaving(false);
     }
-  }
-
-  function handleStartDateChange(value) {
-    setStartDate(value);
-    saveProgrammeDates(value, targetCompletion);
-  }
-
-  function handleTargetDateChange(value) {
-    setTargetCompletion(value);
-    saveProgrammeDates(startDate, value);
   }
 
   function resetCvrToRegister() {
@@ -997,36 +1045,41 @@ export default function DevelopmentWorkspace({
               </div>
             ) : null}
             <div className="dev-workspace-identity__item dev-workspace-identity__item--date">
-              <dt>Start</dt>
+              <dt>Start Date</dt>
               <dd>
-                <input
-                  className="input dev-workspace-identity__date-input"
-                  type="date"
-                  value={startDate}
-                  onChange={(event) => handleStartDateChange(event.target.value)}
-                  aria-label="Start date"
-                />
+                {programmeEditing ? (
+                  <input className="input dev-workspace-identity__date-input" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} aria-label="Start Date" />
+                ) : programmeLoading ? 'Loading…' : programme?.siteStart || 'Not set'}
               </dd>
             </div>
             <div className="dev-workspace-identity__item dev-workspace-identity__item--date">
-              <dt>Target</dt>
+              <dt>Target Completion</dt>
               <dd>
-                <input
-                  className="input dev-workspace-identity__date-input"
-                  type="date"
-                  value={targetCompletion}
-                  min={startDate || undefined}
-                  onChange={(event) => handleTargetDateChange(event.target.value)}
-                  aria-label="Target completion date"
-                />
+                {programmeEditing ? (
+                  <input className="input dev-workspace-identity__date-input" type="date" value={targetCompletion} min={startDate || undefined} onChange={(event) => setTargetCompletion(event.target.value)} aria-label="Target Completion" />
+                ) : programmeLoading ? 'Loading…' : programme?.finalCompletion || 'Not set'}
               </dd>
             </div>
           </dl>
+          {!programmeLoading && !programmeLoadError ? (
+            <div className="dev-workspace-identity__programme-actions">
+              {programmeEditing ? (
+                <>
+                  <button type="button" className="po-list-btn-secondary" disabled={programmeSaving} onClick={cancelProgrammeEdit}>Cancel</button>
+                  <button type="button" className="po-btn-primary" disabled={programmeSaving} onClick={saveProgrammeDates}>{programmeSaving ? 'Saving…' : 'Save programme dates'}</button>
+                </>
+              ) : (
+                <button type="button" className="po-list-btn-secondary" onClick={beginProgrammeEdit}>{programme?.exists || programme?.siteStart || programme?.finalCompletion ? 'Edit programme dates' : 'Set programme dates'}</button>
+              )}
+            </div>
+          ) : null}
+          {programmeLoadError ? <p className="dev-workspace-identity__error" role="alert">{programmeLoadError}</p> : null}
           {dateError ? (
             <p className="dev-workspace-identity__error" role="alert">
               {dateError}
             </p>
           ) : null}
+          {programmeSaved ? <p className="dev-workspace-identity__programme-status" role="status">Programme dates saved.</p> : null}
         </div>
       ) : null}
 
@@ -1131,7 +1184,7 @@ export default function DevelopmentWorkspace({
         ) : null}
 
         {activeTab === 'budget' ? (
-          <DevelopmentBudgetWorkspace developmentId={model.id} siteStartDate={startDate} />
+          <DevelopmentBudgetWorkspace developmentId={model.id} siteStartDate={programme?.siteStart || ''} />
         ) : null}
 
         {activeTab === 'revenue' ? (
@@ -1149,6 +1202,7 @@ export default function DevelopmentWorkspace({
         {activeTab === 'prelims' ? (
           <DevelopmentPrelimsWorkspace
             developmentId={model.id}
+            programmeRefreshToken={programmeRefresh}
             onSetUpCompanyTemplate={() => onNavigate?.({
               view: 'administration',
               section: 'prelims-templates',

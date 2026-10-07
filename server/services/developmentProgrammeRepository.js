@@ -10,13 +10,11 @@ const {
   seedProgrammeFromDevelopment,
 } = require("./developmentProgrammeMapper");
 const { validatePutProgrammeBody } = require("./developmentProgrammeValidation");
+const { assertServicePermission } = require("../auth/authorization");
+const { PERMISSIONS } = require("../auth/permissions");
 
 function isUniqueViolation(err) {
   return err && err.code === "23505";
-}
-
-function provisionalActor(body = {}) {
-  return body.updatedBy || body.createdBy || body.actor || null;
 }
 
 async function developmentOr404(clientId, developmentId) {
@@ -54,7 +52,12 @@ async function getDevelopmentProgramme(clientId, developmentId) {
   };
 }
 
-async function putDevelopmentProgramme(clientId, developmentId, body = {}, { actor } = {}) {
+async function putDevelopmentProgramme(clientId, developmentId, body = {}, { auth } = {}) {
+  assertServicePermission(auth, PERMISSIONS.CVR_EDIT);
+  if (auth && String(auth.clientId) !== String(clientId)) {
+    return { ok: false, status: 403, message: "Tenant boundary violation." };
+  }
+  const actor = auth?.displayName || null;
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
 
@@ -169,5 +172,4 @@ module.exports = {
   getDevelopmentProgramme,
   putDevelopmentProgramme,
   findProgrammeRow,
-  provisionalActor,
 };

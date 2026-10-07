@@ -17,7 +17,8 @@ const getOrderMatricesLoadError = vi.hoisted(() => vi.fn());
 const buildDevelopmentWorkspaceModel = vi.hoisted(() => vi.fn());
 const getDevelopmentBudget = vi.hoisted(() => vi.fn());
 const listServerCostCodes = vi.hoisted(() => vi.fn());
-const updateDevelopment = vi.hoisted(() => vi.fn());
+const getDevelopmentProgramme = vi.hoisted(() => vi.fn());
+const putDevelopmentProgramme = vi.hoisted(() => vi.fn());
 
 vi.mock('../api', () => ({
   listPOs,
@@ -43,9 +44,15 @@ vi.mock('../developments/developmentHelpers', () => ({
   buildDevelopmentWorkspaceModel,
 }));
 
-vi.mock('../developments/developmentStore', () => ({
-  updateDevelopment,
-  VERSION_CONFLICT_MESSAGE: 'Development version conflict.',
+vi.mock('../api/developmentProgramme', () => ({
+  getDevelopmentProgramme,
+  putDevelopmentProgramme,
+  DevelopmentProgrammeApiError: class DevelopmentProgrammeApiError extends Error {
+    constructor(message, { status = 0 } = {}) {
+      super(message);
+      this.status = status;
+    }
+  },
 }));
 
 vi.mock('../api/developmentBudget', () => ({
@@ -107,7 +114,7 @@ vi.mock('./DevelopmentSellingCostsWorkspace', () => ({
   default: () => <div data-testid="selling-costs-panel">Selling Costs panel</div>,
 }));
 vi.mock('./DevelopmentPrelimsWorkspace', () => ({
-  default: () => <div data-testid="prelims-panel">Prelims panel</div>,
+  default: ({ programmeRefreshToken }) => <div data-testid="prelims-panel" data-programme-refresh={programmeRefreshToken}>Prelims panel</div>,
 }));
 vi.mock('./CVRRegister', () => ({ default: ({ onOpenPeriod, createRequestToken }) => <div data-testid="cvr-panel" data-create-request-token={createRequestToken}>CVR panel<button onClick={() => onOpenPeriod?.('P04')}>Open P04</button></div> }));
 vi.mock('./CVRSummaryPage', () => ({ default: () => null }));
@@ -191,11 +198,24 @@ describe('DevelopmentWorkspace stability guards', () => {
       ],
     });
     listServerCostCodes.mockResolvedValue({ costCodes: [] });
-    updateDevelopment.mockImplementation(async (_id, patch) => ({
-      ...sampleDevelopment,
-      ...patch,
-      version: sampleDevelopment.version + 1,
-    }));
+    getDevelopmentProgramme.mockResolvedValue({
+      developmentId: sampleDevelopment.id,
+      exists: false,
+      siteStart: '2026-09-01',
+      firstCompletion: '2028-01-15',
+      finalCompletion: '2029-10-01',
+      totalPlots: 31,
+      version: 0,
+    });
+    putDevelopmentProgramme.mockResolvedValue({
+      developmentId: sampleDevelopment.id,
+      exists: true,
+      siteStart: '2027-03-01',
+      firstCompletion: '2028-01-15',
+      finalCompletion: '2030-08-31',
+      totalPlots: 31,
+      version: 1,
+    });
   });
 
   afterEach(() => {
@@ -243,60 +263,68 @@ describe('DevelopmentWorkspace stability guards', () => {
     });
   }
 
-  it.each([
-    ['Prelims', 'Start date', '2027-03-01', 'prelims-panel'],
-    ['Prelims', 'Target completion date', '2028-09-30', 'prelims-panel'],
-    ['Revenue', 'Start date', '2027-03-01', 'revenue-panel'],
-    ['Ledger', 'Start date', '2027-03-01', 'ledger-panel'],
-  ])(
-    'keeps %s active when editing %s and the refreshed Development arrives',
-    async (tab, label, value, panelTestId) => {
-      const onDevelopmentChanged = vi.fn();
-      renderWorkspace({ onDevelopmentChanged });
-      await act(async () => { await Promise.resolve(); });
-      clickTab(tab);
+  it('displays the legacy seed, drafts without persistence, and Cancel restores authority', async () => {
+    renderWorkspace();
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(container.textContent).toContain('2026-09-01');
+    expect(container.textContent).toContain('2029-10-01');
 
-      await changeDate(label, value);
-      expect(updateDevelopment).toHaveBeenCalledTimes(1);
-      expect(updateDevelopment).toHaveBeenCalledWith(
-        sampleDevelopment.id,
-        expect.objectContaining({
-          [label === 'Start date' ? 'startDate' : 'targetCompletion']: value,
-          version: sampleDevelopment.version,
-        })
-      );
-      expect(onDevelopmentChanged).toHaveBeenCalledTimes(1);
+    act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Edit programme dates').click());
+    await changeDate('Start Date', '2027-03-01');
+    expect(putDevelopmentProgramme).not.toHaveBeenCalled();
+    act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Cancel').click());
+    expect(container.textContent).toContain('2026-09-01');
+    expect(putDevelopmentProgramme).not.toHaveBeenCalled();
+  });
 
-      renderWorkspace({
-        development: {
-          ...sampleDevelopment,
-          [label === 'Start date' ? 'startDate' : 'targetCompletion']: value,
-          version: sampleDevelopment.version + 1,
-        },
-        onDevelopmentChanged,
-      });
-      await act(async () => { await Promise.resolve(); });
-
-      expect(document.querySelector(`[data-testid="${panelTestId}"]`)).not.toBeNull();
-    }
-  );
-
-  it('keeps Overview active and preserves unrelated Development fields after a date edit', async () => {
-    const onDevelopmentChanged = vi.fn();
-    renderWorkspace({ onDevelopmentChanged });
-    await act(async () => { await Promise.resolve(); });
-
-    await changeDate('Start date', '2027-03-01');
-
-    expect(document.body.textContent).toContain('Overview panel');
-    expect(updateDevelopment).toHaveBeenCalledTimes(1);
-    expect(updateDevelopment.mock.calls[0][1]).toEqual({
-      startDate: '2027-03-01',
-      targetCompletion: '',
-      version: sampleDevelopment.version,
+  it('saves one atomic typed programme, preserves evidence, and refreshes mounted Prelims', async () => {
+    renderWorkspace();
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    clickTab('Prelims');
+    act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Edit programme dates').click());
+    await changeDate('Start Date', '2027-03-01');
+    await changeDate('Target Completion', '2030-08-31');
+    expect(putDevelopmentProgramme).not.toHaveBeenCalled();
+    await act(async () => {
+      [...container.querySelectorAll('button')].find((button) => button.textContent === 'Save programme dates').click();
+      await Promise.resolve();
     });
-    expect(updateDevelopment.mock.calls[0][1]).not.toHaveProperty('developmentName');
-    expect(updateDevelopment.mock.calls[0][1]).not.toHaveProperty('jobNumber');
+    expect(putDevelopmentProgramme).toHaveBeenCalledTimes(1);
+    expect(putDevelopmentProgramme).toHaveBeenCalledWith(sampleDevelopment.id, {
+      siteStart: '2027-03-01', firstCompletion: '2028-01-15', finalCompletion: '2030-08-31', totalPlots: 31, version: 0,
+    });
+    expect(container.textContent).toContain('Programme dates saved.');
+    expect(container.querySelector('[data-testid="prelims-panel"]').dataset.programmeRefresh).toBe('1');
+  });
+
+  it('keeps a stale-conflict draft visibly unsaved', async () => {
+    const { DevelopmentProgrammeApiError } = await import('../api/developmentProgramme');
+    putDevelopmentProgramme.mockRejectedValueOnce(new DevelopmentProgrammeApiError('Conflict', { status: 409 }));
+    renderWorkspace();
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Edit programme dates').click());
+    await changeDate('Start Date', '2027-03-01');
+    await changeDate('Target Completion', '2030-08-31');
+    await act(async () => {
+      [...container.querySelectorAll('button')].find((button) => button.textContent === 'Save programme dates').click();
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain('updated elsewhere');
+    expect(container.querySelector('input[aria-label="Start Date"]').value).toBe('2027-03-01');
+    expect(container.textContent).not.toContain('Programme dates saved.');
+  });
+
+  it('rejects partial and inverted programme drafts before persistence', async () => {
+    renderWorkspace();
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Edit programme dates').click());
+    await changeDate('Target Completion', '2020-01-01');
+    act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Save programme dates').click());
+    expect(container.textContent).toContain('must be on or after');
+    expect(putDevelopmentProgramme).not.toHaveBeenCalled();
+    await changeDate('Start Date', '');
+    act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Save programme dates').click());
+    expect(container.textContent).toContain('are required');
   });
 
   it('shows a visible defensive state when the workspace model is missing', () => {
@@ -337,7 +365,7 @@ describe('DevelopmentWorkspace stability guards', () => {
     const selected = [...container.querySelectorAll('.po-package-tabs__tab')]
       .find((button) => button.textContent === tabLabel);
     expect(selected?.getAttribute('aria-current')).toBe('page');
-    expect(updateDevelopment).not.toHaveBeenCalled();
+    expect(putDevelopmentProgramme).not.toHaveBeenCalled();
   });
 
   it('switches to Selling Costs when selecting the Selling Costs tab', async () => {

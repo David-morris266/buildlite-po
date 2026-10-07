@@ -6,13 +6,22 @@
 const express = require("express");
 const { isDbConfigured } = require("../db");
 const { getActiveClient } = require("../services/activeClient");
+const { requirePermission } = require("../auth/authorization");
+const { PERMISSIONS } = require("../auth/permissions");
 const {
   getDevelopmentProgramme,
   putDevelopmentProgramme,
-  provisionalActor,
 } = require("../services/developmentProgrammeRepository");
 
 const router = express.Router({ mergeParams: true });
+
+async function authenticatedTenantId(req) {
+  if (req.buildliteAuth?.clientId) return req.buildliteAuth.clientId;
+  if (process.env.BUILDLITE_SERVER_TEST === "1" || process.env.NODE_ENV === "test") {
+    return (await getActiveClient())?.id || null;
+  }
+  return null;
+}
 
 function sendResult(res, result, successStatus = 200) {
   if (!result.ok) {
@@ -24,15 +33,14 @@ function sendResult(res, result, successStatus = 200) {
   return res.status(result.status || successStatus).json(result.programme);
 }
 
-router.get("/programme", async (req, res) => {
+router.get("/programme", requirePermission(PERMISSIONS.COMMERCIAL_READ), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
     }
-    const active = await getActiveClient();
-    if (!active) return res.status(404).json({ error: "No active client set" });
-
-    const result = await getDevelopmentProgramme(active.id, req.params.developmentId);
+    const clientId = await authenticatedTenantId(req);
+    if (!clientId) return res.status(403).json({ message: "Authenticated tenant is required." });
+    const result = await getDevelopmentProgramme(clientId, req.params.developmentId);
     sendResult(res, result);
   } catch (err) {
     console.error("[Programme] GET error:", err);
@@ -40,18 +48,22 @@ router.get("/programme", async (req, res) => {
   }
 });
 
-router.put("/programme", async (req, res) => {
+router.put("/programme", requirePermission(PERMISSIONS.CVR_EDIT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
     }
-    const active = await getActiveClient();
-    if (!active) return res.status(404).json({ error: "No active client set" });
-
     const body = req.body || {};
-    const result = await putDevelopmentProgramme(active.id, req.params.developmentId, body, {
-      actor: provisionalActor(body),
-    });
+    const clientId = await authenticatedTenantId(req);
+    if (!clientId) return res.status(403).json({ message: "Authenticated tenant is required." });
+    const result = await putDevelopmentProgramme(
+      clientId,
+      req.params.developmentId,
+      body,
+      {
+        auth: { ...req.buildliteAuth, clientId },
+      }
+    );
     sendResult(res, result, result.status === 201 ? 201 : 200);
   } catch (err) {
     console.error("[Programme] PUT error:", err);

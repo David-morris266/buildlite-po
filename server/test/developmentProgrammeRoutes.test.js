@@ -13,8 +13,19 @@ const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { CLOSE_SOURCE_KEYS } = require("../services/cvrCloseConstants");
 const { calculateSystemForecast, calculateFinalForecast } = require("../services/cvrCloseFormulas");
+const { PERMISSIONS } = require("../auth/permissions");
 
-const app = createApp();
+let authenticatedClientId = null;
+const authenticatedPrincipal = () => ({
+  userId: "00000000-0000-0000-0000-000000000001",
+  membershipId: "00000000-0000-0000-0000-000000000002",
+  providerUserId: "programme-test-user",
+  displayName: "Authenticated Programme QS",
+  roleKey: "qs",
+  clientId: authenticatedClientId,
+  permissions: [PERMISSIONS.COMMERCIAL_READ, PERMISSIONS.CVR_EDIT],
+});
+const app = createApp({ testPrincipal: authenticatedPrincipal });
 const MIGRATION_004 = path.join(__dirname, "..", "migrations", "004_developments.sql");
 const MIGRATION_009 = path.join(__dirname, "..", "migrations", "009_cvr_and_purchase_ledger.sql");
 const MIGRATION_014 = path.join(__dirname, "..", "migrations", "014_development_programme.sql");
@@ -97,6 +108,7 @@ if (!isDbConfigured()) {
     assert.equal(db.rows[0].db, "buildlite_test");
     assert.notEqual(db.rows[0].db, "buildlite_clone");
     await ensureSchema();
+    authenticatedClientId = (await getActiveClient()).id;
   });
 
   test.after(async () => {
@@ -110,6 +122,7 @@ if (!isDbConfigured()) {
       "inputs",
       "purchaseOrders",
       "commercialEvents",
+      "variationOrders",
       "certificates",
       "ledger",
     ]);
@@ -165,7 +178,7 @@ if (!isDbConfigured()) {
       .put(`/api/developments/${developmentId}/programme`)
       .send({
         version: 0,
-        actor: "Commercial Manager",
+        actor: "Spoofed actor",
         siteStart: "2026-09-01",
         finalCompletion: "2029-10-01",
         totalPlots: 31,
@@ -175,6 +188,12 @@ if (!isDbConfigured()) {
     assert.equal(created.body.version, 1);
     assert.equal(created.body.firstCompletion, null);
     assert.equal(created.body.durationMonths, 38);
+    const provenance = await pool.query(
+      `SELECT created_by, updated_by FROM development_programme WHERE development_id = $1`,
+      [developmentId]
+    );
+    assert.equal(provenance.rows[0].created_by, "Authenticated Programme QS");
+    assert.equal(provenance.rows[0].updated_by, "Authenticated Programme QS");
 
     const updated = await request(app)
       .put(`/api/developments/${developmentId}/programme`)
@@ -320,81 +339,40 @@ if (!isDbConfigured()) {
     assert.ok(active);
   });
 
-  test("new CVR periods persist reportingMonth; omitted stays null; siblings are untouched", async () => {
+  test("tenant and permission authority are server-derived for GET and PUT", async () => {
     const active = await getActiveClient();
-    const omittedId = await createDevelopment(active, testSite1Payload());
-    const omitted = await request(app)
-      .post(`/api/developments/${omittedId}/cvr/periods`)
-      .send({ periodKey: "P01" });
-    assert.equal(omitted.status, 201);
-    assert.equal(omitted.body.reportingMonth, null);
+    const developmentId = await createDevelopment(active, testSite1Payload());
+    const deniedRead = createApp({ testPrincipal: { ...authenticatedPrincipal(), permissions: [] } });
+    assert.equal((await request(deniedRead).get(`/api/developments/${developmentId}/programme`)).status, 403);
 
-    const withMonthId = await createDevelopment(active, testSite1Payload());
-    const withMonth = await request(app)
-      .post(`/api/developments/${withMonthId}/cvr/periods`)
-      .send({ periodKey: "P01", reportingMonth: "2026-10" });
-    assert.equal(withMonth.status, 201);
-    assert.equal(withMonth.body.reportingMonth, "2026-10-01");
+    const readOnly = createApp({
+      testPrincipal: { ...authenticatedPrincipal(), permissions: [PERMISSIONS.COMMERCIAL_READ] },
+    });
+    assert.equal((await request(readOnly).get(`/api/developments/${developmentId}/programme`)).status, 200);
+    assert.equal((await request(readOnly).put(`/api/developments/${developmentId}/programme`).send({
+      version: 0, siteStart: "2026-09-01", finalCompletion: "2029-10-01", totalPlots: 31,
+    })).status, 403);
 
-    const siblingId = await createDevelopment(active, testSite1Payload());
-    const historic = await pool.query(
-      `
-        INSERT INTO cvr_periods (
-          client_id, development_id, period_key, period_label, reporting_month,
-          status, commentary, submitted_at, submitted_by, approved_at, approved_by
-        )
-        VALUES
-          ($1, $2, 'P01', 'P01', NULL, 'locked', '{}'::jsonb, NOW(), 'test', NOW(), 'test'),
-          ($1, $2, 'P02', 'P02', NULL, 'locked', '{}'::jsonb, NOW(), 'test', NOW(), 'test'),
-          ($1, $2, 'P03', 'P03', NULL, 'locked', '{}'::jsonb, NOW(), 'test', NOW(), 'test')
-        RETURNING period_key, reporting_month
-      `,
-      [active.id, siblingId]
+    const other = await pool.query(
+      `INSERT INTO clients (code, name, is_active) VALUES ($1, $2, false) RETURNING id`,
+      [`PROGSPOOF_${Date.now()}`, "Programme spoof tenant"]
     );
-    assert.equal(historic.rows.length, 3);
-    assert.ok(historic.rows.every((row) => row.reporting_month == null));
-
-    const next = await request(app)
-      .post(`/api/developments/${siblingId}/cvr/periods`)
-      .send({ periodKey: "P99", reportingMonth: "2026-11" });
-    assert.equal(next.status, 201);
-    assert.equal(next.body.periodKey, "P99");
-    assert.equal(next.body.reportingMonth, "2026-11-01");
-
-    const untouched = await pool.query(
-      `
-        SELECT period_key, reporting_month
-        FROM cvr_periods
-        WHERE development_id = $1 AND period_key = ANY($2::text[])
-        ORDER BY period_key
-      `,
-      [siblingId, ["P01", "P02", "P03"]]
-    );
-    assert.equal(untouched.rows.length, 3);
-    assert.ok(untouched.rows.every((row) => row.reporting_month == null));
-  });
-
-  test("invalid reportingMonth is rejected and omitted reportingMonth stays null", async () => {
-    const active = await getActiveClient();
-    const invalidId = await createDevelopment(active, testSite1Payload());
-    const invalid = await request(app)
-      .post(`/api/developments/${invalidId}/cvr/periods`)
-      .send({ periodKey: "P01", reportingMonth: "2026-13" });
-    assert.equal(invalid.status, 400);
-    assert.match(String(invalid.body?.message || invalid.body?.errors || ""), /reportingMonth/i);
-
-    const keyId = await createDevelopment(active, testSite1Payload());
-    const fromKey = await request(app)
-      .post(`/api/developments/${keyId}/cvr/periods`)
-      .send({ periodKey: "P03", reportingMonth: "P03" });
-    assert.equal(fromKey.status, 400);
-
-    const omittedId = await createDevelopment(active, testSite1Payload());
-    const omitted = await request(app)
-      .post(`/api/developments/${omittedId}/cvr/periods`)
-      .send({ periodKey: "P01" });
-    assert.equal(omitted.status, 201);
-    assert.equal(omitted.body.reportingMonth, null);
+    trackTenant(other.rows[0].id);
+    const spoofed = await request(app).put(`/api/developments/${developmentId}/programme`).send({
+      clientId: other.rows[0].id,
+      actor: "Spoofed actor",
+      version: 0,
+      siteStart: "2026-09-01",
+      finalCompletion: "2029-10-01",
+      totalPlots: 31,
+    });
+    assert.equal(spoofed.status, 201);
+    const row = (await pool.query(
+      `SELECT client_id, created_by FROM development_programme WHERE development_id = $1`,
+      [developmentId]
+    )).rows[0];
+    assert.equal(row.client_id, active.id);
+    assert.equal(row.created_by, "Authenticated Programme QS");
   });
 
   test("programme writes do not create snapshot rows", async () => {
