@@ -232,7 +232,6 @@ async function importDraftCvrBudget(clientId, developmentId, periodId, body = {}
     const period = await findPeriodRow(clientId, developmentId, periodId, tx, {
       forUpdate: true,
     });
-    if (period?.budget_source === 'development_budget') { await tx.query('ROLLBACK'); return fail(409, 'DEVELOPMENT_BUDGET_AUTHORITY', 'Budget is managed from Development Budget.'); }
     if (!period) {
       await tx.query("ROLLBACK");
       return { ok: false, status: 404, message: "CVR period not found." };
@@ -240,6 +239,18 @@ async function importDraftCvrBudget(clientId, developmentId, periodId, body = {}
     if (!isCvrPeriodMutable(period.status)) {
       await tx.query("ROLLBACK");
       return periodNotDraftResult(period.status);
+    }
+    if (period.budget_source === 'development_budget') { await tx.query('ROLLBACK'); return fail(409, 'DEVELOPMENT_BUDGET_AUTHORITY', 'Budget is managed from Development Budget.'); }
+    const budgetAuthority = await require('./cvrPeriodRepository').classifyLegacyBudgetSource(period, tx);
+    if (budgetAuthority.importAvailable !== true) {
+      await tx.query('ROLLBACK');
+      return fail(
+        409,
+        budgetAuthority.adoptionAvailable ? 'DEVELOPMENT_BUDGET_RECOVERY_AVAILABLE' : 'BUDGET_AUTHORITY_UNAVAILABLE',
+        budgetAuthority.adoptionAvailable
+          ? 'Use the authoritative Development Budget for this Draft CVR. Legacy Budget Import is not available.'
+          : budgetAuthority.authorityMessage || 'CVR Budget authority could not be established. No budget was imported.'
+      );
     }
 
     const masters = await tx.query(`SELECT * FROM cost_codes WHERE client_id = $1`, [clientId]);

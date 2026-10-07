@@ -158,8 +158,7 @@ async function hydratePeriod(clientId, row, dbClient = null) {
       document.budgetSource = document.snapshot?.budgetSource || { state: 'legacy_not_captured', adopted: true };
     }
   } else {
-    const live = row.status === CVR_PERIOD_STATUSES.draft ? await budgetSnapshots.liveDocument(db, clientId, row.development_id) : null;
-    document.budgetSource = { state: 'legacy_cvr', adopted: false, adoptionAvailable: Boolean(live) };
+    document.budgetSource = await classifyLegacyBudgetSource(row, db);
   }
   const { buildLiveVariationExposure, compareSubmittedVariationExposure, acknowledgementRequirements, listAcknowledgements } = require('./cvrVariationExposureSnapshot');
   if (row.status === CVR_PERIOD_STATUSES.draft) {
@@ -178,6 +177,35 @@ async function hydratePeriod(clientId, row, dbClient = null) {
     exposure.acknowledgements = await listAcknowledgements(dbClient || { query }, clientId, exposure.submissionId);
   }
   return document;
+}
+
+async function classifyLegacyBudgetSource(row, dbClient) {
+  const mutable = row?.status === CVR_PERIOD_STATUSES.draft;
+  if (!mutable) {
+    return { state: 'legacy_cvr', adopted: false, adoptionAvailable: false, importAvailable: false };
+  }
+  try {
+    const live = await require('./cvrDevelopmentBudgetSnapshot').liveDocument(
+      dbClient || { query },
+      row.client_id,
+      row.development_id
+    );
+    return {
+      state: 'legacy_cvr',
+      adopted: false,
+      adoptionAvailable: Boolean(live),
+      importAvailable: !live,
+    };
+  } catch (error) {
+    return {
+      state: 'authority_unavailable',
+      adopted: false,
+      adoptionAvailable: false,
+      importAvailable: false,
+      authorityUnavailable: true,
+      authorityMessage: 'Budget authority unavailable. BuildLite could not confirm whether this CVR should use the Development Budget. No budget action has been taken.',
+    };
+  }
 }
 
 async function listCvrPeriods(clientId, developmentId) {
@@ -1447,6 +1475,7 @@ module.exports = {
   findPeriodRow,
   listCostCodeInputRowsForUpdate,
   updateCostCodeInputCommercialFields,
+  classifyLegacyBudgetSource,
   updateCostCodeInputBudgets,
   insertInput,
   insertAudit,

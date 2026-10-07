@@ -4,8 +4,26 @@ const { PERMISSIONS } = require('../auth/permissions');
 
 async function liveDocument(db, clientId, developmentId) {
   const result = await getAuthority(clientId, developmentId, { userId: 'internal-cvr-budget-reader', permissions: [PERMISSIONS.COMMERCIAL_READ] }, db);
-  if (!result.ok || !result.authority.exists) return null;
+  if (!result.ok) {
+    const error = new Error(result.message || 'Development Budget Authority could not be checked.');
+    error.status = result.status || 500;
+    error.code = 'DEVELOPMENT_BUDGET_AUTHORITY_UNAVAILABLE';
+    throw error;
+  }
+  if (!result.authority.exists) return null;
   const a = result.authority;
+  const hasOpeningBudget = a.events.some((event) => event.eventType === 'opening_budget');
+  const integrityValid = a.events.every((event) => verifyJsonIntegrity(
+    event.sourceSnapshot,
+    event.sourceSnapshotSha256,
+    event.sourceSnapshotHashScheme
+  ).valid);
+  if (!hasOpeningBudget || !integrityValid) {
+    const error = new Error('Development Budget Authority could not be verified.');
+    error.status = 409;
+    error.code = 'DEVELOPMENT_BUDGET_AUTHORITY_UNAVAILABLE';
+    throw error;
+  }
   return JSON.parse(JSON.stringify({ schemaVersion: 'cvr_development_budget_source_v1', calculationVersion: a.calculationVersion,
     dataVersion: a.dataVersion, canonicalAuthorityDigest: a.canonicalDigest,
     originalBudgetPence: Math.round(a.totalOriginalBudget * 100), currentBudgetPence: Math.round(a.totalCurrentBudget * 100),

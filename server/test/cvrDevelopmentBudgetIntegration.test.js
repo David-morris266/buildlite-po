@@ -49,6 +49,8 @@ test('established legacy CVR development can continue without retrospective Budg
  await pool.query("INSERT INTO cvr_periods(client_id,development_id,period_key,period_label,status,commentary,version,budget_source,submitted_at,submitted_by,approved_at,approved_by) VALUES($1,$2,'P01','P01','locked','{}',1,'legacy_cvr',NOW(),'legacy-test',NOW(),'legacy-test')",[f.client.id,developmentId]);
  const result=await cvr.createCvrPeriod(f.client.id,developmentId,{periodKey:'P02',periodLabel:'P02',reportingMonth:'2026-10-01'},{actor:'QS',currentDate:FIXED_CURRENT_DATE});
  assert.equal(result.ok,true,result.message); assert.equal(result.period.budgetSourceMode,'legacy_cvr');
+ assert.deepEqual(result.period.budgetSource,{state:'legacy_cvr',adopted:false,adoptionAvailable:false,importAvailable:true});
+ const legacyImport=await require('../services/cvrBudgetImportService').importDraftCvrBudget(f.client.id,developmentId,result.period.id,{rows:[{costCodeKey:'4120',originalBudget:100,currentBudget:100}]},{actor:'QS'}); assert.equal(legacyImport.ok,true,legacyImport.message);
  const forbidden=await cvr.patchCvrPeriod(f.client.id,developmentId,result.period.id,{version:result.period.version,reportingMonth:'2027-02'},{actor:'QS'});
  assert.equal(forbidden.status,400); assert.match(forbidden.message,/cannot be changed after/i);
  const commentary=await cvr.patchCvrPeriod(f.client.id,developmentId,result.period.id,{version:result.period.version,commentary:{keyCommercialIssues:'Still editable'}},{actor:'QS'});
@@ -69,8 +71,11 @@ test('existing Draft retains its baseline until explicit adoption, then rejects 
  const developmentId=`dev-${randomUUID()}`; await pool.query("INSERT INTO developments(id,client_id,job_number,development_name,status,payload) VALUES($1,$2,'LEGACY','Legacy adoption','live','{}')",[developmentId,f.client.id]);
  await budget.postEvent(f.client.id,developmentId,{eventType:'opening_budget',effectiveDate:'2026-09-10',reference:'OPEN2',reason:'Opening',idempotencyKey:randomUUID(),lines:[{costCodeId:f.code.id,amount:'50000.00'}]},f.auth);
  const period=(await pool.query("INSERT INTO cvr_periods(client_id,development_id,period_key,period_label,status,commentary,version,budget_source) VALUES($1,$2,'P01','P01','draft','{}',1,'legacy_cvr') RETURNING *",[f.client.id,developmentId])).rows[0];
- const before=await cvr.getCvrPeriod(f.client.id,developmentId,period.id); assert.equal(before.period.budgetSource.adoptionAvailable,true); assert.equal(before.period.budgetSource.adopted,false);
+ const before=await cvr.getCvrPeriod(f.client.id,developmentId,period.id); assert.deepEqual(before.period.budgetSource,{state:'legacy_cvr',adopted:false,adoptionAvailable:true,importAvailable:false});
+ const unsafeImport=await require('../services/cvrBudgetImportService').importDraftCvrBudget(f.client.id,developmentId,period.id,{rows:[{costCodeKey:'4120',originalBudget:1}]},{actor:'QS'}); assert.equal(unsafeImport.ok,false); assert.equal(unsafeImport.code,'DEVELOPMENT_BUDGET_RECOVERY_AVAILABLE');
+ assert.equal(Number((await pool.query('SELECT COUNT(*) count FROM cvr_cost_code_inputs WHERE period_id=$1',[period.id])).rows[0].count),0);
  const adopted=await cvr.adoptDevelopmentBudget(f.client.id,developmentId,period.id,{reason:'Use authority'},{actor:'QS'}); assert.equal(adopted.ok,true); assert.equal(adopted.period.budgetSource.document.currentBudgetPence,5000000);
+ assert.equal(adopted.period.id,period.id); assert.equal(adopted.period.budgetSource.adopted,true);
  const create=await cvr.createCostCodeInput(f.client.id,developmentId,period.id,{costCodeKey:'4120',costCodeLabel:'4120',originalBudget:1,currentBudget:1},{actor:'QS'}); assert.equal(create.status,409); assert.match(create.message,/Development Budget/);
 });
 test('development-budget Draft accepts sparse commercial adjustment patch and retains unrelated facts',async()=>{

@@ -225,6 +225,7 @@ export default function CVRWorkspace({
   const variationExposure = locked ? period?.snapshot?.variationExposure : period?.variationExposure;
   const budgetSource = locked ? period?.snapshot?.budgetSource : period?.budgetSource;
   const developmentBudgetAdopted = Boolean(budgetSource?.adopted);
+  const legacyBudgetImportAvailable = budgetSource?.importAvailable === true;
   const requirements = variationExposure?.acknowledgementRequirements || [];
   const acknowledgedKeys = new Set((variationExposure?.acknowledgements || []).map((entry) => `${entry.variationAccountItemId}:${entry.exceptionCode}`));
   const missingAcknowledgements = requirements.filter((entry) => !acknowledgedKeys.has(`${entry.variationAccountItemId}:${entry.exceptionCode}`));
@@ -673,7 +674,7 @@ export default function CVRWorkspace({
           <div className="dev-cvr-period__actions dev-cvr-period__actions--inline">
             {!readOnly ? (
               <>
-                {!developmentBudgetAdopted ? <button
+                {legacyBudgetImportAvailable ? <button
                   type="button"
                   className="po-list-btn-secondary dev-cvr__shell-btn"
                   onClick={() => setBudgetImportOpen(true)}
@@ -781,6 +782,7 @@ export default function CVRWorkspace({
       <CvrAuditHistory items={auditItems} />
 
       {developmentBudgetAdopted ? <div className="po-list-feedback po-list-feedback--info" role="status">Original and Current Budget are controlled by Development Budget. Manage budget movements from Development → Budget.</div> : budgetSource?.adoptionAvailable && !readOnly ? <div className="po-list-feedback po-list-feedback--warning" role="status">A Development Budget is available. This existing Draft still uses its established CVR budget until you choose to adopt it. <button type="button" className="po-list-btn-secondary" onClick={handleAdoptDevelopmentBudget}>Use Development Budget</button></div> : null}
+      {budgetSource?.authorityUnavailable ? <div className="po-list-feedback po-list-feedback--error" role="alert">{budgetSource.authorityMessage || 'Budget authority unavailable. BuildLite could not confirm whether this CVR should use the Development Budget. No budget action has been taken.'}</div> : null}
       {submitted && budgetSource?.stale ? <div className="po-list-feedback po-list-feedback--error" role="alert">Development Budget changed after this CVR was submitted. Reject to Draft, review the current budget and resubmit before Lock.</div> : null}
 
       {submitted && variationExposure?.stale ? (

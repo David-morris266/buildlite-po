@@ -121,6 +121,27 @@ describe('CVR period/input mappers (BL-031B)', () => {
     );
   });
 
+  it('preserves explicit legacy recovery authority without inventing missing permissions', () => {
+    const budgetSource = {
+      state: 'authority_unavailable', adopted: false, adoptionAvailable: false,
+      importAvailable: false, authorityUnavailable: true,
+      authorityMessage: 'Budget authority unavailable.',
+    };
+    const classified = normalizeServerCvrPeriod({
+      ...buildServerCvrPeriodFixture(),
+      budgetSource,
+    });
+    expect(classified.budgetSource).toEqual(budgetSource);
+
+    const missing = normalizeServerCvrPeriod({
+      ...buildServerCvrPeriodFixture(),
+      budgetSource: null,
+    });
+    expect(missing.budgetSource).toBeNull();
+    expect(missing.budgetSource?.importAvailable === true).toBe(false);
+    expect(missing.budgetSource?.adoptionAvailable === true).toBe(false);
+  });
+
   it('maps cost-code inputs including manualAccrual and labels', () => {
     const mapped = normalizeServerCvrCostCodeInput(
       buildServerCvrInputFixture({

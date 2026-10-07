@@ -259,7 +259,9 @@ export function buildServerCvrPeriodFixture(overrides = {}) {
     approvedBy: overrides.approvedBy || null,
     auditHistory: overrides.auditHistory || [],
     variationExposure: overrides.variationExposure || null,
-    budgetSource: overrides.budgetSource || null,
+    budgetSource: overrides.budgetSource === undefined
+      ? { state: 'legacy_cvr', adopted: false, adoptionAvailable: false, importAvailable: true }
+      : overrides.budgetSource,
     budgetSourceMode: overrides.budgetSourceMode || 'legacy_cvr',
     snapshot: overrides.snapshot === undefined ? null : overrides.snapshot,
     snapshotDeferred: overrides.snapshot

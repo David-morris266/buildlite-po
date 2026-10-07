@@ -162,6 +162,45 @@ describe('CVRWorkspace input hydration (BL-031B)', () => {
     expect(getCvrMutationCallCounts().addMember).toBe(0);
   });
 
+  it('offers explicit Development Budget recovery without exposing legacy import', async () => {
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({
+      id: PERIOD_ID,
+      developmentId: DEV.id,
+      budgetSourceMode: 'legacy_cvr',
+      budgetSource: { state: 'legacy_cvr', adopted: false, adoptionAvailable: true, importAvailable: false },
+    }));
+    seedMockCvrInputs(PERIOD_ID, []);
+
+    await act(async () => { root.render(<CVRWorkspace development={DEV} periodKey="P01" />); });
+    await flush(); await flush();
+
+    expect(container.textContent).toContain('Use Development Budget');
+    expect(container.textContent).not.toContain('Import Budget');
+    expect(container.textContent).toContain('Add Cost Code');
+  });
+
+  it('fails closed when budget authority is unavailable', async () => {
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({
+      id: PERIOD_ID,
+      developmentId: DEV.id,
+      budgetSourceMode: 'legacy_cvr',
+      budgetSource: {
+        state: 'authority_unavailable', adopted: false, adoptionAvailable: false,
+        importAvailable: false, authorityUnavailable: true,
+        authorityMessage: 'Budget authority unavailable. No budget action has been taken.',
+      },
+    }));
+    seedMockCvrInputs(PERIOD_ID, []);
+
+    await act(async () => { root.render(<CVRWorkspace development={DEV} periodKey="P01" />); });
+    await flush(); await flush();
+
+    expect(container.textContent).toContain('Budget authority unavailable');
+    expect(container.textContent).not.toContain('Use Development Budget');
+    expect(container.textContent).not.toContain('Import Budget');
+    expect(container.textContent).toContain('Add Cost Code');
+  });
+
   it('uses exactly two workbench panes only while a wide Storyboard is open', async () => {
     const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
       width: 1400, height: 600, top: 0, right: 1400, bottom: 600, left: 0, x: 0, y: 0,
