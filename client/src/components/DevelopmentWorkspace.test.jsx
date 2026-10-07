@@ -266,14 +266,14 @@ describe('DevelopmentWorkspace stability guards', () => {
   it('displays the legacy seed, drafts without persistence, and Cancel restores authority', async () => {
     renderWorkspace();
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-    expect(container.textContent).toContain('2026-09-01');
-    expect(container.textContent).toContain('2029-10-01');
+    expect(container.textContent).toContain('01/09/2026');
+    expect(container.textContent).toContain('01/10/2029');
 
     act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Edit programme dates').click());
     await changeDate('Start Date', '2027-03-01');
     expect(putDevelopmentProgramme).not.toHaveBeenCalled();
     act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Cancel').click());
-    expect(container.textContent).toContain('2026-09-01');
+    expect(container.textContent).toContain('01/09/2026');
     expect(putDevelopmentProgramme).not.toHaveBeenCalled();
   });
 
@@ -294,7 +294,12 @@ describe('DevelopmentWorkspace stability guards', () => {
       siteStart: '2027-03-01', firstCompletion: '2028-01-15', finalCompletion: '2030-08-31', totalPlots: 31, version: 0,
     });
     expect(container.textContent).toContain('Programme dates saved.');
+    expect(container.textContent).toContain('01/03/2027');
+    expect(container.textContent).toContain('31/08/2030');
     expect(container.querySelector('[data-testid="prelims-panel"]').dataset.programmeRefresh).toBe('1');
+    act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Edit programme dates').click());
+    expect(container.querySelector('input[aria-label="Start Date"]').value).toBe('2027-03-01');
+    expect(container.querySelector('input[aria-label="Target Completion"]').value).toBe('2030-08-31');
   });
 
   it('keeps a stale-conflict draft visibly unsaved', async () => {

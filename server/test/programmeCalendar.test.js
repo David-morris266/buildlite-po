@@ -7,9 +7,18 @@ const assert = require("node:assert/strict");
 const {
   inclusiveCalendarMonthCount,
   monthNumberFromSiteStart,
+  toCanonicalProgrammeDate,
   suggestNextReportingMonth,
   toYearMonth,
 } = require("../services/programmeCalendar");
+
+test("canonical programme dates enforce product years and real calendar days", () => {
+  assert.equal(toCanonicalProgrammeDate("2027-03-01"), "2027-03-01");
+  assert.equal(toCanonicalProgrammeDate("2028-02-29"), "2028-02-29");
+  for (const value of ["27-03-01", "0027-03-01", "01/03/2027", "2027-02-29", "2027-04-31"]) {
+    assert.equal(toCanonicalProgrammeDate(value), null);
+  }
+});
 
 test("Test Site 1 seed span is 38 inclusive calendar months", () => {
   assert.equal(inclusiveCalendarMonthCount("2026-09-01", "2029-10-01"), 38);

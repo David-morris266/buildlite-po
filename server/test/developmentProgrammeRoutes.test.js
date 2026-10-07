@@ -179,15 +179,21 @@ if (!isDbConfigured()) {
       .send({
         version: 0,
         actor: "Spoofed actor",
-        siteStart: "2026-09-01",
-        finalCompletion: "2029-10-01",
+        siteStart: "2027-03-01",
+        finalCompletion: "2030-08-31",
         totalPlots: 31,
       });
     assert.equal(created.status, 201);
     assert.equal(created.body.exists, true);
     assert.equal(created.body.version, 1);
     assert.equal(created.body.firstCompletion, null);
-    assert.equal(created.body.durationMonths, 38);
+    assert.equal(created.body.siteStart, "2027-03-01");
+    assert.equal(created.body.finalCompletion, "2030-08-31");
+    assert.equal(created.body.durationMonths, 42);
+    const roundTrip = await request(app).get(`/api/developments/${developmentId}/programme`);
+    assert.equal(roundTrip.status, 200);
+    assert.equal(roundTrip.body.siteStart, "2027-03-01");
+    assert.equal(roundTrip.body.finalCompletion, "2030-08-31");
     const provenance = await pool.query(
       `SELECT created_by, updated_by FROM development_programme WHERE development_id = $1`,
       [developmentId]
@@ -199,9 +205,9 @@ if (!isDbConfigured()) {
       .put(`/api/developments/${developmentId}/programme`)
       .send({
         version: 1,
-        siteStart: "2026-09-01",
+        siteStart: "2027-03-01",
         firstCompletion: "2027-06-15",
-        finalCompletion: "2029-10-01",
+        finalCompletion: "2030-08-31",
         totalPlots: 31,
       });
     assert.equal(updated.status, 200);

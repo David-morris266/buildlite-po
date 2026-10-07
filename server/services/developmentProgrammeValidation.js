@@ -6,7 +6,7 @@
 
 const {
   inclusiveCalendarMonthCount,
-  toIsoDate,
+  toCanonicalProgrammeDate,
 } = require("./programmeCalendar");
 
 function parseExpectedVersion(value) {
@@ -17,7 +17,7 @@ function parseExpectedVersion(value) {
 }
 
 function parseRequiredDate(value, field, errors) {
-  const iso = toIsoDate(value);
+  const iso = toCanonicalProgrammeDate(value);
   if (!iso) {
     errors.push(`${field} must be a YYYY-MM-DD date.`);
     return null;

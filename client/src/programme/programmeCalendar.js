@@ -3,6 +3,40 @@
  * V1: no partial-month proration. Month 1 = calendar month containing siteStart.
  */
 
+export const MIN_PROGRAMME_YEAR = 1900;
+export const MAX_PROGRAMME_YEAR = 9999;
+
+function daysInMonth(year, month) {
+  if (month === 2) {
+    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    return leap ? 29 : 28;
+  }
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+export function parseCanonicalProgrammeDate(value) {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < MIN_PROGRAMME_YEAR || year > MAX_PROGRAMME_YEAR) return null;
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > daysInMonth(year, month)) return null;
+  return { year, month, day, iso: raw };
+}
+
+export function isCanonicalProgrammeDate(value) {
+  return Boolean(parseCanonicalProgrammeDate(value));
+}
+
+export function formatProgrammeDateUk(value) {
+  const parts = parseCanonicalProgrammeDate(value);
+  if (!parts) return null;
+  return `${String(parts.day).padStart(2, '0')}/${String(parts.month).padStart(2, '0')}/${String(parts.year).padStart(4, '0')}`;
+}
+
 export function parseIsoDateParts(value) {
   const raw = String(value || '').trim();
   const match = raw.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?/);

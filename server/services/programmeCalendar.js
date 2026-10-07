@@ -4,6 +4,34 @@
  * Month 1 is the calendar month containing siteStart.
  */
 
+const MIN_PROGRAMME_YEAR = 1900;
+const MAX_PROGRAMME_YEAR = 9999;
+
+function daysInMonth(year, month) {
+  if (month === 2) {
+    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    return leap ? 29 : 28;
+  }
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+function parseCanonicalProgrammeDate(value) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < MIN_PROGRAMME_YEAR || year > MAX_PROGRAMME_YEAR) return null;
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > daysInMonth(year, month)) return null;
+  return { year, month, day, iso: raw };
+}
+
+function toCanonicalProgrammeDate(value) {
+  return parseCanonicalProgrammeDate(value)?.iso || null;
+}
+
 function parseIsoDateParts(value) {
   const raw = String(value || "").trim();
   const match = raw.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?/);
@@ -74,6 +102,10 @@ function suggestNextReportingMonth(previousReportingMonth) {
 }
 
 module.exports = {
+  MIN_PROGRAMME_YEAR,
+  MAX_PROGRAMME_YEAR,
+  parseCanonicalProgrammeDate,
+  toCanonicalProgrammeDate,
   parseIsoDateParts,
   toYearMonth,
   toIsoDate,

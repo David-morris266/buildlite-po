@@ -5,7 +5,58 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { validatePutProgrammeBody } = require("../services/developmentProgrammeValidation");
-const { seedProgrammeFromDevelopment } = require("../services/developmentProgrammeMapper");
+const {
+  programmeRowToDocument,
+  seedProgrammeFromDevelopment,
+  toDateOnly,
+} = require("../services/developmentProgrammeMapper");
+
+test("PostgreSQL Date values map to strict four-digit programme dates", () => {
+  assert.equal(toDateOnly(new Date(2027, 2, 1)), "2027-03-01");
+  const early = new Date(0);
+  early.setFullYear(27, 2, 1);
+  early.setHours(0, 0, 0, 0);
+  assert.equal(toDateOnly(early), null);
+  assert.throws(() => programmeRowToDocument({
+    id: "programme-1",
+    development_id: "dev-1",
+    site_start: early,
+    first_completion: null,
+    final_completion: new Date(2030, 7, 31),
+    total_plots: 1,
+    version: 1,
+  }, "dev-1"), /site_start is not a supported calendar date/i);
+});
+
+test("programme PUT rejects malformed and impossible calendar dates", () => {
+  for (const siteStart of ["27-03-01", "0027-03-01", "01/03/2027", "2027-02-29", "2027-04-31"]) {
+    const result = validatePutProgrammeBody({
+      version: 0,
+      siteStart,
+      finalCompletion: "2030-08-31",
+      totalPlots: 31,
+    });
+    assert.equal(result.ok, false, siteStart);
+  }
+  assert.equal(validatePutProgrammeBody({
+    version: 0,
+    siteStart: "2028-02-29",
+    finalCompletion: "2030-08-31",
+    totalPlots: 31,
+  }).ok, true);
+});
+
+test("malformed legacy seed dates fail closed without rewriting payload", () => {
+  const seeded = seedProgrammeFromDevelopment({
+    id: "dev-bad-seed",
+    startDate: "27-03-01",
+    targetCompletion: "2030-08-31",
+    plotCount: 31,
+  });
+  assert.equal(seeded.siteStart, null);
+  assert.equal(seeded.finalCompletion, "2030-08-31");
+  assert.equal(seeded.exists, false);
+});
 
 test("Test Site 1 payload seed resolves without a programme row or firstCompletion", () => {
   const seeded = seedProgrammeFromDevelopment({

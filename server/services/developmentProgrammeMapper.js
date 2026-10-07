@@ -3,7 +3,10 @@
  * GET never inserts. firstCompletion is never seeded from Plot Master.
  */
 
-const { inclusiveCalendarMonthCount, toIsoDate } = require("./programmeCalendar");
+const {
+  inclusiveCalendarMonthCount,
+  toCanonicalProgrammeDate,
+} = require("./programmeCalendar");
 
 function toIso(value) {
   if (!value) return null;
@@ -13,15 +16,23 @@ function toIso(value) {
 
 function toDateOnly(value) {
   if (!value) return null;
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
-    return value.slice(0, 10);
+  if (typeof value === "string") {
+    return toCanonicalProgrammeDate(value);
   }
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return null;
+  const date = value;
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return toCanonicalProgrammeDate(`${String(year).padStart(4, "0")}-${month}-${day}`);
+}
+
+function requiredPersistedDate(value, field) {
+  const canonical = toDateOnly(value);
+  if (!canonical) {
+    throw new Error(`Persisted development programme ${field} is not a supported calendar date.`);
+  }
+  return canonical;
 }
 
 function parsePlotCount(value) {
@@ -51,8 +62,8 @@ function emptyProgrammeDocument(developmentId) {
 
 function seedProgrammeFromDevelopment(development = {}) {
   const developmentId = development.id || development.developmentId || null;
-  const siteStart = toIsoDate(development.startDate);
-  const finalCompletion = toIsoDate(development.targetCompletion);
+  const siteStart = toCanonicalProgrammeDate(development.startDate);
+  const finalCompletion = toCanonicalProgrammeDate(development.targetCompletion);
   return {
     ...emptyProgrammeDocument(developmentId),
     siteStart,
@@ -65,9 +76,12 @@ function seedProgrammeFromDevelopment(development = {}) {
 
 function programmeRowToDocument(row, developmentId) {
   if (!row) return emptyProgrammeDocument(developmentId);
-  const siteStart = toDateOnly(row.site_start);
+  const siteStart = requiredPersistedDate(row.site_start, "site_start");
   const firstCompletion = toDateOnly(row.first_completion);
-  const finalCompletion = toDateOnly(row.final_completion);
+  if (row.first_completion && !firstCompletion) {
+    throw new Error("Persisted development programme first_completion is not a supported calendar date.");
+  }
+  const finalCompletion = requiredPersistedDate(row.final_completion, "final_completion");
   return {
     id: row.id,
     developmentId: row.development_id,

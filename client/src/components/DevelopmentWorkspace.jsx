@@ -6,6 +6,10 @@ import {
   getDevelopmentProgramme,
   putDevelopmentProgramme,
 } from '../api/developmentProgramme';
+import {
+  formatProgrammeDateUk,
+  isCanonicalProgrammeDate,
+} from '../programme/programmeCalendar';
 import { getDevelopmentCommercialReadiness } from '../api/developments';
 import { buildDevelopmentWorkspaceNavigation } from '../navigation/navigationBuilders';
 import {
@@ -666,6 +670,10 @@ export default function DevelopmentWorkspace({
       setDateError('Start Date and Target Completion are required.');
       return;
     }
+    if (!isCanonicalProgrammeDate(startDate) || !isCanonicalProgrammeDate(targetCompletion)) {
+      setDateError('Programme dates must be valid calendar dates in YYYY-MM-DD format.');
+      return;
+    }
     if (targetCompletion < startDate) {
       setDateError('Target completion must be on or after the start date.');
       return;
@@ -1049,7 +1057,7 @@ export default function DevelopmentWorkspace({
               <dd>
                 {programmeEditing ? (
                   <input className="input dev-workspace-identity__date-input" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} aria-label="Start Date" />
-                ) : programmeLoading ? 'Loading…' : programme?.siteStart || 'Not set'}
+                ) : programmeLoading ? 'Loading…' : formatProgrammeDateUk(programme?.siteStart) || 'Not set'}
               </dd>
             </div>
             <div className="dev-workspace-identity__item dev-workspace-identity__item--date">
@@ -1057,7 +1065,7 @@ export default function DevelopmentWorkspace({
               <dd>
                 {programmeEditing ? (
                   <input className="input dev-workspace-identity__date-input" type="date" value={targetCompletion} min={startDate || undefined} onChange={(event) => setTargetCompletion(event.target.value)} aria-label="Target Completion" />
-                ) : programmeLoading ? 'Loading…' : programme?.finalCompletion || 'Not set'}
+                ) : programmeLoading ? 'Loading…' : formatProgrammeDateUk(programme?.finalCompletion) || 'Not set'}
               </dd>
             </div>
           </dl>
