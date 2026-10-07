@@ -8,6 +8,7 @@
 
 import {
   CvrPeriodApiError,
+  getCvrPeriodById,
   listCvrPeriodInputs,
   listCvrPeriodsForDevelopment,
 } from '../api/cvrPeriods';
@@ -38,6 +39,17 @@ const inputLoadStateByPeriod = new Map();
 const inputLoadErrorByPeriod = new Map();
 const inputLoadPromiseByPeriod = new Map();
 const periodDevelopmentById = new Map();
+const authoritativeOpenState = new Map();
+const authoritativeOpenPromise = new Map();
+
+const openKey = (developmentId, periodKey) => `${developmentId || ''}:${periodKey || ''}`;
+
+export function getAuthoritativeCvrOpenState(developmentId, periodKey) {
+  return authoritativeOpenState.get(openKey(developmentId, periodKey)) || {
+    state: 'idle',
+    error: null,
+  };
+}
 
 function wrapApiError(error, fallbackMessage) {
   if (error instanceof CvrPeriodCacheError) return error;
@@ -287,6 +299,52 @@ export async function ensureCvrPeriodAndInputsReady(developmentId, periodKey) {
   return { periods, period, inputs };
 }
 
+export function openAuthoritativeCvrPeriod(developmentId, periodKey) {
+  if (!developmentId || !periodKey) {
+    return Promise.reject(new CvrPeriodCacheError('Unable to load current CVR without its Development and period identity.', { code: 'MISSING_CVR_IDENTITY' }));
+  }
+  const key = openKey(developmentId, periodKey);
+  if (authoritativeOpenPromise.has(key)) return authoritativeOpenPromise.get(key);
+
+  const promise = (async () => {
+    authoritativeOpenState.set(key, { state: 'loading', error: null });
+    try {
+      const periods = await refreshCvrPeriodsForDevelopment(developmentId);
+      const listed = periods.find((item) => item.periodKey === periodKey);
+      if (!listed?.id) {
+        throw new CvrPeriodCacheError('This CVR period does not exist.', { code: 'CVR_PERIOD_NOT_FOUND', status: 404 });
+      }
+      const currentDocument = await getCvrPeriodById(developmentId, listed.id);
+      const period = upsertCachedCvrPeriod(developmentId, currentDocument);
+      await refreshCvrInputsForPeriod(developmentId, period.id);
+      authoritativeOpenState.set(key, { state: 'current', error: null });
+      return { period: getCachedCvrPeriodByKey(developmentId, periodKey), inputs: getCachedCvrInputs(period.id) };
+    } catch (error) {
+      const wrapped = wrapApiError(error, 'Unable to load current CVR');
+      authoritativeOpenState.set(key, { state: 'error', error: wrapped });
+      throw wrapped;
+    } finally {
+      authoritativeOpenPromise.delete(key);
+    }
+  })();
+  authoritativeOpenPromise.set(key, promise);
+  return promise;
+}
+
+export function resetCvrPeriodServerCache() {
+  periodsByDevelopment.clear();
+  periodLoadStateByDevelopment.clear();
+  periodLoadErrorByDevelopment.clear();
+  periodLoadPromiseByDevelopment.clear();
+  inputsByPeriod.clear();
+  inputLoadStateByPeriod.clear();
+  inputLoadErrorByPeriod.clear();
+  inputLoadPromiseByPeriod.clear();
+  periodDevelopmentById.clear();
+  authoritativeOpenState.clear();
+  authoritativeOpenPromise.clear();
+}
+
 export function replaceCachedCvrPeriods(developmentId, documents) {
   const periods = normalizeServerCvrPeriodList(documents);
   indexPeriods(developmentId, periods);
@@ -357,13 +415,5 @@ export function upsertCachedCvrInput(periodId, document) {
 }
 
 export function __resetCvrPeriodServerCacheForTests() {
-  periodsByDevelopment.clear();
-  periodLoadStateByDevelopment.clear();
-  periodLoadErrorByDevelopment.clear();
-  periodLoadPromiseByDevelopment.clear();
-  inputsByPeriod.clear();
-  inputLoadStateByPeriod.clear();
-  inputLoadErrorByPeriod.clear();
-  inputLoadPromiseByPeriod.clear();
-  periodDevelopmentById.clear();
+  resetCvrPeriodServerCache();
 }

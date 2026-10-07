@@ -22,8 +22,8 @@ import {
 } from '../cvr/cvrHistoricConstants';
 import { isCvrServerAuthorityEnabled } from '../cvr/cvrPeriodAuthority';
 import {
-  ensureCvrPeriodAndInputsReady,
   getCvrPeriodReadiness,
+  openAuthoritativeCvrPeriod,
   refreshCvrPeriodsForDevelopment,
 } from '../cvr/cvrPeriodServerCache';
 import { isLedgerServerAuthorityEnabled } from '../ledger/ledgerAuthority';
@@ -321,6 +321,10 @@ export default function CVRSummaryPage({
     financialRisks: '',
     actionsBeforeNextCvr: '',
   });
+  const [openAttempt, setOpenAttempt] = useState(0);
+  const [authoritativeOpenState, setAuthoritativeOpenState] = useState(
+    isCvrServerAuthorityEnabled() ? 'loading' : 'current'
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -364,8 +368,9 @@ export default function CVRSummaryPage({
     (async () => {
       try {
         if (isCvrServerAuthorityEnabled()) {
-          await refreshCvrPeriodsForDevelopment(development.id);
-          await ensureCvrPeriodAndInputsReady(development.id, periodKey);
+          setAuthoritativeOpenState('loading');
+          await openAuthoritativeCvrPeriod(development.id, periodKey);
+          if (!cancelled) setAuthoritativeOpenState('current');
         }
         if (isLedgerServerAuthorityEnabled()) {
           await ensureLedgerReadyForDevelopment(development.id).catch(() => null);
@@ -375,6 +380,7 @@ export default function CVRSummaryPage({
         }
       } catch {
         // Cache error state is authoritative; no localStorage fallback.
+        if (!cancelled) setAuthoritativeOpenState('error');
       }
       if (!cancelled) setLocalRefresh((value) => value + 1);
     })();
@@ -382,7 +388,7 @@ export default function CVRSummaryPage({
     return () => {
       cancelled = true;
     };
-  }, [development.id, periodKey, refreshToken]);
+  }, [development.id, periodKey, refreshToken, openAttempt]);
 
   const summary = useMemo(() => {
     void refreshToken;
@@ -579,7 +585,7 @@ export default function CVRSummaryPage({
     actions: String(commentary.actionsBeforeNextCvr || '').trim() ? 1 : 0,
   };
 
-  if (summary.unavailable && !summary.historicUnavailable) {
+  if (isCvrServerAuthorityEnabled() && authoritativeOpenState !== 'current') {
     return (
       <div className="dev-cvr dev-cvr-workspace dev-cvr-workspace--focused cvr-summary">
         <ApplicationPageHeader
@@ -588,16 +594,19 @@ export default function CVRSummaryPage({
           lead={`Development ${development.jobNumber || '—'}`}
           onBack={onBackToRegister}
         />
-        {cvrError ? (
+        {authoritativeOpenState === 'error' || cvrError ? (
           <div className="po-list-feedback po-list-feedback--error" role="alert">
-            Unable to load CVR data
+            <p>Unable to load current CVR.</p>
+            <button type="button" className="po-list-btn-secondary" onClick={() => setOpenAttempt((value) => value + 1)}>Retry</button>
           </div>
         ) : (
-          <p role="status">Loading CVR data…</p>
+          <p role="status">Loading current CVR…</p>
         )}
       </div>
     );
   }
+
+  if (summary.unavailable && !summary.historicUnavailable) return null;
 
   return (
     <div className="dev-cvr dev-cvr-workspace dev-cvr-workspace--focused cvr-summary">

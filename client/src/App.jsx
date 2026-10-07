@@ -19,6 +19,10 @@ import { useOptionalUnsavedChanges } from './navigation/UnsavedChangesContext.js
 import { dismissSetupAssistant } from './setup/SetupAssistant';
 import { buildPoFormSeedFromSetup, loadSetupDraft } from './setup/setupDraft';
 import { useBuildLitePrincipal } from './auth/BuildLiteAuthProvider';
+import {
+  CVR_AUTHORITY_CONFIGURATION_MESSAGE,
+  isCvrAuthorityConfigurationValid,
+} from './cvr/cvrPeriodAuthority';
 import { shouldEnterCompanyReadiness } from './navigation/startupDestination';
 import { parseSubcontractOrderKey } from './payments/packageKeyMigration';
 import {
@@ -306,6 +310,9 @@ function ApplicationContent() {
   const canProvision = principal?.platformPermissions?.includes('platform.tenant_provision') === true;
   if (principal?.platformOnly === true && !principal.activeTenant && canProvision) {
     return <PlatformProvisioningApplication />;
+  }
+  if (principal?.activeTenant && !isCvrAuthorityConfigurationValid()) {
+    return <main className="auth-configuration"><h1>BuildLite configuration error</h1><p>{CVR_AUTHORITY_CONFIGURATION_MESSAGE}</p></main>;
   }
   return <TenantApplicationContent />;
 }

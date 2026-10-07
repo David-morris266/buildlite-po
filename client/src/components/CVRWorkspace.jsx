@@ -49,8 +49,8 @@ import {
   CVR_HISTORIC_UNAVAILABLE_MESSAGE,
 } from '../cvr/cvrHistoricConstants';
 import {
-  ensureCvrPeriodAndInputsReady,
   getCvrPeriodReadiness,
+  openAuthoritativeCvrPeriod,
   upsertCachedCvrPeriod,
 } from '../cvr/cvrPeriodServerCache';
 import { isLedgerServerAuthorityEnabled } from '../ledger/ledgerAuthority';
@@ -189,6 +189,10 @@ export default function CVRWorkspace({
   const [reportingMonthPrompt, setReportingMonthPrompt] = useState(null);
   const [reportingMonthBusy, setReportingMonthBusy] = useState(false);
   const [acknowledging, setAcknowledging] = useState('');
+  const [openAttempt, setOpenAttempt] = useState(0);
+  const [authoritativeOpenState, setAuthoritativeOpenState] = useState(
+    isCvrServerAuthorityEnabled() ? 'loading' : 'current'
+  );
 
   const period = useMemo(() => {
     void refreshToken;
@@ -203,13 +207,16 @@ export default function CVRWorkspace({
     (async () => {
       try {
         if (isCvrServerAuthorityEnabled()) {
-          await ensureCvrPeriodAndInputsReady(development.id, periodKey);
+          setAuthoritativeOpenState('loading');
+          await openAuthoritativeCvrPeriod(development.id, periodKey);
+          if (!cancelled) setAuthoritativeOpenState('current');
         }
         if (isLedgerServerAuthorityEnabled()) {
           await ensureLedgerReadyForDevelopment(development.id).catch(() => null);
         }
       } catch {
         // Cache error state is authoritative; no localStorage fallback.
+        if (!cancelled) setAuthoritativeOpenState('error');
       }
       if (!cancelled) setLocalRefresh((value) => value + 1);
     })();
@@ -217,7 +224,7 @@ export default function CVRWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [development.id, periodKey, refreshToken]);
+  }, [development.id, periodKey, refreshToken, openAttempt]);
 
   const readOnly = !isCvrPeriodEditable(period);
   const submitted = isCvrPeriodSubmitted(period);
@@ -613,7 +620,7 @@ export default function CVRWorkspace({
   const historic = Boolean(workspace.historic);
   const historicUnavailable = Boolean(workspace.historicUnavailable);
 
-  if (cvrUnresolved) {
+  if (isCvrServerAuthorityEnabled() && authoritativeOpenState !== 'current') {
     return (
       <div className="dev-cvr dev-cvr-workspace dev-cvr-workspace--focused">
         <ApplicationPageHeader
@@ -622,16 +629,19 @@ export default function CVRWorkspace({
           lead={`Development ${development.jobNumber || '—'}`}
           onBack={onBackToSummary}
         />
-        {cvrError ? (
+        {authoritativeOpenState === 'error' || cvrError ? (
           <div className="po-list-feedback po-list-feedback--error" role="alert">
-            Unable to load CVR data
+            <p>Unable to load current CVR.</p>
+            <button type="button" className="po-list-btn-secondary" onClick={() => setOpenAttempt((value) => value + 1)}>Retry</button>
           </div>
         ) : (
-          <p role="status">Loading CVR data…</p>
+          <p role="status">Loading current CVR…</p>
         )}
       </div>
     );
   }
+
+  if (cvrUnresolved) return null;
 
   if (period?.missing) {
     return (

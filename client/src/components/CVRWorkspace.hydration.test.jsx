@@ -22,11 +22,15 @@ vi.mock('../api/cvrPeriods', () => import('../test/mockCvrPeriodApi'));
 import {
   buildServerCvrInputFixture,
   buildServerCvrPeriodFixture,
+  getCvrInputListCallCount,
   getCvrMutationCallCounts,
+  getCvrPeriodGetCallCount,
+  getCvrPeriodListCallCount,
   resetCvrPeriodApiStore,
   seedMockCvrInputs,
   seedMockCvrPeriod,
   setCvrPeriodListDelay,
+  setCvrPeriodListReject,
 } from '../test/mockCvrPeriodApi';
 import { __resetCvrPeriodServerCacheForTests } from '../cvr/cvrPeriodServerCache';
 import { formatCvrSubmissionBlockers } from '../cvr/cvrSubmissionBlockerPresentation';
@@ -92,7 +96,7 @@ describe('CVRWorkspace input hydration (BL-031B)', () => {
       root.render(<CVRWorkspace development={DEV} periodKey="P01" />);
     });
 
-    expect(container.textContent).toContain('Loading CVR data…');
+    expect(container.textContent).toContain('Loading current CVR…');
     expect(container.textContent).not.toContain('5231');
 
     await act(async () => {
@@ -176,6 +180,56 @@ describe('CVRWorkspace input hydration (BL-031B)', () => {
 
     expect(container.textContent).toContain('Use Development Budget');
     expect(container.textContent).not.toContain('Import Budget');
+    expect(container.textContent).toContain('Add Cost Code');
+  });
+
+  it('ignores a stale browser-local P01 and opens the authoritative server period and inputs', async () => {
+    localStorage.setItem('buildlite_cvr_v1', JSON.stringify({
+      [DEV.id]: {
+        activePeriodKey: 'P01',
+        periods: { P01: { periodKey: 'P01', status: 'draft', costCentres: [], budgetSource: null } },
+      },
+    }));
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({
+      id: PERIOD_ID,
+      developmentId: DEV.id,
+      budgetSourceMode: 'legacy_cvr',
+      budgetSource: { state: 'legacy_cvr', adopted: false, adoptionAvailable: true, importAvailable: false },
+    }));
+    seedMockCvrInputs(PERIOD_ID, [
+      buildServerCvrInputFixture({ periodId: PERIOD_ID, costCodeKey: '3010', costCodeLabel: '3010 — Foundations' }),
+    ]);
+
+    await act(async () => { root.render(<CVRWorkspace development={DEV} periodKey="P01" />); });
+    await flush(); await flush();
+
+    expect(container.textContent).toContain('Use Development Budget');
+    expect(container.textContent).toContain('3010');
+    expect(container.textContent).not.toContain('Import Budget');
+    expect(getCvrPeriodListCallCount()).toBe(1);
+    expect(getCvrPeriodGetCallCount()).toBe(1);
+    expect(getCvrInputListCallCount()).toBe(1);
+    expect(JSON.parse(localStorage.getItem('buildlite_cvr_v1'))[DEV.id].periods.P01.costCentres).toEqual([]);
+  });
+
+  it('fails closed on authoritative-open failure and retries without exposing mutations', async () => {
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({ id: PERIOD_ID, developmentId: DEV.id }));
+    setCvrPeriodListReject();
+    await act(async () => { root.render(<CVRWorkspace development={DEV} periodKey="P01" />); });
+    await flush(); await flush();
+
+    expect(container.textContent).toContain('Unable to load current CVR');
+    expect(container.textContent).not.toContain('Add Cost Code');
+    expect(container.textContent).not.toContain('Submit for Approval');
+
+    resetCvrPeriodApiStore();
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({ id: PERIOD_ID, developmentId: DEV.id }));
+    seedMockCvrInputs(PERIOD_ID, []);
+    const retry = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Retry');
+    await act(async () => { retry.click(); await Promise.resolve(); });
+    await flush(); await flush();
+
+    expect(container.textContent).not.toContain('Unable to load current CVR');
     expect(container.textContent).toContain('Add Cost Code');
   });
 

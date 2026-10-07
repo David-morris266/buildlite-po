@@ -9,6 +9,7 @@ import {
   buildServerCvrInputFixture,
   buildServerCvrPeriodFixture,
   getCvrInputListCallCount,
+  getCvrPeriodGetCallCount,
   getCvrPeriodListCallCount,
   resetCvrPeriodApiStore,
   seedMockCvrInputs,
@@ -25,6 +26,8 @@ import {
   getCachedCvrPeriods,
   getCvrInputLoadState,
   getCvrPeriodLoadState,
+  getAuthoritativeCvrOpenState,
+  openAuthoritativeCvrPeriod,
   patchCachedCvrPeriod,
   refreshCvrPeriodsForDevelopment,
   refreshCvrInputsForPeriod,
@@ -62,6 +65,43 @@ describe('cvrPeriodServerCache (BL-031B)', () => {
     expect(getCvrPeriodLoadState(DEV_A)).toBe('loaded');
     expect(getCachedCvrPeriods(DEV_A)).toHaveLength(1);
     expect(getCachedCvrPeriods(DEV_A)[0].periodKey).toBe('P01');
+  });
+
+  it('authoritatively opens and refreshes an already cached period and its inputs', async () => {
+    seedMockCvrPeriod(DEV_A, buildServerCvrPeriodFixture({ id: PERIOD_A, developmentId: DEV_A, version: 1 }));
+    seedMockCvrInputs(PERIOD_A, [buildServerCvrInputFixture({ periodId: PERIOD_A, costCodeKey: '1000' })]);
+    await ensureCvrPeriodsReadyForDevelopment(DEV_A);
+    await ensureCvrInputsReadyForPeriod(DEV_A, PERIOD_A);
+
+    seedMockCvrPeriod(DEV_A, buildServerCvrPeriodFixture({
+      id: PERIOD_A,
+      developmentId: DEV_A,
+      version: 2,
+      budgetSource: { adopted: false, adoptionAvailable: true, importAvailable: false },
+    }));
+    seedMockCvrInputs(PERIOD_A, [buildServerCvrInputFixture({ periodId: PERIOD_A, costCodeKey: '2000' })]);
+
+    const result = await openAuthoritativeCvrPeriod(DEV_A, 'P01');
+
+    expect(result.period.version).toBe(2);
+    expect(result.period.budgetSource.adoptionAvailable).toBe(true);
+    expect(result.inputs.map((item) => item.costCodeKey)).toEqual(['2000']);
+    expect(getCvrPeriodListCallCount()).toBe(2);
+    expect(getCvrPeriodGetCallCount()).toBe(1);
+    expect(getCvrInputListCallCount()).toBe(2);
+    expect(getAuthoritativeCvrOpenState(DEV_A, 'P01')).toEqual({ state: 'current', error: null });
+  });
+
+  it('keeps authoritative opening failures explicit and retryable', async () => {
+    seedMockCvrPeriod(DEV_A, buildServerCvrPeriodFixture({ id: PERIOD_A, developmentId: DEV_A }));
+    setCvrPeriodListReject();
+    await expect(openAuthoritativeCvrPeriod(DEV_A, 'P01')).rejects.toThrow();
+    expect(getAuthoritativeCvrOpenState(DEV_A, 'P01').state).toBe('error');
+
+    resetCvrPeriodApiStore();
+    seedMockCvrPeriod(DEV_A, buildServerCvrPeriodFixture({ id: PERIOD_A, developmentId: DEV_A }));
+    await expect(openAuthoritativeCvrPeriod(DEV_A, 'P01')).resolves.toBeTruthy();
+    expect(getAuthoritativeCvrOpenState(DEV_A, 'P01').state).toBe('current');
   });
 
   it('treats a loaded empty period list as genuine empty', async () => {
