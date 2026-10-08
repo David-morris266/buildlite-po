@@ -40,7 +40,7 @@ function movementRow(overrides = {}) {
       { key: 'systemForecast', label: 'System Forecast', available: true, previousLabel: '£53,000.00', currentLabel: '£53,500.00', movementLabel: '+£500.00', explanation: { reason: 'Planting scope matured', stale: false } },
       { key: 'expectedLiability', label: 'Expected Liability', available: true, previousLabel: '£0.00', currentLabel: '£0.00', movementLabel: '£0.00' },
       { key: 'vaExposureUplift', label: 'Variation Account exposure', available: true, previousLabel: '£0.00', currentLabel: '£0.00', movementLabel: '£0.00', attributions: [{ sourceType: 'variation_account', sourceId: 'va-1', reference: 'VA-0001', description: 'Valley detail', amount: 0, drillThrough: { type: 'variation_account', id: 'va-1' } }] },
-      { key: 'commercialAdjustment', label: 'Commercial Adjustment', available: true, previousLabel: '£500.00', currentLabel: '£1,500.00', movementLabel: '+£1,000.00', attributions: [{ sourceType: 'commercial_adjustment', sourceId: 'adjustment-1', reference: 'Commercial Adjustment', description: 'UAT movement change', amount: 1000 }] },
+      { key: 'commercialAdjustment', label: 'Projected Adjustment', available: true, previousLabel: '£500.00', currentLabel: '£1,500.00', movementLabel: '+£1,000.00', attributions: [{ sourceType: 'commercial_adjustment', sourceId: 'adjustment-1', reference: 'Projected Adjustment', description: 'UAT movement change', amount: 1000 }] },
     ], ...overrides,
   };
 }
@@ -174,12 +174,12 @@ describe('CVR Summary Cost Code interaction', () => {
     expect(detail).not.toBeNull();
     expect(document.activeElement).toBe(detail);
     expect(detail.textContent).toContain('3640 — Planting');
-    expect(detail.textContent).toContain('Previous CVR£53,500.00');
-    expect(detail.textContent).toContain('Current CVR£55,000.00');
+    expect(detail.textContent).toContain('Previous EFC£53,500.00');
+    expect(detail.textContent).toContain('Current EFC£55,000.00');
     expect(detail.textContent).toContain('System Forecast£53,000.00£53,500.00+£500.00');
-    expect(detail.textContent).toContain('Commercial Adjustment£500.00£1,500.00+£1,000.00');
+    expect(detail.textContent).toContain('Projected Adjustment£500.00£1,500.00+£1,000.00');
     expect(detail.textContent).toContain('QS explanation: Planting scope matured');
-    expect(detail.textContent).toContain('Commercial Adjustment: UAT movement change +£1,000.00');
+    expect(detail.textContent).toContain('Projected Adjustment: UAT movement change +£1,000.00');
     expect(detail.textContent.match(/UAT movement change/g)).toHaveLength(1);
     expect(detail.querySelectorAll('col.cvr-movement-inspection__component-column')).toHaveLength(1);
     expect(detail.querySelectorAll('col.cvr-movement-inspection__numeric-column')).toHaveLength(3);

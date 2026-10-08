@@ -113,7 +113,7 @@ describe('CVRWorkspace historic snapshot (BL-031E.4)', () => {
     expect(text).not.toContain('Import Budget');
     expect(text).not.toContain('Add Cost Code');
     expect(text).not.toContain('Save accrual');
-    expect(text).not.toContain('Save commercial adjustment');
+    expect(text).not.toContain('Save Projected Adjustment');
     expect(container.querySelector('.dev-cvr__cell-input')).toBeNull();
     const rowButton = [...container.querySelectorAll('.dev-cvr__row-link')].find((button) => button.textContent === '5231');
     act(() => rowButton.click());
@@ -122,7 +122,7 @@ describe('CVRWorkspace historic snapshot (BL-031E.4)', () => {
     expect(storyboard.textContent).toMatch(/2,150/);
     expect(storyboard.textContent).toContain('Current Cost');
     expect(storyboard.textContent).not.toContain('Save accrual');
-    expect(storyboard.textContent).not.toContain('Save commercial adjustment');
+    expect(storyboard.textContent).not.toContain('Save Projected Adjustment');
   });
 
   it('shows the legacy historic-unavailable banner instead of live figures', async () => {

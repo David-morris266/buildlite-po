@@ -42,7 +42,7 @@ describe('CVR period movement comparison', () => {
     expect(report.rows[0].components.map(({ key, label, movement }) => ({ key, label, movement }))).toEqual([
       { key: 'systemForecast', label: 'System Forecast', movement: 73200 },
       { key: 'changeExposure', label: 'Change Exposure', movement: 4000 },
-      { key: 'commercialAdjustment', label: 'Commercial Adjustment', movement: 0 },
+      { key: 'commercialAdjustment', label: 'Projected Adjustment', movement: 0 },
     ]);
     expect(report.rows[0]).toMatchObject({ movement: 77200, residual: 0, awaitingExplanation: 77200 });
   });

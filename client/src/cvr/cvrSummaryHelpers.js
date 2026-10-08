@@ -551,7 +551,7 @@ export function buildCommercialExceptions(rows, summary, { historic } = {}) {
     },
     {
       key: 'adjustments',
-      label: 'Commercial Adjustments',
+      label: 'Projected Adjustments',
       count: adjustmentRows.length,
       valueLabel: formatCvrMoney(adjustmentTotal),
       rows: adjustmentRows,
@@ -728,7 +728,7 @@ export function buildRecentCommercialActivity(period, rows = []) {
       items.push({
         id: entry.id,
         type: 'adjustment',
-        label: 'Commercial Adjustment changed',
+        label: 'Projected Adjustment changed',
         actor: entry.user || '—',
         at: entry.date,
         dateTimeLabel: formatPoDateTime(entry.date),

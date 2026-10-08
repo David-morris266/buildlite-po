@@ -94,7 +94,7 @@ export function validateCommercialAdjustment(commercialAdjustment, commercialRea
   const errors = [];
 
   if (Math.abs(adjustment) > 0.005 && !reason) {
-    errors.push('Commercial Reason is required when Commercial Adjustment is not zero.');
+    errors.push('Commercial reason is required when Projected Adjustment is not zero.');
   }
 
   return {

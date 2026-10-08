@@ -210,7 +210,7 @@ describe('DevelopmentPrelimsAdoptionReview (x.4C.2)', () => {
     expect(dialog.textContent).toMatch(/\+£7,720/);
     expect(dialog.textContent).toMatch(/\+£7,200/);
     expect(container.querySelector('[data-testid="confirm-replacement-wording"]')?.textContent).toMatch(
-      /replaces the current CVR adjustment/i
+      /replaces the current Projected Adjustment/i
     );
     expect(container.querySelector('[data-testid="confirm-unresolved-5231"]')?.textContent).toMatch(
       /excluded from this adoption/i

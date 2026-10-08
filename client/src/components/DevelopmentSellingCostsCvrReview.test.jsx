@@ -260,7 +260,7 @@ describe('DevelopmentSellingCostsCvrReview', () => {
     expect(document.querySelectorAll('[data-testid="selling-costs-adopt"]')).toHaveLength(1);
   });
 
-  it('keeps non-zero System Forecast context accessible in the compact Detailed row', async () => {
+  it('keeps the evidence-supported baseline accessible in Detailed reconciliation', async () => {
     const comparison = {
       ...readyPreview.comparison,
       costCodeKey: '6110',
@@ -280,7 +280,7 @@ describe('DevelopmentSellingCostsCvrReview', () => {
     });
     await renderReview();
     const context = [...document.querySelectorAll('details')].find((node) => node.textContent.includes('CVR calculation context'));
-    expect(context.textContent).toMatch(/System Forecast.*2,500\.00/);
+    expect(context.textContent).toMatch(/Evidence-supported baseline.*2,500\.00/);
     expect(context.textContent).toMatch(/Proposed replacement adjustment.*7,500\.00/);
   });
 
@@ -291,10 +291,10 @@ describe('DevelopmentSellingCostsCvrReview', () => {
     });
     expect(document.querySelector('[data-testid="selling-costs-adoption-confirm"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="confirm-replacement-wording"]')?.textContent).toMatch(
-      /replaces the current CVR adjustment; it is not added to it/i
+      /replaces the current Projected Adjustment; it is not added to it/i
     );
     expect(document.querySelector('[data-testid="confirm-no-budget-system-accrual"]')?.textContent).toMatch(
-      /does not change budget, system forecast or accrual/i
+      /does not change budget, evidence-supported baseline or accrual/i
     );
     expect(adoptSellingCostsIntoCvr).not.toHaveBeenCalled();
 
@@ -585,7 +585,7 @@ describe('DevelopmentSellingCostsCvrReview', () => {
     });
     await renderReview();
     expect(document.querySelector('[data-testid="proposal-below-system"]')?.textContent).toMatch(
-      /below system forecast/i
+      /below evidence-supported baseline/i
     );
   });
 

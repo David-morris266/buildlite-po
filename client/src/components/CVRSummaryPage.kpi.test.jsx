@@ -86,7 +86,7 @@ describe('Commercial Cost Summary authority presentation', () => {
     expect(container.textContent).toContain('Legacy hierarchy unresolved');
     expect(container.textContent).not.toContain('Other');
     expect([...container.querySelectorAll('thead th')].map((node) => node.textContent)).toEqual([
-      'Commercial Head', 'Site Start', 'Current CVR', '£/ft²', 'Cost to Complete', 'Uncommitted', 'Change Exposure', 'Movement', 'Variance',
+      'Commercial Head', 'Site Start', 'EFC', '£/ft²', 'Cost to Complete', 'Uncommitted', 'Change Exposure', 'Movement', 'Variance',
     ]);
     expect(container.querySelectorAll('thead th.cvr-summary__numeric')).toHaveLength(8);
     expect(container.textContent).toContain('Select a Commercial Head or hierarchy status');
@@ -123,7 +123,7 @@ describe('CVR Movement Report presentation', () => {
     expect(container.textContent).toContain('Component reconciled');
     expect(container.textContent).toContain('Reconciled movement+£25.00');
     expect(container.textContent).toContain('Unreconciled£0.00');
-    expect(container.textContent).toContain('Commercial Adjustment: Revised brick allowance');
+    expect(container.textContent).toContain('Projected Adjustment: Revised brick allowance');
     expect(container.textContent).not.toContain('Explained');
     expect(container.textContent).not.toContain('Explanation');
     expect(container.querySelector('.cvr-movement__executive')).toBeNull();
@@ -149,7 +149,7 @@ describe('CVR Movement Report presentation', () => {
     expect(container.textContent).toContain('Unreconciled movements requiring review');
     expect(container.textContent).toContain('Unreconciled +£100.00');
     expect(container.textContent).toContain('Reconciled movement+£400.00');
-    expect(container.textContent).not.toContain('No Final Forecast movement this period.');
+    expect(container.textContent).not.toContain('No EFC movement this period.');
   });
 
   it('offers stable Variation Account drill-through only when attribution carries that identity', () => {

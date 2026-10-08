@@ -3,7 +3,7 @@ const COMPONENT_LABELS = {
   changeExposure: 'Change Exposure',
   expectedLiability: 'Expected Liability',
   vaExposureUplift: 'Variation Account exposure',
-  commercialAdjustment: 'Commercial Adjustment',
+  commercialAdjustment: 'Projected Adjustment',
 };
 
 const toPence = (value) => Number.isFinite(Number(value)) ? Math.round(Number(value) * 100) : 0;
@@ -140,9 +140,9 @@ function adjustmentAttributions(component, current, previous) {
     sourceType: matching?.source || 'commercial_adjustment',
     sourceId: matching?.id || `${current?.costCodeKey || 'cost-code'}:adjustment`,
     reference: matching?.source === 'prelims_adoption' ? 'Prelims adoption'
-      : matching?.source === 'selling_costs_adoption' ? 'Selling Costs adoption' : 'Commercial Adjustment',
+      : matching?.source === 'selling_costs_adoption' ? 'Selling Costs adoption' : 'Projected Adjustment',
     description: String(reason).trim(), amountPence: movementPence,
-    evidenceBasis: matching ? 'Recorded adjustment adoption/history' : 'Current mandatory Commercial Adjustment reason',
+    evidenceBasis: matching ? 'Recorded adjustment adoption/history' : 'Current mandatory Projected Adjustment reason',
     drillThrough: null,
   }];
 }

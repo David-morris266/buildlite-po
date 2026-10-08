@@ -153,12 +153,7 @@ export function buildCvrWorkspaceModel(development, options = {}) {
         modifier: 'outstanding',
       },
       {
-        label: 'System Forecast',
-        value: formatCvrMoney(summary.systemForecast),
-        modifier: 'default',
-      },
-      {
-        label: 'Final Forecast',
+        label: 'Estimated Final Cost (EFC)',
         value: formatCvrMoney(summary.finalForecast),
         modifier: 'default',
       },

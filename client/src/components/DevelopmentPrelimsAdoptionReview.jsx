@@ -36,7 +36,7 @@ function signedMoney(value) {
 
 function headlineForCandidate(row) {
   if (!row || row.flags?.[PRELIMS_ADOPTION_FLAG_KEYS.NO_CVR_ROW]) return null;
-  return `Prelims proposal ${money(row.resolvedPrelimsTotal)} → CVR final forecast ${money(
+  return `Prelims proposal ${money(row.resolvedPrelimsTotal)} → CVR EFC ${money(
     row.currentFinalForecast
   )} → proposed final ${money(row.proposedFinalForecast)} (${signedMoney(row.deltaFinal)})`;
 }
@@ -143,7 +143,7 @@ function CostCodeReviewCard({
           ) : null}
           {belowSystem ? (
             <span className="dev-prelims-review__flag" data-testid="proposal-below-system">
-              Proposal below system forecast
+              Proposal below evidence-supported baseline
             </span>
           ) : null}
         </div>
@@ -159,15 +159,15 @@ function CostCodeReviewCard({
           <dd>{row.unresolvedCount || 0}</dd>
         </div>
         <div>
-          <dt>CVR system forecast</dt>
+          <dt>CVR evidence-supported baseline</dt>
           <dd>{money(row.systemForecast)}</dd>
         </div>
         <div>
-          <dt>Current CVR adjustment</dt>
+          <dt>Current Projected Adjustment</dt>
           <dd>{signedMoney(row.currentAdjustment)}</dd>
         </div>
         <div>
-          <dt>Current final forecast</dt>
+          <dt>Current EFC</dt>
           <dd>{money(row.currentFinalForecast)}</dd>
         </div>
         <div>
@@ -177,11 +177,11 @@ function CostCodeReviewCard({
           </dd>
         </div>
         <div>
-          <dt>Proposed final forecast</dt>
+          <dt>Proposed EFC</dt>
           <dd>{money(row.proposedFinalForecast)}</dd>
         </div>
         <div>
-          <dt>Resulting movement in final forecast</dt>
+          <dt>Resulting EFC movement</dt>
           <dd
             className={
               row.deltaFinal > 0
@@ -204,7 +204,7 @@ function CostCodeReviewCard({
       </dl>
 
       <p className="dev-prelims-review__semantics" data-testid="adjustment-semantics">
-        The proposed replacement adjustment replaces the current CVR adjustment (system +
+        The proposed replacement adjustment replaces the current Projected Adjustment (baseline +
         replacement = proposed final). It is not added on top of the existing adjustment.
       </p>
 
@@ -346,7 +346,7 @@ function AdoptionConfirmDialog({
       <div className="dev-cvr-add modal dev-prelims-review__confirm" role="dialog" aria-modal="true">
         <h3>Confirm Prelims adoption into {periodKey || 'CVR'}</h3>
         <p className="dev-prelims-review__semantics" data-testid="confirm-replacement-wording">
-          The proposed replacement adjustment replaces the current CVR adjustment. It is not added
+          The proposed replacement adjustment replaces the current Projected Adjustment. It is not added
           to it.
         </p>
 
@@ -369,7 +369,7 @@ function AdoptionConfirmDialog({
                   <dd>{money(row.resolvedPrelimsTotal)}</dd>
                 </div>
                 <div>
-                  <dt>Current system forecast</dt>
+                  <dt>Current evidence-supported baseline</dt>
                   <dd>{money(row.systemForecast)}</dd>
                 </div>
                 <div>
@@ -377,7 +377,7 @@ function AdoptionConfirmDialog({
                   <dd>{signedMoney(row.currentAdjustment)}</dd>
                 </div>
                 <div>
-                  <dt>Current final forecast</dt>
+                  <dt>Current EFC</dt>
                   <dd>{money(row.currentFinalForecast)}</dd>
                 </div>
                 <div>
@@ -385,11 +385,11 @@ function AdoptionConfirmDialog({
                   <dd>{signedMoney(row.proposedAdjustment)}</dd>
                 </div>
                 <div>
-                  <dt>Proposed final forecast</dt>
+                  <dt>Proposed EFC</dt>
                   <dd>{money(row.proposedFinalForecast)}</dd>
                 </div>
                 <div>
-                  <dt>Resulting movement in final forecast</dt>
+                  <dt>Resulting EFC movement</dt>
                   <dd>{signedMoney(row.deltaFinal)}</dd>
                 </div>
               </dl>
@@ -404,7 +404,7 @@ function AdoptionConfirmDialog({
                   <p>
                     Previously adopted adjustment: {signedMoney(row.adoptionMetadata?.adoptedAdjustment)}
                   </p>
-                  <p>Current CVR adjustment: {signedMoney(row.currentAdjustment)}</p>
+                  <p>Current Projected Adjustment: {signedMoney(row.currentAdjustment)}</p>
                   <p>
                     New proposed replacement adjustment: {signedMoney(row.proposedAdjustment)}
                   </p>
@@ -445,7 +445,7 @@ function AdoptionConfirmDialog({
               disabled={adopting}
               onChange={(event) => onAcknowledgeSuperseded(event.target.checked)}
             />
-            <span>I understand this will replace the current CVR adjustment.</span>
+            <span>I understand this will replace the current Projected Adjustment.</span>
           </label>
         ) : null}
 
@@ -797,15 +797,15 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
 
             <dl className="dev-prelims__context" data-testid="prelims-cvr-comparison">
               <div>
-                <dt>Current final forecast (reviewed cost codes)</dt>
+                <dt>Current EFC (reviewed Cost Codes)</dt>
                 <dd>{money(summary?.currentFinalForecastTotal)}</dd>
               </div>
               <div>
-                <dt>Proposed final forecast (reviewed cost codes)</dt>
+                <dt>Proposed EFC (reviewed Cost Codes)</dt>
                 <dd>{money(summary?.proposedFinalForecastTotal)}</dd>
               </div>
               <div>
-                <dt>Resulting movement in final forecast</dt>
+                <dt>Resulting EFC movement</dt>
                 <dd>{signedMoney(summary?.deltaFinalTotal)}</dd>
               </div>
             </dl>
@@ -818,7 +818,7 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
 
             <p className="dev-prelims-review__semantics">
               {preview.adjustmentSemantics ||
-                'The proposed replacement adjustment replaces the current CVR adjustment; it is not added to it.'}
+                'The proposed replacement adjustment replaces the current Projected Adjustment; it is not added to it.'}
             </p>
             <p className="dev-prelims-review__support">{preview.accrualNote}</p>
             {!draftPeriod ? (

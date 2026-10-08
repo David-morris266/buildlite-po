@@ -9,12 +9,12 @@ const LEGACY_COMPONENTS = [
   ['systemForecast', 'System Forecast'],
   ['expectedLiability', 'Expected Liability'],
   ['vaExposureUplift', 'Variation Account exposure'],
-  ['commercialAdjustment', 'Commercial Adjustment'],
+  ['commercialAdjustment', 'Projected Adjustment'],
 ];
 const CHANGE_EXPOSURE_COMPONENTS = [
   ['systemForecast', 'System Forecast'],
   ['changeExposure', 'Change Exposure'],
-  ['commercialAdjustment', 'Commercial Adjustment'],
+  ['commercialAdjustment', 'Projected Adjustment'],
 ];
 
 const pence = (value) => value == null || value === '' || !Number.isFinite(Number(value))

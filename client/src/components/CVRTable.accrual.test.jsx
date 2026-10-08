@@ -76,7 +76,7 @@ describe('CVRTable Storyboard selection contract', () => {
     );
     expect(headers).toEqual([
       'Cost Code', 'Description', 'Budget', 'Current Cost', 'CTC', 'Uncommitted',
-      'Change Exposure', 'Current CVR', 'Movement', 'Variance',
+      'Change Exposure', 'Proj. Adj.', 'EFC', 'Movement', 'Variance',
     ]);
     const action = container.querySelector('.dev-cvr__row-link');
     act(() => action.click());

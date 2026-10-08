@@ -151,13 +151,13 @@ function ReconciliationRows({ rows, comparisons = [], prefix = 'review' }) {
             <div data-label="Proposed">{money(proposed)}</div>
             <div data-label="Movement" className={rowMovement > 0 ? 'dev-prelims-review__delta--up' : rowMovement < 0 ? 'dev-prelims-review__delta--down' : undefined}>{signedMoney(rowMovement)}</div>
             <div data-label="Action"><span className={`dev-selling-costs-review-row__action dev-selling-costs-review-row__action--${row.action}`}>{reconciliationLabel(row.action)}</span></div>
-            {release ? <p className="dev-selling-costs-review-row__note">Releases the earlier Selling Costs-owned position. The Cost Code and System Forecast remain unchanged.</p> : null}
+            {release ? <p className="dev-selling-costs-review-row__note">Releases the earlier Selling Costs-owned position. The Cost Code and evidence-supported baseline remain unchanged.</p> : null}
             {row.action === 'preserved_manual' ? <p className="dev-selling-costs-review-row__note">This position is now manual and will not be changed automatically.</p> : null}
             {Array.isArray(row.constituentLines) && row.constituentLines.length ? (
               <details className="dev-selling-costs-review-row__evidence"><summary>From {row.constituentLines.length} Detailed line{row.constituentLines.length === 1 ? '' : 's'}</summary><ul>{row.constituentLines.map(line => <li key={line.id}><span><strong>{line.name}</strong>{lineBasis(line) ? <small>{lineBasis(line)}</small> : null}</span><strong>{money(line.forecast)}</strong></li>)}</ul></details>
             ) : null}
             {comparison && (Number(comparison.systemForecast) !== 0 || Number(comparison.currentAccrual) !== 0) ? (
-              <details className="dev-selling-costs-review-row__evidence"><summary>CVR calculation context</summary><dl><div><dt>System Forecast</dt><dd>{money(comparison.systemForecast)}</dd></div><div><dt>Current adjustment</dt><dd>{signedMoney(comparison.currentAdjustment)}</dd></div><div><dt>Proposed replacement adjustment</dt><dd>{signedMoney(comparison.proposedReplacementAdjustment)}</dd></div><div><dt>Accrual (unchanged)</dt><dd>{money(comparison.currentAccrual)}</dd></div></dl></details>
+              <details className="dev-selling-costs-review-row__evidence"><summary>CVR calculation context</summary><dl><div><dt>Evidence-supported baseline</dt><dd>{money(comparison.systemForecast)}</dd></div><div><dt>Current Projected Adjustment</dt><dd>{signedMoney(comparison.currentAdjustment)}</dd></div><div><dt>Proposed replacement adjustment</dt><dd>{signedMoney(comparison.proposedReplacementAdjustment)}</dd></div><div><dt>Accrual (unchanged)</dt><dd>{money(comparison.currentAccrual)}</dd></div></dl></details>
             ) : null}
           </article>
         );
@@ -207,7 +207,7 @@ export function sellingCostsAdoptionConflictMessage(err) {
     case 'SELLING_COSTS_PROPOSAL_STALE':
       return 'Forecast Revenue or the Selling Costs proposal changed. Refresh and review again before adopting.';
     case 'SYSTEM_FORECAST_DRIFT':
-      return 'CVR system forecast changed. Refresh and review again before adopting.';
+      return 'CVR evidence-supported baseline changed. Refresh and review again before adopting.';
     case 'CURRENT_ADJUSTMENT_DRIFT':
       return 'CVR adjustment changed. Refresh and review again before adopting.';
     case 'CVR_INPUT_CONFLICT':
@@ -217,9 +217,9 @@ export function sellingCostsAdoptionConflictMessage(err) {
     case 'DESTINATION_INVALID':
       return 'The Selling Costs destination is no longer valid. Refresh and review again.';
     case 'SUPERSEDED_ACK_REQUIRED':
-      return 'The current CVR adjustment has superseded a previous Selling Costs adoption. Acknowledge replacement to continue.';
+      return 'The current Projected Adjustment has superseded a previous Selling Costs adoption. Acknowledge replacement to continue.';
     case 'BELOW_SYSTEM_ACK_REQUIRED':
-      return 'The Selling Costs proposal is below the current system forecast. Acknowledge the negative replacement adjustment to continue.';
+      return 'The Selling Costs proposal is below the current evidence-supported baseline. Acknowledge the negative replacement adjustment to continue.';
     default:
       return err instanceof SellingCostsApiError
         ? err.message
@@ -260,11 +260,11 @@ function AdoptionConfirmDialog({
       <div className="dev-cvr-add modal dev-prelims-review__confirm" role="dialog" aria-modal="true">
         <h3>Confirm Selling Costs adoption into {preview.periodKey || 'CVR'}</h3>
         <p className="dev-prelims-review__semantics" data-testid="confirm-replacement-wording">
-          The proposed replacement adjustment replaces the current CVR adjustment; it is not added
+          The proposed replacement adjustment replaces the current Projected Adjustment; it is not added
           to it.
         </p>
         <p className="dev-prelims-review__support" data-testid="confirm-no-budget-system-accrual">
-          This adoption does not change budget, system forecast or accrual.
+          This adoption does not change budget, evidence-supported baseline or accrual.
         </p>
 
         {detailed ? (
@@ -304,7 +304,7 @@ function AdoptionConfirmDialog({
                 </dd>
               </div>
               <div>
-                <dt>Current system forecast</dt>
+                <dt>Current evidence-supported baseline</dt>
                 <dd data-testid="confirm-system-forecast">{money(comparison.systemForecast)}</dd>
               </div>
               <div>
@@ -314,7 +314,7 @@ function AdoptionConfirmDialog({
                 </dd>
               </div>
               <div>
-                <dt>Current final forecast</dt>
+                <dt>Current EFC</dt>
                 <dd data-testid="confirm-current-final">{money(comparison.currentFinalForecast)}</dd>
               </div>
               <div>
@@ -324,7 +324,7 @@ function AdoptionConfirmDialog({
                 </dd>
               </div>
               <div>
-                <dt>Proposed final forecast</dt>
+                <dt>Proposed EFC</dt>
                 <dd data-testid="confirm-proposed-final">{money(comparison.proposedFinalForecast)}</dd>
               </div>
               <div>
@@ -340,21 +340,21 @@ function AdoptionConfirmDialog({
             </dl>
             {needsBelowSystemAck ? (
               <p className="dev-prelims-review__warn" data-testid="confirm-below-system">
-                The Selling Costs proposal is below the current system forecast. Adopting will write
+                The Selling Costs proposal is below the current evidence-supported baseline. Adopting will write
                 a negative replacement adjustment. This does not add a committed/actual floor.
               </p>
             ) : null}
             {needsSupersededAck ? (
               <div className="dev-prelims-review__warn" data-testid="confirm-superseded">
                 <p>
-                  The current CVR adjustment has been changed since the previous Selling Costs
+                  The current Projected Adjustment has been changed since the previous Selling Costs
                   adoption.
                 </p>
                 <p>
                   Previously adopted adjustment:{' '}
                   {signedMoney(comparison.adoptionMetadata?.adoptedAdjustment)}
                 </p>
-                <p>Current CVR adjustment: {signedMoney(comparison.currentAdjustment)}</p>
+                <p>Current Projected Adjustment: {signedMoney(comparison.currentAdjustment)}</p>
                 <p>
                   New proposed replacement adjustment:{' '}
                   {signedMoney(comparison.proposedReplacementAdjustment)}
@@ -374,7 +374,7 @@ function AdoptionConfirmDialog({
             />
             <span>
               I understand the proposed replacement adjustment is negative because the proposal is
-              below the current system forecast.
+              below the current evidence-supported baseline.
             </span>
           </label>
         ) : null}
@@ -387,7 +387,7 @@ function AdoptionConfirmDialog({
               disabled={adopting}
               onChange={(event) => onAcknowledgeSuperseded(event.target.checked)}
             />
-            <span>I understand this will replace the current CVR adjustment.</span>
+            <span>I understand this will replace the current Projected Adjustment.</span>
           </label>
         ) : null}
 
@@ -683,7 +683,7 @@ export default function DevelopmentSellingCostsCvrReview({ developmentId, onBack
                   </span>
                   {belowSystem ? (
                     <span className="dev-prelims-review__flag" data-testid="proposal-below-system">
-                      Proposal below system forecast
+                      Proposal below evidence-supported baseline
                     </span>
                   ) : null}
                 </div>
@@ -695,17 +695,17 @@ export default function DevelopmentSellingCostsCvrReview({ developmentId, onBack
                   <dd data-testid="review-cost-code">{comparison.costCodeKey}</dd>
                 </div>
                 <div>
-                  <dt>System forecast</dt>
+                  <dt>Evidence-supported baseline</dt>
                   <dd data-testid="review-system-forecast">{money(comparison.systemForecast)}</dd>
                 </div>
                 <div>
-                  <dt>Current commercial adjustment</dt>
+                  <dt>Current Projected Adjustment</dt>
                   <dd data-testid="review-current-adjustment">
                     {signedMoney(comparison.currentAdjustment)}
                   </dd>
                 </div>
                 <div>
-                  <dt>Current final forecast</dt>
+                  <dt>Current EFC</dt>
                   <dd data-testid="review-current-final">
                     {money(comparison.currentFinalForecast)}
                   </dd>
@@ -717,7 +717,7 @@ export default function DevelopmentSellingCostsCvrReview({ developmentId, onBack
                   </dd>
                 </div>
                 <div>
-                  <dt>Proposed final forecast</dt>
+                  <dt>Proposed EFC</dt>
                   <dd data-testid="review-proposed-final">
                     {money(comparison.proposedFinalForecast)}
                   </dd>
@@ -751,7 +751,7 @@ export default function DevelopmentSellingCostsCvrReview({ developmentId, onBack
             <div className="dev-prelims-review__actions dev-selling-costs-review__final-actions" data-testid="selling-costs-adopt-actions">
               <div>
                 {detailed ? <strong>Net CVR movement: {signedMoney(transactionSummary.netMovement)}</strong> : null}
-                <p>{detailed ? 'This will replace the current Selling Costs-owned CVR positions with the reviewed Detailed Selling Costs forecast.' : 'Adoption uses the reviewed replacement adjustment and leaves budget, System Forecast and accrual unchanged.'}</p>
+                <p>{detailed ? 'This will replace the current Selling Costs-owned CVR positions with the reviewed Detailed Selling Costs forecast.' : 'Adoption uses the reviewed replacement adjustment and leaves budget, evidence-supported baseline and accrual unchanged.'}</p>
               </div>
               <div className="dev-selling-costs-review__buttons">
                 <button type="button" className="po-list-btn-secondary" onClick={onBack}>Back to Selling Costs</button>

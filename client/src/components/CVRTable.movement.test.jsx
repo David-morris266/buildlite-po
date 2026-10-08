@@ -30,14 +30,14 @@ describe('CVR Worksheet commercial review presentation', () => {
     expect(ribbonRule).not.toContain('overflow-x');
   });
 
-  it('renders all ten authoritative review columns with Cost Code as the Storyboard action', () => {
+  it('renders the authoritative review columns with one EFC and Projected Adjustment', () => {
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
     act(() => root.render(<CVRTable rows={[row]} totals={totals} comparison={comparison} onRowSelect={vi.fn()} readOnly />));
     expect([...container.querySelectorAll('thead th')].map((node) => node.textContent)).toEqual([
-      'Cost Code', 'Description', 'Budget', 'Current Cost', 'CTC', 'Uncommitted', 'Change Exposure', 'Current CVR', 'Movement', 'Variance',
+      'Cost Code', 'Description', 'Budget', 'Current Cost', 'CTC', 'Uncommitted', 'Change Exposure', 'Proj. Adj.', 'EFC', 'Movement', 'Variance',
     ]);
     const cells = [...container.querySelectorAll('tbody td')].map((node) => node.textContent);
-    expect(cells.slice(2)).toEqual(['£120.00', '£45.00', '£80.00', '£20.00', '£15.00', '£125.00', '+£25.00', '−£5.00']);
+    expect(cells.slice(2)).toEqual(['£120.00', '£45.00', '£80.00', '£20.00', '£15.00', '+£10.00', '£125.00', '+£25.00', '−£5.00']);
     expect(container.textContent).not.toContain('Previous CVR');
     expect(container.textContent).not.toContain('View detail');
     const action = container.querySelector('.dev-cvr__row-link');
@@ -47,7 +47,7 @@ describe('CVR Worksheet commercial review presentation', () => {
   it('keeps first-period Movement unavailable', () => {
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
     act(() => root.render(<CVRTable rows={[row]} totals={totals} comparison={{ available: false, rows: [] }} readOnly />));
-    expect([...container.querySelectorAll('tbody td')][8].textContent).toBe('—');
+    expect([...container.querySelectorAll('tbody td')][9].textContent).toBe('—');
   });
 
   it('selects a middle row without changing the Cost Code population', () => {
@@ -58,8 +58,8 @@ describe('CVR Worksheet commercial review presentation', () => {
     }
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
     act(() => root.render(<Harness />));
-    expect(container.querySelectorAll('colgroup col')).toHaveLength(10);
-    expect(container.querySelectorAll('col.dev-cvr__column-money')).toHaveLength(8);
+    expect(container.querySelectorAll('colgroup col')).toHaveLength(11);
+    expect(container.querySelectorAll('col.dev-cvr__column-money')).toHaveLength(9);
     const button3640 = [...container.querySelectorAll('.dev-cvr__row-link')].find((button) => button.textContent === '3640');
     act(() => button3640.click());
     expect(container.querySelectorAll('tbody > tr')).toHaveLength(5);

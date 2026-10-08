@@ -120,7 +120,7 @@ describe('CVRWorkspace input hydration (BL-031B)', () => {
     const storyboard = document.body.querySelector('[aria-label*="Cost Code Storyboard for 5231"]');
     expect(storyboard).not.toBeNull();
     expect(storyboard.textContent).toContain('Manual Accrual');
-    expect(storyboard.textContent).toContain('Commercial Adjustment');
+    expect(storyboard.textContent).toContain('Projected Adjustment');
     expect(container.querySelector('[data-expanded-for]')).toBeNull();
     expect(container.querySelector('.dev-cvr__workbench').children).toHaveLength(1);
     expect(container.querySelector('[role="region"][aria-label="CVR cost code grid"]')).not.toBeNull();

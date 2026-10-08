@@ -289,7 +289,7 @@ describe('CostCentreDrawer accrual and forecast UX', () => {
     expect(text).toMatch(/2[,\s]?150/);
     expect(text).toMatch(/50[,\s]?150/);
     expect(text).not.toMatch(/-100\.00/);
-    expect(text).toMatch(/Save commercial adjustment/);
+    expect(text).toMatch(/Save Projected Adjustment/);
     expect(text).toMatch(/Save accrual/);
   });
 
@@ -501,6 +501,6 @@ describe('CostCentreDrawer accrual and forecast UX', () => {
       onSaveCommercialAdjustment,
     });
     expect(container.querySelector('.dev-cvr-drawer__save-adjustment').disabled).toBe(true);
-    expect(container.textContent).toMatch(/Commercial adjustment saved/i);
+    expect(container.textContent).toMatch(/Projected Adjustment saved/i);
   });
 });
