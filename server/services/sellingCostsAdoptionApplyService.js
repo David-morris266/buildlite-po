@@ -1,8 +1,9 @@
 /**
  * BL-034D — Server Selling Costs → Draft CVR adoption command.
  * Accepts intent + expectations only. Recalculates replacement adjustment.
- * Writes commercial adjustment + provenance. Does not write budget, system
- * forecast, accrual, membership, settings, or period lifecycle.
+ * Writes commercial adjustment + provenance. For an authoritative fact-only
+ * CVR row it may establish the empty editable overlay required for that write.
+ * It does not write budget, system forecast, accrual, settings, or lifecycle.
  */
 
 const crypto = require("crypto");
@@ -45,6 +46,8 @@ const {
   buildSellingCostsReconciliation,
   classifySellingCostsOwnership,
 } = require("./sellingCostsAdoptionReconciliation");
+const { addDraftCvrCostCodeMember } = require("./cvrMembershipService");
+const { liveDocument: loadLiveDevelopmentBudget } = require("./cvrDevelopmentBudgetSnapshot");
 
 const SELLING_COSTS_ADOPTION_ERROR_CODES = {
   PERIOD_NOT_DRAFT: "PERIOD_NOT_DRAFT",
@@ -150,11 +153,11 @@ function parseSelections(body = {}) {
     seen.add(keyNorm);
 
     const expectedInputVersion = Number(item.expectedInputVersion ?? item.inputVersion);
-    if (!Number.isInteger(expectedInputVersion) || expectedInputVersion < 1) {
+    if (!Number.isInteger(expectedInputVersion) || expectedInputVersion < 0) {
       return fail(
         400,
         SELLING_COSTS_ADOPTION_ERROR_CODES.CVR_INPUT_CONFLICT,
-        "expectedInputVersion must be a positive integer.",
+        "expectedInputVersion must be a non-negative integer.",
         { costCodeKey: destinationCostCodeKey }
       );
     }
@@ -218,7 +221,7 @@ function parseReconciliationExpectations(body = {}) {
   for (const row of rows) {
     const costCodeKey = String(row?.costCodeKey || "").trim();
     const version = Number(row?.expectedInputVersion);
-    if (!costCodeKey || !Number.isInteger(version) || version < 1) continue;
+    if (!costCodeKey || !Number.isInteger(version) || version < 0) continue;
     byKey.set(costCodeKeyIdentity(costCodeKey), {
       costCodeKey,
       expectedInputVersion: version,
@@ -270,6 +273,7 @@ function validateSelectionAgainstComparison({
   inputDoc,
   resolvedDestinationKey,
   destination,
+  createdFromFactOnly = false,
 }) {
   const costCodeKey = selection.destinationCostCodeKey;
 
@@ -309,7 +313,10 @@ function validateSelectionAgainstComparison({
     );
   }
 
-  if (inputDoc.version !== selection.expectedInputVersion) {
+  const versionMatches = createdFromFactOnly
+    ? selection.expectedInputVersion === 0 && inputDoc.version === 1
+    : inputDoc.version === selection.expectedInputVersion;
+  if (!versionMatches) {
     return fail(
       409,
       SELLING_COSTS_ADOPTION_ERROR_CODES.CVR_INPUT_CONFLICT,
@@ -554,6 +561,19 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
 
     const inputRows = await listCostCodeInputRowsForUpdate(clientId, periodId, dbClient);
     const inputDocs = inputRows.map(inputRowToDocument);
+    const usesDevelopmentBudget = period.budgetSourceMode === "development_budget";
+    const developmentBudgetDocument = usesDevelopmentBudget
+      ? await loadLiveDevelopmentBudget(dbClient, clientId, developmentId)
+      : null;
+    if (usesDevelopmentBudget && !developmentBudgetDocument) {
+      await dbClient.query("ROLLBACK");
+      return fail(
+        409,
+        SELLING_COSTS_ADOPTION_ERROR_CODES.CVR_CLOSE_NOT_READY,
+        "Current CVR Development Budget authority is unavailable.",
+        { blockers: [{ source: "developmentBudget", reason: "development_budget_unavailable" }] }
+      );
+    }
 
     const closeCandidate = await buildCvrCloseCandidate({
       clientId,
@@ -561,6 +581,7 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
       periodId,
       actor: resolvedActor,
       dbClient,
+      developmentBudgetDocument,
     });
     if (!closeCandidate.ready) {
       await dbClient.query("ROLLBACK");
@@ -600,9 +621,31 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
 
     for (const selection of parsed.selections) {
       const authority=authoritativeDestinations.find(item=>sameCostCodeKey(item.destination.costCodeKey,selection.destinationCostCodeKey));
-      const inputDoc = findByCostCodeKey(inputDocs, selection.destinationCostCodeKey);
-      const overlay = inputDoc;
       const cvrRow = findByCostCodeKey(cvrRows, selection.destinationCostCodeKey);
+      let inputDoc = findByCostCodeKey(inputDocs, selection.destinationCostCodeKey);
+      let createdFromFactOnly = false;
+      if (!inputDoc && cvrRow && selection.expectedInputVersion === 0) {
+        const membership = await addDraftCvrCostCodeMember(
+          clientId,
+          developmentId,
+          periodId,
+          { costCodeKey: selection.destinationCostCodeKey },
+          { actor: resolvedActor, dbClient }
+        );
+        if (!membership.ok) {
+          await dbClient.query("ROLLBACK");
+          return fail(
+            membership.status || 409,
+            SELLING_COSTS_ADOPTION_ERROR_CODES.CVR_INPUT_CONFLICT,
+            membership.message || `Could not establish CVR input authority for ${selection.destinationCostCodeKey}.`,
+            { costCodeKey: selection.destinationCostCodeKey }
+          );
+        }
+        inputDoc = membership.input;
+        inputDocs.push(inputDoc);
+        createdFromFactOnly = true;
+      }
+      const overlay = inputDoc;
       const existingMetadata = extractSellingCostsAdoptionMetadata(
         overlay?.displayMetadata || cvrRow?.displayMetadata
       );
@@ -627,6 +670,7 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
         inputDoc,
         resolvedDestinationKey: authority.destination.costCodeKey,
         destination: authority.destination,
+        createdFromFactOnly,
       });
       if (!validated.ok) {
         await dbClient.query("ROLLBACK");

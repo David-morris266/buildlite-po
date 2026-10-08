@@ -235,10 +235,24 @@ async function buildSellingCostsReviewPreview(clientId, developmentId) {
     };
   }
 
+  const usesDevelopmentBudget = openPeriod.budgetSourceMode === "development_budget";
+  const developmentBudgetDocument = usesDevelopmentBudget
+    ? openPeriod.budgetSource?.document || null
+    : null;
+  if (usesDevelopmentBudget && !developmentBudgetDocument) {
+    return {
+      ok: false,
+      status: 409,
+      message: "Current CVR Development Budget authority is unavailable.",
+      blockers: [{ source: "developmentBudget", reason: "development_budget_unavailable" }],
+    };
+  }
+
   const closeCandidate = await buildCvrCloseCandidate({
     clientId,
     developmentId,
     periodId: openPeriod.id,
+    developmentBudgetDocument,
   });
   if (!closeCandidate.ready) {
     return {
@@ -252,7 +266,11 @@ async function buildSellingCostsReviewPreview(clientId, developmentId) {
   const inputsResult = await listCostCodeInputs(clientId, developmentId, openPeriod.id);
   if (!inputsResult.ok) return inputsResult;
   const inputRows = inputsResult.inputs || [];
-  const missingDestinations = destinations.filter(({ destination }) => !findByCostCodeKey(inputRows, destination.costCodeKey, row => row.costCodeKey));
+  const cvrRows = closeCandidate.snapshot?.rows || [];
+  const missingDestinations = destinations.filter(({ destination }) =>
+    !findByCostCodeKey(cvrRows, destination.costCodeKey, row => row.costCodeKey) &&
+    !findByCostCodeKey(inputRows, destination.costCodeKey, row => row.costCodeKey)
+  );
   if (missingDestinations.length) {
     return blockedPreview({
       developmentId,
@@ -265,12 +283,11 @@ async function buildSellingCostsReviewPreview(clientId, developmentId) {
     });
   }
 
-  const cvrRows = closeCandidate.snapshot?.rows || [];
   const comparisons = destinations.map(({ destination, forecast, aggregateFingerprint, lines }) => {
     const destinationKey = destination.costCodeKey;
     const overlay = findByCostCodeKey(inputRows, destinationKey, row => row.costCodeKey);
     const cvrRow = findByCostCodeKey(cvrRows, destinationKey, row => row.costCodeKey);
-    const existingMetadata = extractSellingCostsAdoptionMetadata(overlay.displayMetadata || cvrRow?.displayMetadata);
+    const existingMetadata = extractSellingCostsAdoptionMetadata(overlay?.displayMetadata || cvrRow?.displayMetadata);
     const detailedEvidence = proposal.mode === SELLING_COSTS_MODES.DETAILED ? {
       evidenceVersion: 1,
       wholeProposalFingerprint: proposal.proposalEvidenceFingerprint,
@@ -285,7 +302,7 @@ async function buildSellingCostsReviewPreview(clientId, developmentId) {
     } : null;
     return {
       ...compareSellingCostsToCvr({developmentId,periodKey:openPeriod.periodKey,reportingMonth:openPeriod.reportingMonth,mode:proposal.mode,assumptionPercent:proposal.assumptionPercent,forecastRevenue:proposal.forecastRevenue,forecastSellingCosts:forecast,destinationCostCodeKey:destinationKey,cvrRow,overlay,existingMetadata,detailedEvidence}),
-      costCodeDescription: overlay.costCodeLabel || cvrRow?.costCodeLabel || destination.label || destinationKey,
+      costCodeDescription: overlay?.costCodeLabel || cvrRow?.costCodeLabel || destination.label || destinationKey,
       destination,
       detailedEvidence,
       constituentLines: lines,
@@ -321,7 +338,7 @@ async function buildSellingCostsReviewPreview(clientId, developmentId) {
           : ownership.owned
             ? "retained"
             : "added";
-      return {action,costCodeKey:comparison.costCodeKey,costCodeDescription:comparison.costCodeDescription,inputId:overlay.id,inputVersion:overlay.version,currentAdjustment:comparison.currentAdjustment,proposedAdjustment:comparison.proposedReplacementAdjustment,resultingMovement:comparison.resultingMovement,constituentLines:comparison.constituentLines};
+      return {action,costCodeKey:comparison.costCodeKey,costCodeDescription:comparison.costCodeDescription,inputId:overlay?.id||null,inputVersion:overlay?.version??0,currentAdjustment:comparison.currentAdjustment,proposedAdjustment:comparison.proposedReplacementAdjustment,resultingMovement:comparison.resultingMovement,constituentLines:comparison.constituentLines};
     }),
   ];
   const reviewState=comparisons.some(item=>item.reviewState===SELLING_COSTS_REVIEW_STATES.SUPERSEDED)?SELLING_COSTS_REVIEW_STATES.SUPERSEDED:comparisons.every(item=>item.isUpToDate)?SELLING_COSTS_REVIEW_STATES.UP_TO_DATE:comparisons.some(item=>item.reviewState===SELLING_COSTS_REVIEW_STATES.DRIFTED)?SELLING_COSTS_REVIEW_STATES.DRIFTED:SELLING_COSTS_REVIEW_STATES.NOT_ADOPTED;

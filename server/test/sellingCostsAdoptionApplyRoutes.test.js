@@ -17,6 +17,8 @@ const {
 const {
   SELLING_COSTS_ADOPTION_ERROR_CODES,
 } = require("../services/sellingCostsAdoptionApplyService");
+const developmentBudgetRepository = require("../services/developmentBudgetRepository");
+const { PERMISSIONS } = require("../auth/permissions");
 
 const app = createApp();
 const MIGRATION_004 = path.join(__dirname, "..", "migrations", "004_developments.sql");
@@ -264,20 +266,70 @@ async function saveAssumption(developmentId, percent = 1.75) {
   return res.body;
 }
 
-async function createDraftPeriod(clientId, developmentId, { reportingMonth = "2026-08-01", status = "draft" } = {}) {
+async function createDraftPeriod(clientId, developmentId, { reportingMonth = "2026-08-01", status = "draft", budgetSource = "legacy_cvr" } = {}) {
   const period = await pool.query(
     `
       INSERT INTO cvr_periods (
-        client_id, development_id, period_key, period_label, status, version, reporting_month
+        client_id, development_id, period_key, period_label, status, version, reporting_month, budget_source
       )
-      VALUES ($1, $2, 'P04', 'Period 04', $4, 1, $3::date)
+      VALUES ($1, $2, 'P04', 'Period 04', $4, 1, $3::date, $5)
       RETURNING id
     `,
-    [clientId, developmentId, reportingMonth, status]
+    [clientId, developmentId, reportingMonth, status, budgetSource]
   );
   const periodId = period.rows[0].id;
   trackPeriod(periodId);
   return periodId;
+}
+
+async function postOpeningDevelopmentBudget(clientId, developmentId, costCodeId, amount) {
+  const principal = (await pool.query(
+    `SELECT u.id AS user_id, u.provider_user_id, u.display_name,
+            m.id AS membership_id, r.key AS role_key
+       FROM client_user_memberships m
+       JOIN buildlite_users u ON u.id = m.user_id
+       JOIN roles r ON r.id = m.role_id
+       JOIN role_permissions rp ON rp.role_id = r.id
+      WHERE m.client_id = $1 AND m.is_active = true
+        AND rp.permission_key = $2
+      LIMIT 1`,
+    [clientId, PERMISSIONS.DEVELOPMENT_BUDGET_POST]
+  )).rows[0];
+  assert.ok(principal, "Development Budget test principal is required");
+  const result = await developmentBudgetRepository.postEvent(
+    clientId,
+    developmentId,
+    {
+      eventType: "opening_budget",
+      effectiveDate: "2026-08-01",
+      reference: `SC-FACT-${developmentId}`,
+      reason: "Selling Costs fact-only CVR membership regression",
+      idempotencyKey: `sc-fact-${developmentId}`,
+      lines: [{ costCodeId, amount }],
+    },
+    {
+      clientId,
+      userId: principal.user_id,
+      membershipId: principal.membership_id,
+      providerUserId: principal.provider_user_id,
+      displayName: principal.display_name,
+      roleKey: principal.role_key,
+      permissions: [PERMISSIONS.COMMERCIAL_READ, PERMISSIONS.DEVELOPMENT_BUDGET_POST],
+    }
+  );
+  assert.equal(result.status, 201, result.message || JSON.stringify(result));
+}
+
+async function removeDevelopmentBudget(developmentId) {
+  await pool.query("ALTER TABLE development_budget_event_lines DISABLE TRIGGER USER");
+  await pool.query("ALTER TABLE development_budget_events DISABLE TRIGGER USER");
+  try {
+    await pool.query("DELETE FROM development_budget_event_lines WHERE development_id = $1", [developmentId]);
+    await pool.query("DELETE FROM development_budget_events WHERE development_id = $1", [developmentId]);
+  } finally {
+    await pool.query("ALTER TABLE development_budget_event_lines ENABLE TRIGGER USER");
+    await pool.query("ALTER TABLE development_budget_events ENABLE TRIGGER USER");
+  }
 }
 
 async function addMember(
@@ -559,6 +611,64 @@ if (!isDbConfigured()) {
     const refreshed = await loadReview(developmentId);
     assert.equal(refreshed.reviewState, "up_to_date");
     assert.equal(refreshed.canAdopt, true);
+  });
+
+  test("Development Budget fact row is reviewable and adoption establishes only its editable overlay", async () => {
+    const active = await getActiveClient();
+    const developmentId = await createDevelopment(active);
+    const destination = await insertCostCode(active.id, "5400", "Selling Costs — General Allowance");
+    await classify(active.id, "5400");
+    await saveAssumption(developmentId, 1.75);
+    await postOpeningDevelopmentBudget(active.id, developmentId, destination.id, 150000);
+    const periodId = await createDraftPeriod(active.id, developmentId, { budgetSource: "development_budget" });
+
+    try {
+      const beforeInputs = await pool.query("SELECT * FROM cvr_cost_code_inputs WHERE period_id = $1", [periodId]);
+      assert.equal(beforeInputs.rows.length, 0);
+
+      const preview = await loadReview(developmentId);
+      assert.equal(preview.reviewStatus, "ready", JSON.stringify(preview));
+      assert.equal(preview.comparison.inputId, null);
+      assert.equal(preview.comparison.inputVersion, 0);
+      assert.equal(preview.comparison.flags.noCvrMember, false);
+      assert.equal(preview.comparison.systemForecast, 150000);
+
+      const adopted = await postAdopt(developmentId, intentFromReview(preview));
+      assert.equal(adopted.status, 200, adopted.body?.message || JSON.stringify(adopted.body));
+      assert.equal(adopted.body.adopted[0].newAdjustment, 32780.64);
+
+      const after = await pool.query(
+        `SELECT original_budget, current_budget, commercial_adjustment::float8 AS adjustment, version
+           FROM cvr_cost_code_inputs WHERE period_id = $1 AND cost_code_key = '5400'`,
+        [periodId]
+      );
+      assert.equal(after.rows.length, 1);
+      assert.equal(after.rows[0].original_budget, null);
+      assert.equal(after.rows[0].current_budget, null);
+      assert.equal(after.rows[0].adjustment, 32780.64);
+      assert.equal(after.rows[0].version, 2);
+
+      const refreshed = await loadReview(developmentId);
+      assert.equal(refreshed.comparison.systemForecast, 150000);
+      assert.equal(refreshed.comparison.isUpToDate, true);
+      const repeated = await postAdopt(developmentId, intentFromReview(refreshed));
+      assert.equal(repeated.status, 200, repeated.body?.message || JSON.stringify(repeated.body));
+      assert.equal(repeated.body.adopted.length, 0);
+      assert.equal(repeated.body.unchanged.length, 1);
+
+      const budgetEvidence = await pool.query(
+        `SELECT COUNT(DISTINCT e.id)::int AS event_count,
+                SUM(l.signed_amount)::float8 AS total
+           FROM development_budget_events e
+           JOIN development_budget_event_lines l ON l.event_id = e.id
+          WHERE e.client_id = $1 AND e.development_id = $2`,
+        [active.id, developmentId]
+      );
+      assert.equal(budgetEvidence.rows[0].event_count, 1);
+      assert.equal(budgetEvidence.rows[0].total, 150000);
+    } finally {
+      await removeDevelopmentBudget(developmentId);
+    }
   });
 
   test("destination change atomically releases the prior workflow position and adopts the new one", async () => {

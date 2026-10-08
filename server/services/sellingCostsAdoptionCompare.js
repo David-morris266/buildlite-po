@@ -377,12 +377,15 @@ function compareSellingCostsToCvr({
     coincidentalMatch: Boolean(drift.coincidentalMatch),
     flags: {
       [SELLING_COSTS_REVIEW_FLAG_KEYS.PROPOSAL_BELOW_SYSTEM]: proposalBelowSystem,
-      [SELLING_COSTS_REVIEW_FLAG_KEYS.NO_CVR_MEMBER]: !overlay,
+      [SELLING_COSTS_REVIEW_FLAG_KEYS.NO_CVR_MEMBER]: !cvrRow && !overlay,
       [SELLING_COSTS_REVIEW_FLAG_KEYS.COINCIDENTAL_MATCH]: Boolean(drift.coincidentalMatch),
     },
     adoptionMetadata: metadata,
     inputId: overlay?.id || null,
-    inputVersion: overlay?.version ?? null,
+    // A fact-derived Development Budget row is already a CVR member even before
+    // its first editable overlay is established. Version zero is the reviewed
+    // expectation used by the atomic adoption command for that transition.
+    inputVersion: overlay?.version ?? (cvrRow ? 0 : null),
     detailedEvidence,
   };
 }
