@@ -12,7 +12,23 @@ function directionalEnvelope(values) {
   return { ok: true, value: money(material[0] > 0 ? Math.max(...material) : Math.min(...material)) };
 }
 
-function buildChangeExposureByCostCode(events = [], variationItems = []) {
+function exposureIdentity(item) {
+  const ceId = item?.commercialEvent?.id || item?.va?.sourceCommercialEventId;
+  if (ceId) return `ce:${ceId}`;
+  const vaId = item?.va?.variationAccountItemId;
+  return vaId ? `va:${vaId}` : null;
+}
+
+function incrementalBeyondAbsorbed(current, absorbed) {
+  const currentPence = pence(current);
+  const absorbedPence = pence(absorbed);
+  if (!absorbedPence || Math.sign(currentPence) !== Math.sign(absorbedPence)) return money(currentPence);
+  const difference = currentPence - absorbedPence;
+  if (absorbedPence > 0) return money(Math.max(0, difference));
+  return money(Math.min(0, difference));
+}
+
+function buildChangeExposureByCostCode(events = [], variationItems = [], absorbedItems = []) {
   const submitted = new Map((events || []).filter(event => event.status === 'submitted')
     .map(event => [String(event.id), event]));
   const consumed = new Set();
@@ -52,7 +68,24 @@ function buildChangeExposureByCostCode(events = [], variationItems = []) {
     const expected = effectiveExpectedLiability(ce);
     add(key, expected, { linked: false, commercialEvent: ce, expectedLiability: expected, expectedTreatment: normalizeTreatment(ce.expectedTreatment), resultingExposure: expected });
   }
+  const absorbed = new Map((absorbedItems || []).map((item) => [item.identity, money(Number(item.amountPence || 0))]));
+  if (absorbed.size) {
+    totals.clear();
+    for (const [key, items] of evidence) {
+      const adjusted = items.map((item) => {
+        const identity = exposureIdentity(item);
+        const absorbedAmount = identity ? absorbed.get(identity) : null;
+        return absorbedAmount == null ? item : {
+          ...item,
+          absorbedAtSiteStart: absorbedAmount,
+          incrementalExposure: incrementalBeyondAbsorbed(item.resultingExposure, absorbedAmount),
+        };
+      });
+      evidence.set(key, adjusted);
+      totals.set(key, money(adjusted.reduce((sum, item) => sum + pence(item.incrementalExposure ?? item.resultingExposure), 0)));
+    }
+  }
   return { totals, evidence, blockers };
 }
 
-module.exports = { directionalEnvelope, buildChangeExposureByCostCode };
+module.exports = { directionalEnvelope, exposureIdentity, incrementalBeyondAbsorbed, buildChangeExposureByCostCode };

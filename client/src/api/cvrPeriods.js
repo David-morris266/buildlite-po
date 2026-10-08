@@ -88,6 +88,13 @@ export async function createCvrPeriodForDevelopment(developmentId, payload = {})
   return handleJson(res);
 }
 
+export async function createFirstCvrFromSiteStartForDevelopment(developmentId, payload = {}) {
+  const res = await fetch(buildUrl(`/api/developments/${encodeURIComponent(developmentId)}/cvr/site-start-period/create-p01`), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(withActor(payload)),
+  });
+  return handleJson(res);
+}
+
 export async function patchCvrPeriodForDevelopment(developmentId, periodId, payload = {}) {
   const res = await fetch(buildUrl(periodsUrl(developmentId, periodId)), {
     method: 'PATCH',

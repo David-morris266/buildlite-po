@@ -3,6 +3,8 @@
  * Adoption writes only via confirmed POST to the banked x.4C.1 command.
  */
 
+/* eslint-disable react-refresh/only-export-components */
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   DevelopmentPrelimsApiError,
@@ -133,7 +135,7 @@ function CostCodeReviewCard({
         <div className="dev-prelims-review__chips">
           {upToDate ? (
             <span className="dev-prelims-review__flag" data-testid={`already-adopted-${row.costCodeKey}`}>
-              Already adopted — no change
+              Already up to date
             </span>
           ) : null}
           {superseded ? (
@@ -531,8 +533,8 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
     };
   }, [developmentId, reloadToken, loadPreview]);
 
-  const candidates = preview?.candidates || [];
-  const missingRows = preview?.missingFromCvr || [];
+  const candidates = useMemo(() => preview?.candidates || [], [preview?.candidates]);
+  const missingRows = useMemo(() => preview?.missingFromCvr || [], [preview?.missingFromCvr]);
   const draftPeriod = isPeriodDraft(preview);
 
   const eligibleRows = useMemo(
@@ -660,6 +662,8 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
 
     const payload = {
       expectedPeriodKey: preview.periodKey,
+      expectedPeriodType: preview.periodType || 'monthly_cvr',
+      expectedPeriodVersion: preview.periodVersion,
       expectedReportingMonth: preview.reportingMonth,
       selections: selectedRows.map((row) =>
         buildSelectionPayload(row, {
@@ -725,6 +729,11 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
     }
   }
 
+  const siteStart = preview?.periodType === 'site_start';
+  const destinationLabel = siteStart ? 'Site Start' : 'CVR';
+  const currentEfcLabel = siteStart ? 'Current Working EFC' : 'Current EFC';
+  const proposedEfcLabel = siteStart ? 'Proposed Working EFC' : 'Proposed EFC';
+
   return (
     <section className="dev-prelims-review" data-testid="prelims-adoption-review">
       <div className="dev-prelims-review__toolbar">
@@ -734,10 +743,10 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
       </div>
 
       <header className="dev-prelims-review__intro">
-        <h3>Review against CVR</h3>
+        <h3>{`Review against ${destinationLabel}`}</h3>
         <p data-testid="review-intro-copy">
-          Commercial preview of the Prelims proposal against the current open CVR worksheet. This
-          review does not change the CVR until you explicitly select cost codes and confirm
+          Commercial preview of the Prelims proposal against the current open {destinationLabel} worksheet. This
+          review does not change {siteStart ? 'Site Start' : 'the CVR'} until you explicitly select cost codes and confirm
           adoption.
         </p>
       </header>
@@ -761,14 +770,14 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
           <div className="dev-prelims-review__summary" data-testid="prelims-review-summary">
             <dl className="dev-prelims__context" data-testid="prelims-proposal-split">
               <div>
-                <dt>Open CVR</dt>
+                <dt>{siteStart ? 'Working forecast' : 'Open CVR'}</dt>
                 <dd>
                   {preview.periodKey || '—'}
                   {preview.periodStatus ? ` · ${preview.periodStatus}` : ''}
                 </dd>
               </div>
               <div>
-                <dt>Reporting month</dt>
+                <dt>{preview.monthLabel || 'Reporting month'}</dt>
                 <dd>{preview.reportingMonth || '—'}</dd>
               </div>
               <div>
@@ -778,13 +787,13 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
                 </dd>
               </div>
               <div>
-                <dt>Reviewable against CVR</dt>
+                <dt>{`Reviewable against ${destinationLabel}`}</dt>
                 <dd data-testid="summary-reviewable">
                   {money(summary?.proposedFinalForecastTotal)}
                 </dd>
               </div>
               <div>
-                <dt>Not on current CVR</dt>
+                <dt>{`Not on current ${destinationLabel}`}</dt>
                 <dd data-testid="summary-not-on-cvr">
                   {missingRows.length ? money(notOnCvrTotal) : money(0)}
                 </dd>
@@ -797,11 +806,11 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
 
             <dl className="dev-prelims__context" data-testid="prelims-cvr-comparison">
               <div>
-                <dt>Current EFC (reviewed Cost Codes)</dt>
+                <dt>{`${currentEfcLabel} (reviewed Cost Codes)`}</dt>
                 <dd>{money(summary?.currentFinalForecastTotal)}</dd>
               </div>
               <div>
-                <dt>Proposed EFC (reviewed Cost Codes)</dt>
+                <dt>{`${proposedEfcLabel} (reviewed Cost Codes)`}</dt>
                 <dd>{money(summary?.proposedFinalForecastTotal)}</dd>
               </div>
               <div>
@@ -850,7 +859,7 @@ export default function DevelopmentPrelimsAdoptionReview({ developmentId, onBack
               disabled={!draftPeriod || selectedKeys.size === 0 || adopting}
               data-testid="adopt-selected"
             >
-              Adopt selected into CVR
+              {`Adopt selected into ${destinationLabel}`}
             </button>
           </div>
 

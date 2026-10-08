@@ -11,6 +11,7 @@ import {
   adoptCvrDevelopmentBudget,
   approveCvrPeriodForDevelopment,
   createCvrPeriodForDevelopment,
+  createFirstCvrFromSiteStartForDevelopment,
   createCvrPeriodInput,
   importCvrBudget,
   patchCvrPeriodForDevelopment,
@@ -65,6 +66,13 @@ export async function createServerCvrPeriod(developmentId, payload = {}) {
   } catch (error) {
     return mapApiError(error);
   }
+}
+
+export async function createServerFirstCvrFromSiteStart(developmentId, payload = {}) {
+  try {
+    const period = await createFirstCvrFromSiteStartForDevelopment(developmentId, payload);
+    return { ok: true, period: cachePeriod(developmentId, period) };
+  } catch (error) { return mapApiError(error); }
 }
 
 export async function patchServerCvrPeriod(developmentId, periodId, payload = {}) {

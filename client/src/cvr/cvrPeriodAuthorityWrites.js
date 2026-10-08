@@ -17,6 +17,7 @@ import {
   addServerCvrCostCodeMember,
   approveServerCvrPeriod,
   createServerCvrPeriod,
+  createServerFirstCvrFromSiteStart,
   createServerCvrPeriodInput,
   importServerCvrBudget,
   patchServerCvrPeriod,
@@ -175,7 +176,7 @@ export async function copyOpeningInputsOntoDraft(developmentId, {
   }
 
   if (existingKeys.size === 0) {
-    const mapped = mapOpeningQsInputs(source.inputs, { includeBudgets: targetPeriod.budgetSourceMode !== 'development_budget' });
+    const mapped = mapOpeningQsInputs(source.inputs, { includeBudgets: !['development_budget', 'site_start_budget'].includes(targetPeriod.budgetSourceMode) });
     if (!mapped.ok) return mapped;
     const upserted = await upsertServerCvrPeriodInputs(developmentId, targetPeriod.id, {
       inputs: mapped.inputs,
@@ -293,21 +294,37 @@ export async function createDraftPeriodOnServer(developmentId, {
   };
 }
 
-export async function submitPeriodOnServer(developmentId, periodKey) {
+export async function createFirstCvrFromSiteStartOnServer(developmentId, { siteStartPeriod, reportingMonth } = {}) {
+  if (!siteStartPeriod?.id || siteStartPeriod.periodType !== 'site_start' || siteStartPeriod.status !== 'locked') {
+    return { ok:false,errors:['A locked Site Start is required before P01 can be created.'] };
+  }
+  const month = toYearMonth(reportingMonth);
+  if (!month) return { ok:false,errors:['Reporting month must be YYYY-MM.'] };
+  const created = await createServerFirstCvrFromSiteStart(developmentId, {
+    reportingMonth: month,
+    siteStartVersion: siteStartPeriod.version,
+  });
+  if (!created.ok) return created;
+  return { ok:true,periodKey:'P01',period:created.period,opened:false,copied:false };
+}
+
+export async function submitPeriodOnServer(developmentId, periodKey, payload = {}) {
   const resolved = requireCachedPeriod(developmentId, periodKey);
   if (!resolved.ok) return resolved;
   const result = await submitServerCvrPeriod(developmentId, resolved.period.id, {
     version: resolved.period.version,
+    ...payload,
   });
   if (!result.ok) return result;
   return { ok: true, period: result.period, periodKey };
 }
 
-export async function approvePeriodOnServer(developmentId, periodKey) {
+export async function approvePeriodOnServer(developmentId, periodKey, payload = {}) {
   const resolved = requireCachedPeriod(developmentId, periodKey);
   if (!resolved.ok) return resolved;
   const result = await approveServerCvrPeriod(developmentId, resolved.period.id, {
     version: resolved.period.version,
+    ...payload,
   });
   if (!result.ok) return result;
   return {
@@ -365,7 +382,7 @@ export async function patchCostCentreOnServer(developmentId, periodKey, centre) 
   const mapped = toServerInputPayload(centre);
   if (!mapped.ok) return mapped;
   const payload = { ...mapped.value };
-  if (resolved.period.budgetSourceMode === 'development_budget') {
+  if (['development_budget', 'site_start_budget'].includes(resolved.period.budgetSourceMode)) {
     delete payload.originalBudget;
     delete payload.currentBudget;
   }

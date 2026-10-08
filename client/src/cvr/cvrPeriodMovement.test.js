@@ -31,6 +31,60 @@ const model = (rows, extra = {}) => ({
 });
 
 describe('CVR period movement comparison', () => {
+  it('treats approved Site Start EFC as the P01 baseline without reporting absorbed adjustments as movement', () => {
+    const siteStart = row('5000', 130, { systemForecast: 100, changeExposure: 10, commercialAdjustment: 20 });
+    const p01 = row('5000', 130, { currentBudget: 130, systemForecast: 130, changeExposure: 0, commercialAdjustment: 0 });
+    const docs = [evidence('5000')];
+    const report = buildCvrPeriodComparison({
+      currentModel: model([p01]), previousModel: model([siteStart], { historic: true, snapshot: { id: 'site-start-snapshot' } }),
+      currentPeriod: { ...hierarchy(docs, 'live'), periodType: 'monthly_cvr', periodKey: 'P01', budgetSourceMode: 'site_start_budget' },
+      previousPeriod: { ...hierarchy(docs), periodType: 'site_start', periodKey: 'SITE_START' },
+    });
+    expect(report).toMatchObject({
+      baselineTransition: true,
+      baselineExplanation: 'Site Start forecast absorbed into P01 baseline.',
+      totalMovement: 0,
+    });
+    expect(report.rows[0]).toMatchObject({ movement: 0, residual: 0, unexplained: false });
+    expect(report.rows[0].components.map(({ key, movement }) => ({ key, movement }))).toEqual([
+      { key: 'systemForecast', movement: 0 },
+      { key: 'changeExposure', movement: 0 },
+      { key: 'commercialAdjustment', movement: 0 },
+    ]);
+  });
+
+  it('reports only genuine post-Site-Start facts in P01 and keeps ordinary P02 component comparison unchanged', () => {
+    const docs = [evidence('5000')];
+    const siteStart = row('5000', 130, { systemForecast: 100, changeExposure: 10, commercialAdjustment: 20 });
+    const p01 = row('5000', 137, { currentBudget: 130, systemForecast: 135, changeExposure: 2, commercialAdjustment: 0 });
+    const p01Report = buildCvrPeriodComparison({
+      currentModel: model([p01]), previousModel: model([siteStart], { historic: true, snapshot: { id: 'site-start-snapshot' } }),
+      currentPeriod: { ...hierarchy(docs, 'live'), periodType: 'monthly_cvr', periodKey: 'P01', budgetSourceMode: 'site_start_budget' },
+      previousPeriod: { ...hierarchy(docs), periodType: 'site_start', periodKey: 'SITE_START' },
+    });
+    expect(p01Report.rows[0].components.map(({ movement }) => movement)).toEqual([5, 2, 0]);
+    expect(p01Report.totalMovement).toBe(7);
+
+    const p02 = row('5000', 140, { currentBudget: 130, systemForecast: 136, changeExposure: 3, commercialAdjustment: 1 });
+    const p02Report = buildCvrPeriodComparison({
+      currentModel: model([p02]), previousModel: model([p01], { historic: true, snapshot: { id: 'p01-snapshot' } }),
+      currentPeriod: { ...hierarchy(docs, 'live'), periodType: 'monthly_cvr', periodKey: 'P02', budgetSourceMode: 'site_start_budget' },
+      previousPeriod: { ...hierarchy(docs), periodType: 'monthly_cvr', periodKey: 'P01' },
+    });
+    expect(p02Report.baselineTransition).toBe(false);
+    expect(p02Report.rows[0].components.map(({ movement }) => movement)).toEqual([1, 1, 1]);
+    expect(p02Report.totalMovement).toBe(3);
+
+    const p03 = row('5000', 138, { currentBudget: 130, systemForecast: 135, changeExposure: 2, commercialAdjustment: 1 });
+    const p03Report = buildCvrPeriodComparison({
+      currentModel: model([p03]), previousModel: model([p02], { historic: true, snapshot: { id: 'p02-snapshot' } }),
+      currentPeriod: { ...hierarchy(docs, 'live'), periodType: 'monthly_cvr', periodKey: 'P03', budgetSourceMode: 'site_start_budget' },
+      previousPeriod: { ...hierarchy(docs), periodType: 'monthly_cvr', periodKey: 'P02' },
+    });
+    expect(p03Report.rows[0].components.map(({ movement }) => movement)).toEqual([-1, -1, 0]);
+    expect(p03Report.totalMovement).toBe(-2);
+  });
+
   it('uses the canonical current component keys for the P02 movement bridge', () => {
     const previous = row('3000', 90000, { systemForecast: 90000, changeExposure: 0 });
     const current = row('3000', 167200, { systemForecast: 163200, changeExposure: 4000 });

@@ -362,14 +362,22 @@ async function buildCvrCloseCandidate({
 
   const actuals = buildActualsByCostCode(transactions);
   const expectedLiabilities = buildExpectedLiabilityByCostCode(events);
-  const changeExposure = buildChangeExposureByCostCode(events, variationExposureDocument?.items || []);
+  const changeExposure = buildChangeExposureByCostCode(
+    events,
+    variationExposureDocument?.items || [],
+    developmentBudgetDocument?.absorbedChangeExposure || []
+  );
   if (changeExposure.blockers.length) {
     return notReadyResult({ clientId, developmentId, periodId, sources, blockers: changeExposure.blockers });
   }
   const hierarchyByCostCode = new Map((commercialHierarchyDocument?.costCodes || []).map((entry) => [normaliseCostCodeKey(entry.costCodeKey), entry]));
   const variationExposureByCostCode = new Map();
-  const authorityBudgetByCostCode = new Map((developmentBudgetDocument?.positions || []).map((p) => [normaliseCostCodeKey(p.costCode), p]));
-  const usesDevelopmentBudget = Boolean(developmentBudgetDocument);
+  const siteStartBudgetDocument = period.periodType === 'site_start'
+    ? period.budgetSource?.document || null
+    : null;
+  const authoritativeBudgetDocument = developmentBudgetDocument || siteStartBudgetDocument;
+  const authorityBudgetByCostCode = new Map((authoritativeBudgetDocument?.positions || []).map((p) => [normaliseCostCodeKey(p.costCode), p]));
+  const usesDevelopmentBudget = Boolean(authoritativeBudgetDocument);
   for (const item of variationExposureDocument?.items || []) {
     const key = normaliseCostCodeKey(item.costCode);
     if (!key || item.vaExposureUplift == null) continue;

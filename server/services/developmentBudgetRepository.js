@@ -40,15 +40,24 @@ async function getAuthority(clientId,developmentId,auth,dbClient=null){
   const perCostCode=[...positions.values()].sort((a,b)=>a.costCode.localeCompare(b.costCode)).map(p=>({costCodeId:p.costCodeId,costCode:p.costCode,description:p.description,originalBudget:pounds(p.originalPence),currentBudget:pounds(p.currentPence)}));
   const totalOriginalPence=perCostCode.reduce((s,p)=>s+moneyToPence(p.originalBudget.toFixed(2)),0),totalCurrentPence=perCostCode.reduce((s,p)=>s+moneyToPence(p.currentBudget.toFixed(2)),0);
   const sourceDocument={calculationVersion:CALCULATION_VERSION,clientId,developmentId,events:events.map(e=>({id:e.id,sequenceNumber:e.sequenceNumber,eventType:e.eventType,sourceSnapshotSha256:e.sourceSnapshotSha256})),positions:perCostCode.map(p=>({costCodeId:p.costCodeId,costCode:p.costCode,originalPence:moneyToPence(p.originalBudget.toFixed(2)),currentPence:moneyToPence(p.currentBudget.toFixed(2))}))};
-  const milestone=(await db.query("SELECT * FROM development_budget_milestones WHERE client_id=$1 AND development_id=$2 AND milestone_type='site_start_budget'",[clientId,developmentId])).rows[0]||null;
+  const milestoneRows=(await db.query("SELECT * FROM development_budget_milestones WHERE client_id=$1 AND development_id=$2 AND milestone_type='site_start_budget' ORDER BY created_at DESC",[clientId,developmentId])).rows;
+  const milestone=milestoneRows.sort((a,b)=>Number(b.authority_version||1)-Number(a.authority_version||1))[0]||null;
+  const milestoneEvidence=milestone?.evidence_snapshot||{};
+  const milestonePositions=Number(milestone?.authority_version||1)===2
+    ? (milestoneEvidence.snapshot?.rows||[]).map(p=>({costCodeId:null,costCode:p.costCodeKey,description:p.description||'',amountPence:Number(p.efcPence||0)}))
+    : (milestoneEvidence.positions||[]);
+  const milestoneTotalPence=Number(milestone?.authority_version||1)===2
+    ? Number(milestoneEvidence.snapshot?.totalEfcPence||0)
+    : Number(milestoneEvidence.totalPence||0);
   const siteStartBudget=milestone?{
-    confirmed:true,id:milestone.id,openingBudgetEventId:milestone.opening_budget_event_id,
+    confirmed:true,id:milestone.id,authorityVersion:Number(milestone.authority_version||1),openingBudgetEventId:milestone.opening_budget_event_id,
+    siteStartPeriodId:milestone.site_start_period_id||null,siteStartSnapshotId:milestone.site_start_snapshot_id||null,landAppraisalId:milestone.land_appraisal_id||null,
     approvedEffectiveDate:canonicalDatabaseDate(milestone.approved_effective_date),reference:milestone.reference,
     approvalReason:milestone.approval_reason,evidenceSnapshot:milestone.evidence_snapshot,
     evidenceSha256:milestone.evidence_sha256,evidenceHashScheme:milestone.evidence_hash_scheme,
     createdBy:{userId:milestone.created_by_user_id,membershipId:milestone.created_by_membership_id,providerUserId:milestone.created_by_provider_user_id,displayName:milestone.created_by_display_name,roleKey:milestone.created_role_key,permission:milestone.created_permission_key},
-    createdAt:new Date(milestone.created_at).toISOString(),totalBudget:pounds(Number(milestone.evidence_snapshot?.totalPence||0)),
-    positions:(milestone.evidence_snapshot?.positions||[]).map(p=>({...p,amount:pounds(Number(p.amountPence||0))})),
+    createdAt:new Date(milestone.created_at).toISOString(),totalBudget:pounds(milestoneTotalPence),
+    positions:milestonePositions.map(p=>({...p,amount:pounds(Number(p.amountPence||0))})),
   }:{confirmed:false};
   return {ok:true,status:200,authority:{exists:events.length>0,calculationVersion:CALCULATION_VERSION,dataVersion:events.at(-1)?.sequenceNumber||0,development:{id:dev.id,name:dev.development_name,version:dev.version},totalOriginalBudget:pounds(totalOriginalPence),totalCurrentBudget:pounds(totalCurrentPence),perCostCode,events,siteStartBudget,sourceDocument,canonicalDigest:hashCanonicalJson(sourceDocument),canonicalHashScheme:CANONICAL_JSON_SHA256_V1}};
 }

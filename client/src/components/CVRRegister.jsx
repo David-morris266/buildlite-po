@@ -9,6 +9,7 @@ import {
 import { resolveCreateNextReportingMonthAction } from '../cvr/cvrCreateNextReportingMonth';
 import { isCvrServerAuthorityEnabled } from '../cvr/cvrPeriodAuthority';
 import { firstCvrCreationState } from '../cvr/cvrFirstPeriodReadiness';
+import { createFirstCvrFromSiteStart } from '../cvr/cvrPeriodStore';
 import {
   ensureCvrInputsReadyForPeriod,
   ensureCvrPeriodsReadyForDevelopment,
@@ -144,9 +145,10 @@ export default function CVRRegister({
     createConfirmInFlight.current = true;
     setReportingMonthBusy(true);
     try {
-      const result = await Promise.resolve(
-        createNextCvrPeriod(development.id, { reportingMonth })
-      );
+      const siteStartCutover = register.rows.length === 1 && register.rows[0]?.period?.periodType === 'site_start';
+      const result = await Promise.resolve(siteStartCutover
+        ? createFirstCvrFromSiteStart(development.id, { reportingMonth })
+        : createNextCvrPeriod(development.id, { reportingMonth }));
       await completeCreate(result);
     } finally {
       createConfirmInFlight.current = false;
@@ -154,9 +156,10 @@ export default function CVRRegister({
     }
   }
 
+  const siteStartCutover = register.rows.length === 1 && register.rows[0]?.period?.periodType === 'site_start' && register.rows[0]?.period?.status === 'locked';
   const primaryActionLabel = register.draftPeriodKey
     ? 'Open Draft CVR'
-    : 'Create New CVR Period';
+    : siteStartCutover ? 'Create first CVR (P01)' : 'Create New CVR Period';
   const { firstPeriod, blocked: firstPeriodCreationBlocked } = firstCvrCreationState({
     rowCount: register.rows.length,
     readiness: commercialReadiness,
@@ -237,7 +240,7 @@ export default function CVRRegister({
               register.rows.map((row) => (
                 <tr key={row.periodKey}>
                   <td>
-                    <strong>{row.periodKey}</strong>
+                    <strong>{row.displayPeriodLabel || row.periodKey}</strong>
                   </td>
                   <td>{row.reportingPeriodLabel}</td>
                   <td>

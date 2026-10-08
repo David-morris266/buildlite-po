@@ -138,6 +138,7 @@ export default function CostCentreDrawer({
   ledgerError = false, readOnly = false, historic = false, onClose, onSaveNotes,
   onSaveCommercialAdjustment, onOpenVariationAccount, onOpenAdjustmentWorkflow,
   storyboard = false, sideBySide = false,
+  budgetLabel = 'Current Budget',
 }) {
   const title = row?.costCodeLabel || 'Cost Code';
   const [adjustment, setAdjustment] = useState('');
@@ -207,7 +208,7 @@ export default function CostCentreDrawer({
         <div><dt>Previous EFC</dt><dd>{movement?.previousForecastLabel || 'Unavailable'}</dd></div>
         <div><dt>Current EFC</dt><dd>{movement?.currentForecastLabel || formatCvrMoney(displayRow.finalForecast)}</dd></div>
         <div className="dev-cvr-storyboard__movement-primary"><dt>Movement</dt><dd className={Number(movement?.movement) > 0 ? 'cvr-movement--adverse' : Number(movement?.movement) < 0 ? 'cvr-movement--favourable' : ''}>{movement?.movementLabel || 'Unavailable'}</dd></div>
-        <div><dt>Current Budget</dt><dd>{formatCvrMoney(displayRow.currentBudget)}</dd></div>
+        <div><dt>{budgetLabel}</dt><dd>{formatCvrMoney(displayRow.currentBudget)}</dd></div>
         <div><dt>Variance to Budget</dt><dd className={`dev-cvr__variance dev-cvr__variance--${displayRow.varianceState || 'neutral'}`}>{formatCvrMoney(displayRow.variance)}</dd></div>
       </dl>
 

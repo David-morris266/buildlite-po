@@ -131,6 +131,20 @@ describe('CVR Movement Report presentation', () => {
     expect(onOpen).toHaveBeenCalledWith(movement, expect.any(HTMLButtonElement));
   });
 
+  it('identifies the Site Start cutover bridge without creating another reporting view', () => {
+    const report = {
+      available: true, baselineTransition: true,
+      baselineExplanation: 'Site Start forecast absorbed into P01 baseline.',
+      totalMovement: 0, automaticallyAttributed: 0, qsExplained: 0, awaitingExplanation: 0,
+      sections: { adverse: [], favourable: [], other: [], unexplained: [] },
+    };
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    act(() => root.render(<CvrMovementReport report={report} />));
+    expect(container.textContent).toContain('Site Start forecast absorbed into P01 baseline.');
+    expect(container.textContent).toContain('Movement below shows only change after the approved Site Start benchmark.');
+    expect(container.textContent).toContain('No EFC movement this period.');
+  });
+
   it('keeps a non-zero component residual visibly unreconciled', () => {
     const movement = {
       id: 'movement-3640', costCodeKey: '3640', costCodeLabel: '3640', description: 'Planting',

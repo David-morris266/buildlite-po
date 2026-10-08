@@ -23,6 +23,7 @@ const {
   buildSellingCostsReconciliation,
   classifySellingCostsOwnership,
 } = require("./sellingCostsAdoptionReconciliation");
+const { periodContext } = require("./cvrPeriodContext");
 
 const ADJUSTMENT_SEMANTICS =
   "The proposed replacement adjustment would replace the current CVR commercial adjustment; it is not added to it. This review does not write the CVR.";
@@ -158,6 +159,7 @@ function blockedPreview({
   block,
   comparison = null,
 }) {
+  const context = period ? periodContext(period) : null;
   return {
     ok: true,
     preview: {
@@ -170,7 +172,11 @@ function blockedPreview({
       periodId: period?.id || null,
       periodStatus: period?.status || null,
       periodVersion: Number(period?.version) || 0,
-      reportingMonth: period ? normalizeReportingMonth(period.reportingMonth) : null,
+      periodType: context?.periodType || null,
+      periodLabel: context?.periodLabel || null,
+      reportingMonth: context?.effectiveMonth || null,
+      effectiveMonth: context?.effectiveMonth || null,
+      monthLabel: context?.monthLabel || null,
       adjustmentSemantics: ADJUSTMENT_SEMANTICS,
       accrualNote: ACCRUAL_NOTE,
       proposal: proposalContext(proposal),
@@ -234,17 +240,21 @@ async function buildSellingCostsReviewPreview(clientId, developmentId) {
       message: "No open CVR worksheet is available to review against.",
     };
   }
+  const context = periodContext(openPeriod);
 
   const usesDevelopmentBudget = openPeriod.budgetSourceMode === "development_budget";
-  const developmentBudgetDocument = usesDevelopmentBudget
+  const usesSiteStartBudget = openPeriod.budgetSourceMode === "site_start_budget";
+  const developmentBudgetDocument = (usesDevelopmentBudget || usesSiteStartBudget || context.isSiteStart)
     ? openPeriod.budgetSource?.document || null
     : null;
-  if (usesDevelopmentBudget && !developmentBudgetDocument) {
+  if ((usesDevelopmentBudget || usesSiteStartBudget || context.isSiteStart) && !developmentBudgetDocument) {
     return {
       ok: false,
       status: 409,
-      message: "Current CVR Development Budget authority is unavailable.",
-      blockers: [{ source: "developmentBudget", reason: "development_budget_unavailable" }],
+      message: context.isSiteStart
+        ? "Site Start Land Appraisal authority is unavailable."
+        : "Current CVR Development Budget authority is unavailable.",
+      blockers: [{ source: context.isSiteStart ? "landAppraisal" : "developmentBudget", reason: context.isSiteStart ? "land_appraisal_unavailable" : "development_budget_unavailable" }],
     };
   }
 
@@ -301,7 +311,7 @@ async function buildSellingCostsReviewPreview(clientId, developmentId) {
       lines,
     } : null;
     return {
-      ...compareSellingCostsToCvr({developmentId,periodKey:openPeriod.periodKey,reportingMonth:openPeriod.reportingMonth,mode:proposal.mode,assumptionPercent:proposal.assumptionPercent,forecastRevenue:proposal.forecastRevenue,forecastSellingCosts:forecast,destinationCostCodeKey:destinationKey,cvrRow,overlay,existingMetadata,detailedEvidence}),
+      ...compareSellingCostsToCvr({developmentId,periodKey:openPeriod.periodKey,reportingMonth:context.effectiveMonth,mode:proposal.mode,assumptionPercent:proposal.assumptionPercent,forecastRevenue:proposal.forecastRevenue,forecastSellingCosts:forecast,destinationCostCodeKey:destinationKey,cvrRow,overlay,existingMetadata,detailedEvidence}),
       costCodeDescription: overlay?.costCodeLabel || cvrRow?.costCodeLabel || destination.label || destinationKey,
       destination,
       detailedEvidence,
@@ -356,7 +366,11 @@ async function buildSellingCostsReviewPreview(clientId, developmentId) {
       periodId: openPeriod.id,
       periodStatus: openPeriod.status,
       periodVersion: Number(openPeriod.version) || 0,
-      reportingMonth: normalizeReportingMonth(openPeriod.reportingMonth),
+      periodType: context.periodType,
+      periodLabel: context.periodLabel,
+      reportingMonth: context.effectiveMonth,
+      effectiveMonth: context.effectiveMonth,
+      monthLabel: context.monthLabel,
       adjustmentSemantics: ADJUSTMENT_SEMANTICS,
       accrualNote: ACCRUAL_NOTE,
       proposal: proposalContext(proposal),

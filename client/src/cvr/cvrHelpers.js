@@ -84,6 +84,7 @@ export function buildCvrWorkspaceModel(development, options = {}) {
   const period = options.period || null;
   const historic = Boolean(model.historic);
   const historicUnavailable = Boolean(model.historicUnavailable);
+  const siteStart = period?.periodType === 'site_start';
 
   if (model.unavailable) {
     return {
@@ -123,12 +124,12 @@ export function buildCvrWorkspaceModel(development, options = {}) {
     developmentNotes: model.developmentNotes,
     summaryCards: [
       {
-        label: 'Original Budget',
+        label: siteStart ? 'Land Appraisal Baseline' : 'Original Budget',
         value: formatCvrMoney(summary.originalBudget),
         modifier: 'default',
       },
       {
-        label: 'Current Budget',
+        label: siteStart ? 'Working Baseline' : 'Current Budget',
         value: formatCvrMoney(summary.currentBudget),
         modifier: 'default',
       },

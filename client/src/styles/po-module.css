@@ -12295,3 +12295,9 @@
 .admin-readiness-item .admin-panel__heading p {
   margin-bottom: 0;
 }
+.cvr-summary__benchmark-movement {
+  display: block;
+  margin-top: 0.2rem;
+  font-weight: 400;
+  white-space: normal;
+}

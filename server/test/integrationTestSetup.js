@@ -110,6 +110,48 @@ async function prepareIntegrationTestDatabase(pool) {
   if (!hasTenantBranding.rowCount) {
     await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '066_tenant_branding_assets.sql'), 'utf8'));
   }
+  const hasSiteStartPeriod = await pool.query(
+    "SELECT 1 FROM information_schema.columns WHERE table_name='cvr_periods' AND column_name='period_type'"
+  );
+  if (!hasSiteStartPeriod.rowCount) {
+    await pool.query(fs.readFileSync(
+      path.join(__dirname, '..', 'migrations', '067_site_start_period_foundation.sql'),
+      'utf8'
+    ));
+  } else {
+    const hasLandAppraisalSeal = await pool.query("SELECT 1 FROM information_schema.columns WHERE table_name='development_land_appraisals' AND column_name='is_sealed'");
+    if (!hasLandAppraisalSeal.rowCount) {
+      await pool.query(`ALTER TABLE development_land_appraisals ADD COLUMN is_sealed BOOLEAN NOT NULL DEFAULT TRUE;
+        ALTER TABLE development_land_appraisals ALTER COLUMN is_sealed SET DEFAULT FALSE;
+        CREATE OR REPLACE FUNCTION protect_land_appraisal_history() RETURNS trigger AS $$
+        BEGIN
+          IF TG_OP='UPDATE' AND OLD.is_sealed=FALSE AND NEW.is_sealed=TRUE
+             AND (to_jsonb(NEW)-'is_sealed')=(to_jsonb(OLD)-'is_sealed') THEN RETURN NEW; END IF;
+          RAISE EXCEPTION 'Land Purchase Appraisal history is append-only';
+        END; $$ LANGUAGE plpgsql;
+        CREATE OR REPLACE FUNCTION validate_land_appraisal_line_boundary() RETURNS trigger AS $$ BEGIN
+          IF NOT EXISTS(SELECT 1 FROM development_land_appraisals a WHERE a.id=NEW.appraisal_id AND a.client_id=NEW.client_id AND a.development_id=NEW.development_id AND a.is_sealed=FALSE) THEN RAISE EXCEPTION 'Land Appraisal line creation is limited to the original capture transaction'; END IF;
+          IF NOT EXISTS(SELECT 1 FROM cost_codes c WHERE c.id=NEW.cost_code_id AND c.client_id=NEW.client_id AND c.is_active AND c.code=NEW.cost_code) THEN RAISE EXCEPTION 'Land Appraisal requires an active tenant Cost Code identity'; END IF;
+          RETURN NEW;
+        END; $$ LANGUAGE plpgsql;`);
+    }
+    await pool.query("ALTER TABLE development_land_appraisals ALTER COLUMN is_sealed SET DEFAULT FALSE");
+    const hasSiteStartV2 = await pool.query("SELECT 1 FROM information_schema.columns WHERE table_name='development_budget_milestones' AND column_name='authority_version'");
+    if (!hasSiteStartV2.rowCount) {
+      const migration = fs.readFileSync(path.join(__dirname, '..', 'migrations', '067_site_start_period_foundation.sql'), 'utf8');
+      await pool.query(migration.slice(migration.indexOf('-- SS-4A:')));
+    }
+    const hasSiteStartCutover = await pool.query("SELECT 1 FROM information_schema.columns WHERE table_name='cvr_periods' AND column_name='site_start_source_snapshot_id'");
+    if (!hasSiteStartCutover.rowCount) {
+      await pool.query(`ALTER TABLE cvr_periods ADD COLUMN site_start_source_snapshot_id UUID REFERENCES cvr_period_snapshots(id) ON DELETE RESTRICT;
+        ALTER TABLE cvr_periods DROP CONSTRAINT IF EXISTS cvr_periods_budget_source_check;
+        ALTER TABLE cvr_periods ADD CONSTRAINT cvr_periods_budget_source_check CHECK(budget_source IN('legacy_cvr','development_budget','land_appraisal','site_start_budget'));
+        ALTER TABLE cvr_periods DROP CONSTRAINT IF EXISTS chk_cvr_period_type_identity;
+        ALTER TABLE cvr_periods ADD CONSTRAINT chk_cvr_period_type_identity CHECK(
+          (period_type='site_start' AND period_key='SITE_START' AND period_label='Site Start' AND reporting_month IS NULL AND forecast_as_at_month IS NOT NULL AND budget_source='land_appraisal' AND site_start_source_snapshot_id IS NULL)
+          OR (period_type='monthly_cvr' AND period_key<>'SITE_START' AND forecast_as_at_month IS NULL AND ((budget_source='site_start_budget' AND site_start_source_snapshot_id IS NOT NULL) OR (budget_source<>'site_start_budget' AND site_start_source_snapshot_id IS NULL))))`);
+    }
+  }
   const activeClientId = await ensureActiveTestClient(pool);
   await ensureDefaultTestPrincipal(pool, activeClientId);
 }

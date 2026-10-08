@@ -161,6 +161,10 @@ function validatePatchPeriodBody(body = {}) {
   if (body.reportingMonth !== undefined) {
     errors.push("Reporting Period cannot be changed after the CVR period is created.");
   }
+  if (body.forecastAsAtMonth !== undefined) {
+    value.forecastAsAtMonth = parseReportingMonth(body.forecastAsAtMonth, errors);
+    if (!value.forecastAsAtMonth) errors.push("forecastAsAtMonth is required for Site Start.");
+  }
   if (body.commentary !== undefined) {
     value.commentary = normaliseCommentary(body.commentary, errors);
   }
@@ -250,6 +254,7 @@ module.exports = {
   optionalMoney,
   trimText,
   normaliseCostCodeKey,
+  parseReportingMonth,
   parseExpectedVersion,
   validateCreatePeriodBody,
   validatePatchPeriodBody,

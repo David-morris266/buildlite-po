@@ -23,6 +23,25 @@ const pence = (value) => value == null || value === '' || !Number.isFinite(Numbe
 const money = (value) => value == null ? null : value / 100;
 const periodNumber = (key) => Number(String(key || '').replace(/[^0-9]/g, '')) || 0;
 
+function isSiteStartCutoverComparison(currentPeriod, previousPeriod) {
+  return currentPeriod?.periodType === 'monthly_cvr'
+    && currentPeriod?.budgetSourceMode === 'site_start_budget'
+    && previousPeriod?.periodType === 'site_start';
+}
+
+function siteStartBaselineComponentRow(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    systemForecast: row.finalForecast,
+    expectedLiability: 0,
+    expectedLiabilityCaptured: true,
+    vaExposureUplift: 0,
+    changeExposure: row.changeExposure == null ? undefined : 0,
+    commercialAdjustment: 0,
+  };
+}
+
 export function findPreviousLockedCvrPeriod(developmentId, periodKey) {
   const current = periodNumber(periodKey);
   return listCvrPeriods(developmentId)
@@ -82,6 +101,7 @@ export function formatSignedMovement(value) {
 }
 
 export function buildCvrPeriodComparison({ currentModel, previousModel, currentPeriod, previousPeriod }) {
+  const siteStartCutover = isSiteStartCutoverComparison(currentPeriod, previousPeriod);
   const previousAvailable = Boolean(previousModel && !previousModel.unavailable && !previousModel.historicUnavailable);
   const previousComplete = previousAvailable && Boolean(previousModel.historic && previousModel.snapshot);
   const currentRows = new Map((currentModel?.rows || []).map((row) => [normaliseHierarchyCostCodeKey(row.costCodeKey), row]));
@@ -100,10 +120,11 @@ export function buildCvrPeriodComparison({ currentModel, previousModel, currentP
     const currentForecastPence = current ? pence(current.finalForecast) : comparable ? 0 : null;
     const movementPence = comparable && previousForecastPence != null && currentForecastPence != null
       ? currentForecastPence - previousForecastPence : null;
-    const componentSet = current?.changeExposure != null && previous?.changeExposure != null
+    const previousComponents = siteStartCutover ? siteStartBaselineComponentRow(previous) : previous;
+    const componentSet = current?.changeExposure != null && previousComponents?.changeExposure != null
       ? CHANGE_EXPOSURE_COMPONENTS : LEGACY_COMPONENTS;
     const components = componentSet.map(([name]) => componentDelta(
-      name, current || {}, previous || {}, comparable && !newCode && !previousOnly, componentSet
+      name, current || {}, previousComponents || {}, comparable && !newCode && !previousOnly, componentSet
     ));
     let explainedPence = null;
     if (components.every((component) => component.available)) {
@@ -138,7 +159,7 @@ export function buildCvrPeriodComparison({ currentModel, previousModel, currentP
       unexplained: residualPence == null ? movementPence !== 0 : residualPence !== 0,
       adjustmentReason, newCode, previousOnly, currentHierarchy: currentPath, previousHierarchy: previousPath, hierarchyChanged,
     };
-    return attributeCvrMovementRow({ row, current, previous, currentPeriod, previousPeriod });
+    return attributeCvrMovementRow({ row, current, previous: previousComponents, currentPeriod, previousPeriod });
   }).sort((a, b) => Math.abs(pence(b.movement) || 0) - Math.abs(pence(a.movement) || 0));
 
   const moved = rows.filter((row) => row.comparable && pence(row.movement) !== 0);
@@ -174,6 +195,8 @@ export function buildCvrPeriodComparison({ currentModel, previousModel, currentP
     awaitingExplanationMagnitude: money(rows.reduce((sum, row) =>
       sum + (pence(row.awaitingExplanationMagnitude) || 0), 0)),
     explanationReconciles: totalMovementPence == null ? null : explanationReconciliationPence === totalMovementPence,
+    baselineTransition: siteStartCutover,
+    baselineExplanation: siteStartCutover ? 'Site Start forecast absorbed into P01 baseline.' : null,
   };
 }
 

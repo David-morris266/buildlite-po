@@ -14,6 +14,16 @@ describe('cvrPeriodStatus', () => {
     expect(sortPeriodKeys(['P03', 'P01', 'P02'])).toEqual(['P01', 'P02', 'P03']);
   });
 
+  it('orders Site Start before P01 without treating it as P00', () => {
+    expect(sortPeriodKeys(['P02', 'SITE_START', 'P01'])).toEqual([
+      'SITE_START',
+      'P01',
+      'P02',
+    ]);
+    expect(parsePeriodNumber('SITE_START')).toBe(0);
+    expect(formatNextPeriodKey(['SITE_START'])).toBe('P01');
+  });
+
   it('formats the next period key', () => {
     expect(formatNextPeriodKey(['P01', 'P02'])).toBe('P03');
     expect(formatNextPeriodKey([])).toBe('P01');

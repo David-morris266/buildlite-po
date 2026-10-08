@@ -3,7 +3,7 @@
  * into client store shape. Snapshot money is nested under `snapshot.totals`.
  */
 
-import { isCvrPeriodLocked } from './cvrPeriodStatus';
+import { isCvrPeriodLocked, periodOrdinal } from './cvrPeriodStatus';
 import { normalizeServerCvrSnapshot } from './cvrSnapshotMapper';
 
 function emptyCommentary() {
@@ -63,8 +63,11 @@ export function normalizeServerCvrPeriod(document, inputs = []) {
     periodKey: document.periodKey,
     periodLabel: document.periodLabel || document.periodKey,
     reportingMonth: document.reportingMonth || null,
+    periodType: document.periodType || 'monthly_cvr',
+    forecastAsAtMonth: document.forecastAsAtMonth || null,
     status,
     budgetSourceMode: document.budgetSourceMode || 'legacy_cvr',
+    siteStartSourceSnapshotId: document.siteStartSourceSnapshotId || null,
     budgetSource: document.budgetSource || null,
     commercialHierarchy: document.commercialHierarchy || null,
     version: Number(document.version) || 1,
@@ -97,9 +100,7 @@ export function normalizeServerCvrPeriodList(documents) {
       normalizeServerCvrPeriod(item, firstNonEmptyArray(item?.costCentres, item?.inputs))
     )
     .filter(Boolean)
-    .sort((a, b) => String(a.periodKey).localeCompare(String(b.periodKey), undefined, {
-      numeric: true,
-    }));
+    .sort((a, b) => periodOrdinal(a) - periodOrdinal(b));
 }
 
 export function normalizeServerCvrCostCodeInput(document) {

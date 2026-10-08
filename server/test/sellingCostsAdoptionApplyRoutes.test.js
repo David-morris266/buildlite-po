@@ -19,6 +19,7 @@ const {
 } = require("../services/sellingCostsAdoptionApplyService");
 const developmentBudgetRepository = require("../services/developmentBudgetRepository");
 const { PERMISSIONS } = require("../auth/permissions");
+const { captureLandAppraisal } = require("../services/landAppraisalRepository");
 
 const app = createApp();
 const MIGRATION_004 = path.join(__dirname, "..", "migrations", "004_developments.sql");
@@ -85,6 +86,12 @@ async function cleanup() {
     await pool.query(`DELETE FROM cvr_periods WHERE id = ANY($1::uuid[])`, [testPeriodIds]);
   }
   if (testDevelopmentIds.length) {
+    await pool.query("ALTER TABLE development_land_appraisal_lines DISABLE TRIGGER USER");
+    await pool.query("ALTER TABLE development_land_appraisals DISABLE TRIGGER USER");
+    await pool.query(`DELETE FROM development_land_appraisal_lines WHERE development_id = ANY($1::text[])`, [testDevelopmentIds]);
+    await pool.query(`DELETE FROM development_land_appraisals WHERE development_id = ANY($1::text[])`, [testDevelopmentIds]);
+    await pool.query("ALTER TABLE development_land_appraisals ENABLE TRIGGER USER");
+    await pool.query("ALTER TABLE development_land_appraisal_lines ENABLE TRIGGER USER");
     await pool.query(
       `DELETE FROM development_selling_costs_settings WHERE development_id = ANY($1::text[])`,
       [testDevelopmentIds]
@@ -266,16 +273,19 @@ async function saveAssumption(developmentId, percent = 1.75) {
   return res.body;
 }
 
-async function createDraftPeriod(clientId, developmentId, { reportingMonth = "2026-08-01", status = "draft", budgetSource = "legacy_cvr" } = {}) {
+async function createDraftPeriod(clientId, developmentId, { reportingMonth = "2026-08-01", status = "draft", budgetSource = "legacy_cvr", periodType = "monthly_cvr", periodKey = "P04" } = {}) {
+  const siteStart = periodType === "site_start";
   const period = await pool.query(
     `
       INSERT INTO cvr_periods (
-        client_id, development_id, period_key, period_label, status, version, reporting_month, budget_source
+        client_id, development_id, period_key, period_label, status, version, reporting_month, budget_source, period_type, forecast_as_at_month
       )
-      VALUES ($1, $2, 'P04', 'Period 04', $4, 1, $3::date, $5)
+      VALUES ($1, $2, $6, $7, $4, 1, $3::date, $5, $8, $9::date)
       RETURNING id
     `,
-    [clientId, developmentId, reportingMonth, status, budgetSource]
+    [clientId, developmentId, siteStart ? null : reportingMonth, status, budgetSource,
+      periodKey, siteStart ? "Site Start" : "Period 04", periodType,
+      siteStart ? reportingMonth : null]
   );
   const periodId = period.rows[0].id;
   trackPeriod(periodId);
@@ -318,6 +328,35 @@ async function postOpeningDevelopmentBudget(clientId, developmentId, costCodeId,
     }
   );
   assert.equal(result.status, 201, result.message || JSON.stringify(result));
+}
+
+async function captureTestLandAppraisal(clientId, developmentId, costCodeId, amount) {
+  const principal = (await pool.query(
+    `SELECT u.id AS user_id,u.provider_user_id,u.display_name,m.id AS membership_id,r.key AS role_key
+       FROM client_user_memberships m
+       JOIN buildlite_users u ON u.id=m.user_id
+       JOIN roles r ON r.id=m.role_id
+       JOIN role_permissions rp ON rp.role_id=r.id
+      WHERE m.client_id=$1 AND m.is_active=true AND rp.permission_key=$2 LIMIT 1`,
+    [clientId, PERMISSIONS.LAND_APPRAISAL_CAPTURE]
+  )).rows[0];
+  assert.ok(principal, "Land Appraisal test principal is required");
+  const result = await captureLandAppraisal(clientId, developmentId, {
+    effectiveDate: "2026-08-01",
+    reference: `SS3-${developmentId}`,
+    approvalReason: "SS3 guarded Selling Costs adoption",
+    lines: [{ costCodeId, amount: Number(amount).toFixed(2) }],
+  }, {
+    clientId,
+    userId: principal.user_id,
+    membershipId: principal.membership_id,
+    providerUserId: principal.provider_user_id,
+    displayName: principal.display_name,
+    roleKey: principal.role_key,
+    permissions: [PERMISSIONS.COMMERCIAL_READ, PERMISSIONS.LAND_APPRAISAL_CAPTURE],
+  });
+  assert.equal(result.status, 201, result.message || JSON.stringify(result));
+  return result.appraisal;
 }
 
 async function removeDevelopmentBudget(developmentId) {
@@ -425,6 +464,7 @@ function intentFromReview(preview, extras = {}) {
     : [preview.comparison];
   return {
     expectedPeriodKey: preview.periodKey,
+    expectedPeriodType: preview.periodType || "monthly_cvr",
     expectedPeriodVersion: preview.periodVersion,
     expectedReportingMonth: preview.reportingMonth,
     expectedSettingsVersion: Number(preview.proposal?.settings?.version) || 0,
@@ -457,6 +497,7 @@ function exactClientIntentFromReview(preview) {
   const comparison = preview?.comparison || {};
   return {
     expectedPeriodKey: preview.periodKey,
+    expectedPeriodType: preview.periodType || "monthly_cvr",
     expectedPeriodVersion: preview.periodVersion,
     expectedReportingMonth: preview.reportingMonth,
     expectedSettingsVersion: Number(preview.proposal?.settings?.version) || 0,
@@ -669,6 +710,59 @@ if (!isDbConfigured()) {
     } finally {
       await removeDevelopmentBudget(developmentId);
     }
+  });
+
+  test("Site Start uses forecast-as-at and adopts a fact-only Land Appraisal destination idempotently", async () => {
+    const active = await getActiveClient();
+    const developmentId = await createDevelopment(active);
+    const destination = await insertCostCode(active.id, "5400", "Selling Costs — General Allowance");
+    await classify(active.id, "5400");
+    await saveAssumption(developmentId, 1.75);
+    const appraisal = await captureTestLandAppraisal(active.id, developmentId, destination.id, 150000);
+    const periodId = await createDraftPeriod(active.id, developmentId, {
+      reportingMonth: "2027-03-01",
+      budgetSource: "land_appraisal",
+      periodType: "site_start",
+      periodKey: "SITE_START",
+    });
+
+    const preview = await loadReview(developmentId);
+    assert.equal(preview.periodType, "site_start");
+    assert.equal(preview.periodKey, "SITE_START");
+    assert.equal(preview.reportingMonth, "2027-03");
+    assert.equal(preview.monthLabel, "Forecast as at");
+    assert.equal(preview.comparison.inputVersion, 0);
+    assert.equal(preview.comparison.systemForecast, 150000);
+
+    const adopted = await postAdopt(developmentId, intentFromReview(preview));
+    assert.equal(adopted.status, 200, adopted.body?.message || JSON.stringify(adopted.body));
+    assert.equal(adopted.body.periodType, "site_start");
+    assert.equal(adopted.body.reportingMonth, "2027-03");
+    assert.equal(adopted.body.adopted[0].newAdjustment, 32780.64);
+
+    const appraisalAfter = await pool.query(
+      `SELECT a.evidence_sha256,l.amount FROM development_land_appraisals a
+       JOIN development_land_appraisal_lines l ON l.appraisal_id=a.id WHERE a.id=$1`,
+      [appraisal.id]
+    );
+    assert.equal(appraisalAfter.rows[0].evidence_sha256, appraisal.evidenceSha256);
+    assert.equal(Number(appraisalAfter.rows[0].amount), 150000);
+
+    const refreshed = await loadReview(developmentId);
+    assert.equal(refreshed.reviewState, "up_to_date");
+    const repeated = await postAdopt(developmentId, intentFromReview(refreshed));
+    assert.equal(repeated.status, 200, repeated.body?.message || JSON.stringify(repeated.body));
+    assert.equal(repeated.body.adopted.length, 0);
+    assert.equal(repeated.body.unchanged.length, 1);
+
+    // This suite reuses the tenant's 5400 fixture in later tests. Remove only
+    // this guarded test appraisal after immutability has been asserted.
+    await pool.query("ALTER TABLE development_land_appraisal_lines DISABLE TRIGGER USER");
+    await pool.query("ALTER TABLE development_land_appraisals DISABLE TRIGGER USER");
+    await pool.query("DELETE FROM development_land_appraisal_lines WHERE appraisal_id=$1", [appraisal.id]);
+    await pool.query("DELETE FROM development_land_appraisals WHERE id=$1", [appraisal.id]);
+    await pool.query("ALTER TABLE development_land_appraisals ENABLE TRIGGER USER");
+    await pool.query("ALTER TABLE development_land_appraisal_lines ENABLE TRIGGER USER");
   });
 
   test("destination change atomically releases the prior workflow position and adopts the new one", async () => {

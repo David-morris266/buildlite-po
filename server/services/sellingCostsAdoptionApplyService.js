@@ -47,7 +47,9 @@ const {
   classifySellingCostsOwnership,
 } = require("./sellingCostsAdoptionReconciliation");
 const { addDraftCvrCostCodeMember } = require("./cvrMembershipService");
+const { effectiveForecastMonth, periodContext } = require("./cvrPeriodContext");
 const { liveDocument: loadLiveDevelopmentBudget } = require("./cvrDevelopmentBudgetSnapshot");
+const { getLandAppraisalAuthority } = require("./landAppraisalRepository");
 
 const SELLING_COSTS_ADOPTION_ERROR_CODES = {
   PERIOD_NOT_DRAFT: "PERIOD_NOT_DRAFT",
@@ -67,6 +69,7 @@ const SELLING_COSTS_ADOPTION_ERROR_CODES = {
   DUPLICATE_COST_CODE: "DUPLICATE_COST_CODE",
   DETAILED_NOT_AVAILABLE: "DETAILED_NOT_AVAILABLE",
   CANNOT_ADOPT: "CANNOT_ADOPT",
+  WORKFLOW_OWNERSHIP_CONFLICT: "WORKFLOW_OWNERSHIP_CONFLICT",
   CVR_CLOSE_NOT_READY: CVR_CLOSE_NOT_READY_CODE,
 };
 
@@ -276,6 +279,15 @@ function validateSelectionAgainstComparison({
   createdFromFactOnly = false,
 }) {
   const costCodeKey = selection.destinationCostCodeKey;
+  const prelimsAuthority = inputDoc?.displayMetadata?.prelimsAdoption;
+  if (prelimsAuthority && !prelimsAuthority.superseded && !prelimsAuthority.released) {
+    return fail(
+      409,
+      SELLING_COSTS_ADOPTION_ERROR_CODES.WORKFLOW_OWNERSHIP_CONFLICT,
+      `Cost code ${costCodeKey} is currently owned by Prelims adoption. Resolve that authority deliberately before adopting Selling Costs.`,
+      { costCodeKey, conflictingOwner: "prelims" }
+    );
+  }
 
   if (!destinationIsReady(destination)) {
     return fail(
@@ -435,6 +447,7 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
   if (!scoped.ok) return scoped;
 
   const expectedPeriodKey = String(body.expectedPeriodKey || body.periodKey || "").trim();
+  const expectedPeriodType = String(body.expectedPeriodType || "monthly_cvr").trim();
   const expectedPeriodVersion = Number(body.expectedPeriodVersion);
   const expectedReportingMonth = normalizeReportingMonth(
     body.expectedReportingMonth || body.reportingMonth
@@ -488,6 +501,7 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
     }
 
     const period = periodRowToDocument(periodRow);
+    const context = periodContext(period);
     const periodId = period.id;
 
     if (Number(period.version) !== expectedPeriodVersion) {
@@ -517,13 +531,18 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
       );
     }
 
-    const actualReportingMonth = normalizeReportingMonth(period.reportingMonth);
+    if (context.periodType !== expectedPeriodType) {
+      await dbClient.query("ROLLBACK");
+      return fail(409, SELLING_COSTS_ADOPTION_ERROR_CODES.PERIOD_KEY_CHANGED, "Period type no longer matches the reviewed period.", { expectedPeriodType, actualPeriodType: context.periodType });
+    }
+
+    const actualReportingMonth = effectiveForecastMonth(period);
     if (actualReportingMonth !== expectedReportingMonth) {
       await dbClient.query("ROLLBACK");
       return fail(
         409,
         SELLING_COSTS_ADOPTION_ERROR_CODES.REPORTING_MONTH_CHANGED,
-        "CVR reporting month no longer matches the reviewed period.",
+        `${context.monthLabel} no longer matches the reviewed period.`,
         { expectedReportingMonth, actualReportingMonth }
       );
     }
@@ -562,16 +581,24 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
     const inputRows = await listCostCodeInputRowsForUpdate(clientId, periodId, dbClient);
     const inputDocs = inputRows.map(inputRowToDocument);
     const usesDevelopmentBudget = period.budgetSourceMode === "development_budget";
+    const usesSiteStartBudget = period.budgetSourceMode === "site_start_budget";
+    const landAppraisalResult = context.isSiteStart
+      ? await getLandAppraisalAuthority(clientId, developmentId, dbClient)
+      : null;
     const developmentBudgetDocument = usesDevelopmentBudget
       ? await loadLiveDevelopmentBudget(dbClient, clientId, developmentId)
-      : null;
-    if (usesDevelopmentBudget && !developmentBudgetDocument) {
+      : usesSiteStartBudget
+        ? await require('./cvrSiteStartBudgetSource').liveDocument(dbClient, clientId, developmentId, period.siteStartSourceSnapshotId)
+      : context.isSiteStart
+        ? landAppraisalResult?.appraisal || null
+        : null;
+    if ((usesDevelopmentBudget || usesSiteStartBudget || context.isSiteStart) && !developmentBudgetDocument) {
       await dbClient.query("ROLLBACK");
       return fail(
         409,
         SELLING_COSTS_ADOPTION_ERROR_CODES.CVR_CLOSE_NOT_READY,
-        "Current CVR Development Budget authority is unavailable.",
-        { blockers: [{ source: "developmentBudget", reason: "development_budget_unavailable" }] }
+        context.isSiteStart ? "Site Start Land Appraisal authority is unavailable." : "Current CVR Development Budget authority is unavailable.",
+        { blockers: [{ source: context.isSiteStart ? "landAppraisal" : "developmentBudget", reason: context.isSiteStart ? "land_appraisal_unavailable" : "development_budget_unavailable" }] }
       );
     }
 
@@ -653,6 +680,7 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
         developmentId,
         periodKey: period.periodKey,
         reportingMonth: actualReportingMonth,
+        periodType: context.periodType,
         mode: proposal.mode,
         assumptionPercent: proposal.assumptionPercent,
         forecastRevenue: proposal.forecastRevenue,
@@ -892,6 +920,8 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
       adoption: {
         periodId,
         periodKey: period.periodKey,
+        periodType: context.periodType,
+        periodVersion: Number(period.version),
         reportingMonth: actualReportingMonth,
         adopted,
         released,
@@ -917,4 +947,5 @@ module.exports = {
   adoptSellingCostsForecasts,
   buildAdoptionReason,
   parseSelections,
+  validateSelectionAgainstComparison,
 };

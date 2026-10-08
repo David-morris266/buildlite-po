@@ -86,6 +86,8 @@ function previewDoc(overrides = {}) {
     periodKey: 'P04',
     periodId: 'period-p04',
     periodStatus: 'draft',
+    periodType: 'monthly_cvr',
+    periodVersion: 3,
     reportingMonth: '2026-08',
     adjustmentSemantics:
       'The proposed replacement adjustment replaces the current CVR adjustment; it is not added to it.',
@@ -127,6 +129,26 @@ async function flush() {
 describe('DevelopmentPrelimsAdoptionReview (x.4C.2)', () => {
   let container;
   let root;
+
+  it('presents Site Start adoption against the authoritative forecast-as-at context', async () => {
+    previewDevelopmentPrelimsAdoption.mockResolvedValue(previewDoc({
+      periodKey: 'SITE_START',
+      periodType: 'site_start',
+      periodVersion: 9,
+      reportingMonth: '2027-06',
+      monthLabel: 'Forecast as at',
+    }));
+    await act(async () => {
+      root.render(<DevelopmentPrelimsAdoptionReview developmentId="dev-1" onBack={() => {}} />);
+    });
+    await flush();
+
+    expect(container.textContent).toContain('Review against Site Start');
+    expect(container.textContent).toContain('Forecast as at');
+    expect(container.textContent).toContain('Current Working EFC');
+    expect(container.textContent).toContain('Proposed Working EFC');
+    expect(container.querySelector('[data-testid="adopt-selected"]')?.textContent).toContain('Site Start');
+  });
 
   beforeEach(() => {
     container = document.createElement('div');

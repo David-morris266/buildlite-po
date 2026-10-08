@@ -66,9 +66,12 @@ export function buildCvrPeriodRegisterRow(developmentId, period, pos = []) {
 
   return {
     periodKey: period.periodKey,
+    displayPeriodLabel: period.periodType === 'site_start' ? 'Site Start' : period.periodKey,
     status,
     statusLabel: status.label,
-    reportingPeriodLabel: formatReportingPeriod(period.reportingMonth),
+    reportingPeriodLabel: period.periodType === 'site_start'
+      ? `Forecast as at ${formatReportingPeriod(period.forecastAsAtMonth)}`
+      : formatReportingPeriod(period.reportingMonth),
     forecastLabel: forecastUnavailable ? '—' : formatCvrMoney(model.summary.finalForecast),
     varianceLabel: forecastUnavailable ? '—' : formatCvrMoney(model.summary.variance),
     createdLabel: formatPoDate(period.createdAt),
@@ -124,6 +127,16 @@ export function buildCvrRegisterModel(development, options = {}) {
 
 export function buildCvrPeriodHeaderMeta(period) {
   if (!period) return [];
+
+  if (period.periodType === 'site_start') {
+    return [
+      { label: 'Forecast as at', value: formatReportingPeriod(period.forecastAsAtMonth) },
+      { label: 'Period', value: 'Site Start' },
+      { label: 'Created', value: formatPoDate(period.createdAt) },
+      { label: 'Submitted', value: '—' },
+      { label: 'Approved', value: '—' },
+    ];
+  }
 
   return [
     { label: 'Reporting Period', value: formatReportingPeriod(period.reportingMonth) },

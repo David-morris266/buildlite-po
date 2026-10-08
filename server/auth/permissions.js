@@ -15,6 +15,8 @@ const PERMISSIONS = Object.freeze({
   PAYMENT_AUTHORITY_REVERSE: 'payment_authority.reverse',
   PAYMENT_RELEASE_EXECUTE: 'payment_release.execute',
   DEVELOPMENT_BUDGET_POST: 'development_budget.post', COMPANY_SETTINGS_MANAGE: 'company_settings.manage', DEVELOPMENT_CREATE: 'development.create',
+  LAND_APPRAISAL_CAPTURE: 'land_appraisal.capture',
+  SITE_START_MANAGE: 'site_start.manage',
   COMMERCIAL_STRUCTURE_MANAGE: 'commercial_structure.manage',
   COMMERCIAL_HEAD_CATEGORIES_MANAGE: 'commercial_head_categories.manage',
   COMMERCIAL_TEMPLATES_MANAGE: 'commercial_templates.manage',

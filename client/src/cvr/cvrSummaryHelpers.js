@@ -139,8 +139,17 @@ export function buildCommercialCostMovementSummary({
   currentTotals = {}, movementReport = null, giaSummary = null,
 } = {}) {
   const budgetAuthority = String(currentPeriod?.status || '').toLowerCase() === 'locked' ? currentPeriod?.snapshot?.budgetSource : currentPeriod?.budgetSource;
-  const siteStartDocument = budgetAuthority?.document?.siteStartBudget || null;
-  const siteStartByCode = new Map((siteStartDocument?.positions || []).map(position => [String(position.costCode || '').trim().toLowerCase(), Number(position.amountPence || 0) / 100]));
+  const legacySiteStart = budgetAuthority?.document?.siteStartBudget || null;
+  const siteStartPositions = currentPeriod?.periodType === 'site_start' && String(currentPeriod?.status || '').toLowerCase() === 'locked'
+    ? (currentPeriod?.snapshot?.rows || []).map(row => ({ costCode: row.costCodeKey, amountPence: Math.round(Number(row.finalForecast || 0) * 100) }))
+    : currentPeriod?.budgetSourceMode === 'site_start_budget'
+      ? (budgetAuthority?.document?.positions || []).map(position => ({ costCode: position.costCode, amountPence: position.originalPence }))
+      : legacySiteStart?.positions || [];
+  const siteStartAvailable = siteStartPositions.length > 0 || Number.isFinite(Number(legacySiteStart?.totalPence));
+  const siteStartTotal = siteStartPositions.length > 0
+    ? roundMoney(siteStartPositions.reduce((sum, position) => sum + Number(position.amountPence || 0) / 100, 0))
+    : Number.isFinite(Number(legacySiteStart?.totalPence)) ? Number(legacySiteStart.totalPence) / 100 : null;
+  const siteStartByCode = new Map(siteStartPositions.map(position => [String(position.costCode || '').trim().toLowerCase(), Number(position.amountPence || 0) / 100]));
   const current = movementBucketMap(currentRows, currentPeriod);
   const previous = movementReport?.available ? movementBucketMap(previousRows, previousPeriod) : new Map();
   const keys = [...new Set([...current.keys(), ...previous.keys()])];
@@ -155,7 +164,8 @@ export function buildCommercialCostMovementSummary({
     const costToComplete = sumNullable((now?.bucket.rows || []).map(({ row }) => row.costToComplete)) ?? 0;
     const uncommittedForecast = sumNullable((now?.bucket.rows || []).map(({ row }) => row.uncommittedForecast)) ?? 0;
     const changeExposure = sumNullable((now?.bucket.rows || []).map(({ row }) => row.changeExposure)) ?? 0;
-    const siteStartBudget = siteStartDocument ? roundMoney((now?.bucket.rows || []).reduce((sum, { row }) => sum + (siteStartByCode.get(String(row.costCodeKey || '').trim().toLowerCase()) || 0), 0)) : null;
+    const siteStartBudget = siteStartAvailable ? roundMoney((now?.bucket.rows || []).reduce((sum, { row }) => sum + (siteStartByCode.get(String(row.costCodeKey || '').trim().toLowerCase()) || 0), 0)) : null;
+    const cumulativeSiteStartMovement = siteStartBudget == null ? null : roundMoney(currentForecast - siteStartBudget);
     const costPerFt2 = calculateCostPerFt2(currentForecast, giaSummary);
     const costCodeKeys = [...new Set([...(now?.bucket.filter.costCodeKeys || []), ...(prior?.bucket.filter.costCodeKeys || [])])];
     const bucketHeadId = bucket.headId || null;
@@ -167,11 +177,12 @@ export function buildCommercialCostMovementSummary({
     return {
       head: bucket.label, headKey: key, headId: bucket.headId, kind: bucket.kind,
       resolutionStates: bucket.resolutionStates, families: bucket.families, reportingGroups: bucket.reportingGroups,
-      budget: now?.budget ?? 0, siteStartBudget, previousForecast, currentForecast, movement,
+      budget: now?.budget ?? 0, siteStartBudget, cumulativeSiteStartMovement, previousForecast, currentForecast, movement,
       finalForecast: currentForecast, variance: now?.variance ?? 0,
       costToComplete, uncommittedForecast, changeExposure, costPerFt2,
       budgetLabel: formatCvrMoney(now?.budget ?? 0), siteStartBudgetLabel: siteStartBudget == null ? '—' : formatCvrMoney(siteStartBudget), previousForecastLabel: formatCvrMoney(previousForecast),
       currentForecastLabel: formatCvrMoney(currentForecast), movementLabel: formatSignedMovement(movement),
+      cumulativeSiteStartMovementLabel: formatSignedMovement(cumulativeSiteStartMovement),
       costToCompleteLabel: formatCvrMoney(costToComplete), uncommittedForecastLabel: formatCvrMoney(uncommittedForecast),
       changeExposureLabel: formatCvrMoney(changeExposure), costPerFt2Label: costPerFt2 == null ? 'Unavailable' : `£${costPerFt2.toFixed(2)}`,
       finalForecastLabel: formatCvrMoney(currentForecast), varianceLabel: formatCvrMoney(now?.variance ?? 0),
@@ -182,7 +193,7 @@ export function buildCommercialCostMovementSummary({
   });
   const totals = {
     budget: currentTotals.currentBudget,
-    siteStartBudget: siteStartDocument ? Number(siteStartDocument.totalPence || 0) / 100 : null,
+    siteStartBudget: siteStartAvailable ? siteStartTotal : null,
     previousForecast: movementReport?.available ? roundMoney(previousRows.reduce((sum, row) => sum + (Number(row.finalForecast) || 0), 0)) : null,
     currentForecast: currentTotals.finalForecast,
     movement: movementReport?.totalMovement ?? null,
@@ -192,9 +203,13 @@ export function buildCommercialCostMovementSummary({
     changeExposure: currentTotals.changeExposure,
     costPerFt2: calculateCostPerFt2(currentTotals.finalForecast, giaSummary),
   };
+  totals.cumulativeSiteStartMovement = totals.siteStartBudget == null || totals.currentForecast == null
+    ? null
+    : roundMoney(totals.currentForecast - totals.siteStartBudget);
   Object.assign(totals, {
     budgetLabel: formatCvrMoney(totals.budget), previousForecastLabel: formatCvrMoney(totals.previousForecast),
     siteStartBudgetLabel: totals.siteStartBudget == null ? '—' : formatCvrMoney(totals.siteStartBudget),
+    cumulativeSiteStartMovementLabel: formatSignedMovement(totals.cumulativeSiteStartMovement),
     currentForecastLabel: formatCvrMoney(totals.currentForecast), movementLabel: formatSignedMovement(totals.movement),
     varianceLabel: formatCvrMoney(totals.variance), varianceState: getVarianceState(totals.variance),
     costToCompleteLabel: formatCvrMoney(totals.costToComplete),

@@ -237,6 +237,8 @@ export function buildServerCvrPeriodFixture(overrides = {}) {
     developmentId: overrides.developmentId || 'dev-cvr-b',
     periodKey: overrides.periodKey || 'P01',
     periodLabel: overrides.periodLabel || 'P01',
+    periodType: overrides.periodType || 'monthly_cvr',
+    forecastAsAtMonth: overrides.forecastAsAtMonth || null,
     reportingMonth: Object.prototype.hasOwnProperty.call(overrides, 'reportingMonth')
       ? overrides.reportingMonth
       : '2026-01-01',
@@ -630,6 +632,10 @@ export async function patchCvrPeriodForDevelopment(developmentId, periodId, payl
     periodLabel: payload.periodLabel ?? existing.periodLabel,
     reportingMonth:
       payload.reportingMonth !== undefined ? payload.reportingMonth : existing.reportingMonth,
+    forecastAsAtMonth:
+      payload.forecastAsAtMonth !== undefined
+        ? `${payload.forecastAsAtMonth}-01`.replace(/-01-01$/, '-01')
+        : existing.forecastAsAtMonth,
     commentary: payload.commentary
       ? { ...emptyCommentary(), ...payload.commentary }
       : existing.commentary,

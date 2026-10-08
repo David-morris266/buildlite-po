@@ -132,10 +132,36 @@ describe('DevelopmentSellingCostsCvrReview', () => {
     };
     const payload = buildAdoptionIntentPayload(preview);
     expect(payload.expectedPeriodVersion).toBe(4);
+    expect(payload.expectedPeriodType).toBe('monthly_cvr');
     expect(payload.expectedSettingsVersion).toBe(12);
     expect(payload.selections.map(item => [item.destinationCostCodeKey,item.proposalFingerprint,item.expectedInputVersion])).toEqual([
       ['6110','detail-6110',2],['6170','detail-6170',3],
     ]);
+  });
+
+  it('renders Site Start context and carries explicit type, version and effective month', async () => {
+    const siteStart = {
+      ...readyPreview,
+      periodKey: 'SITE_START',
+      periodType: 'site_start',
+      periodLabel: 'Site Start',
+      periodVersion: 7,
+      reportingMonth: '2027-06',
+      monthLabel: 'Forecast as at',
+    };
+    getSellingCostsCvrReview.mockResolvedValue(siteStart);
+    await renderReview();
+
+    expect(container.textContent).toContain('Review against Site Start');
+    expect(container.textContent).toContain('Current Working EFC');
+    expect(container.textContent).toContain('Proposed Working EFC');
+    expect(container.querySelector('[data-testid="selling-costs-adopt"]')?.textContent).toContain('Site Start');
+    expect(buildAdoptionIntentPayload(siteStart)).toMatchObject({
+      expectedPeriodKey: 'SITE_START',
+      expectedPeriodType: 'site_start',
+      expectedPeriodVersion: 7,
+      expectedReportingMonth: '2027-06',
+    });
   });
 
   it('shows Simple-mode comparison as read-only until Adopt is chosen', async () => {
@@ -383,7 +409,7 @@ describe('DevelopmentSellingCostsCvrReview', () => {
       document.querySelector('[data-testid="confirm-adoption"]').click();
     });
     await flush();
-    expect(document.querySelector('[data-testid="review-state"]')?.textContent).toBe('Up to date');
+    expect(document.querySelector('[data-testid="review-state"]')?.textContent).toBe('Already up to date');
   });
 
   it('does not double-submit while adopting', async () => {

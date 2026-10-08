@@ -19,4 +19,16 @@ describe('CVR Reporting Period header presentation', () => {
     const items = buildCvrPeriodHeaderMeta({ periodKey: 'P01', reportingMonth: null });
     expect(items).toContainEqual({ label: 'Reporting Period', value: '—' });
   });
+
+  it('presents Site Start with its distinct Forecast as at authority', () => {
+    expect(buildCvrPeriodHeaderMeta({
+      periodKey: 'SITE_START',
+      periodType: 'site_start',
+      reportingMonth: null,
+      forecastAsAtMonth: '2027-04-01',
+    })).toEqual(expect.arrayContaining([
+      { label: 'Forecast as at', value: 'April 2027' },
+      { label: 'Period', value: 'Site Start' },
+    ]));
+  });
 });

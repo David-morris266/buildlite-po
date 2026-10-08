@@ -20,6 +20,8 @@ const {
   approveCvrPeriod,
   createCostCodeInput,
   createCvrPeriod,
+  createFirstCvrFromSiteStart,
+  createSiteStartPeriod,
   getCvrPeriod,
   listCostCodeInputs,
   listCvrPeriods,
@@ -67,6 +69,52 @@ function sendResult(res, result, successStatus = 200, payloadKey) {
   }
   return res.status(result.status || successStatus).json(result);
 }
+
+router.post(
+  "/cvr/site-start-period",
+  requirePermission(PERMISSIONS.SITE_START_MANAGE),
+  async (req, res) => {
+    try {
+      if (!isDbConfigured()) {
+        return res.status(500).json({ message: "Database not configured" });
+      }
+      const active = await getActiveClient();
+      if (!active) return res.status(404).json({ error: "No active client set" });
+      const result = await createSiteStartPeriod(
+        active.id,
+        req.params.developmentId,
+        req.body || {},
+        { actor: req.buildliteAuth.displayName, auth: req.buildliteAuth }
+      );
+      return sendResult(res, result, 201, "period");
+    } catch (err) {
+      console.error("[CVR] create Site Start error:", err);
+      return res.status(err.status || 500).json({
+        message: err.message || "Failed to create Site Start.",
+      });
+    }
+  }
+);
+
+router.post(
+  "/cvr/site-start-period/create-p01",
+  requirePermission(PERMISSIONS.CVR_EDIT),
+  async (req, res) => {
+    try {
+      if (!isDbConfigured()) return res.status(500).json({ message: "Database not configured" });
+      const active = await getActiveClient();
+      if (!active) return res.status(404).json({ error: "No active client set" });
+      const result = await createFirstCvrFromSiteStart(active.id, req.params.developmentId, req.body || {}, {
+        actor: req.buildliteAuth.displayName,
+        auth: req.buildliteAuth,
+      });
+      return sendResult(res, result, 201, "period");
+    } catch (err) {
+      console.error("[CVR] create P01 from Site Start error:", err);
+      return res.status(err.status || 500).json({ message: err.message || "Failed to create P01 from Site Start." });
+    }
+  }
+);
 
 router.get("/cvr/periods", async (req, res) => {
   try {

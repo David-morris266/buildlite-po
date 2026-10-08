@@ -6,6 +6,7 @@ Phase 0 introduces versioned SQL migrations. **Do not edit a migration file afte
 
 | File | Purpose |
 |------|---------|
+| `067_site_start_period_foundation.sql` | Immutable Land Purchase Appraisal, explicit Site Start period identity, v2 Approved Site Start Budget milestone, and stable Approved-Site-Start budget source for P01 cutover. Existing periods and v1 milestones remain unchanged. |
 | `065_first_platform_operator_bootstrap.sql` | Append-only audit for an explicitly allowlisted, verified Clerk platform operator establishing a membership-less BuildLite identity. Creates no tenant or tenant authority. |
 | `057_change_exposure_identity.sql` | Optional explicit CE identity on a VA item plus append-only authenticated identity audit. Existing rows remain NULL; no inference or backfill. |
 | `058_site_start_budget_milestone.sql` | Explicit immutable Site Start Budget milestone referencing the Opening Budget event, with authenticated provenance and no inferred/backfilled milestone. |

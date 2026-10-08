@@ -166,6 +166,86 @@ describe('CVRWorkspace input hydration (BL-031B)', () => {
     expect(getCvrMutationCallCounts().addMember).toBe(0);
   });
 
+  it('renders an immutable Land Appraisal Site Start baseline and versioned forecast month control', async () => {
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({
+      id: PERIOD_ID,
+      developmentId: DEV.id,
+      periodKey: 'SITE_START',
+      periodLabel: 'Site Start',
+      periodType: 'site_start',
+      reportingMonth: null,
+      forecastAsAtMonth: '2027-03-01',
+      budgetSourceMode: 'land_appraisal',
+      budgetSource: {
+        state: 'land_appraisal',
+        adopted: true,
+        document: {
+          positions: [{ costCodeId: 'land-100', costCode: 'LAND-100', description: 'Land purchase', originalPence: 125000000, currentPence: 125000000 }],
+        },
+      },
+    }));
+    seedMockCvrInputs(PERIOD_ID, []);
+
+    await act(async () => {
+      root.render(<CVRWorkspace development={DEV} periodKey="SITE_START" />);
+    });
+    await flush(); await flush();
+
+    expect(container.textContent).toContain('Site Start Forecast');
+    expect(container.textContent).toContain('Working Site Start Forecast');
+    expect(container.textContent).toContain('Land Appraisal Baseline');
+    expect(container.textContent).toContain('Land purchase');
+    expect(container.textContent).toContain('£1,250,000.00');
+    expect(container.textContent).not.toContain('Import Budget');
+    expect([...container.querySelectorAll('button')].some((button) => button.textContent === 'Submit')).toBe(true);
+    const month = container.querySelector('input[type="month"]');
+    expect(month.value).toBe('2027-03');
+    act(() => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(month, '2027-04');
+      month.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const save = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Update forecast month');
+    await act(async () => save.click());
+    await flush();
+    expect(container.textContent).toContain('Forecast as at updated');
+    expect(getCvrMutationCallCounts().patch).toBe(1);
+  });
+
+  it('presents Site Start approval as an immutable-budget decision with required evidence', async () => {
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({
+      id: PERIOD_ID, developmentId: DEV.id, periodKey: 'SITE_START', periodLabel: 'Site Start',
+      periodType: 'site_start', status: 'submitted', reportingMonth: null,
+      forecastAsAtMonth: '2027-04-01', budgetSourceMode: 'land_appraisal',
+      budgetSource: { state: 'land_appraisal', adopted: true, document: { positions: [] } },
+      variationExposure: { stale: false, acknowledgementRequirements: [], acknowledgements: [] },
+    }));
+    seedMockCvrInputs(PERIOD_ID, []);
+    await act(async () => { root.render(<CVRWorkspace development={DEV} periodKey="SITE_START" />); });
+    await flush(); await flush();
+    const approve = [...container.querySelectorAll('button')].find((button) => button.textContent.includes('Approve & Lock'));
+    expect(approve).toBeTruthy();
+    act(() => approve.click());
+    expect(container.textContent).toContain('Approve & Lock Site Start Budget');
+    expect(container.textContent).toContain('immutable Approved Site Start Budget');
+    expect(container.textContent).toContain('Approval reference');
+    expect(container.textContent).toContain('Approval reason');
+    expect([...container.querySelectorAll('[role="dialog"] button')].find((button) => button.textContent === 'Approve & Lock').disabled).toBe(true);
+  });
+
+  it('replaces generic Create Next with the explicit P01 cutover on locked Site Start', async () => {
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({
+      id: PERIOD_ID, developmentId: DEV.id, periodKey: 'SITE_START', periodLabel: 'Site Start',
+      periodType: 'site_start', status: 'locked', reportingMonth: null,
+      forecastAsAtMonth: '2027-04-01', budgetSourceMode: 'land_appraisal',
+      budgetSource: { state: 'land_appraisal', adopted: true, document: { positions: [] } },
+    }));
+    seedMockCvrInputs(PERIOD_ID, []);
+    await act(async () => { root.render(<CVRWorkspace development={DEV} periodKey="SITE_START" />); });
+    await flush(); await flush();
+    expect(container.textContent).toContain('Create first CVR (P01)');
+    expect(container.textContent).not.toContain('Next Period');
+  });
+
   it('offers explicit Development Budget recovery without exposing legacy import', async () => {
     seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({
       id: PERIOD_ID,

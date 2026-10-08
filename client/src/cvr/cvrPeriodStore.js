@@ -19,6 +19,7 @@ import {
 import {
   approvePeriodOnServer,
   createDraftPeriodOnServer,
+  createFirstCvrFromSiteStartOnServer,
   recoverOrOpenDraftPeriodOnServer,
   rejectPeriodOnServer,
   savePeriodCommentaryOnServer,
@@ -331,6 +332,18 @@ export function createNextCvrPeriod(developmentId, options = {}) {
   return createOrOpenDraftPeriod(developmentId, options);
 }
 
+export function createFirstCvrFromSiteStart(developmentId, options = {}) {
+  const blocked = assertCvrPeriodReadsReady(developmentId);
+  if (!blocked.ok) return blocked;
+  if (!isCvrServerAuthorityEnabled()) return {ok:false,errors:['Site Start cutover requires server CVR authority.']};
+  return withDraftCreateLock(developmentId, () => {
+    const periods = listCvrPeriods(developmentId);
+    const siteStartPeriod = periods.find((period) => period.periodType === 'site_start');
+    if (periods.some((period) => period.periodType !== 'site_start')) return {ok:false,errors:['The first monthly CVR already exists for this Development.']};
+    return createFirstCvrFromSiteStartOnServer(developmentId, { siteStartPeriod, reportingMonth: options.reportingMonth });
+  });
+}
+
 export function __resetCvrDraftCreateLockForTests() {
   draftCreateInFlight.clear();
 }
@@ -357,7 +370,7 @@ function updatePeriodRecord(developmentId, periodKey, updater) {
   return { ok: true, period: next, periodKey };
 }
 
-export function submitCvrPeriod(developmentId, periodKey) {
+export function submitCvrPeriod(developmentId, periodKey, payload = {}) {
   if (isCvrServerAuthorityEnabled()) {
     const blocked = assertCvrPeriodReadsReady(developmentId);
     if (!blocked.ok) return blocked;
@@ -365,7 +378,7 @@ export function submitCvrPeriod(developmentId, periodKey) {
     if (!canSubmitCvrPeriod(period)) {
       return { ok: false, errors: ['This CVR period cannot be submitted.'] };
     }
-    return submitPeriodOnServer(developmentId, periodKey);
+    return submitPeriodOnServer(developmentId, periodKey, payload);
   }
 
   return updatePeriodRecord(developmentId, periodKey, (period) => {
@@ -384,7 +397,7 @@ export function submitCvrPeriod(developmentId, periodKey) {
   });
 }
 
-export function approveCvrPeriod(developmentId, periodKey) {
+export function approveCvrPeriod(developmentId, periodKey, payload = {}) {
   if (isCvrServerAuthorityEnabled()) {
     const blocked = assertCvrPeriodReadsReady(developmentId);
     if (!blocked.ok) return blocked;
@@ -392,7 +405,7 @@ export function approveCvrPeriod(developmentId, periodKey) {
     if (!canApproveCvrPeriod(period)) {
       return { ok: false, errors: ['This CVR period cannot be approved.'] };
     }
-    return approvePeriodOnServer(developmentId, periodKey);
+    return approvePeriodOnServer(developmentId, periodKey, payload);
   }
 
   return updatePeriodRecord(developmentId, periodKey, (period) => {

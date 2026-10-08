@@ -20,6 +20,7 @@ import {
 import { resolveCreateNextReportingMonthAction } from '../cvr/cvrCreateNextReportingMonth';
 import {
   approveCvrPeriod,
+  createFirstCvrFromSiteStart,
   getCvrPeriod,
   getCvrPeriodStatusMeta,
   isCvrPeriodEditable,
@@ -43,7 +44,10 @@ import {
   addCostCodeMemberOnServer,
   ensureDraftCvrOverlayMemberOnServer,
 } from '../cvr/cvrPeriodAuthorityWrites';
-import { adoptServerCvrDevelopmentBudget } from '../cvr/cvrPeriodServerMutations';
+import {
+  adoptServerCvrDevelopmentBudget,
+  patchServerCvrPeriod,
+} from '../cvr/cvrPeriodServerMutations';
 import {
   CVR_HISTORIC_SNAPSHOT_BANNER,
   CVR_HISTORIC_UNAVAILABLE_MESSAGE,
@@ -193,6 +197,11 @@ export default function CVRWorkspace({
   const [authoritativeOpenState, setAuthoritativeOpenState] = useState(
     isCvrServerAuthorityEnabled() ? 'loading' : 'current'
   );
+  const [forecastAsAtMonth, setForecastAsAtMonth] = useState('');
+  const [forecastAsAtBusy, setForecastAsAtBusy] = useState(false);
+  const [forecastAsAtFeedback, setForecastAsAtFeedback] = useState('');
+  const [siteStartApprovalReference, setSiteStartApprovalReference] = useState('');
+  const [siteStartApprovalReason, setSiteStartApprovalReason] = useState('');
 
   const period = useMemo(() => {
     void refreshToken;
@@ -227,6 +236,7 @@ export default function CVRWorkspace({
   }, [development.id, periodKey, refreshToken, openAttempt]);
 
   const readOnly = !isCvrPeriodEditable(period);
+  const siteStart = period?.periodType === 'site_start';
   const submitted = isCvrPeriodSubmitted(period);
   const locked = isCvrPeriodLocked(period);
   const variationExposure = locked ? period?.snapshot?.variationExposure : period?.variationExposure;
@@ -241,6 +251,14 @@ export default function CVRWorkspace({
   const headerMeta = buildCvrPeriodHeaderMeta(period).filter(
     (item) => item.label !== 'Period'
   );
+
+  useEffect(() => {
+    setForecastAsAtMonth(String(period?.forecastAsAtMonth || '').slice(0, 7));
+  }, [period?.forecastAsAtMonth]);
+
+  useEffect(() => {
+    setForecastAsAtFeedback('');
+  }, [period?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -518,12 +536,17 @@ export default function CVRWorkspace({
   }
 
   async function handleApprove() {
-    const result = await Promise.resolve(approveCvrPeriod(development.id, periodKey));
+    const result = await Promise.resolve(approveCvrPeriod(development.id, periodKey, siteStart ? {
+      approvalReference: siteStartApprovalReference,
+      comment: siteStartApprovalReason,
+    } : {}));
     if (!result.ok) {
       window.alert(result.errors?.[0] || 'Could not approve CVR.');
       return;
     }
     setDialog(null);
+    setSiteStartApprovalReference('');
+    setSiteStartApprovalReason('');
     refresh();
   }
 
@@ -539,6 +562,23 @@ export default function CVRWorkspace({
   async function handleAdoptDevelopmentBudget() {
     const result = await adoptServerCvrDevelopmentBudget(development.id, period.id);
     if (!result.ok) { window.alert(result.errors?.[0] || 'Could not use Development Budget.'); return; }
+    refresh();
+  }
+
+  async function handleForecastAsAtSave() {
+    if (!siteStart || readOnly || !period?.id || !/^\d{4}-\d{2}$/.test(forecastAsAtMonth)) return;
+    setForecastAsAtBusy(true);
+    setForecastAsAtFeedback('');
+    const result = await patchServerCvrPeriod(development.id, period.id, {
+      version: period.version,
+      forecastAsAtMonth,
+    });
+    setForecastAsAtBusy(false);
+    if (!result.ok) {
+      setForecastAsAtFeedback(result.errors?.[0] || 'Could not update Forecast as at.');
+      return;
+    }
+    setForecastAsAtFeedback('Forecast as at updated. Working forecast recomposed.');
     refresh();
   }
 
@@ -570,7 +610,9 @@ export default function CVRWorkspace({
   async function handleCreateNextPeriod() {
     const action = resolveCreateNextReportingMonthAction(development.id);
     if (action.kind === 'recover') {
-      const result = await Promise.resolve(createNextCvrPeriod(development.id));
+      const result = await Promise.resolve(siteStart
+        ? createFirstCvrFromSiteStart(development.id, { reportingMonth: action.reportingMonth })
+        : createNextCvrPeriod(development.id));
       if (!result.ok) {
         window.alert(result.errors?.[0] || 'Could not create next CVR period.');
         return;
@@ -590,7 +632,9 @@ export default function CVRWorkspace({
     setReportingMonthBusy(true);
     try {
       const result = await Promise.resolve(
-        createNextCvrPeriod(development.id, { reportingMonth })
+        siteStart
+          ? createFirstCvrFromSiteStart(development.id, { reportingMonth })
+          : createNextCvrPeriod(development.id, { reportingMonth })
       );
       if (!result.ok) {
         window.alert(result.errors?.[0] || 'Could not create next CVR period.');
@@ -677,8 +721,8 @@ export default function CVRWorkspace({
     <div className="dev-cvr dev-cvr-workspace dev-cvr-workspace--focused">
       <ApplicationPageHeader
         breadcrumbs={pageNavigation?.breadcrumbs || []}
-        title={workspace.developmentName}
-        lead={`Development ${workspace.developmentNumber || '—'}${readOnly ? ' · Read-only period' : ''}`}
+        title={siteStart ? 'Site Start Forecast' : workspace.developmentName}
+        lead={siteStart ? `${workspace.developmentName} · Working EFC${readOnly ? ' · Read-only period' : ''}` : `Development ${workspace.developmentNumber || '—'}${readOnly ? ' · Read-only period' : ''}`}
         onBack={onBackToSummary}
         actions={(
           <div className="dev-cvr-period__actions dev-cvr-period__actions--inline">
@@ -733,7 +777,7 @@ export default function CVRWorkspace({
                 className="po-list-btn-secondary dev-cvr__shell-btn"
                 onClick={handleCreateNextPeriod}
               >
-                Next Period
+                {siteStart ? 'Create first CVR (P01)' : 'Next Period'}
               </button>
             ) : null}
           </div>
@@ -791,7 +835,22 @@ export default function CVRWorkspace({
 
       <CvrAuditHistory items={auditItems} />
 
-      {developmentBudgetAdopted ? <div className="po-list-feedback po-list-feedback--info" role="status">Original and Current Budget are controlled by Development Budget. Manage budget movements from Development → Budget.</div> : budgetSource?.adoptionAvailable && !readOnly ? <div className="po-list-feedback po-list-feedback--warning" role="status">A Development Budget is available. This existing Draft still uses its established CVR budget until you choose to adopt it. <button type="button" className="po-list-btn-secondary" onClick={handleAdoptDevelopmentBudget}>Use Development Budget</button></div> : null}
+      {siteStart ? (
+        <section className="dev-cvr__notes-panel" aria-label="Site Start forecast period">
+          <h3>Working Site Start Forecast</h3>
+          <p>The Land Purchase Appraisal is the immutable baseline. Projected Adjustments change Working EFC without rewriting that historical authority.</p>
+          <div className="dev-cvr-drawer__adjustment-fields">
+            <label className="dev-form__field">
+              <span className="dev-form__label">Forecast as at</span>
+              <input type="month" className="input" value={forecastAsAtMonth} disabled={readOnly || forecastAsAtBusy} onChange={(event) => { setForecastAsAtMonth(event.target.value); setForecastAsAtFeedback(''); }} />
+            </label>
+            <button type="button" className="po-list-btn-secondary" disabled={readOnly || forecastAsAtBusy || !/^\d{4}-\d{2}$/.test(forecastAsAtMonth) || forecastAsAtMonth === String(period?.forecastAsAtMonth || '').slice(0, 7)} onClick={() => void handleForecastAsAtSave()}>{forecastAsAtBusy ? 'Saving…' : 'Update forecast month'}</button>
+          </div>
+          {forecastAsAtFeedback ? <p role="status">{forecastAsAtFeedback}</p> : null}
+        </section>
+      ) : null}
+
+      {siteStart ? <div className="po-list-feedback po-list-feedback--info" role="status">Land Appraisal Baseline is immutable. Use Projected Adjustments to develop the Working EFC.</div> : developmentBudgetAdopted ? <div className="po-list-feedback po-list-feedback--info" role="status">{period?.budgetSourceMode === 'site_start_budget' ? 'Original Budget is the Approved Site Start EFC. Current Budget also includes authorised Development Budget movements after Site Start.' : 'Original and Current Budget are controlled by Development Budget. Manage budget movements from Development → Budget.'}</div> : budgetSource?.adoptionAvailable && !readOnly ? <div className="po-list-feedback po-list-feedback--warning" role="status">A Development Budget is available. This existing Draft still uses its established CVR budget until you choose to adopt it. <button type="button" className="po-list-btn-secondary" onClick={handleAdoptDevelopmentBudget}>Use Development Budget</button></div> : null}
       {budgetSource?.authorityUnavailable ? <div className="po-list-feedback po-list-feedback--error" role="alert">{budgetSource.authorityMessage || 'Budget authority unavailable. BuildLite could not confirm whether this CVR should use the Development Budget. No budget action has been taken.'}</div> : null}
       {submitted && budgetSource?.stale ? <div className="po-list-feedback po-list-feedback--error" role="alert">Development Budget changed after this CVR was submitted. Reject to Draft, review the current budget and resubmit before Lock.</div> : null}
 
@@ -872,6 +931,7 @@ export default function CVRWorkspace({
             onSaveCommercialAdjustment={handleSaveCommercialAdjustment}
             onOpenVariationAccount={onOpenVariationAccount}
             onOpenAdjustmentWorkflow={onOpenAdjustmentWorkflow}
+            budgetLabel={siteStart ? 'Land Appraisal Baseline' : 'Current Budget'}
           />
         </div>
       ) : null}
@@ -901,28 +961,32 @@ export default function CVRWorkspace({
 
       {dialog === 'submit' ? (
         <WorkflowDialog
-          title="Submit CVR for Approval"
+          title={siteStart ? 'Submit Site Start for Approval' : 'Submit CVR for Approval'}
           confirmLabel="Submit for Approval"
           onCancel={() => setDialog(null)}
           onConfirm={handleSubmit}
         >
           <p className="dev-cvr-add__lead">
-            This period will become read-only while awaiting approval.
+            {siteStart ? 'The Working EFC will be recomposed from authoritative evidence and become read-only while awaiting approval.' : 'This period will become read-only while awaiting approval.'}
           </p>
         </WorkflowDialog>
       ) : null}
 
       {dialog === 'approve' ? (
         <WorkflowDialog
-          title="Approve & Lock CVR"
+          title={siteStart ? 'Approve & Lock Site Start Budget' : 'Approve & Lock CVR'}
           confirmLabel="Approve & Lock"
           onCancel={() => setDialog(null)}
           onConfirm={handleApprove}
-          confirmDisabled={Boolean(variationExposure?.stale || budgetSource?.stale || missingAcknowledgements.length)}
+          confirmDisabled={Boolean(variationExposure?.stale || budgetSource?.stale || missingAcknowledgements.length || (siteStart && (!siteStartApprovalReference.trim() || !siteStartApprovalReason.trim())))}
         >
           <p className="dev-cvr-add__lead">
-            Locked periods become permanent historical records.
+            {siteStart ? 'The locked EFC by Cost Code becomes the immutable Approved Site Start Budget.' : 'Locked periods become permanent historical records.'}
           </p>
+          {siteStart ? <>
+            <label className="dev-form__field"><span className="dev-form__label">Approval reference</span><input className="input" value={siteStartApprovalReference} onChange={(event) => setSiteStartApprovalReference(event.target.value)} /></label>
+            <label className="dev-form__field"><span className="dev-form__label">Approval reason</span><textarea className="input" rows={3} value={siteStartApprovalReason} onChange={(event) => setSiteStartApprovalReason(event.target.value)} /></label>
+          </> : null}
           {missingAcknowledgements.length ? <p className="po-list-feedback po-list-feedback--warning">Acknowledge {missingAcknowledgements.length} submitted Variation Account exposure exception{missingAcknowledgements.length === 1 ? '' : 's'} before Lock.</p> : null}
         </WorkflowDialog>
       ) : null}

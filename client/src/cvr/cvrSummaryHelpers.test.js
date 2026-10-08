@@ -403,6 +403,23 @@ describe('buildCommercialCostMovementSummary', () => {
     expect(unavailable.totals.siteStartBudget).toBeNull();
   });
 
+  it('uses the immutable Site Start source positions and keeps cumulative movement separate from period movement', () => {
+    const currentPeriod = period([allocated('4120', 'House Build')]);
+    currentPeriod.periodType = 'monthly_cvr';
+    currentPeriod.budgetSourceMode = 'site_start_budget';
+    currentPeriod.budgetSource = { document: { positions: [{ costCode: '4120', originalPence: 10000, currentPence: 11000 }] } };
+    const summary = buildCommercialCostMovementSummary({
+      currentRows: [{ costCodeKey: '4120', currentBudget: 110, finalForecast: 125, variance: -15 }],
+      previousRows: [{ costCodeKey: '4120', currentBudget: 100, finalForecast: 120, variance: -20 }],
+      currentPeriod,
+      previousPeriod: period([allocated('4120', 'House Build')]),
+      currentTotals: { currentBudget: 110, finalForecast: 125, variance: -15 },
+      movementReport: { available: true, totalMovement: 5, rows: [] },
+    });
+    expect(summary.items[0]).toMatchObject({ siteStartBudget: 100, movement: 5, cumulativeSiteStartMovement: 25 });
+    expect(summary.totals).toMatchObject({ siteStartBudget: 100, movement: 5, cumulativeSiteStartMovement: 25 });
+  });
+
   it('shows a hierarchy transfer as equal movement out and in without recasting either period', () => {
     const currentRows = [{ costCodeKey: '4120', currentBudget: 100, finalForecast: 100, variance: 0 }];
     const previousRows = [{ costCodeKey: '4120', currentBudget: 100, finalForecast: 100, variance: 0 }];

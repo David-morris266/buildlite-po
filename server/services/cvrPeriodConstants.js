@@ -11,6 +11,8 @@ const CVR_PERIOD_STATUSES = {
   submitted: "submitted",
   locked: "locked",
 };
+const CVR_PERIOD_TYPES = Object.freeze({ monthly: 'monthly_cvr', siteStart: 'site_start' });
+const SITE_START_PERIOD_KEY = 'SITE_START';
 
 const CVR_PERIOD_AUDIT_ACTIONS = {
   created: "created",
@@ -66,6 +68,16 @@ function nextPeriodKey(existingKeys = []) {
   return formatPeriodKey(next);
 }
 
+function periodOrdinal(periodOrKey) {
+  const period = typeof periodOrKey === 'object' && periodOrKey ? periodOrKey : { periodKey: periodOrKey };
+  const type = period.periodType || period.period_type;
+  const key = period.periodKey || period.period_key;
+  if (type === CVR_PERIOD_TYPES.siteStart || String(key || '').toUpperCase() === SITE_START_PERIOD_KEY) return 0;
+  const parsed = parsePeriodNumber(key);
+  return parsed > 0 ? parsed : Number.MAX_SAFE_INTEGER;
+}
+function comparePeriods(a,b){return periodOrdinal(a)-periodOrdinal(b);}
+
 function emptyCommentary() {
   return {
     keyCommercialIssues: "",
@@ -94,6 +106,8 @@ function isCvrPeriodMutable(status) {
 
 module.exports = {
   CVR_PERIOD_STATUSES,
+  CVR_PERIOD_TYPES,
+  SITE_START_PERIOD_KEY,
   CVR_PERIOD_AUDIT_ACTIONS,
   UUID_PATTERN,
   PERIOD_KEY_PATTERN,
@@ -108,6 +122,8 @@ module.exports = {
   formatPeriodKey,
   parsePeriodNumber,
   nextPeriodKey,
+  periodOrdinal,
+  comparePeriods,
   emptyCommentary,
   isCvrPeriodDraft,
   isCvrPeriodSubmitted,

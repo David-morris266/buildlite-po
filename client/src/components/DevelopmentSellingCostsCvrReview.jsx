@@ -48,7 +48,7 @@ function stateLabel(preview) {
   }
   switch (state) {
     case 'up_to_date':
-      return 'Up to date';
+      return 'Already up to date';
     case 'drifted':
       return 'Drifted';
     case 'superseded':
@@ -170,6 +170,7 @@ export function buildAdoptionIntentPayload(preview, { acknowledgeSuperseded, ack
   const comparisons = Array.isArray(preview?.comparisons) && preview.comparisons.length ? preview.comparisons : [preview?.comparison || {}];
   return {
     expectedPeriodKey: preview.periodKey,
+    expectedPeriodType: preview.periodType || 'monthly_cvr',
     expectedPeriodVersion: preview.periodVersion,
     expectedReportingMonth: preview.reportingMonth,
     expectedSettingsVersion: Number(preview.proposal?.settings?.version) || 0,
@@ -212,6 +213,8 @@ export function sellingCostsAdoptionConflictMessage(err) {
       return 'CVR adjustment changed. Refresh and review again before adopting.';
     case 'CVR_INPUT_CONFLICT':
       return 'This CVR line changed since review. Refresh and review again before adopting.';
+    case 'WORKFLOW_OWNERSHIP_CONFLICT':
+      return 'This Cost Code is owned by another forecast workflow. Resolve that authority deliberately before adopting Selling Costs.';
     case 'DESTINATION_NOT_ON_CVR':
       return 'This Selling Costs destination is not on the current CVR. Add it to the CVR first.';
     case 'DESTINATION_INVALID':
@@ -560,6 +563,11 @@ export default function DevelopmentSellingCostsCvrReview({ developmentId, onBack
     }
   }
 
+  const siteStart = preview?.periodType === 'site_start';
+  const destinationLabel = siteStart ? 'Site Start' : 'CVR';
+  const currentEfcLabel = siteStart ? 'Current Working EFC' : 'Current EFC';
+  const proposedEfcLabel = siteStart ? 'Proposed Working EFC' : 'Proposed EFC';
+
   return (
     <section className="dev-prelims-review" data-testid="selling-costs-cvr-review">
       <div className="dev-prelims-review__toolbar">
@@ -572,10 +580,10 @@ export default function DevelopmentSellingCostsCvrReview({ developmentId, onBack
       </div>
 
       <header className="dev-prelims-review__intro">
-        <h3>Review against CVR</h3>
+        <h3>{`Review against ${destinationLabel}`}</h3>
         <p>
-          Compare the current Selling Costs proposal with its destination CVR line. Numbers stay
-          read-only until you choose Adopt into CVR.
+          Compare the current Selling Costs proposal with its destination {destinationLabel} line. Numbers stay
+          read-only until you choose Adopt into {destinationLabel}.
         </p>
       </header>
 
@@ -705,7 +713,7 @@ export default function DevelopmentSellingCostsCvrReview({ developmentId, onBack
                   </dd>
                 </div>
                 <div>
-                  <dt>Current EFC</dt>
+                  <dt>{currentEfcLabel}</dt>
                   <dd data-testid="review-current-final">
                     {money(comparison.currentFinalForecast)}
                   </dd>
@@ -717,7 +725,7 @@ export default function DevelopmentSellingCostsCvrReview({ developmentId, onBack
                   </dd>
                 </div>
                 <div>
-                  <dt>Proposed EFC</dt>
+                  <dt>{proposedEfcLabel}</dt>
                   <dd data-testid="review-proposed-final">
                     {money(comparison.proposedFinalForecast)}
                   </dd>
@@ -756,7 +764,7 @@ export default function DevelopmentSellingCostsCvrReview({ developmentId, onBack
               <div className="dev-selling-costs-review__buttons">
                 <button type="button" className="po-list-btn-secondary" onClick={onBack}>Back to Selling Costs</button>
                 <button type="button" className="po-btn-primary" onClick={openConfirm} disabled={adopting} data-testid="selling-costs-adopt">
-                  {detailed ? 'Adopt Detailed Selling Costs into CVR' : 'Adopt into CVR'}
+                  {detailed ? `Adopt Detailed Selling Costs into ${destinationLabel}` : `Adopt into ${destinationLabel}`}
                 </button>
               </div>
             </div>

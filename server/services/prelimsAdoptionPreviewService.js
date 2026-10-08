@@ -16,6 +16,7 @@ const {
   roundMoney,
 } = require("./prelimsAdoptionCompare");
 const { PRELIMS_UNRESOLVED_LABELS } = require("./prelimsConstants");
+const { effectiveForecastMonth, periodContext } = require("./cvrPeriodContext");
 
 const MISSING_CVR_LINE_MESSAGE =
   "This Prelims proposal uses a cost code that is not currently included as a CVR line.";
@@ -31,7 +32,7 @@ function toYearMonth(value) {
 function pickOpenCvrPeriod(periods = []) {
   const open = periods.filter((period) => period && !isCvrPeriodLocked(period.status));
   if (!open.length) return null;
-  const withMonth = open.filter((period) => toYearMonth(period.reportingMonth));
+  const withMonth = open.filter((period) => effectiveForecastMonth(period));
   const draft = withMonth.find((period) => period.status === CVR_PERIOD_STATUSES.draft);
   const submitted = withMonth.find((period) => period.status === CVR_PERIOD_STATUSES.submitted);
   return draft || submitted || withMonth[withMonth.length - 1] || open[open.length - 1];
@@ -197,22 +198,26 @@ async function buildPrelimsAdoptionReviewPreview(clientId, developmentId, { repo
     };
   }
 
+  const context = periodContext(openPeriod);
   const collectionResult = await listPrelimsItems(clientId, developmentId, {
-    reportingMonth: reportingMonth || toYearMonth(openPeriod.reportingMonth),
+    reportingMonth: reportingMonth || context.effectiveMonth,
   });
   if (!collectionResult.ok) return collectionResult;
 
   const collection = collectionResult.collection;
   const usesDevelopmentBudget = openPeriod.budgetSourceMode === "development_budget";
-  const developmentBudgetDocument = usesDevelopmentBudget
+  const usesSiteStartBudget = openPeriod.budgetSourceMode === "site_start_budget";
+  const developmentBudgetDocument = (usesDevelopmentBudget || usesSiteStartBudget || context.isSiteStart)
     ? openPeriod.budgetSource?.document || null
     : null;
-  if (usesDevelopmentBudget && !developmentBudgetDocument) {
+  if ((usesDevelopmentBudget || usesSiteStartBudget || context.isSiteStart) && !developmentBudgetDocument) {
     return {
       ok: false,
       status: 409,
-      message: "Current CVR Development Budget authority is unavailable.",
-      blockers: [{ source: "developmentBudget", reason: "development_budget_unavailable" }],
+      message: context.isSiteStart
+        ? "Site Start Land Appraisal authority is unavailable."
+        : "Current CVR Development Budget authority is unavailable.",
+      blockers: [{ source: context.isSiteStart ? "landAppraisal" : "developmentBudget", reason: context.isSiteStart ? "land_appraisal_unavailable" : "development_budget_unavailable" }],
     };
   }
   const closeCandidate = await buildCvrCloseCandidate({
@@ -259,7 +264,7 @@ async function buildPrelimsAdoptionReviewPreview(clientId, developmentId, { repo
   const enginePreview = buildPrelimsAdoptionPreview({
     developmentId,
     periodKey: openPeriod.periodKey,
-    reportingMonth: collection.reportingMonth || toYearMonth(openPeriod.reportingMonth),
+    reportingMonth: collection.reportingMonth || context.effectiveMonth,
     prelimsItems: collection.items || [],
     programme: collection.programme,
     cvrRows,
@@ -297,8 +302,13 @@ async function buildPrelimsAdoptionReviewPreview(clientId, developmentId, { repo
       periodKey: openPeriod.periodKey,
       periodId: openPeriod.id,
       periodStatus: openPeriod.status,
+      periodType: context.periodType,
+      periodVersion: Number(openPeriod.version) || 0,
+      periodLabel: context.periodLabel,
       reportingMonth: enginePreview.reportingMonth,
-      reportingMonthSource: collection.reportingMonthSource || "open-cvr",
+      effectiveMonth: context.effectiveMonth,
+      monthLabel: context.monthLabel,
+      reportingMonthSource: collection.reportingMonthSource || (context.isSiteStart ? "site-start-forecast-as-at" : "open-cvr"),
       programme: collection.programme || null,
       adjustmentSemantics:
         "The proposed replacement adjustment replaces the current CVR adjustment; it is not added to it.",
@@ -307,7 +317,10 @@ async function buildPrelimsAdoptionReviewPreview(clientId, developmentId, { repo
         periodKey: openPeriod.periodKey,
         periodId: openPeriod.id,
         status: openPeriod.status,
-        reportingMonth: toYearMonth(openPeriod.reportingMonth),
+        periodType: context.periodType,
+        periodVersion: Number(openPeriod.version) || 0,
+        reportingMonth: context.isSiteStart ? null : context.effectiveMonth,
+        forecastAsAtMonth: context.isSiteStart ? context.effectiveMonth : null,
         ready: true,
       },
       summary: {

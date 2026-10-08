@@ -16,6 +16,8 @@ const {
   isCvrPeriodMutable,
   isValidUuid,
   nextPeriodKey,
+  CVR_PERIOD_TYPES,
+  SITE_START_PERIOD_KEY,
 } = require("./cvrPeriodConstants");
 const { periodRowToDocument, inputRowToDocument } = require("./cvrPeriodMapper");
 const { getSnapshotForPeriod } = require("./cvrSnapshotRepository");
@@ -110,7 +112,9 @@ async function listPeriodRows(clientId, developmentId, dbClient = null) {
       SELECT *
       FROM cvr_periods
       WHERE client_id = $1 AND development_id = $2
-      ORDER BY period_key ASC
+      ORDER BY CASE WHEN period_type='site_start' THEN 0 ELSE 1 END,
+        CASE WHEN period_key ~ '^P[0-9]+$' THEN substring(period_key from 2)::integer ELSE 2147483647 END,
+        period_key
     `,
     [clientId, developmentId]
   );
@@ -146,7 +150,16 @@ async function hydratePeriod(clientId, row, dbClient = null) {
   }
   const budgetSnapshots = require('./cvrDevelopmentBudgetSnapshot');
   const db = dbClient || { query };
-  if ((row.budget_source || 'legacy_cvr') === 'development_budget') {
+  if ((row.budget_source || 'legacy_cvr') === 'land_appraisal') {
+    const appraisal = await require('./landAppraisalRepository').getLandAppraisalAuthority(
+      clientId,
+      row.development_id,
+      db
+    );
+    document.budgetSource = appraisal.ok
+      ? { state: 'land_appraisal', adopted: true, document: appraisal.appraisal }
+      : { state: 'integrity_failed', adopted: false, document: null, integrityError: appraisal.message };
+  } else if ((row.budget_source || 'legacy_cvr') === 'development_budget') {
     if (row.status === CVR_PERIOD_STATUSES.draft) {
       const live = await budgetSnapshots.liveDocument(db, clientId, row.development_id);
       document.budgetSource = { state: 'live', adopted: true, document: live };
@@ -156,6 +169,18 @@ async function hydratePeriod(clientId, row, dbClient = null) {
         staleReasons: compared.reasons, document: compared.submitted?.source_snapshot || null, hash: compared.submitted?.source_snapshot_sha256 || null, integrity: compared.integrity || null };
     } else if (row.status === CVR_PERIOD_STATUSES.locked) {
       document.budgetSource = document.snapshot?.budgetSource || { state: 'legacy_not_captured', adopted: true };
+    }
+  } else if ((row.budget_source || 'legacy_cvr') === 'site_start_budget') {
+    const siteStartSource = require('./cvrSiteStartBudgetSource');
+    if (row.status === CVR_PERIOD_STATUSES.draft) {
+      document.budgetSource = { state: 'live', adopted: true,
+        document: await siteStartSource.liveDocument(db, row.client_id, row.development_id, row.site_start_source_snapshot_id) };
+    } else if (row.status === CVR_PERIOD_STATUSES.submitted) {
+      const compared = await siteStartSource.compare(db, { clientId: row.client_id, developmentId: row.development_id, periodId: row.id, sourceSnapshotId: row.site_start_source_snapshot_id });
+      document.budgetSource = { state: 'submitted', adopted: true, captured: compared.captured, stale: compared.stale,
+        staleReasons: compared.reasons, document: compared.submitted?.source_snapshot || null, hash: compared.submitted?.source_snapshot_sha256 || null, integrity: compared.integrity || null };
+    } else {
+      document.budgetSource = document.snapshot?.budgetSource || { state: 'site_start_budget', adopted: true };
     }
   } else {
     document.budgetSource = await classifyLegacyBudgetSource(row, db);
@@ -285,6 +310,11 @@ async function createCvrPeriod(clientId, developmentId, body = {}, {
       };
     }
     const existing = await listPeriodRows(clientId, developmentId, dbClient);
+    if (existing.some((row) => row.period_type === CVR_PERIOD_TYPES.siteStart) &&
+        !existing.some((row) => (row.period_type || CVR_PERIOD_TYPES.monthly) === CVR_PERIOD_TYPES.monthly)) {
+      await dbClient.query("ROLLBACK");
+      return { ok:false,status:409,code:'SITE_START_CUTOVER_REQUIRED',message:'Create P01 from the Approved Site Start Budget.' };
+    }
     const open = existing.find((row) => !isCvrPeriodLocked(row.status));
     if (open) {
       await dbClient.query("ROLLBACK");
@@ -297,9 +327,16 @@ async function createCvrPeriod(clientId, developmentId, body = {}, {
     }
 
     const periodKey = validated.value.periodKey || nextPeriodKey(existing.map((row) => row.period_key));
+    const latestMonthly = [...existing].reverse().find((item) => (item.period_type || CVR_PERIOD_TYPES.monthly) === CVR_PERIOD_TYPES.monthly);
+    const continuesSiteStartBudget = latestMonthly?.budget_source === 'site_start_budget' && latestMonthly.site_start_source_snapshot_id;
     const budgetReadiness = readinessResult.readiness.items.find((entry) => entry.key === 'development_budget');
     let budgetSource = 'legacy_cvr';
-    if (budgetReadiness?.state === 'ready') {
+    let siteStartSourceSnapshotId = null;
+    if (continuesSiteStartBudget) {
+      await require('./cvrSiteStartBudgetSource').authority(dbClient, clientId, developmentId, latestMonthly.site_start_source_snapshot_id);
+      budgetSource = 'site_start_budget';
+      siteStartSourceSnapshotId = latestMonthly.site_start_source_snapshot_id;
+    } else if (budgetReadiness?.state === 'ready') {
       const budgetDocument = await loadDevelopmentBudgetDocument(dbClient, clientId, developmentId);
       if (!budgetDocument?.positions?.length) {
         await dbClient.query("ROLLBACK");
@@ -326,9 +363,9 @@ async function createCvrPeriod(clientId, developmentId, body = {}, {
       `
         INSERT INTO cvr_periods (
           client_id, development_id, period_key, period_label, reporting_month,
-          status, commentary, version, created_by, updated_by, budget_source
+          status, commentary, version, created_by, updated_by, budget_source, site_start_source_snapshot_id
         )
-        VALUES ($1, $2, $3, $4, $5, 'draft', $6::jsonb, 1, $7, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, 'draft', $6::jsonb, 1, $7, $7, $8, $9)
         RETURNING *
       `,
       [
@@ -340,6 +377,7 @@ async function createCvrPeriod(clientId, developmentId, body = {}, {
         JSON.stringify(validated.value.commentary),
         actor || null,
         budgetSource,
+        siteStartSourceSnapshotId,
       ]
     );
 
@@ -367,6 +405,119 @@ async function createCvrPeriod(clientId, developmentId, body = {}, {
   } finally {
     dbClient.release();
   }
+}
+
+async function createSiteStartPeriod(clientId, developmentId, body = {}, options = {}) {
+  const { assertServicePermission } = require('../auth/authorization');
+  const { PERMISSIONS } = require('../auth/permissions');
+  const { parseReportingMonth } = require('./cvrPeriodValidation');
+  assertServicePermission(options.auth, PERMISSIONS.SITE_START_MANAGE);
+  const errors = [];
+  const forecastAsAtMonth = parseReportingMonth(body.forecastAsAtMonth, errors);
+  if (!forecastAsAtMonth || errors.length) {
+    return { ok: false, status: 400, message: 'forecastAsAtMonth is required in YYYY-MM format.' };
+  }
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query('BEGIN');
+    await dbClient.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))',
+      [clientId, developmentId]
+    );
+    const development = await dbClient.query(
+      'SELECT 1 FROM developments WHERE id = $1 AND client_id = $2 FOR UPDATE',
+      [developmentId, clientId]
+    );
+    if (!development.rowCount) {
+      await dbClient.query('ROLLBACK');
+      return { ok: false, status: 404, message: 'Development not found.' };
+    }
+    const appraisalResult = await require('./landAppraisalRepository').getLandAppraisalAuthority(
+      clientId,
+      developmentId,
+      dbClient
+    );
+    const appraisal = appraisalResult.appraisal;
+    if (!appraisal) {
+      await dbClient.query('ROLLBACK');
+      return { ok: false, status: 409, message: appraisalResult.message || 'An immutable Land Purchase Appraisal is required before Site Start can be created.' };
+    }
+    const periods = await listPeriodRows(clientId, developmentId, dbClient);
+    if (periods.some((row) => (row.period_type || CVR_PERIOD_TYPES.monthly) === CVR_PERIOD_TYPES.monthly)) {
+      await dbClient.query('ROLLBACK');
+      return { ok: false, status: 409, message: 'Site Start cannot be created after monthly CVR history exists.' };
+    }
+    if (periods.some((row) => row.period_type === CVR_PERIOD_TYPES.siteStart)) {
+      await dbClient.query('ROLLBACK');
+      return { ok: false, status: 409, message: 'Site Start already exists for this Development.' };
+    }
+    const inserted = (await dbClient.query(
+      `INSERT INTO cvr_periods (
+         client_id, development_id, period_key, period_label, reporting_month,
+         forecast_as_at_month, period_type, status, commentary, version,
+         created_by, updated_by, budget_source
+       ) VALUES ($1, $2, $3, 'Site Start', NULL, $4, $5, 'draft', '{}', 1, $6, $6, 'land_appraisal')
+       RETURNING *`,
+      [clientId, developmentId, SITE_START_PERIOD_KEY, forecastAsAtMonth,
+        CVR_PERIOD_TYPES.siteStart, options.actor || null]
+    )).rows[0];
+    await insertAudit(dbClient, {
+      clientId,
+      periodId: inserted.id,
+      action: CVR_PERIOD_AUDIT_ACTIONS.created,
+      actor: options.actor,
+      comment: 'Site Start period created from Land Purchase Appraisal',
+      newStatus: CVR_PERIOD_STATUSES.draft,
+    });
+    await dbClient.query('COMMIT');
+    return { ok: true, status: 201, period: await hydratePeriod(clientId, inserted) };
+  } catch (error) {
+    await dbClient.query('ROLLBACK');
+    if (isUniqueViolation(error)) {
+      return { ok: false, status: 409, message: 'Site Start already exists for this Development.' };
+    }
+    throw error;
+  } finally {
+    dbClient.release();
+  }
+}
+
+async function createFirstCvrFromSiteStart(clientId, developmentId, body = {}, options = {}) {
+  const { assertServicePermission } = require('../auth/authorization');
+  const { PERMISSIONS } = require('../auth/permissions');
+  const { parseReportingMonth } = require('./cvrPeriodValidation');
+  assertServicePermission(options.auth, PERMISSIONS.CVR_EDIT);
+  const errors = [];
+  const reportingMonth = parseReportingMonth(body.reportingMonth, errors);
+  if (!reportingMonth || errors.length) return { ok:false,status:400,message:'reportingMonth is required in YYYY-MM format.' };
+  const reportingState = classifyReportingPeriod(reportingMonth, options.currentDate || new Date());
+  if (reportingState !== REPORTING_PERIOD_STATES.CLOSED) return { ok:false,status:409,code:'CVR_REPORTING_PERIOD_NOT_CLOSED',reportingPeriodState:reportingState,message:'The first CVR Reporting Period must be a valid closed commercial month.' };
+  const expectedVersion = parseExpectedVersion(body.siteStartVersion);
+  if (expectedVersion == null) return { ok:false,status:400,message:'siteStartVersion is required and must be a positive integer.' };
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query('BEGIN');
+    await dbClient.query('SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))',[clientId,developmentId]);
+    const development = await dbClient.query('SELECT 1 FROM developments WHERE id=$1 AND client_id=$2 FOR UPDATE',[developmentId,clientId]);
+    if (!development.rowCount) { await dbClient.query('ROLLBACK'); return {ok:false,status:404,message:'Development not found.'}; }
+    const monthly = await dbClient.query("SELECT id,period_key FROM cvr_periods WHERE client_id=$1 AND development_id=$2 AND period_type='monthly_cvr' LIMIT 1",[clientId,developmentId]);
+    if (monthly.rowCount) { await dbClient.query('ROLLBACK'); return {ok:false,status:409,message:'The first monthly CVR already exists for this Development.'}; }
+    const siteStart = (await dbClient.query("SELECT * FROM cvr_periods WHERE client_id=$1 AND development_id=$2 AND period_type='site_start' FOR UPDATE",[clientId,developmentId])).rows[0];
+    if (!siteStart || siteStart.status !== CVR_PERIOD_STATUSES.locked) { await dbClient.query('ROLLBACK'); return {ok:false,status:409,message:'A locked Site Start is required before P01 can be created.'}; }
+    if (Number(siteStart.version) !== expectedVersion) { await dbClient.query('ROLLBACK'); return {ok:false,status:409,message:'Site Start version conflict.',period:await hydratePeriod(clientId,siteStart,dbClient)}; }
+    const milestone = (await dbClient.query(`SELECT * FROM development_budget_milestones WHERE client_id=$1 AND development_id=$2 AND authority_version=2 AND site_start_period_id=$3`,[clientId,developmentId,siteStart.id])).rows[0];
+    if (!milestone) { await dbClient.query('ROLLBACK'); return {ok:false,status:409,message:'The Approved Site Start Budget milestone is unavailable.'}; }
+    await require('./cvrSiteStartBudgetSource').authority(dbClient,clientId,developmentId,milestone.site_start_snapshot_id);
+    const inserted = (await dbClient.query(`INSERT INTO cvr_periods(client_id,development_id,period_key,period_label,reporting_month,period_type,status,commentary,version,created_by,updated_by,budget_source,site_start_source_snapshot_id)
+      VALUES($1,$2,'P01','P01',$3,'monthly_cvr','draft','{}',1,$4,$4,'site_start_budget',$5) RETURNING *`,[clientId,developmentId,reportingMonth,options.actor||null,milestone.site_start_snapshot_id])).rows[0];
+    await insertAudit(dbClient,{clientId,periodId:inserted.id,action:CVR_PERIOD_AUDIT_ACTIONS.created,actor:options.actor,newStatus:CVR_PERIOD_STATUSES.draft,comment:'P01 created from Approved Site Start Budget'});
+    await dbClient.query('COMMIT');
+    return {ok:true,status:201,period:await hydratePeriod(clientId,inserted)};
+  } catch(error) {
+    await dbClient.query('ROLLBACK');
+    if (isUniqueViolation(error)) return {ok:false,status:409,message:'The first monthly CVR already exists for this Development.'};
+    throw error;
+  } finally { dbClient.release(); }
 }
 
 function lockedMutationResult() {
@@ -425,6 +576,11 @@ async function patchCvrPeriod(clientId, developmentId, periodId, body = {}, { ac
       validated.value.reportingMonth !== undefined
         ? validated.value.reportingMonth
         : row.reporting_month;
+    let nextForecastAsAt=row.forecast_as_at_month;
+    if(validated.value.forecastAsAtMonth!==undefined){
+      if((row.period_type||CVR_PERIOD_TYPES.monthly)!==CVR_PERIOD_TYPES.siteStart){await dbClient.query('ROLLBACK');return {ok:false,status:400,message:'forecastAsAtMonth applies only to Site Start.'};}
+      nextForecastAsAt=validated.value.forecastAsAtMonth;
+    }
     const priorMovementExplanations = Array.isArray(row.commentary?.movementExplanations)
       ? row.commentary.movementExplanations : [];
     const authoritativeCommentary = validated.value.commentary
@@ -449,13 +605,14 @@ async function patchCvrPeriod(clientId, developmentId, periodId, body = {}, { ac
           period_label = $1,
           reporting_month = $2,
           commentary = $3::jsonb,
+          forecast_as_at_month = $8,
           version = version + 1,
           updated_at = NOW(),
           updated_by = $4
         WHERE client_id = $5 AND id = $6 AND version = $7
         RETURNING *
       `,
-      [nextLabel, nextMonth, nextCommentary, actor || null, clientId, periodId, validated.version]
+      [nextLabel, nextMonth, nextCommentary, actor || null, clientId, periodId, validated.version,nextForecastAsAt]
     );
 
     if (!updated.rowCount) {
@@ -492,6 +649,7 @@ async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, {
   actor,
   auth,
   buildCloseCandidate = require('./cvrCloseEngine').buildCvrCloseCandidate,
+  buildWholeCloseCandidate = require('./cvrCommercialClose').buildWholeCvrCloseCandidate,
 } = {}) {
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
@@ -503,13 +661,25 @@ async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, {
     const row = await findPeriodRow(clientId, developmentId, periodId, dbClient, { forUpdate: true });
     if (!row) { await dbClient.query('ROLLBACK'); return { ok: false, status: 404, message: 'CVR period not found.' }; }
     if (row.status !== CVR_PERIOD_STATUSES.draft) { await dbClient.query('ROLLBACK'); return notDraftMutationResult(row.status); }
+    if (row.period_type === CVR_PERIOD_TYPES.siteStart) {
+      require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.SITE_START_MANAGE);
+      if (!row.forecast_as_at_month) { await dbClient.query('ROLLBACK'); return { ok:false,status:409,message:'Forecast as at is required before Site Start can be submitted.' }; }
+      if (body.version != null && Number(body.version) !== Number(row.version)) { await dbClient.query('ROLLBACK'); return { ok:false,status:409,message:'CVR period version conflict.',period:await hydratePeriod(clientId,row,dbClient) }; }
+      const appraisalResult = await require('./landAppraisalRepository').getLandAppraisalAuthority(clientId, developmentId, dbClient);
+      const appraisal = appraisalResult.appraisal;
+      if (!appraisal || appraisal.integrity?.valid !== true) { await dbClient.query('ROLLBACK'); return { ok:false,status:409,code:CVR_CLOSE_NOT_READY_CODE,message:'A verified Land Purchase Appraisal is required before Site Start can be submitted.',blockers:[{source:'landAppraisal',reason:'missing_or_invalid'}] }; }
+      const identities = await dbClient.query(`SELECT l.cost_code_id FROM development_land_appraisal_lines l JOIN cost_codes c ON c.id=l.cost_code_id AND c.client_id=l.client_id AND c.code=l.cost_code AND c.is_active=true WHERE l.appraisal_id=$1`,[appraisal.id]);
+      if (identities.rowCount !== appraisal.lines.length) { await dbClient.query('ROLLBACK'); return { ok:false,status:409,code:CVR_CLOSE_NOT_READY_CODE,message:'Land Appraisal Cost Code authority is no longer valid.',blockers:[{source:'landAppraisal',reason:'cost_code_identity_invalid'}] }; }
+    }
     const exposure = await appendSubmittedVariationExposure(dbClient, { clientId, developmentId, periodId, actor });
     if (!exposure.ok) {
       await dbClient.query('ROLLBACK');
       return { ok: false, status: 409, code: CVR_CLOSE_NOT_READY_CODE, message: 'Variation exposure is not ready to submit.', blockers: exposure.blockers };
     }
-    if (row.budget_source === 'development_budget') {
-      const budget = await require('./cvrDevelopmentBudgetSnapshot').appendSubmission(dbClient, { clientId, developmentId, periodId, actor });
+    if (['development_budget','site_start_budget'].includes(row.budget_source)) {
+      const budget = row.budget_source === 'site_start_budget'
+        ? await require('./cvrSiteStartBudgetSource').appendSubmission(dbClient, { clientId, developmentId, periodId, sourceSnapshotId: row.site_start_source_snapshot_id, actor })
+        : await require('./cvrDevelopmentBudgetSnapshot').appendSubmission(dbClient, { clientId, developmentId, periodId, actor });
       if (!budget.ok) { await dbClient.query('ROLLBACK'); return { ok:false,status:409,message:budget.message }; }
       const closeCandidate = await buildCloseCandidate({
         clientId,
@@ -531,9 +701,20 @@ async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, {
         };
       }
     }
-    await require('./cvrCommercialHierarchySnapshot').appendSubmission(dbClient, {
+    const hierarchySubmission = await require('./cvrCommercialHierarchySnapshot').appendSubmission(dbClient, {
       clientId, developmentId, periodId, actor, auth,
     });
+    if (row.period_type === CVR_PERIOD_TYPES.siteStart) {
+      const candidate = await buildWholeCloseCandidate({
+        clientId, developmentId, periodId, actor, dbClient,
+        variationExposureDocument: exposure.live?.document || null,
+        commercialHierarchyDocument: hierarchySubmission.document,
+      });
+      if (!candidate?.ready || !candidate?.complete || !candidate?.canLock || !candidate?.snapshot) {
+        await dbClient.query('ROLLBACK');
+        return { ok:false,status:409,code:CVR_CLOSE_NOT_READY_CODE,message:'Site Start is not ready to submit.',blockers:publicCloseBlockers(candidate?.blockers) };
+      }
+    }
     const updated = (await dbClient.query(`UPDATE cvr_periods SET status='submitted',submitted_at=NOW(),submitted_by=$1,version=version+1,updated_at=NOW(),updated_by=$1 WHERE client_id=$2 AND development_id=$3 AND id=$4 AND status='draft' RETURNING *`, [actor || null, clientId, developmentId, periodId])).rows[0];
     await insertAudit(dbClient, { clientId, periodId, action: CVR_PERIOD_AUDIT_ACTIONS.submitted, actor, comment: body.comment || '', priorStatus: row.status, newStatus: CVR_PERIOD_STATUSES.submitted });
     await dbClient.query('COMMIT');
@@ -612,7 +793,7 @@ async function acknowledgeVariationExposureException(clientId, developmentId, pe
 
 async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, options = {}) {
   require('../auth/authorization').assertServicePermission(options.auth, require('../auth/permissions').PERMISSIONS.CVR_LOCK);
-  const { buildWholeCvrCloseCandidate } = require("./cvrCommercialClose");
+  const buildWholeCvrCloseCandidate = options.buildWholeCloseCandidate || require("./cvrCommercialClose").buildWholeCvrCloseCandidate;
   const { persistCvrPeriodSnapshot, isUniqueViolation: isSnapshotUnique } = require("./cvrSnapshotRepository");
 
   const actor = options.actor;
@@ -667,6 +848,12 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
         period: await hydratePeriod(clientId, row),
       };
     }
+    if (row.period_type === CVR_PERIOD_TYPES.siteStart) {
+      if (!String(body.approvalReference || '').trim() || !String(body.comment || '').trim()) {
+        await dbClient.query('ROLLBACK');
+        return { ok:false,status:400,message:'Approval reference and approval reason are required to approve and lock Site Start.' };
+      }
+    }
 
     const existingSnapshot = await getSnapshotForPeriod(clientId, periodId, dbClient);
     if (existingSnapshot) {
@@ -687,8 +874,10 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
       return { ok: false, status: 409, code: CVR_CLOSE_NOT_READY_CODE, message: "Variation exposure changed after this CVR was submitted. Reject, review and resubmit before Lock.", blockers: variationExposure.staleReasons.map((reason) => ({ source: 'variationAccount', reason })) };
     }
     const budgetComparison = row.budget_source === 'development_budget'
-      ? await require('./cvrDevelopmentBudgetSnapshot').compare(dbClient, { clientId, developmentId, periodId }) : null;
-    if (budgetComparison?.stale || (row.budget_source === 'development_budget' && !budgetComparison?.captured)) {
+      ? await require('./cvrDevelopmentBudgetSnapshot').compare(dbClient, { clientId, developmentId, periodId })
+      : row.budget_source === 'site_start_budget'
+        ? await require('./cvrSiteStartBudgetSource').compare(dbClient, { clientId, developmentId, periodId, sourceSnapshotId: row.site_start_source_snapshot_id }) : null;
+    if (budgetComparison?.stale || (['development_budget','site_start_budget'].includes(row.budget_source) && !budgetComparison?.captured)) {
       await dbClient.query('ROLLBACK');
       return { ok:false,status:409,code:CVR_CLOSE_NOT_READY_CODE,message:'Development Budget changed after this CVR was submitted. Reject, review and resubmit before Lock.', blockers:(budgetComparison?.reasons || ['development_budget_not_captured']).map(reason=>({source:'developmentBudget',reason})) };
     }
@@ -743,7 +932,7 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
       };
     }
 
-    await persistCvrPeriodSnapshot(dbClient, {
+    const persistedSnapshot = await persistCvrPeriodSnapshot(dbClient, {
       clientId,
       developmentId,
       periodRow: row,
@@ -754,6 +943,21 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
       budgetSubmissionId: budgetComparison?.submitted?.id || null,
       hierarchySubmissionId: hierarchySubmission.row?.id || null,
     });
+
+    if (row.period_type === CVR_PERIOD_TYPES.siteStart) {
+      const appraisalResult = await require('./landAppraisalRepository').getLandAppraisalAuthority(clientId, developmentId, dbClient);
+      if (!appraisalResult.ok || !appraisalResult.appraisal) {
+        await dbClient.query('ROLLBACK');
+        return { ok:false,status:409,code:CVR_CLOSE_NOT_READY_CODE,message:appraisalResult.message || 'Land Purchase Appraisal authority is unavailable.' };
+      }
+      const appraisal = appraisalResult.appraisal;
+      await require('./siteStartBudgetMilestone').createV2SiteStartMilestone(dbClient, {
+        clientId, developmentId, periodRow: row, persistedSnapshot, appraisal,
+        approvalReference: body.approvalReference,
+        approvalReason: body.comment,
+        auth: options.auth,
+      });
+    }
 
     if (failAfter === "period") {
       throw new Error("forced-period-update-failure");
@@ -1139,7 +1343,7 @@ async function createCostCodeInput(clientId, developmentId, periodId, body = {},
       await dbClient.query("ROLLBACK");
       return notDraftMutationResult(period.status);
     }
-    if (period.budget_source === 'development_budget' && (Object.prototype.hasOwnProperty.call(body, 'originalBudget') || Object.prototype.hasOwnProperty.call(body, 'currentBudget'))) {
+    if (['development_budget', 'land_appraisal', 'site_start_budget'].includes(period.budget_source) && (Object.prototype.hasOwnProperty.call(body, 'originalBudget') || Object.prototype.hasOwnProperty.call(body, 'currentBudget'))) {
       await dbClient.query('ROLLBACK');
       return { ok:false,status:409,message:'Budget is managed from Development Budget.' };
     }
@@ -1184,7 +1388,7 @@ async function patchCostCodeInput(clientId, developmentId, periodId, inputId, bo
       await dbClient.query("ROLLBACK");
       return notDraftMutationResult(period.status);
     }
-    if (period.budget_source === 'development_budget' && (Object.prototype.hasOwnProperty.call(body, 'originalBudget') || Object.prototype.hasOwnProperty.call(body, 'currentBudget'))) {
+    if (['development_budget', 'land_appraisal', 'site_start_budget'].includes(period.budget_source) && (Object.prototype.hasOwnProperty.call(body, 'originalBudget') || Object.prototype.hasOwnProperty.call(body, 'currentBudget'))) {
       await dbClient.query('ROLLBACK');
       return { ok:false,status:409,message:'Budget is managed from Development Budget.' };
     }
@@ -1334,7 +1538,7 @@ async function upsertCostCodeInputs(clientId, developmentId, periodId, body = {}
       await dbClient.query("ROLLBACK");
       return notDraftMutationResult(period.status);
     }
-    if (period.budget_source === 'development_budget' && items.some((item) => Object.prototype.hasOwnProperty.call(item, 'originalBudget') || Object.prototype.hasOwnProperty.call(item, 'currentBudget'))) {
+    if (['development_budget', 'land_appraisal', 'site_start_budget'].includes(period.budget_source) && items.some((item) => Object.prototype.hasOwnProperty.call(item, 'originalBudget') || Object.prototype.hasOwnProperty.call(item, 'currentBudget'))) {
       await dbClient.query('ROLLBACK');
       return { ok:false,status:409,message:'Budget is managed from Development Budget.' };
     }
@@ -1462,6 +1666,8 @@ module.exports = {
   listCvrPeriods,
   getCvrPeriod,
   createCvrPeriod,
+  createSiteStartPeriod,
+  createFirstCvrFromSiteStart,
   patchCvrPeriod,
   submitCvrPeriod,
   developmentBudgetBaselineBlockers,

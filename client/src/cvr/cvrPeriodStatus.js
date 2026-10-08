@@ -92,7 +92,15 @@ export function canCreateNextCvrPeriod(periods = []) {
 }
 
 export function sortPeriodKeys(keys = []) {
-  return [...keys].sort((a, b) => parsePeriodNumber(a) - parsePeriodNumber(b));
+  return [...keys].sort((a, b) => periodOrdinal(a) - periodOrdinal(b));
+}
+
+export function periodOrdinal(periodOrKey) {
+  const period = periodOrKey && typeof periodOrKey === 'object' ? periodOrKey : { periodKey: periodOrKey };
+  const key = String(period.periodKey || '');
+  if (period.periodType === 'site_start' || key.toUpperCase() === 'SITE_START') return 0;
+  const number = parsePeriodNumber(key);
+  return number > 0 ? number : Number.MAX_SAFE_INTEGER;
 }
 
 export function parsePeriodNumber(periodKey) {
