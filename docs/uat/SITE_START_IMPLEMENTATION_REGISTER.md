@@ -141,3 +141,10 @@ Owner-review the complete SS-1 through SS-5 tranche locally, then bank and relea
 - Projected Adjustment, commercial reason, Manual Accrual and notes remain governed editable input evidence. Land Appraisal amounts remain immutable and continue to supply the authoritative row budget.
 - Explicit attempts to mutate protected budget fields still fail closed with source-neutral wording. Optimistic versions, reason validation, ownership protection and existing monthly-CVR behavior are unchanged.
 - Guarded coverage proves an appraisal-backed overlay can save adjustment, accrual and notes; rejects missing reasons, stale versions and explicit budget mutation; preserves the £18,679,000 appraisal; and creates no Development Budget event.
+
+## SS-UAT-03 Prelims effective month and worksheet readability
+
+- Development Prelims collection and setup preview now resolve one effective forecast month from the active period: Site Start uses `forecast_as_at_month`; ordinary monthly CVRs continue to use `reporting_month`; explicit preview overrides and no-period behavior remain supported.
+- Site Start presentation identifies `Forecast as at` using a readable calendar-month label. Review and adoption retain the same existing server-authoritative effective-month calculation and stale-intent protection.
+- The forecast engine is unchanged. TIME total forecast remains programme-duration based; the effective month resolves elapsed and remaining phasing only.
+- The desktop setup worksheet now protects readable Prelim, Cost Code and Assumption widths, using its existing overflow container when needed. The established card layout below 900px remains unchanged.

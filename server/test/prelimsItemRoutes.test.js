@@ -371,6 +371,50 @@ if (!isDbConfigured()) {
     assert.equal(phased.body.items[0].calculation.forecastToComplete, 37000);
   });
 
+  test("Site Start Forecast-as-at is the effective Prelims month without changing TIME total", async () => {
+    const active = await getActiveClient();
+    const developmentId = await createDevelopment(active, {
+      startDate: "2027-03-01",
+      targetCompletion: "2030-08-31",
+    });
+    await request(app)
+      .put(`/api/developments/${developmentId}/programme`)
+      .send({
+        version: 0,
+        siteStart: "2027-03-01",
+        finalCompletion: "2030-08-31",
+        totalPlots: 31,
+      });
+    await pool.query(
+      `INSERT INTO cvr_periods(
+         client_id,development_id,period_key,period_label,period_type,
+         reporting_month,forecast_as_at_month,budget_source,status
+       ) VALUES($1,$2,'SITE_START','Site Start','site_start',NULL,'2026-10-01','land_appraisal','draft')`,
+      [active.id, developmentId]
+    );
+    await request(app).post(`/api/developments/${developmentId}/prelims-items`).send(timeBody());
+
+    const siteStart = await request(app).get(`/api/developments/${developmentId}/prelims-items`);
+    assert.equal(siteStart.status, 200);
+    assert.equal(siteStart.body.reportingMonth, "2026-10");
+    assert.equal(siteStart.body.reportingMonthSource, "site-start-forecast-as-at");
+    assert.equal(siteStart.body.items[0].calculation.elapsedMonths, 0);
+    assert.equal(siteStart.body.items[0].calculation.forecastToDate, 0);
+    assert.equal(
+      siteStart.body.items[0].calculation.forecastToComplete,
+      siteStart.body.items[0].calculation.totalForecast
+    );
+
+    const total = siteStart.body.items[0].calculation.totalForecast;
+    const explicit = await request(app).get(
+      `/api/developments/${developmentId}/prelims-items?reportingMonth=2027-10`
+    );
+    assert.equal(explicit.body.reportingMonth, "2027-10");
+    assert.equal(explicit.body.reportingMonthSource, "query");
+    assert.equal(explicit.body.items[0].calculation.totalForecast, total);
+    assert.ok(explicit.body.items[0].calculation.elapsedMonths > 0);
+  });
+
   test("TIME offsets persist on create/update and keep zero-default money identical", async () => {
     const active = await getActiveClient();
     const developmentId = await createDevelopment(active);

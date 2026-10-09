@@ -296,7 +296,7 @@ describe('Development Prelims setup worksheet', () => {
     expect(container.textContent).toContain('£78,000.00');
     expect(container.textContent).toContain('1 configured');
     expect(container.textContent).toContain(
-      'As-at phasing will become available when a CVR reporting month exists.'
+      'As-at phasing will become available when an effective forecast month exists.'
     );
 
     const add = Array.from(container.querySelectorAll('button')).find((button) =>
@@ -470,6 +470,18 @@ describe('Development Prelims setup worksheet', () => {
     expect(css).toMatch(
       /\.dev-prelims-setup__detail \.dev-prelims-time--compact\s*\{[\s\S]*grid-template-columns:\s*minmax\(13\.5rem, 1fr\) minmax\(13\.5rem, 1fr\)/
     );
+    expect(css).toMatch(/\.dev-prelims-setup__table\s*\{[\s\S]*min-width:\s*72rem/);
+    expect(css).toMatch(/@media \(max-width: 900px\)[\s\S]*\.dev-prelims-setup__table,[\s\S]*min-width:\s*0/);
+  });
+
+  it('presents the Site Start setup month as Forecast as at', async () => {
+    previewDevelopmentPrelimsSetup.mockResolvedValueOnce({
+      ...previewBody(),
+      reportingMonth: '2026-10',
+      reportingMonthSource: 'site-start-forecast-as-at',
+    });
+    await renderSheet();
+    expect(container.textContent).toContain('Forecast as at: October 2026');
   });
 
   it('shows an already-instantiated TIME assumption read-only and labels counts as new setup work', async () => {

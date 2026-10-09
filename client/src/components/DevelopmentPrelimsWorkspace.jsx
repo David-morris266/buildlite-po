@@ -17,6 +17,7 @@ import {
 import { resolveTimeSpan, suggestedPrelimsDriver } from '../prelims/prelimsForecastEngine';
 import DevelopmentPrelimsAdoptionReview from './DevelopmentPrelimsAdoptionReview';
 import DevelopmentPrelimsSetupWorksheet from './DevelopmentPrelimsSetupWorksheet';
+import { formatReportingPeriod } from '../cvr/cvrReportingMonth';
 import PrelimsTimeSpanFields from './PrelimsTimeSpanFields';
 import { coerceOffsetMonths, parseIsoDateParts } from '../programme/programmeCalendar';
 
@@ -246,6 +247,11 @@ export default function DevelopmentPrelimsWorkspace({
   const setupSupportingCopy = hasSitePrelims
     ? 'Use your company Prelims template to add more assumptions to the Site Prelims proposal.'
     : 'Use your company Prelims template to add assumptions to the Site Prelims proposal.';
+  const calculationMonthLabel = collection?.reportingMonth
+    ? collection.reportingMonthSource === 'site-start-forecast-as-at'
+      ? `Forecast as at: ${formatReportingPeriod(collection.reportingMonth)}`
+      : `CVR reporting month: ${formatReportingPeriod(collection.reportingMonth)}`
+    : 'No reporting month — total forecasts available; as-at phasing pending';
 
   const formTimeSpan = useMemo(() => {
     if (form.forecastDriver !== PRELIMS_DRIVERS.TIME) {
@@ -378,9 +384,7 @@ export default function DevelopmentPrelimsWorkspace({
           <div>
             <dt>Calculation as at</dt>
             <dd>
-              {collection.reportingMonth
-                ? `CVR reporting month ${collection.reportingMonth}`
-                : 'No reporting month — total forecasts available; as-at phasing pending'}
+              {calculationMonthLabel}
             </dd>
           </div>
           <div>

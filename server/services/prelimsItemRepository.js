@@ -13,6 +13,7 @@ const { prelimsRowToPersisted, attachPrelimsCalculation } = require("./prelimsIt
 const { validatePrelimsItemBody } = require("./prelimsItemValidation");
 const { aggregatePrelimsLines } = require("./prelimsForecastEngine");
 const { toYearMonth } = require("./programmeCalendar");
+const { effectiveForecastMonth, isSiteStartPeriod } = require("./cvrPeriodContext");
 
 function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -54,19 +55,35 @@ async function resolveReportingMonth(clientId, developmentId, requested, dbClien
     const exec = dbClient ? dbClient.query.bind(dbClient) : query;
     const { rows } = await exec(
       `
-        SELECT period_key, status, to_char(reporting_month, 'YYYY-MM') AS reporting_month
+        SELECT period_key, period_type, status,
+               to_char(reporting_month, 'YYYY-MM') AS reporting_month,
+               to_char(forecast_as_at_month, 'YYYY-MM') AS forecast_as_at_month
         FROM cvr_periods
         WHERE client_id = $1 AND development_id = $2
         ORDER BY period_key
       `,
       [clientId, developmentId]
     );
-    const withMonth = rows.filter((row) => row.reporting_month);
+    const withMonth = rows
+      .map((row) => ({
+        ...row,
+        effectiveMonth: effectiveForecastMonth({
+          periodType: row.period_type,
+          reportingMonth: row.reporting_month,
+          forecastAsAtMonth: row.forecast_as_at_month,
+        }),
+      }))
+      .filter((row) => row.effectiveMonth);
     const draft = withMonth.find((row) => row.status === "draft");
     const submitted = withMonth.find((row) => row.status === "submitted");
     const chosen = draft || submitted || withMonth[withMonth.length - 1] || null;
     if (!chosen) return { reportingMonth: null, source: "none" };
-    return { reportingMonth: chosen.reporting_month, source: "open-cvr" };
+    return {
+      reportingMonth: chosen.effectiveMonth,
+      source: isSiteStartPeriod({ periodType: chosen.period_type })
+        ? "site-start-forecast-as-at"
+        : "open-cvr",
+    };
   } catch {
     return { reportingMonth: null, source: "none" };
   }

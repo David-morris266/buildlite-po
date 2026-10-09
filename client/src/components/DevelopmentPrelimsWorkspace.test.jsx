@@ -393,7 +393,17 @@ describe('DevelopmentPrelimsWorkspace (x.5 landing + add/edit)', () => {
     expect(container.textContent).toMatch(/explicitly confirm adoption/i);
     expect(container.textContent).toMatch(/company Prelims template/i);
     expect(container.textContent).toMatch(/Set up site Prelims/);
-    expect(container.textContent).toMatch(/CVR reporting month 2026-08/);
+    expect(container.textContent).toMatch(/CVR reporting month: August 2026/);
+  });
+
+  it('labels Site Start effective month as Forecast as at', async () => {
+    listDevelopmentPrelimsItems.mockResolvedValueOnce({
+      ...collectionFor([]),
+      reportingMonth: '2026-10',
+      reportingMonthSource: 'site-start-forecast-as-at',
+    });
+    await renderWorkspace();
+    expect(container.textContent).toContain('Forecast as at: October 2026');
   });
 
   it('shows resolved proposal and unresolved count separately', async () => {

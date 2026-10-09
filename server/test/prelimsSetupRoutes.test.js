@@ -282,6 +282,30 @@ if (!isDbConfigured()) {
     assert.equal(templatesAfter.rows[0].version, templatesBefore.rows[0].version);
   });
 
+  test("setup preview and general collection share the Site Start Forecast-as-at month", async () => {
+    const active = await getActiveClient();
+    const developmentId = await createDevelopment(active);
+    const { template } = await createTemplate();
+    await pool.query(
+      `INSERT INTO cvr_periods(
+         client_id,development_id,period_key,period_label,period_type,
+         reporting_month,forecast_as_at_month,budget_source,status
+       ) VALUES($1,$2,'SITE_START','Site Start','site_start',NULL,'2026-10-01','land_appraisal','draft')`,
+      [active.id, developmentId]
+    );
+
+    const collection = await request(app).get(`/api/developments/${developmentId}/prelims-items`);
+    const preview = await request(app).get(
+      `/api/developments/${developmentId}/prelims-setup/preview?templateId=${template.id}`
+    );
+    assert.equal(collection.status, 200);
+    assert.equal(preview.status, 200);
+    assert.equal(collection.body.reportingMonth, "2026-10");
+    assert.equal(preview.body.reportingMonth, collection.body.reportingMonth);
+    assert.equal(collection.body.reportingMonthSource, "site-start-forecast-as-at");
+    assert.equal(preview.body.reportingMonthSource, collection.body.reportingMonthSource);
+  });
+
   test("apply is transactional, idempotent, and does not write template/classification/CVR", async () => {
     const active = await getActiveClient();
     const developmentId = await createDevelopment(active);

@@ -11,6 +11,7 @@ import { listCostCodesForTemplateMapping } from '../admin/prelimsTemplateCostCod
 import { loadCommercialStructure } from '../admin/commercialStructureService';
 import { mappingOptionPrimaryLabel } from '../admin/prelimsTemplateMapping';
 import { formatCvrMoney } from '../cvr/cvrHelpers';
+import { formatReportingPeriod } from '../cvr/cvrReportingMonth';
 import { PRELIMS_DRIVERS, PRELIMS_UNRESOLVED_LABELS } from '../prelims/prelimsConstants';
 import {
   applyPayloadFromDrafts,
@@ -253,6 +254,11 @@ export default function DevelopmentPrelimsSetupWorksheet({
     () => (preview?.lines || []).filter((line) => line.enabled && !line.alreadyApplied).length,
     [preview]
   );
+  const previewMonthLabel = preview?.reportingMonth
+    ? preview.reportingMonthSource === 'site-start-forecast-as-at'
+      ? `Forecast as at: ${formatReportingPeriod(preview.reportingMonth)}`
+      : `CVR reporting month: ${formatReportingPeriod(preview.reportingMonth)}`
+    : 'No reporting month';
   const dirty = useMemo(
     () => setupDraftsAreDirty(drafts, baselineDrafts),
     [drafts, baselineDrafts]
@@ -420,9 +426,7 @@ export default function DevelopmentPrelimsSetupWorksheet({
         </label>
         <p className="dev-prelims-setup__meta">
           {preview
-            ? `${preview.lines.length} template lines · ${alreadyAppliedCount} already on this development · ${availableCount} available to add · CVR ${
-                preview.reportingMonth || 'no reporting month'
-              }`
+            ? `${preview.lines.length} template lines · ${alreadyAppliedCount} already on this development · ${availableCount} available to add · ${previewMonthLabel}`
             : 'Loading worksheet…'}
         </p>
       </div>
@@ -443,8 +447,8 @@ export default function DevelopmentPrelimsSetupWorksheet({
       ) : null}
       {preview && !preview.reportingMonth ? (
         <p className="dev-workspace__section-lead">
-          Total Forecast is available now. As-at phasing will become available when a CVR
-          reporting month exists.
+          Total Forecast is available now. As-at phasing will become available when an effective
+          forecast month exists.
         </p>
       ) : null}
       {preview && !preview.programme?.siteStart && !preview.programme?.finalCompletion ? (
