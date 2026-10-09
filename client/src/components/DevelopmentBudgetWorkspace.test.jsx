@@ -3,8 +3,9 @@ import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), confirm: vi.fn(), codes: vi.fn(), permission: true, parse: vi.fn() }));
-vi.mock('../api/developmentBudget', () => ({ getDevelopmentBudget: mocks.get, postDevelopmentBudgetEvent: mocks.post, confirmSiteStartBudget: mocks.confirm }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), getAppraisal: vi.fn(), captureAppraisal: vi.fn(), createSiteStart: vi.fn(), listPeriods: vi.fn(), post: vi.fn(), confirm: vi.fn(), codes: vi.fn(), permission: true, parse: vi.fn() }));
+vi.mock('../api/developmentBudget', () => ({ getDevelopmentBudget: mocks.get, getLandAppraisal: mocks.getAppraisal, captureLandAppraisal: mocks.captureAppraisal, postDevelopmentBudgetEvent: mocks.post, confirmSiteStartBudget: mocks.confirm }));
+vi.mock('../api/cvrPeriods', () => ({ createSiteStartPeriodForDevelopment: mocks.createSiteStart, listCvrPeriodsForDevelopment: mocks.listPeriods }));
 vi.mock('../api/costCodes', () => ({ listServerCostCodes: mocks.codes }));
 vi.mock('../auth/BuildLiteAuthProvider', () => ({ useBuildLitePermission: () => mocks.permission }));
 vi.mock('../developmentBudget/developmentBudgetImport', async importOriginal => ({ ...(await importOriginal()), parseDevelopmentBudgetFile: mocks.parse }));
@@ -22,7 +23,7 @@ const historyAuthority = { ...established, events: [
 
 describe('DevelopmentBudgetWorkspace', () => {
   let host, root;
-  beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); mocks.permission = true; mocks.get.mockResolvedValue(empty); mocks.codes.mockResolvedValue({ costCodes: codes }); mocks.post.mockResolvedValue({ ok: true }); mocks.confirm.mockResolvedValue({ ok: true }); mocks.parse.mockResolvedValue({ fileName: 'budget.csv', rows: [['Cost Code', 'Budget'], ['A', '100.01']], headerRowIndex: 0, headers: ['Cost Code', 'Budget'], fieldByColumn: ['costCode', 'amount'] }); });
+  beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); mocks.permission = true; mocks.get.mockResolvedValue(empty); mocks.getAppraisal.mockResolvedValue(null); mocks.captureAppraisal.mockResolvedValue({ ok: true }); mocks.createSiteStart.mockResolvedValue({ periodKey: 'SITE_START' }); mocks.listPeriods.mockResolvedValue([{ periodKey: 'P01' }]); mocks.codes.mockResolvedValue({ costCodes: codes }); mocks.post.mockResolvedValue({ ok: true }); mocks.confirm.mockResolvedValue({ ok: true }); mocks.parse.mockResolvedValue({ fileName: 'budget.csv', rows: [['Cost Code', 'Budget'], ['A', '100.01']], headerRowIndex: 0, headers: ['Cost Code', 'Budget'], fieldByColumn: ['costCode', 'amount'] }); });
   afterEach(() => { act(() => root.unmount()); host.remove(); vi.clearAllMocks(); });
   async function render() { await act(async () => { root.render(<DevelopmentBudgetWorkspace developmentId="dev-1" />); await Promise.resolve(); }); }
   const button = label => [...host.querySelectorAll('button')].find(item => item.textContent.includes(label));
@@ -57,6 +58,27 @@ describe('DevelopmentBudgetWorkspace', () => {
     expect(mocks.post).toHaveBeenCalledTimes(1);
     expect(mocks.post.mock.calls[0][1]).toMatchObject({ eventType: 'opening_budget', reference: 'OPEN-1', reason: 'Approved baseline', lines: [{ costCodeId: 'cc-a', amount: '100.01' }] });
     expect(host.textContent).toContain('Development Budget established');
+  });
+
+  it('captures an immutable appraisal from the existing importer then creates Site Start', async () => {
+    const captured = { totalCost: 100.01, effectiveDate: '2026-09-09', reference: 'LAND-1', approvalReason: 'Board approved', sourceFingerprint: { fileName: 'appraisal.csv' }, integrity: { valid: true }, lines: [{ costCodeId: 'cc-a', costCode: 'A', description: 'Code A', amount: 100.01 }] };
+    mocks.getAppraisal.mockResolvedValueOnce(null).mockResolvedValue(captured);
+    mocks.listPeriods.mockResolvedValue([]);
+    const opened = vi.fn();
+    await act(async () => { root.render(<DevelopmentBudgetWorkspace developmentId="dev-1" onSiteStartCreated={opened} />); await Promise.resolve(); });
+    act(() => button('Capture Land Purchase Appraisal').click());
+    const fileInput = host.querySelector('input[type="file"]');
+    await act(async () => { Object.defineProperty(fileInput, 'files', { value: [{ name: 'appraisal.csv' }] }); fileInput.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve(); await Promise.resolve(); });
+    const capture = [...host.querySelectorAll('section')].find(section => section.querySelector('h2')?.textContent === 'Capture Land Purchase Appraisal');
+    const inputs = [...capture.querySelectorAll('input:not([type="file"])')];
+    await act(async () => { setValue(inputs[0], '2026-09-09'); setValue(inputs[1], 'LAND-1'); setValue(inputs[2], 'Board approved'); });
+    await act(async () => { button('Capture immutable appraisal').click(); await Promise.resolve(); await Promise.resolve(); });
+    expect(mocks.captureAppraisal).toHaveBeenCalledWith('dev-1', expect.objectContaining({ reference: 'LAND-1', lines: [{ costCodeId: 'cc-a', amount: '100.01' }] }));
+    expect(host.textContent).toContain('immutable acquisition baseline');
+    await act(async () => { button('Create Site Start Draft').click(); await Promise.resolve(); });
+    expect(mocks.createSiteStart).toHaveBeenCalledWith('dev-1', expect.objectContaining({ forecastAsAtMonth: expect.stringMatching(/^\d{4}-\d{2}$/) }));
+    expect(opened).toHaveBeenCalledWith('SITE_START');
+    expect(mocks.post).not.toHaveBeenCalled();
   });
 
   it('accepts a zero-budget schedule row without posting a meaningless journal line', async () => {

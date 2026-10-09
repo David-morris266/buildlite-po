@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { confirmSiteStartBudget, getDevelopmentBudget, postDevelopmentBudgetEvent } from '../api/developmentBudget';
+import { captureLandAppraisal, confirmSiteStartBudget, getDevelopmentBudget, getLandAppraisal, postDevelopmentBudgetEvent } from '../api/developmentBudget';
+import { createSiteStartPeriodForDevelopment, listCvrPeriodsForDevelopment } from '../api/cvrPeriods';
 import { listServerCostCodes } from '../api/costCodes';
 import { useBuildLitePermission } from '../auth/BuildLiteAuthProvider';
 import { buildOpeningBudgetEventLines, IMPORT_FIELDS, parseDevelopmentBudgetFile, parseMoneyToPence, validateDevelopmentBudgetImport } from '../developmentBudget/developmentBudgetImport';
@@ -20,20 +21,25 @@ function EventFields({ form, setForm }) {
   </div>;
 }
 
-export default function DevelopmentBudgetWorkspace({ developmentId, siteStartDate = '' }) {
-  const canPost = useBuildLitePermission('development_budget.post');
+export default function DevelopmentBudgetWorkspace({ developmentId, siteStartDate = '', onSiteStartCreated }) {
+  const canPostPermission = useBuildLitePermission('development_budget.post');
+  const canCaptureAppraisal = useBuildLitePermission('land_appraisal.capture');
+  const canManageSiteStart = useBuildLitePermission('site_start.manage');
   const fileRef = useRef(null);
   const openingKeyRef = useRef(key('opening-budget'));
   const movementKeyRef = useRef(key('budget-movement'));
-  const [authority, setAuthority] = useState(null), [costCodes, setCostCodes] = useState([]), [loading, setLoading] = useState(true), [error, setError] = useState(''), [success, setSuccess] = useState('');
+  const [authority, setAuthority] = useState(null), [appraisal, setAppraisal] = useState(undefined), [periods, setPeriods] = useState([]), [costCodes, setCostCodes] = useState([]), [loading, setLoading] = useState(true), [error, setError] = useState(''), [success, setSuccess] = useState('');
   const [setup, setSetup] = useState(false), [parsed, setParsed] = useState(null), [opening, setOpening] = useState({ effectiveDate: today(), reference: '', reason: '' }), [saving, setSaving] = useState(false);
   const [movementOpen, setMovementOpen] = useState(false), [movement, setMovement] = useState(freshMovement);
   const [siteStartOpen, setSiteStartOpen] = useState(false), [siteStart, setSiteStart] = useState({ approvedEffectiveDate: siteStartDate || today(), reference: '', approvalReason: '' });
+  const [appraisalOpen, setAppraisalOpen] = useState(false), [appraisalEvidence, setAppraisalEvidence] = useState({ effectiveDate: today(), reference: '', approvalReason: '' }), [sourceFingerprint, setSourceFingerprint] = useState(null);
+  const [forecastAsAtMonth, setForecastAsAtMonth] = useState(today().slice(0, 7));
+  const canPost = canPostPermission && (authority?.exists || periods.some(period => period.periodKey !== 'SITE_START'));
   const validation = useMemo(() => parsed ? validateDevelopmentBudgetImport(parsed, costCodes) : null, [parsed, costCodes]);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
-    try { const [budget, response] = await Promise.all([getDevelopmentBudget(developmentId), listServerCostCodes()]); setAuthority(budget); setCostCodes(Array.isArray(response) ? response : response?.costCodes || []); }
+    try { const [budget, landAppraisal, cvrPeriods, response] = await Promise.all([getDevelopmentBudget(developmentId), getLandAppraisal(developmentId), listCvrPeriodsForDevelopment(developmentId), listServerCostCodes()]); setAuthority(budget); setAppraisal(landAppraisal); setPeriods(cvrPeriods); setCostCodes(Array.isArray(response) ? response : response?.costCodes || []); }
     catch (caught) { setError(caught.message || 'Development Budget could not be loaded.'); }
     finally { setLoading(false); }
   }, [developmentId]);
@@ -43,7 +49,25 @@ export default function DevelopmentBudgetWorkspace({ developmentId, siteStartDat
 
   async function chooseFile(file) {
     setError('');
-    try { setParsed(await parseDevelopmentBudgetFile(file)); } catch (caught) { setError(caught.message); }
+    try {
+      setParsed(await parseDevelopmentBudgetFile(file));
+      if (typeof file.arrayBuffer === 'function' && globalThis.crypto?.subtle) {
+        const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+        setSourceFingerprint({ fileName: file.name, sha256: [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('') });
+      } else setSourceFingerprint(null);
+    } catch (caught) { setError(caught.message); }
+  }
+  async function commitAppraisal() {
+    if (!validation?.canCommit || !appraisalEvidence.effectiveDate || !appraisalEvidence.reference.trim() || !appraisalEvidence.approvalReason.trim()) { setError('Resolve the import errors and enter the effective date, reference and approval reason.'); return; }
+    setSaving(true); setError(''); setSuccess('');
+    try { await captureLandAppraisal(developmentId, { ...appraisalEvidence, sourceFingerprint, lines: validation.rows.map(row => ({ costCodeId: row.costCodeId, amount: (row.amountPence / 100).toFixed(2) })) }); setSuccess('Land Purchase Appraisal captured permanently.'); setAppraisalOpen(false); setParsed(null); await load(); }
+    catch (caught) { setError(caught.message); } finally { setSaving(false); }
+  }
+  async function createSiteStart() {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(forecastAsAtMonth)) { setError('Choose a valid Forecast-as-at month.'); return; }
+    setSaving(true); setError(''); setSuccess('');
+    try { const period = await createSiteStartPeriodForDevelopment(developmentId, { forecastAsAtMonth }); setSuccess('Site Start Draft created.'); onSiteStartCreated?.(period?.periodKey || 'SITE_START'); }
+    catch (caught) { setError(caught.message); } finally { setSaving(false); }
   }
   async function commitOpening() {
     if (!validation?.canCommit || !opening.effectiveDate || !opening.reference.trim() || !opening.reason.trim()) { setError('Resolve the import errors and enter the effective date, reference and reason.'); return; }
@@ -74,8 +98,11 @@ export default function DevelopmentBudgetWorkspace({ developmentId, siteStartDat
   if (loading) return <section className="po-module-card"><p>Loading Development Budget…</p></section>;
   if (error && !authority) return <section className="po-module-card"><h2>Development Budget unavailable</h2><p role="alert">{error}</p><button className="po-list-btn-secondary" onClick={load}>Try again</button></section>;
   const positions = authority?.perCostCode || [];
+  const appraisalCapture = appraisalOpen ? <section className="po-module-card"><h2>Capture Land Purchase Appraisal</h2><p>Upload the approved Cost Code appraisal. Review every line before permanent capture; it cannot be edited or replaced afterwards.</p><input ref={fileRef} hidden type="file" accept=".csv,.xlsx,.xls" onChange={event => event.target.files?.[0] && chooseFile(event.target.files[0])} /><button className="po-list-btn-secondary" onClick={() => fileRef.current?.click()}>Choose appraisal file</button>{parsed ? <><h3>Column mapping</h3>{parsed.headers.map((header, index) => <label key={`${header}-${index}`} className="po-import-mapping__row"><span>{header}</span><select value={parsed.fieldByColumn[index]} onChange={event => setParsed(current => ({ ...current, fieldByColumn: current.fieldByColumn.map((field, i) => i === index ? event.target.value : field) }))}>{Object.entries(IMPORT_FIELDS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>)}<h3>Final appraisal review</h3><div className="po-table-wrap"><table className="po-table"><thead><tr><th>Row</th><th>Cost Code</th><th>Description</th><th>Appraisal</th><th>Validation</th></tr></thead><tbody>{validation?.rows.map(row => <tr key={row.rowNumber}><td>{row.rowNumber}</td><td>{row.code}</td><td>{row.description}</td><td>{row.amountPence == null ? '—' : money(row.amountPence / 100)}</td><td>{row.issues.join('; ') || 'Ready'}</td></tr>)}</tbody><tfoot><tr><th colSpan="3">Total</th><th>{money((validation?.totalPence || 0) / 100)}</th><th>{validation?.canCommit ? `${validation.rows.length} codes` : 'Resolve errors'}</th></tr></tfoot></table></div><EventFields form={{ effectiveDate: appraisalEvidence.effectiveDate, reference: appraisalEvidence.reference, reason: appraisalEvidence.approvalReason }} setForm={update => setAppraisalEvidence(current => { const next = typeof update === 'function' ? update({ effectiveDate: current.effectiveDate, reference: current.reference, reason: current.approvalReason }) : update; return { effectiveDate: next.effectiveDate, reference: next.reference, approvalReason: next.reason }; })} /><p className="po-validation-banner">Permanent capture: the approved appraisal and its complete financial line collection cannot be changed later.</p><div className="po-import-step__actions"><button className="po-btn-primary" disabled={saving || !validation?.canCommit} onClick={commitAppraisal}>{saving ? 'Capturing…' : 'Capture immutable appraisal'}</button><button className="po-list-btn-secondary" disabled={saving} onClick={() => { setAppraisalOpen(false); setParsed(null); }}>Cancel</button></div></> : null}</section> : null;
   return <div className="development-budget">
     {error ? <p className="po-validation-banner" role="alert">{error}</p> : null}{success ? <p className="po-success-banner" role="status">{success}</p> : null}
+    {appraisalCapture}
+    <section className="po-module-card"><h2>Land Purchase Appraisal</h2>{appraisal ? <><p><strong>{money(appraisal.totalCost)}</strong> captured as the immutable acquisition baseline.</p><dl className="po-import-review-grid"><div><dt>Effective date</dt><dd>{appraisal.effectiveDate}</dd></div><div><dt>Reference</dt><dd>{appraisal.reference}</dd></div><div><dt>Approval reason</dt><dd>{appraisal.approvalReason}</dd></div><div><dt>Source</dt><dd>{appraisal.sourceFingerprint?.fileName || 'Recorded evidence'}</dd></div></dl><div className="po-table-wrap"><table className="po-table"><thead><tr><th>Cost Code</th><th>Description</th><th>Appraisal</th></tr></thead><tbody>{appraisal.lines.map(line => <tr key={line.costCodeId}><td>{line.costCode}</td><td>{line.description}</td><td>{money(line.amount)}</td></tr>)}</tbody></table></div>{periods.some(period => period.periodKey === 'SITE_START') ? <p>Site Start forecast has been created. Open it from CVR.</p> : canManageSiteStart ? <div className="development-budget-form"><label><span>Forecast-as-at month</span><input className="input" type="month" value={forecastAsAtMonth} onChange={event => setForecastAsAtMonth(event.target.value)} /></label><button className="po-btn-primary" disabled={saving} onClick={createSiteStart}>{saving ? 'Creating…' : 'Create Site Start Draft'}</button></div> : <p>You have read-only access to the captured appraisal.</p>}</> : <><p>Capture the approved acquisition baseline once. The complete Cost Code position is permanent after capture and becomes the opening evidence for Site Start.</p>{canCaptureAppraisal ? !appraisalOpen ? <button className="po-btn-primary" onClick={() => { setAppraisalOpen(true); setSetup(false); }}>Capture Land Purchase Appraisal</button> : null : <p>You have read-only access. Ask an authorised commercial user to capture the appraisal.</p>}</>}</section>
     {!authority?.exists ? <section className="po-module-card"><h2>No Development Budget established</h2><p>Set the approved commercial baseline once, then record later changes as controlled Budget Movements.</p>{canPost ? !setup ? <button className="po-btn-primary" onClick={() => setSetup(true)}>Set up Development Budget</button> : null : <p>You have read-only access. Ask an authorised commercial user to establish the budget.</p>}</section> : <>
       <section className="po-module-card"><h2>Development Budget</h2><dl className="po-import-review-grid"><div><dt>Original Budget</dt><dd>{money(authority.totalOriginalBudget)}</dd></div><div><dt>Movement</dt><dd>{signedMoney(authority.totalCurrentBudget - authority.totalOriginalBudget)}</dd></div><div><dt>Current Budget</dt><dd>{money(authority.totalCurrentBudget)}</dd></div></dl>{canPost ? <button className="po-btn-primary" onClick={openMovement}>Add Budget Movement</button> : <p>Read only</p>}<p className="po-import-step__lead">Development Budget is the authoritative budget source for CVRs that adopt it.</p></section>
       <section className="po-module-card"><h2>Site Start Budget</h2>{authority.siteStartBudget?.confirmed ? <><p><strong>{money(authority.siteStartBudget.totalBudget)}</strong></p><p>Confirmed from Opening Budget · {authority.siteStartBudget.reference} · {authority.siteStartBudget.approvedEffectiveDate}</p></> : <><p>Site Start Budget unavailable. Confirm only when this Opening Budget is the approved baseline applicable at site commencement.</p>{canPost && !siteStartOpen ? <button className="po-btn-primary" onClick={() => setSiteStartOpen(true)}>Confirm as Site Start Budget</button> : null}</>}{siteStartOpen ? <div className="development-budget-form"><dl className="po-import-review-grid"><div><dt>Opening Budget</dt><dd>{money(authority.totalOriginalBudget)}</dd></div><div><dt>Opening Budget effective date</dt><dd>{authority.events.find(event => event.eventType === 'opening_budget')?.effectiveDate || '—'}</dd></div><div><dt>Development site start</dt><dd>{siteStartDate || 'Not set'}</dd></div></dl><p>Confirm this Opening Budget as the approved Site Start Budget.</p><EventFields form={{ effectiveDate: siteStart.approvedEffectiveDate, reference: siteStart.reference, reason: siteStart.approvalReason }} setForm={(update) => setSiteStart(current => { const next = typeof update === 'function' ? update({ effectiveDate: current.approvedEffectiveDate, reference: current.reference, reason: current.approvalReason }) : update; return { approvedEffectiveDate: next.effectiveDate, reference: next.reference, approvalReason: next.reason }; })} /><div className="po-import-step__actions"><button className="po-btn-primary" disabled={saving} onClick={confirmSiteStart}>Confirm Site Start Budget</button><button className="po-list-btn-secondary" disabled={saving} onClick={() => setSiteStartOpen(false)}>Cancel</button></div></div> : null}</section>

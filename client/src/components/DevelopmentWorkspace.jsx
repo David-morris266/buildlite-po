@@ -1192,7 +1192,13 @@ export default function DevelopmentWorkspace({
         ) : null}
 
         {activeTab === 'budget' ? (
-          <DevelopmentBudgetWorkspace developmentId={model.id} siteStartDate={programme?.siteStart || ''} />
+          <DevelopmentBudgetWorkspace developmentId={model.id} siteStartDate={programme?.siteStart || ''} onSiteStartCreated={(periodKey) => {
+            setCvrPeriodKey(periodKey);
+            setCvrView('summary');
+            setCvrRefresh(value => value + 1);
+            setActiveTab('cvr');
+            onNavigationStateChange?.({ workspaceTab: 'cvr', periodKey, cvrSubview: 'summary' });
+          }} />
         ) : null}
 
         {activeTab === 'revenue' ? (

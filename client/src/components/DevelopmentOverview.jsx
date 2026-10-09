@@ -62,7 +62,7 @@ export function CommercialReadinessCard({ readiness, loading = false, error = ''
         {readiness.canCreateFirstCvr ? <div className="dev-workspace__first-cvr-ready">
           <strong>Ready to create the first working CVR</strong>
           <button type="button" className="po-btn-primary" onClick={onStartFirstCvr}>Start first CVR</button>
-        </div> : <p>Complete the required items above before starting P01.</p>}
+        </div> : <p>{readiness.usesSiteStartLifecycle ? 'Capture the appraisal and create Site Start before P01.' : 'Complete the required items above before starting P01.'}</p>}
         {later.length ? <>
           <h3 className="dev-workspace__readiness-heading">Check before submission</h3>
           <p className="dev-workspace__setup-detail">These items do not prevent you starting a working Draft. Check what applies before the appropriate Submit or Lock stage.</p>

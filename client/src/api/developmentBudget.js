@@ -18,6 +18,17 @@ export async function getDevelopmentBudget(developmentId) {
   return json(await fetch(`${API_BASE}/api/developments/${encodeURIComponent(developmentId)}/budget-authority`));
 }
 
+export async function getLandAppraisal(developmentId) {
+  const body = await json(await fetch(`${API_BASE}/api/developments/${encodeURIComponent(developmentId)}/land-appraisal`));
+  return body.appraisal || null;
+}
+
+export async function captureLandAppraisal(developmentId, payload) {
+  return json(await fetch(`${API_BASE}/api/developments/${encodeURIComponent(developmentId)}/land-appraisal`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  }));
+}
+
 export async function postDevelopmentBudgetEvent(developmentId, payload) {
   return json(await fetch(`${API_BASE}/api/developments/${encodeURIComponent(developmentId)}/budget-authority/events`, {
     method: 'POST',

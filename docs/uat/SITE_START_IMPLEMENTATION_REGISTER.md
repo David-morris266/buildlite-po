@@ -124,3 +124,12 @@
 ## Next action
 
 Owner-review the complete SS-1 through SS-5 tranche locally, then bank and release only as a single migration-067-compatible boundary.
+
+## SS-UAT-01 onboarding connection
+
+- Development Budget now loads the existing Land Purchase Appraisal authority alongside the legacy Development Budget authority.
+- A fresh development can reuse the established CSV/Excel Cost Code mapping and validation experience to review totals and source evidence before permanent Land Appraisal capture. Capture uses stable tenant Cost Code IDs and creates no Development Budget event.
+- The captured immutable appraisal remains visible on the Budget page. Authorised users can provide Forecast-as-at month and create the existing `SITE_START` Draft, then move directly to its canonical CVR route.
+- Fresh-development readiness now requires Cost Code Master and immutable Land Appraisal, and directs the operator to Budget setup. A separate Development Budget is not a Site Start prerequisite. Existing monthly and legacy Development-Budget-backed CVRs retain their prior readiness model.
+- Permissions remain independent: `land_appraisal.capture` controls permanent capture and `site_start.manage` controls Site Start creation; read-only users retain appraisal visibility.
+- Minor hosted UX follow-up: the legacy Development Budget setup remains available on the same Budget page for developments that legitimately use that authority. Owner UAT should confirm the two authorities are sufficiently distinct at normal viewport sizes and that duplicate Site Start clicks surface the server's fail-closed response clearly.

@@ -27,11 +27,15 @@ test('creation requires authoritative active cost codes', () => {
   assert.equal(unavailable.items.find(entry => entry.key === 'cost_code_master').blocksDraftCreation, true);
 });
 
-test('new development requires verified Development Budget authority', () => {
-  const missing = evaluateDevelopmentCommercialReadiness(facts({ budget: { available: true, exists: false, integrityValid: false } }));
+test('fresh development requires immutable Land Appraisal rather than Development Budget', () => {
+  const noAppraisal = evaluateDevelopmentCommercialReadiness(facts({ landAppraisal: { available: true, exists: false, integrityValid: false }, budget: { available: true, exists: false, integrityValid: false } }));
+  assert.equal(noAppraisal.canCreateFirstCvr, false);
+  assert.equal(noAppraisal.items.find(entry => entry.key === 'land_appraisal').blocksDraftCreation, true);
+  assert.equal(noAppraisal.items.find(entry => entry.key === 'development_budget').state, 'needs_attention');
+  const missing = evaluateDevelopmentCommercialReadiness(facts({ landAppraisal: { available: true, exists: true, integrityValid: true }, budget: { available: true, exists: false, integrityValid: false } }));
   assert.equal(missing.canCreateFirstCvr, false);
-  assert.equal(missing.items.find(entry => entry.key === 'development_budget').blocksDraftCreation, true);
-  assert.equal(missing.items.find(entry => entry.key === 'development_budget').draftCreationRequirement, true);
+  assert.equal(missing.canCreateSiteStart, true);
+  assert.equal(missing.items.find(entry => entry.key === 'development_budget').blocksDraftCreation, false);
   assert.equal(evaluateDevelopmentCommercialReadiness(facts({ budget: { available: false } })).canCreateFirstCvr, false);
 });
 

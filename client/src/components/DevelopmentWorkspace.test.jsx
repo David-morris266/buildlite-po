@@ -57,6 +57,8 @@ vi.mock('../api/developmentProgramme', () => ({
 
 vi.mock('../api/developmentBudget', () => ({
   getDevelopmentBudget,
+  getLandAppraisal: vi.fn().mockResolvedValue(null),
+  captureLandAppraisal: vi.fn(),
   postDevelopmentBudgetEvent: vi.fn(),
   confirmSiteStartBudget: vi.fn(),
 }));
@@ -64,6 +66,8 @@ vi.mock('../api/developmentBudget', () => ({
 vi.mock('../api/costCodes', () => ({
   listServerCostCodes,
 }));
+
+vi.mock('../api/cvrPeriods', async importOriginal => ({ ...(await importOriginal()), listCvrPeriodsForDevelopment: vi.fn().mockResolvedValue([]) }));
 
 vi.mock('../auth/BuildLiteAuthProvider', () => ({
   useBuildLitePermission: () => true,

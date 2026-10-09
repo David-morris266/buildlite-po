@@ -4,7 +4,7 @@ const { buildCvrRevenueCloseCandidate } = require('./cvrRevenueClose');
 const { buildLiveVariationExposure } = require('./cvrVariationExposureSnapshot');
 
 const STATES = Object.freeze({ BLOCKER: 'blocker', ATTENTION: 'needs_attention', READY: 'ready' });
-const DRAFT_CREATION_REQUIREMENT_KEYS = new Set(['cost_code_master', 'development_budget']);
+const DRAFT_CREATION_REQUIREMENT_KEYS = new Set(['cost_code_master']);
 
 function item(key, state, title, reason, resolutionTarget, detail = {}) {
   return { key, state, title, reason, resolutionTarget, ...detail };
@@ -19,7 +19,10 @@ function evaluateDevelopmentCommercialReadiness(facts = {}) {
   const costCodes = facts.costCodes;
   const periods = facts.periods;
   const budget = facts.budget;
+  const appraisal = facts.landAppraisal;
   const establishedLegacy = Boolean(periods?.rows?.some(period => period.budgetSource === 'legacy_cvr'));
+  const hasMonthlyHistory = Boolean(periods?.rows?.some(period => period.periodType !== 'site_start'));
+  const usesSiteStartLifecycle = facts.landAppraisal !== undefined && !hasMonthlyHistory && !establishedLegacy;
   const openPeriod = periods?.rows?.find(period => ['draft', 'submitted'].includes(period.status));
 
   if (!costCodes?.available) items.push(sourceUnavailable('cost_code_master', 'Cost Code Master', { view: 'administration', section: 'cost-codes' }));
@@ -30,14 +33,24 @@ function evaluateDevelopmentCommercialReadiness(facts = {}) {
   else if (openPeriod) items.push(item('cvr_periods', STATES.ATTENTION, 'CVR in progress', `${openPeriod.periodKey} is ${openPeriod.status}. Continue the current CVR before creating another.`, { tab: 'cvr', periodKey: openPeriod.periodKey }, { openPeriod, workflowState: true, preventsPeriodCreation: true }));
   else items.push(item('cvr_periods', STATES.READY, 'CVR periods', periods.rows.length ? 'No open CVR period.' : 'Ready to create the first CVR period.', { tab: 'cvr' }, { count: periods.rows.length }));
 
+  if (usesSiteStartLifecycle) {
+    if (!appraisal?.available) items.push(sourceUnavailable('land_appraisal', 'Land Purchase Appraisal', { tab: 'budget' }));
+    else if (!appraisal.exists || !appraisal.integrityValid) items.push(item('land_appraisal', STATES.BLOCKER, 'Land Purchase Appraisal', appraisal.exists ? 'Land Purchase Appraisal integrity could not be verified.' : 'Capture the approved Land Purchase Appraisal before creating Site Start.', { tab: 'budget' }, { draftCreationRequirement: true }));
+    else items.push(item('land_appraisal', STATES.READY, 'Land Purchase Appraisal', 'Immutable Land Purchase Appraisal captured.', { tab: 'budget' }, { draftCreationRequirement: true }));
+    const siteStart = periods?.rows?.find(period => period.periodType === 'site_start');
+    if (appraisal?.exists && appraisal.integrityValid && !siteStart) items.push(item('site_start_period', STATES.ATTENTION, 'Site Start forecast', 'Create the working Site Start forecast from the captured appraisal.', { tab: 'budget' }, { draftCreationRequirement: true }));
+  }
+
   if (!budget?.available) items.push(sourceUnavailable('development_budget', 'Development Budget', { tab: 'budget' }));
   else if (!budget.exists || !budget.integrityValid) {
-    const state = establishedLegacy && !budget.exists ? STATES.ATTENTION : STATES.BLOCKER;
+    const state = (establishedLegacy && !budget.exists) || usesSiteStartLifecycle ? STATES.ATTENTION : STATES.BLOCKER;
     const reason = !budget.integrityValid && budget.exists
       ? 'Development Budget integrity could not be verified.'
       : establishedLegacy
         ? 'This established development still uses its compatible legacy CVR budget workflow.'
-        : 'Establish the approved Development Budget before creating the first CVR.';
+        : usesSiteStartLifecycle
+          ? 'No separate Development Budget is required to prepare Site Start.'
+          : 'Establish the approved Development Budget before creating the first CVR.';
     items.push(item('development_budget', state, 'Development Budget', reason, { tab: 'budget' }, { exists: Boolean(budget.exists), integrityValid: Boolean(budget.integrityValid) }));
   } else items.push(item('development_budget', STATES.READY, 'Development Budget', 'Authoritative Development Budget is established and verified.', { tab: 'budget' }));
   if (budget?.available && budget.exists) {
@@ -89,21 +102,22 @@ function evaluateDevelopmentCommercialReadiness(facts = {}) {
 
   const classifiedItems = items.map(entry => ({
     ...entry,
-    draftCreationRequirement: DRAFT_CREATION_REQUIREMENT_KEYS.has(entry.key),
+    draftCreationRequirement: entry.draftCreationRequirement || DRAFT_CREATION_REQUIREMENT_KEYS.has(entry.key) || (!usesSiteStartLifecycle && entry.key === 'development_budget'),
     blocksDraftCreation: Boolean(
-      (DRAFT_CREATION_REQUIREMENT_KEYS.has(entry.key) && entry.state === STATES.BLOCKER) ||
+      ((entry.draftCreationRequirement || DRAFT_CREATION_REQUIREMENT_KEYS.has(entry.key) || (!usesSiteStartLifecycle && entry.key === 'development_budget')) && entry.state === STATES.BLOCKER) ||
       (entry.key === 'cvr_periods' && entry.state === STATES.BLOCKER) ||
       entry.preventsPeriodCreation
     ),
   }));
-  const canCreateFirstCvr = !classifiedItems.some(entry => entry.blocksDraftCreation);
+  const canCreateFirstCvr = !usesSiteStartLifecycle && !classifiedItems.some(entry => entry.blocksDraftCreation);
+  const canCreateSiteStart = usesSiteStartLifecycle && Boolean(appraisal?.exists && appraisal.integrityValid) && !periods?.rows?.some(period => period.periodType === 'site_start');
   const commercialItems = classifiedItems.filter(entry => !entry.workflowState);
   const overallState = commercialItems.some(entry => entry.state === STATES.BLOCKER)
     ? STATES.BLOCKER
     : commercialItems.some(entry => entry.state === STATES.ATTENTION)
       ? STATES.ATTENTION
       : STATES.READY;
-  return { policy: 'gp5b_development_commercial_readiness_v1', overallState, canCreateFirstCvr, hasCvrHistory: Boolean(periods?.rows?.length), establishedLegacy, items: classifiedItems };
+  return { policy: 'site_start_onboarding_v1', overallState, canCreateFirstCvr, canCreateSiteStart, usesSiteStartLifecycle, hasCvrHistory: Boolean(periods?.rows?.length), establishedLegacy, items: classifiedItems };
 }
 
 async function loadDevelopmentCommercialReadiness(clientId, developmentId, query = db.query) {
@@ -113,7 +127,8 @@ async function loadDevelopmentCommercialReadiness(clientId, developmentId, query
   if (!development) return { ok: false, status: 404, message: 'Development not found.' };
 
   const costCodes = await run(async () => ({ activeCount: Number((await query('SELECT COUNT(*)::int count FROM cost_codes WHERE client_id=$1 AND is_active=true', [clientId])).rows[0].count) }));
-  const periods = await run(async () => ({ rows: (await query('SELECT period_key,status,budget_source FROM cvr_periods WHERE client_id=$1 AND development_id=$2 ORDER BY created_at', [clientId, developmentId])).rows.map(row => ({ periodKey: row.period_key, status: row.status, budgetSource: row.budget_source })) }));
+  const periods = await run(async () => ({ rows: (await query('SELECT period_key,status,budget_source,period_type FROM cvr_periods WHERE client_id=$1 AND development_id=$2 ORDER BY created_at', [clientId, developmentId])).rows.map(row => ({ periodKey: row.period_key, status: row.status, budgetSource: row.budget_source, periodType: row.period_type || 'monthly_cvr' })) }));
+  const landAppraisal = await run(async () => { const result = await require('./landAppraisalRepository').getLandAppraisalAuthority(clientId, developmentId); return { exists: Boolean(result.appraisal), integrityValid: Boolean(result.appraisal?.integrity?.valid) }; });
   const budget = await run(async () => {
     const rows = (await query('SELECT event_type,source_snapshot,source_snapshot_sha256,source_snapshot_hash_scheme FROM development_budget_events WHERE client_id=$1 AND development_id=$2 ORDER BY sequence_number', [clientId, developmentId])).rows;
     const milestone = (await query("SELECT 1 FROM development_budget_milestones WHERE client_id=$1 AND development_id=$2 AND milestone_type='site_start_budget'", [clientId, developmentId])).rowCount > 0;
@@ -143,7 +158,7 @@ async function loadDevelopmentCommercialReadiness(clientId, developmentId, query
     return { blockers: live.blockers || [], itemCount: live.document?.items?.length || 0 };
   });
 
-  return { ok: true, status: 200, readiness: evaluateDevelopmentCommercialReadiness({ costCodes, periods, budget, purchaseOrders, packages, certificates, commercialEvents, ledger, prelims, sellingCosts, revenue, plotTenure, variationExposure }) };
+  return { ok: true, status: 200, readiness: evaluateDevelopmentCommercialReadiness({ costCodes, periods, budget, landAppraisal, purchaseOrders, packages, certificates, commercialEvents, ledger, prelims, sellingCosts, revenue, plotTenure, variationExposure }) };
 }
 
 module.exports = { STATES, evaluateDevelopmentCommercialReadiness, loadDevelopmentCommercialReadiness };
