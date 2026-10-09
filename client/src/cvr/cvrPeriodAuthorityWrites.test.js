@@ -336,6 +336,59 @@ describe('BL-031D CVR authority writes', () => {
     });
   });
 
+  it.each(['land_appraisal', 'site_start_budget'])(
+    '%s drawer saves omit protected budgets while retaining governed commercial fields',
+    async (budgetSourceMode) => {
+      authorityEnabled.value = true;
+      const period = buildServerCvrPeriodFixture({
+        developmentId: DEV_A,
+        periodKey: budgetSourceMode === 'land_appraisal' ? 'SITE_START' : 'P01',
+        periodType: budgetSourceMode === 'land_appraisal' ? 'site_start' : 'monthly_cvr',
+        budgetSourceMode,
+      });
+      seedMockCvrPeriod(DEV_A, period);
+      seedMockCvrInputs(period.id, [
+        buildServerCvrInputFixture({
+          periodId: period.id,
+          costCodeKey: '1120',
+          costCodeLabel: '1120 — Engineering Consultant',
+          originalBudget: null,
+          currentBudget: null,
+          commercialAdjustment: 0,
+          adjustmentReason: '',
+          manualAccrual: 0,
+          notes: '',
+          version: 1,
+        }),
+      ]);
+      await ensureCvrPeriodAndInputsReady(DEV_A, period.periodKey);
+
+      const current = listCostCentres(DEV_A, period.periodKey)[0];
+      const result = await updateCostCentre(
+        DEV_A,
+        current.id,
+        {
+          commercialAdjustment: 10000,
+          commercialReason: 'Revised engineering design scope.',
+          manualAccrual: 2500,
+          commercialNotes: 'Reviewed for Site Start.',
+        },
+        period.periodKey
+      );
+
+      expect(result.ok).toBe(true);
+      expect(getLastCvrPatchInputPayload().payload).toMatchObject({
+        version: 1,
+        commercialAdjustment: 10000,
+        adjustmentReason: 'Revised engineering design scope.',
+        manualAccrual: 2500,
+        notes: 'Reviewed for Site Start.',
+      });
+      expect(getLastCvrPatchInputPayload().payload).not.toHaveProperty('originalBudget');
+      expect(getLastCvrPatchInputPayload().payload).not.toHaveProperty('currentBudget');
+    }
+  );
+
   it('legacy CVR input edits keep their editable budget fields in the existing adapter contract', async () => {
     authorityEnabled.value = true;
     await openServerDraft(DEV_A);

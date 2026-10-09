@@ -29,6 +29,8 @@ const { buildPrelimsAdoptionReviewPreview } = require('../services/prelimsAdopti
 const { adoptPrelimsForecasts } = require('../services/prelimsAdoptionApplyService');
 const { postEvent } = require('../services/developmentBudgetRepository');
 const { hashCanonicalJson, CANONICAL_JSON_SHA256_V1 } = require('../services/canonicalJsonIntegrity');
+const { addDraftCvrCostCodeMember } = require('../services/cvrMembershipService');
+const { patchCostCodeInput } = require('../services/cvrPeriodRepository');
 
 const migration = fs.readFileSync(
   path.join(__dirname, '..', 'migrations', '067_site_start_period_foundation.sql'),
@@ -114,6 +116,170 @@ test('migration preserves existing periods as monthly and introduces no data rew
   assert.match(migration, /period_type TEXT NOT NULL DEFAULT 'monthly_cvr'/i);
   assert.doesNotMatch(migration, /UPDATE\s+cvr_periods/i);
   assert.doesNotMatch(migration, /UPDATE\s+cvr_period_snapshots/i);
+});
+
+test('appraisal-backed Site Start supports governed fact-only drawer overlays without mutating budget authority', async (t) => {
+  if (!isDbConfigured()) return t.skip('Database not configured');
+  await prepareIntegrationTestDatabase(pool);
+  const suffix = randomUUID().slice(0, 8);
+  const client = (await pool.query(
+    `INSERT INTO clients(code,name,is_active) VALUES($1,$2,false) RETURNING *`,
+    [`SSUAT02_${suffix}`, `SS-UAT-02 ${suffix}`]
+  )).rows[0];
+  const user = (await pool.query(
+    `INSERT INTO buildlite_users(auth_provider,provider_user_id,email_snapshot,display_name,status)
+     VALUES('clerk',$1,$2,'SS-UAT-02 QS','active') RETURNING *`,
+    [`ssuat02-${suffix}`, `ssuat02-${suffix}@test.invalid`]
+  )).rows[0];
+  const role = (await pool.query("SELECT id FROM roles WHERE key='qs'")).rows[0];
+  const membership = (await pool.query(
+    `INSERT INTO client_user_memberships(client_id,user_id,role_id,is_active)
+     VALUES($1,$2,$3,true) RETURNING *`,
+    [client.id, user.id, role.id]
+  )).rows[0];
+  const developmentId = `ssuat02-${randomUUID()}`;
+  await pool.query(
+    `INSERT INTO developments(id,client_id,job_number,development_name,status,payload)
+     VALUES($1,$2,$3,'SS-UAT-02 Development','live','{}')`,
+    [developmentId, client.id, `SSUAT02-${suffix}`]
+  );
+  const costCode = (await pool.query(
+    `INSERT INTO cost_codes(client_id,code,description,is_active,version)
+     VALUES($1,'1120','Engineering Consultant',true,1) RETURNING *`,
+    [client.id]
+  )).rows[0];
+  const balanceCostCode = (await pool.query(
+    `INSERT INTO cost_codes(client_id,code,description,is_active,version)
+     VALUES($1,'1000','Appraisal balance',true,1) RETURNING *`,
+    [client.id]
+  )).rows[0];
+  const auth = {
+    clientId: client.id,
+    userId: user.id,
+    membershipId: membership.id,
+    providerUserId: user.provider_user_id,
+    displayName: user.display_name,
+    roleKey: 'qs',
+    permissions: [
+      PERMISSIONS.COMMERCIAL_READ,
+      PERMISSIONS.CVR_EDIT,
+      PERMISSIONS.LAND_APPRAISAL_CAPTURE,
+      PERMISSIONS.SITE_START_MANAGE,
+    ],
+  };
+  const captured = await captureLandAppraisal(client.id, developmentId, {
+    effectiveDate: '2027-01-15',
+    reference: 'Ashfield acquisition appraisal',
+    approvalReason: 'Approved acquisition baseline',
+    lines: [
+      { costCodeId: costCode.id, amount: '118000.00' },
+      { costCodeId: balanceCostCode.id, amount: '18561000.00' },
+    ],
+  }, auth);
+  assert.equal(captured.ok, true);
+  assert.equal(captured.appraisal.totalCost, 18679000);
+  assert.equal(captured.appraisal.lines.find(line => line.costCode === '1120').amount, 118000);
+
+  const created = await createSiteStartPeriod(client.id, developmentId, {
+    forecastAsAtMonth: '2027-02',
+  }, { actor: auth.displayName, auth });
+  assert.equal(created.status, 201);
+  const eventCountBefore = Number((await pool.query(
+    'SELECT COUNT(*) n FROM development_budget_events WHERE client_id=$1 AND development_id=$2',
+    [client.id, developmentId]
+  )).rows[0].n);
+
+  const member = await addDraftCvrCostCodeMember(
+    client.id,
+    developmentId,
+    created.period.id,
+    { costCodeKey: costCode.code },
+    { actor: auth.displayName }
+  );
+  assert.equal(member.status, 201);
+  assert.equal(member.input.originalBudget, null);
+  assert.equal(member.input.currentBudget, null);
+  const duplicate = await addDraftCvrCostCodeMember(
+    client.id,
+    developmentId,
+    created.period.id,
+    { costCodeKey: costCode.code },
+    { actor: auth.displayName }
+  );
+  assert.equal(duplicate.ok, false);
+  assert.equal(duplicate.status, 409);
+  assert.equal(duplicate.code, 'COST_CODE_ALREADY_MEMBER');
+  assert.equal(duplicate.input.id, member.input.id);
+  assert.equal(Number((await pool.query(
+    'SELECT COUNT(*) n FROM cvr_cost_code_inputs WHERE period_id=$1 AND cost_code_key=$2',
+    [created.period.id, costCode.code]
+  )).rows[0].n), 1);
+
+  const missingReason = await patchCostCodeInput(client.id, developmentId, created.period.id, member.input.id, {
+    version: member.input.version,
+    commercialAdjustment: 10000,
+    adjustmentReason: '',
+  }, { actor: auth.displayName });
+  assert.equal(missingReason.status, 400);
+  assert.match(missingReason.message, /reason/i);
+
+  const adjusted = await patchCostCodeInput(client.id, developmentId, created.period.id, member.input.id, {
+    version: member.input.version,
+    commercialAdjustment: 10000,
+    adjustmentReason: 'Revised engineering design scope and additional consultant fees.',
+  }, { actor: auth.displayName });
+  assert.equal(adjusted.ok, true);
+  assert.equal(adjusted.input.originalBudget, null);
+  assert.equal(adjusted.input.currentBudget, null);
+  const stale = await patchCostCodeInput(client.id, developmentId, created.period.id, member.input.id, {
+    version: member.input.version,
+    commercialAdjustment: 12000,
+    adjustmentReason: 'Stale edit must fail.',
+  }, { actor: auth.displayName });
+  assert.equal(stale.status, 409);
+  assert.match(stale.message, /version conflict/i);
+
+  const accrued = await patchCostCodeInput(client.id, developmentId, created.period.id, member.input.id, {
+    version: adjusted.input.version,
+    commercialAdjustment: 10000,
+    adjustmentReason: adjusted.input.adjustmentReason,
+    manualAccrual: 2500,
+  }, { actor: auth.displayName });
+  assert.equal(accrued.ok, true);
+  assert.equal(accrued.input.manualAccrual, 2500);
+  const noted = await patchCostCodeInput(client.id, developmentId, created.period.id, member.input.id, {
+    version: accrued.input.version,
+    commercialAdjustment: 10000,
+    adjustmentReason: accrued.input.adjustmentReason,
+    notes: 'Reviewed for Site Start.',
+  }, { actor: auth.displayName });
+  assert.equal(noted.ok, true);
+  assert.equal(noted.input.notes, 'Reviewed for Site Start.');
+
+  const forbiddenBudget = await patchCostCodeInput(client.id, developmentId, created.period.id, member.input.id, {
+    version: noted.input.version,
+    currentBudget: 118000,
+  }, { actor: auth.displayName });
+  assert.equal(forbiddenBudget.status, 409);
+  assert.equal(forbiddenBudget.message, "Budget is managed by the period's authoritative budget source.");
+
+  const candidate = await buildCvrCloseCandidate({
+    clientId: client.id,
+    developmentId,
+    periodId: created.period.id,
+  });
+  const row = candidate.snapshot.rows.find(item => item.costCodeKey === '1120');
+  assert.equal(row.originalBudget, 118000);
+  assert.equal(row.currentBudget, 118000);
+  assert.equal(row.commercialAdjustment, 10000);
+  assert.equal(row.finalForecast, 128000);
+  const appraisalAfter = await getLandAppraisalAuthority(client.id, developmentId);
+  assert.equal(appraisalAfter.appraisal.totalCost, 18679000);
+  assert.equal(appraisalAfter.appraisal.lines.find(line => line.costCode === '1120').amount, 118000);
+  assert.equal(Number((await pool.query(
+    'SELECT COUNT(*) n FROM development_budget_events WHERE client_id=$1 AND development_id=$2',
+    [client.id, developmentId]
+  )).rows[0].n), eventCountBefore);
 });
 
 test('guarded authority flow captures immutable appraisal and versions one Draft Site Start', async (t) => {

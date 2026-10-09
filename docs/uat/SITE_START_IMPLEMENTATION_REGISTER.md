@@ -133,3 +133,11 @@ Owner-review the complete SS-1 through SS-5 tranche locally, then bank and relea
 - Fresh-development readiness now requires Cost Code Master and immutable Land Appraisal, and directs the operator to Budget setup. A separate Development Budget is not a Site Start prerequisite. Existing monthly and legacy Development-Budget-backed CVRs retain their prior readiness model.
 - Permissions remain independent: `land_appraisal.capture` controls permanent capture and `site_start.manage` controls Site Start creation; read-only users retain appraisal visibility.
 - Minor hosted UX follow-up: the legacy Development Budget setup remains available on the same Budget page for developments that legitimately use that authority. Owner UAT should confirm the two authorities are sufficiently distinct at normal viewport sizes and that duplicate Site Start clicks surface the server's fail-closed response clearly.
+
+## SS-UAT-02 Site Start drawer saves
+
+- Appraisal-backed Site Start periods now omit `originalBudget` and `currentBudget` from ordinary Cost Code input PATCH requests, matching the existing protected handling for Development-Budget- and approved-Site-Start-backed periods.
+- The existing guarded Draft membership primitive remains the sole creator of a fact-only editable overlay. It retains stable tenant Cost Code identity, creates at most one overlay and copies no Land Appraisal money.
+- Projected Adjustment, commercial reason, Manual Accrual and notes remain governed editable input evidence. Land Appraisal amounts remain immutable and continue to supply the authoritative row budget.
+- Explicit attempts to mutate protected budget fields still fail closed with source-neutral wording. Optimistic versions, reason validation, ownership protection and existing monthly-CVR behavior are unchanged.
+- Guarded coverage proves an appraisal-backed overlay can save adjustment, accrual and notes; rejects missing reasons, stale versions and explicit budget mutation; preserves the £18,679,000 appraisal; and creates no Development Budget event.

@@ -382,7 +382,7 @@ export async function patchCostCentreOnServer(developmentId, periodKey, centre) 
   const mapped = toServerInputPayload(centre);
   if (!mapped.ok) return mapped;
   const payload = { ...mapped.value };
-  if (['development_budget', 'site_start_budget'].includes(resolved.period.budgetSourceMode)) {
+  if (['development_budget', 'land_appraisal', 'site_start_budget'].includes(resolved.period.budgetSourceMode)) {
     delete payload.originalBudget;
     delete payload.currentBudget;
   }

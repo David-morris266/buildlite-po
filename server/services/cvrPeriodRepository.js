@@ -1345,7 +1345,7 @@ async function createCostCodeInput(clientId, developmentId, periodId, body = {},
     }
     if (['development_budget', 'land_appraisal', 'site_start_budget'].includes(period.budget_source) && (Object.prototype.hasOwnProperty.call(body, 'originalBudget') || Object.prototype.hasOwnProperty.call(body, 'currentBudget'))) {
       await dbClient.query('ROLLBACK');
-      return { ok:false,status:409,message:'Budget is managed from Development Budget.' };
+      return { ok:false,status:409,message:"Budget is managed by the period's authoritative budget source." };
     }
 
     const inserted = await insertInput(dbClient, clientId, periodId, validated.value, actor);
@@ -1390,7 +1390,7 @@ async function patchCostCodeInput(clientId, developmentId, periodId, inputId, bo
     }
     if (['development_budget', 'land_appraisal', 'site_start_budget'].includes(period.budget_source) && (Object.prototype.hasOwnProperty.call(body, 'originalBudget') || Object.prototype.hasOwnProperty.call(body, 'currentBudget'))) {
       await dbClient.query('ROLLBACK');
-      return { ok:false,status:409,message:'Budget is managed from Development Budget.' };
+      return { ok:false,status:409,message:"Budget is managed by the period's authoritative budget source." };
     }
 
     const row = await findInputRow(clientId, periodId, inputId, dbClient, { forUpdate: true });
@@ -1540,7 +1540,7 @@ async function upsertCostCodeInputs(clientId, developmentId, periodId, body = {}
     }
     if (['development_budget', 'land_appraisal', 'site_start_budget'].includes(period.budget_source) && items.some((item) => Object.prototype.hasOwnProperty.call(item, 'originalBudget') || Object.prototype.hasOwnProperty.call(item, 'currentBudget'))) {
       await dbClient.query('ROLLBACK');
-      return { ok:false,status:409,message:'Budget is managed from Development Budget.' };
+      return { ok:false,status:409,message:"Budget is managed by the period's authoritative budget source." };
     }
 
     const results = [];
