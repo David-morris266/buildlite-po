@@ -10605,7 +10605,7 @@
 
 .dev-prelims-setup__table {
   width: 100%;
-  min-width: 104rem;
+  min-width: 76rem;
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -10631,58 +10631,52 @@
   box-shadow: 0 1px 0 var(--line, rgba(255, 255, 255, 0.12));
 }
 
-/* Primary commercial columns: keep scan width tight but separate money fields. */
-.dev-prelims-setup__table th:nth-child(2),
-.dev-prelims-setup__primary td:nth-child(2) {
-  width: 18rem;
-}
-
+/* Compact commercial schedule: identity stays visible; forecast remains in the primary viewport. */
 .dev-prelims-setup__table th:nth-child(1),
 .dev-prelims-setup__primary td:nth-child(1) {
   position: sticky;
   left: 0;
   z-index: 2;
-  width: 12rem;
-  min-width: 12rem;
+  width: 23rem;
+  min-width: 23rem;
   background: #171e22;
 }
 
-.dev-prelims-setup__table th:nth-child(2),
-.dev-prelims-setup__primary td:nth-child(2) {
-  position: sticky;
-  left: 12rem;
-  z-index: 2;
-  background: #171e22;
-}
-
-.dev-prelims-setup__table th:nth-child(1),
-.dev-prelims-setup__table th:nth-child(2) {
+.dev-prelims-setup__table th:nth-child(1) {
   z-index: 4;
   background: #12181b;
 }
 
+.dev-prelims-setup__table th:nth-child(2),
+.dev-prelims-setup__primary td:nth-child(2) { width: 8rem; }
 .dev-prelims-setup__table th:nth-child(3),
-.dev-prelims-setup__primary td:nth-child(3) { width: 7rem; }
+.dev-prelims-setup__primary td:nth-child(3) { width: 18rem; }
+.dev-prelims-setup__table th:nth-child(4),
+.dev-prelims-setup__primary td:nth-child(4) { width: 6rem; }
+.dev-prelims-setup__table th:nth-child(5),
+.dev-prelims-setup__primary td:nth-child(5) { width: 10rem; }
+.dev-prelims-setup__table th:nth-child(6),
+.dev-prelims-setup__primary td:nth-child(6) { width: 10rem; }
+.dev-prelims-setup__table th:nth-child(7),
+.dev-prelims-setup__primary td:nth-child(7) { width: 12rem; }
+
 .dev-prelims-setup__table th:nth-child(4),
 .dev-prelims-setup__primary td:nth-child(4),
-.dev-prelims-setup__table th:nth-child(6),
-.dev-prelims-setup__primary td:nth-child(6) { width: 9rem; }
 .dev-prelims-setup__table th:nth-child(5),
 .dev-prelims-setup__primary td:nth-child(5),
-.dev-prelims-setup__table th:nth-child(7),
-.dev-prelims-setup__primary td:nth-child(7) { width: 5rem; }
-.dev-prelims-setup__table th:nth-child(8),
-.dev-prelims-setup__primary td:nth-child(8) { width: 5rem; text-align: right; }
-.dev-prelims-setup__table th:nth-child(9),
-.dev-prelims-setup__primary td:nth-child(9) { width: 8rem; }
-.dev-prelims-setup__table th:nth-child(10),
-.dev-prelims-setup__primary td:nth-child(10) {
-  width: 8rem; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
+.dev-prelims-setup__table th:nth-child(6),
+.dev-prelims-setup__primary td:nth-child(6) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
-.dev-prelims-setup__table th:nth-child(11),
-.dev-prelims-setup__primary td:nth-child(11) { width: 9rem; }
-.dev-prelims-setup__table th:nth-child(12),
-.dev-prelims-setup__primary td:nth-child(12) { width: 2.5rem; text-align: center; }
+
+.dev-prelims-setup__primary td:nth-child(6) { white-space: nowrap; }
+.dev-prelims-setup__primary td:nth-child(7) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
 
 .dev-prelims-setup__primary td {
   border-bottom: none;
@@ -10808,6 +10802,11 @@
   font-size: 0.7rem;
 }
 
+.dev-prelims-setup__timing-summary {
+  color: var(--muted, #9aa4b2);
+  white-space: normal;
+}
+
 .dev-prelims-setup__mapping-compact {
   display: block;
   margin-top: 0.15rem;
@@ -10857,7 +10856,7 @@
   box-sizing: border-box;
 }
 
-.dev-prelims-setup__primary td:nth-child(9) .input { max-width: 8.75rem; }
+.dev-prelims-setup__primary td:nth-child(5) .input { max-width: 9rem; margin-left: auto; }
 
 .dev-prelims-setup__cost-code-picker {
   position: relative;
@@ -12263,13 +12262,11 @@
     font-weight: 700;
   }
 
-  .dev-prelims-setup__primary td:nth-child(2),
   .dev-prelims-setup__primary td:nth-child(1) {
     grid-column: 1 / -1;
   }
 
-  .dev-prelims-setup__primary td:nth-child(1),
-  .dev-prelims-setup__primary td:nth-child(2) {
+  .dev-prelims-setup__primary td:nth-child(1) {
     position: static;
   }
 

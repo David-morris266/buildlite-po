@@ -55,6 +55,25 @@ function matrixStatusLabel(line, draft, calculation) {
   return state;
 }
 
+const TIMING_LABELS = {
+  SITE_START: 'Site start',
+  FIRST_COMPLETION: 'First completion',
+  FINAL_COMPLETION: 'Completion',
+  FIXED_DATE: 'Fixed date',
+};
+
+function timingPointLabel(basis, offsetMonths) {
+  const label = TIMING_LABELS[basis] || basis || 'Not set';
+  const offset = Number(offsetMonths || 0);
+  if (!offset || basis === 'FIXED_DATE') return label;
+  return `${label} ${offset > 0 ? '+' : ''}${offset}m`;
+}
+
+function timingSummary(draft, isTime) {
+  if (!isTime) return '—';
+  return `${timingPointLabel(draft.startBasis || 'SITE_START', draft.startOffsetMonths)} → ${timingPointLabel(draft.endBasis || 'FINAL_COMPLETION', draft.endOffsetMonths)}`;
+}
+
 export default function DevelopmentPrelimsSetupWorksheet({
   developmentId,
   persistedItems = [],
@@ -494,18 +513,13 @@ export default function DevelopmentPrelimsSetupWorksheet({
           <table className="dev-prelims-setup__table">
             <thead>
               <tr>
-                <th>Cost code</th>
                 <th>Prelim item</th>
                 <th>Driver</th>
-                <th>Start</th>
-                <th>Offset</th>
-                <th>End</th>
-                <th>Offset</th>
+                <th>Timing</th>
                 <th>Months</th>
                 <th>Rate / amount</th>
                 <th>Forecast</th>
                 <th>Status</th>
-                <th><span className="visually-hidden">Details</span></th>
               </tr>
             </thead>
             <tbody>
@@ -571,7 +585,7 @@ export default function DevelopmentPrelimsSetupWorksheet({
                   <Fragment key={line.templateLineId}>
                     {firstInGroup ? (
                       <tr className="dev-prelims-setup__group" aria-label={`${group.costCodeKey || 'Unmapped'} Cost Code group`}>
-                        <td colSpan={12}>
+                        <td colSpan={7}>
                           <div className="dev-prelims-setup__group-summary">
                             <div>
                               <strong>{group.costCodeKey ? costCodeLabel(group.costCodeKey) : 'Cost Code not selected'}</strong>
@@ -596,29 +610,6 @@ export default function DevelopmentPrelimsSetupWorksheet({
                       </tr>
                     ) : null}
                     <tr className={`dev-prelims-setup__primary ${rowClass}`.trim()}>
-                      <td data-label="Cost code">
-                        {searchFirst || editingMapping ? (
-                          <CommercialHeadCostCodePicker
-                            category="PRELIMINARIES"
-                            structure={commercialStructure}
-                            codes={canonicalCostCodeOptions}
-                            identity="code"
-                            name={identity.name}
-                            valueCode={draft.costCodeKey}
-                            disabled={!line.selectable || saving}
-                            onChange={(code) =>
-                              updateDraft(line.templateLineId, 'costCodeKey', code)
-                            }
-                          />
-                        ) : (
-                          <p className="dev-prelims-setup__mapping-value">
-                            {costCodeLabel(draft.costCodeKey)}
-                          </p>
-                        )}
-                        <small className={`dev-prelims-setup__mapping-compact dev-prelims-setup__mapping-source--${provenance.state}`}>
-                          {provenance.label}
-                        </small>
-                      </td>
                       <td data-label="Prelim item">
                         <label className="dev-prelims-setup__line-name">
                           <input
@@ -641,29 +632,8 @@ export default function DevelopmentPrelimsSetupWorksheet({
                           <option value={PRELIMS_DRIVERS.LUMP_SUM}>Lump sum</option>
                         </select>
                       </td>
-                      <td data-label="Start">
-                        {isTime ? <select className="input" value={draft.startBasis || 'SITE_START'} disabled={!line.selectable || saving}
-                          onChange={(event) => updateDraft(line.templateLineId, 'startBasis', event.target.value)} aria-label={`${line.name} start basis`}>
-                          <option value="SITE_START">Site start</option><option value="FIRST_COMPLETION">First completion</option>
-                          <option value="FINAL_COMPLETION">Final completion</option><option value="FIXED_DATE">Fixed date</option>
-                        </select> : '—'}
-                      </td>
-                      <td data-label="Start offset">
-                        {isTime && draft.startBasis !== 'FIXED_DATE' ? <input className="input" type="number" min="-60" max="60" step="1"
-                          value={draft.startOffsetMonths ?? 0} disabled={!line.selectable || saving}
-                          onChange={(event) => updateDraft(line.templateLineId, 'startOffsetMonths', event.target.value)} aria-label={`${line.name} start offset months`} /> : '—'}
-                      </td>
-                      <td data-label="End">
-                        {isTime ? <select className="input" value={draft.endBasis || 'FINAL_COMPLETION'} disabled={!line.selectable || saving}
-                          onChange={(event) => updateDraft(line.templateLineId, 'endBasis', event.target.value)} aria-label={`${line.name} end basis`}>
-                          <option value="SITE_START">Site start</option><option value="FIRST_COMPLETION">First completion</option>
-                          <option value="FINAL_COMPLETION">Final completion</option><option value="FIXED_DATE">Fixed date</option>
-                        </select> : '—'}
-                      </td>
-                      <td data-label="End offset">
-                        {isTime && draft.endBasis !== 'FIXED_DATE' ? <input className="input" type="number" min="-60" max="60" step="1"
-                          value={draft.endOffsetMonths ?? 0} disabled={!line.selectable || saving}
-                          onChange={(event) => updateDraft(line.templateLineId, 'endOffsetMonths', event.target.value)} aria-label={`${line.name} end offset months`} /> : '—'}
+                      <td data-label="Timing" className="dev-prelims-setup__timing-summary">
+                        {timingSummary(draft, isTime)}
                       </td>
                       <td data-label="Months">{isTime && live.span.totalMonths != null ? `${live.span.totalMonths} months` : '—'}</td>
                       <td data-label="Rate / amount">
@@ -714,8 +684,8 @@ export default function DevelopmentPrelimsSetupWorksheet({
                             : '—'
                           : moneyLabel(live.calc.totalForecast)}
                       </td>
-                      <td data-label="Status">{matrixStatusLabel(line, draft, live.calc)}</td>
-                      <td data-label="Details">
+                      <td data-label="Status">
+                        <span>{matrixStatusLabel(line, draft, live.calc)}</span>
                         <button className="dev-prelims-setup__detail-toggle" type="button"
                           aria-expanded={showDetail} aria-label={`${showDetail ? 'Hide' : 'Show'} ${line.name} details`}
                           onClick={() => toggleLineDetail(line.templateLineId)}>⌄</button>
@@ -726,11 +696,29 @@ export default function DevelopmentPrelimsSetupWorksheet({
                         className={`dev-prelims-setup__detail ${rowClass}`.trim()}
                         aria-label={`${line.name} line detail`}
                       >
-                        <td colSpan={12}>
+                        <td colSpan={7}>
                           <div className="dev-prelims-setup__detail-grid">
                             <div><strong>{identity.name}</strong><p>{identity.guidance || 'No additional description.'}</p></div>
                             <div>
                               <strong>{provenance.label}</strong><p>{provenance.detail}</p>
+                              {searchFirst || editingMapping ? (
+                                <CommercialHeadCostCodePicker
+                                  category="PRELIMINARIES"
+                                  structure={commercialStructure}
+                                  codes={canonicalCostCodeOptions}
+                                  identity="code"
+                                  name={identity.name}
+                                  valueCode={draft.costCodeKey}
+                                  disabled={!line.selectable || saving}
+                                  onChange={(code) =>
+                                    updateDraft(line.templateLineId, 'costCodeKey', code)
+                                  }
+                                />
+                              ) : (
+                                <p className="dev-prelims-setup__mapping-value">
+                                  {costCodeLabel(draft.costCodeKey)}
+                                </p>
+                              )}
                               {!searchFirst && !line.alreadyApplied ? <div className="dev-prelims-setup__mapping-actions">
                                 {editingMapping ? <button className="btn" type="button" onClick={() => cancelMappingEdit(line)}>Cancel</button>
                                   : <button className="btn" type="button" onClick={() => beginMappingEdit(line, draft)}>Change for this development</button>}
@@ -739,7 +727,7 @@ export default function DevelopmentPrelimsSetupWorksheet({
                               {line.alreadyApplied ? <p>Amend this saved line from the Site Prelims schedule; setup will not overwrite it.</p> : null}
                             </div>
                           </div>
-                          {isTime && (draft.startBasis === 'FIXED_DATE' || draft.endBasis === 'FIXED_DATE') ? (
+                          {isTime ? (
                             <PrelimsTimeSpanFields
                               compact
                               disabled={!line.selectable || saving}

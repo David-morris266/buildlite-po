@@ -169,11 +169,14 @@ describe('Development Prelims setup worksheet', () => {
       );
       await act(async () => row.querySelector(`[aria-label="Show ${lineName} details"]`).click());
       const detail = row.nextElementSibling;
-      const change = Array.from(detail.querySelectorAll('button')).find((button) =>
-        button.textContent.includes('Change')
-      );
-      await act(async () => change.click());
       search = container.querySelector(`[aria-label="${lineName} cost code search"]`);
+      if (!search) {
+        const change = Array.from(detail.querySelectorAll('button')).find((button) =>
+          button.textContent.includes('Change')
+        );
+        await act(async () => change.click());
+        search = container.querySelector(`[aria-label="${lineName} cost code search"]`);
+      }
     }
     await act(async () => {
       search.focus();
@@ -388,27 +391,36 @@ describe('Development Prelims setup worksheet', () => {
   it('renders a commercial setup worksheet and live TIME forecast', async () => {
     await renderSheet();
     expect(container.querySelectorAll('.dev-prelims-setup__primary')).toHaveLength(4);
+    expect(
+      Array.from(container.querySelectorAll('.dev-prelims-setup__table thead th')).map((cell) =>
+        cell.textContent.trim()
+      )
+    ).toEqual([
+      'Prelim item',
+      'Driver',
+      'Timing',
+      'Months',
+      'Rate / amount',
+      'Forecast',
+      'Status',
+    ]);
     expect(container.textContent).toMatch(/Prelims setup worksheet/);
     expect(container.textContent).toMatch(/Site Manager/);
     expect(container.textContent).toMatch(/38 months/);
     expect(container.textContent).not.toMatch(/Review & Adopt/);
     expect(container.querySelector('[aria-label="Site Manager line detail"]')).toBeNull();
-    expect(container.querySelector('[aria-label="Site Manager start basis"]')).toBeTruthy();
+    expect(container.querySelector('[aria-label="Site Manager start basis"]')).toBeNull();
     expect(container.querySelector('[aria-label="BL-033D.x.2 CUSTOM UAT start basis"]')).toBeNull();
-    expect(container.textContent).toContain('Company mapping');
-    expect(container.textContent).toContain('Company template unmapped');
     expect(container.querySelector('[aria-label="Site Manager cost code search"]')).toBeNull();
     expect(container.querySelector('[aria-label="Site Manager cost code"]')).toBeNull();
     expect(container.textContent).toContain('5210 — Site management');
+    expect(container.querySelector('[aria-label="5210 Cost Code group"]').textContent).toContain(
+      'Configured forecast'
+    );
     expect(
       container.querySelector('[aria-label="Site Manager forecast driver"] option:checked').textContent
     ).toBe('Monthly');
-    expect(
-      container.querySelector('[aria-label="Site Manager start basis"] option:checked').textContent
-    ).toBe('Site start');
-    expect(
-      container.querySelector('[aria-label="Site Manager end basis"] option:checked').textContent
-    ).toBe('Final completion');
+    expect(container.textContent).toContain('Site start → Completion');
 
     await act(async () => {
       setInputValue(container.querySelector('[aria-label="Site Manager monthly rate"]'), '5500');
@@ -425,6 +437,12 @@ describe('Development Prelims setup worksheet', () => {
     expect(container.querySelector('[aria-label="Site Manager line detail"]')).toBeTruthy();
     expect(container.textContent).toContain('Full-time site management');
     expect(container.textContent).toContain('Forecast to date');
+    expect(
+      container.querySelector('[aria-label="Site Manager start basis"] option:checked').textContent
+    ).toBe('Site start');
+    expect(
+      container.querySelector('[aria-label="Site Manager end basis"] option:checked').textContent
+    ).toBe('Final completion');
   });
 
   it('shows explicit company defaults as unselected forecasts rather than authorised development rows', async () => {
@@ -471,8 +489,8 @@ describe('Development Prelims setup worksheet', () => {
       button.textContent.includes('Revert to company mapping')
     );
     await act(async () => revert.click());
-    expect(row.textContent).toContain('Company mapping');
-    expect(row.textContent).toContain('5210 — Site management');
+    expect(row.nextElementSibling.textContent).toContain('Company mapping');
+    expect(row.nextElementSibling.textContent).toContain('5210 — Site management');
   });
 
   it('cancels an inherited mapping change without creating an override', async () => {
@@ -491,7 +509,7 @@ describe('Development Prelims setup worksheet', () => {
     );
     await act(async () => cancel.click());
     expect(container.querySelector('[aria-label="Site Manager cost code search"]')).toBeNull();
-    expect(row.textContent).toContain('Company mapping');
+    expect(row.nextElementSibling.textContent).toContain('Company mapping');
     expect(applyDevelopmentPrelimsSetup).not.toHaveBeenCalled();
   });
 
@@ -511,8 +529,11 @@ describe('Development Prelims setup worksheet', () => {
     expect(css).toMatch(
       /\.dev-prelims-setup__detail \.dev-prelims-time--compact\s*\{[\s\S]*grid-template-columns:\s*minmax\(13\.5rem, 1fr\) minmax\(13\.5rem, 1fr\)/
     );
-    expect(css).toMatch(/\.dev-prelims-setup__table\s*\{[\s\S]*min-width:\s*104rem/);
+    expect(css).toMatch(/\.dev-prelims-setup__table\s*\{[\s\S]*min-width:\s*76rem/);
     expect(css).toMatch(/\.dev-prelims-setup__table th\s*\{[\s\S]*position:\s*sticky/);
+    expect(css).toMatch(
+      /\.dev-prelims-setup__table th:nth-child\(1\),[\s\S]*\.dev-prelims-setup__primary td:nth-child\(1\)\s*\{[\s\S]*position:\s*sticky/
+    );
     expect(css).toMatch(/@media \(max-width: 900px\)[\s\S]*\.dev-prelims-setup__table,[\s\S]*min-width:\s*0/);
   });
 
@@ -561,6 +582,7 @@ describe('Development Prelims setup worksheet', () => {
     expect(row.textContent).toContain('Already on this development');
     expect(row.querySelector('[aria-label="Site Manager monthly rate"]').value).toBe('5000');
     expect(row.querySelector('[aria-label="Site Manager monthly rate"]').disabled).toBe(true);
+    await act(async () => row.querySelector('[aria-label="Show Site Manager details"]').click());
     expect(container.querySelector('[aria-label="Site Manager start basis"]').value).toBe('SITE_START');
     expect(container.querySelector('[aria-label="Site Manager start offset months"]').value).toBe('0');
     expect(container.querySelector('[aria-label="Site Manager end basis"]').value).toBe('FINAL_COMPLETION');
@@ -784,12 +806,20 @@ describe('Development Prelims setup worksheet', () => {
     await renderSheet();
     expect(container.textContent).toContain('Already on this development');
     expect(container.textContent).toContain('5305 — Supervision / Management');
-    expect(container.textContent).toContain('Company mapping');
+    const customRow = Array.from(container.querySelectorAll('.dev-prelims-setup__primary')).find(
+      (item) => item.textContent.includes('BL-033D.x.2 CUSTOM UAT')
+    );
+    await act(async () => customRow.querySelector('[aria-label="Show BL-033D.x.2 CUSTOM UAT details"]').click());
+    expect(customRow.nextElementSibling.textContent).toContain('Company mapping');
   });
 
   it('filters cost codes by canonical code, description, partial text, and restores on clear', async () => {
     await renderSheet();
     const lineName = 'BL-033D.x.2 CUSTOM UAT';
+    const row = Array.from(container.querySelectorAll('.dev-prelims-setup__primary')).find((item) =>
+      item.textContent.includes(lineName)
+    );
+    await act(async () => row.querySelector(`[aria-label="Show ${lineName} details"]`).click());
     const searchInput = container.querySelector(`[aria-label="${lineName} cost code search"]`);
 
     await act(async () => {
@@ -829,6 +859,10 @@ describe('Development Prelims setup worksheet', () => {
     await renderSheet();
     await selectLine('Site Manager');
     const lineName = 'BL-033D.x.2 CUSTOM UAT';
+    const row = Array.from(container.querySelectorAll('.dev-prelims-setup__primary')).find((item) =>
+      item.textContent.includes(lineName)
+    );
+    await act(async () => row.querySelector(`[aria-label="Show ${lineName} details"]`).click());
     await act(async () => {
       const searchInput = container.querySelector(`[aria-label="${lineName} cost code search"]`);
       searchInput.focus();
@@ -906,10 +940,11 @@ describe('Development Prelims setup worksheet', () => {
     });
     expect(container.querySelector(`[aria-label="${lineName} lump-sum amount"]`)).toBeNull();
     expect(container.querySelector(`[aria-label="${lineName} monthly rate"]`)).toBeTruthy();
-    expect(container.querySelector(`[aria-label="${lineName} start basis"]`)).toBeTruthy();
+    expect(container.querySelector(`[aria-label="${lineName} start basis"]`)).toBeNull();
     expect(container.querySelector(`[aria-label="${lineName} line detail"]`)).toBeNull();
     await act(async () => container.querySelector(`[aria-label="Show ${lineName} details"]`).click());
     expect(container.querySelector(`[aria-label="${lineName} line detail"]`)).toBeTruthy();
+    expect(container.querySelector(`[aria-label="${lineName} start basis"]`)).toBeTruthy();
 
     await chooseCostCode(lineName, '5210');
     await act(async () => {
