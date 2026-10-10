@@ -924,7 +924,10 @@ export default function DevelopmentWorkspace({
   const isCvrPeriodOpen =
     activeTab === 'cvr' && Boolean(cvrPeriodKey) && cvrView !== 'register';
   const WorkspaceShell =
-    activeTab === 'cvr' || activeTab === 'ledger' || activeTab === 'revenue'
+    activeTab === 'cvr' ||
+    activeTab === 'ledger' ||
+    activeTab === 'revenue' ||
+    activeTab === 'prelims'
       ? CommercialWorkspace
       : StandardWorkspace;
 

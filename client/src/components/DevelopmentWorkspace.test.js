@@ -17,7 +17,10 @@ const workspaceStyles = readFileSync(
 );
 
 function resolveWorkspaceShell(activeTab) {
-  return activeTab === 'cvr' || activeTab === 'ledger' || activeTab === 'revenue'
+  return activeTab === 'cvr' ||
+    activeTab === 'ledger' ||
+    activeTab === 'revenue' ||
+    activeTab === 'prelims'
     ? CommercialWorkspace
     : StandardWorkspace;
 }
@@ -42,10 +45,12 @@ describe('DevelopmentWorkspace package-open render path', () => {
     ).not.toThrow();
   });
 
-  it('keeps commercial workspace routing for ledger/revenue/cvr tabs', () => {
+  it('keeps commercial workspace routing for ledger/revenue/cvr and full-width Prelims tabs', () => {
     expect(resolveWorkspaceShell('ledger')).toBe(CommercialWorkspace);
     expect(resolveWorkspaceShell('revenue')).toBe(CommercialWorkspace);
     expect(resolveWorkspaceShell('cvr')).toBe(CommercialWorkspace);
+    expect(resolveWorkspaceShell('prelims')).toBe(CommercialWorkspace);
+    expect(workspaceSource).toContain("activeTab === 'prelims'");
   });
 
   it('routes workspace tab clicks through handleSelectWorkspaceTab', () => {
