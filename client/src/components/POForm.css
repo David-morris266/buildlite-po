@@ -267,6 +267,37 @@
   filter: none;
 }
 
+.po-form-container .po-form-action--send {
+  background: linear-gradient(180deg, #7cff6b, #29d659);
+  border: 1px solid transparent;
+  color: #071007;
+  transition: filter 0.15s ease, box-shadow 0.15s ease, transform 0.08s ease;
+}
+
+.po-form-container .po-form-action--send:hover:not(:disabled) {
+  background: linear-gradient(180deg, #87ff77, #32df62);
+  border-color: transparent;
+  filter: brightness(1.04);
+}
+
+.po-form-container .po-form-action--send:focus-visible {
+  outline: 3px solid rgba(124, 255, 107, 0.42);
+  outline-offset: 2px;
+}
+
+.po-form-container .po-form-action--send:active:not(:disabled) {
+  background: linear-gradient(180deg, #65e956, #24c74e);
+  filter: brightness(0.98);
+  transform: translateY(1px);
+}
+
+.po-form-container .po-form-action--send:disabled {
+  background: linear-gradient(180deg, #7cff6b, #29d659);
+  opacity: 0.55;
+  filter: saturate(0.55);
+  transform: none;
+}
+
 .po-form-container button:disabled {
   opacity: 0.55;
   cursor: not-allowed;

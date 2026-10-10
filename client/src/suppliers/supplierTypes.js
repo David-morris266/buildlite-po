@@ -23,9 +23,3 @@ export function getSuggestedOrderTypeForSupplier(supplier) {
   const meta = getSupplierTypeMeta(supplier?.supplierType);
   return meta?.orderType || 'M';
 }
-
-export function isOrderTypeCompatible(supplierType, orderType) {
-  const suggested = getSupplierTypeMeta(supplierType)?.orderType;
-  if (!suggested || !orderType) return true;
-  return String(suggested).toUpperCase() === String(orderType).toUpperCase();
-}

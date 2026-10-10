@@ -148,6 +148,23 @@ describe('BL-031D live commercial formulas', () => {
     expect(commitments.totals.get('5231')).toBe(50250);
   });
 
+  it('approved Professional Consultant Materials PO contributes to commitments without package authority', () => {
+    const commitments = buildCommitmentsByCostCode(DEV, [{
+      poNumber: 'M-CONSULTANT-1',
+      type: 'M',
+      supplierId: 'architect',
+      supplierSnapshot: { supplierType: 'consultant' },
+      developmentId: DEV,
+      costRef: { developmentId: DEV, costCode: '1100' },
+      subtotal: 100000,
+      totals: { net: 100000 },
+      approval: { status: 'Approved' },
+      status: 'Approved',
+      archived: false,
+    }]);
+    expect(commitments.totals.get('1100')).toBe(100000);
+  });
+
   it('BL-038C renders submitted Expected additively without moving System', () => {
     seedSubmittedEvent();
     createOrOpenDraftPeriod(DEV);

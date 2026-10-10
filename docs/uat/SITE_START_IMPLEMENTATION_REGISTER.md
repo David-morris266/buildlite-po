@@ -173,3 +173,15 @@ Owner-review the complete SS-1 through SS-5 tranche locally, then bank and relea
 - The previous independently sized group-summary grid has been removed. Budget and forecast values remain right-aligned and untruncated, while Cost Code descriptions and supporting evidence can wrap naturally.
 - The worksheet follows the CVR scroll contract with `width: max-content`, `min-width: 100%` and the existing worksheet wrapper as the sole desktop horizontal scroll owner. The sticky item column no longer paints over group financial content.
 - Below 900px, group evidence uses the existing responsive card model. Direct authenticated browser inspection remains unavailable; 1440px and 1920px at 100% zoom remain required owner visual acceptance.
+
+## PO-UAT-01A Supplier classification and order-type flexibility
+
+- Supplier classification remains an initial order-type suggestion only. Professional Consultant continues to suggest Sub-contract, while the operator may deliberately select Materials for Purchase Ledger processing or another established valid type.
+- The PO form no longer imposes a client-only equality rule between supplier classification and order type. The established `M`, `S` and `P` order types, all other PO validation, supplier approval and PO approval remain unchanged.
+- Downstream authority remains type-led: only an approved Sub-contract PO materialises a subcontract Package. An approved Materials PO creates no Package and continues through the existing Purchase Ledger and commitment paths.
+- Focused client and guarded server coverage protects consultant Materials and Sub-contract paths, pending-supplier rejection, valid-type selection, package materialisation and approval authority.
+
+## PO-UAT-01B Save & Send action presentation
+
+- Save & Send for Approval now has a narrowly scoped PO-form action class with an explicitly green normal and hover treatment, visible keyboard focus, distinguishable pressed state and retained disabled/loading treatment.
+- No submission logic or global button styling changed. Owner visual UAT remains required at 100% zoom to confirm the action stays green across normal, hover, keyboard-focus, pressed and loading states in the deployed browser.

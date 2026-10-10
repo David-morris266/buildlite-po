@@ -24,11 +24,6 @@ import {
 } from '../api';
 import { notifyCommercialChanged } from '../commercial/commercialEvents';
 import {
-  getSuggestedOrderTypeForSupplier,
-  isOrderTypeCompatible,
-  getSupplierTypeMeta,
-} from '../suppliers/supplierTypes';
-import {
   buildRequestApprovalBody,
   getSetupApprovalRouting,
 } from '../setup/setupDraft';
@@ -53,7 +48,7 @@ import './POForm.css';
 
 const toNumber = (v) => {
   if (v == null) return 0;
-  const n = parseFloat(String(v).replace(/[^0-9.\-]/g, ''));
+  const n = parseFloat(String(v).replace(/[^0-9.-]/g, ''));
   return Number.isFinite(n) ? n : 0;
 };
 
@@ -404,15 +399,6 @@ export default function POForm({
     if (!['M', 'S', 'P'].includes(type)) {
       errors.type = 'Order type must be Materials, Subcontract, or Plant.';
     }
-    if (
-      selectedSupplier?.supplierType &&
-      !isOrderTypeCompatible(selectedSupplier.supplierType, type)
-    ) {
-      const supplierLabel = getSupplierTypeMeta(selectedSupplier.supplierType)?.label;
-      const suggested = getSuggestedOrderTypeForSupplier(selectedSupplier);
-      errors.type = `${supplierLabel} suppliers usually require ${suggested === 'S' ? 'Subcontract' : suggested === 'P' ? 'Plant' : 'Materials'} orders. Change the order type to continue.`;
-    }
-
     if (Object.keys(errors).length) {
       setFormErrors(errors);
       setSaveError('');
@@ -1199,7 +1185,7 @@ export default function POForm({
 
               <button
                 onClick={handleSaveAndSend}
-                className="secondary"
+                className="po-form-action--send"
                 style={{ width: '100%' }}
                 disabled={formDisabled || savingDraft || savingAndSending}
               >

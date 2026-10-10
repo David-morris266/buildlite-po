@@ -82,12 +82,13 @@ async function createDevelopment(active, overrides = {}) {
   return res.body;
 }
 
-async function createApprovedSupplier(clientId, supplierId, name = "Supplier A") {
+async function createApprovedSupplier(clientId, supplierId, name = "Supplier A", overrides = {}) {
   const payload = {
     id: supplierId,
     name,
     approvedSupplier: true,
     approvalStatus: "approved",
+    ...overrides,
   };
   await pool.query(
     `
@@ -209,11 +210,13 @@ if (!isDbConfigured()) {
       await cleanup();
     });
 
-    await t.test("final approval of eligible type-S PO creates Package with membership", async () => {
+    await t.test("final approval of Professional Consultant type-S PO creates Package with membership", async () => {
       const active = await getActiveClient();
       const development = await createDevelopment(active);
       const supplierId = `sup-poappr-${Date.now()}`;
-      await createApprovedSupplier(active.id, supplierId);
+      await createApprovedSupplier(active.id, supplierId, "Consultant Supplier", {
+        supplierType: "consultant",
+      });
 
       const poNumber = `S-APPR-1-${Date.now()}`;
       await savePo(
@@ -353,11 +356,13 @@ if (!isDbConfigured()) {
       testPackageIds.push(pkgSup.id, pkgCost.id, pkgDev.id);
     });
 
-    await t.test("type-M PO approval does not materialise Package", async () => {
+    await t.test("Professional Consultant type-M PO approval does not materialise Package", async () => {
       const active = await getActiveClient();
       const development = await createDevelopment(active);
       const supplierId = `sup-mat-${Date.now()}`;
-      await createApprovedSupplier(active.id, supplierId);
+      await createApprovedSupplier(active.id, supplierId, "Consultant Supplier", {
+        supplierType: "consultant",
+      });
 
       const poNumber = `M-NOPKG-${Date.now()}`;
       await savePo(
@@ -425,6 +430,7 @@ if (!isDbConfigured()) {
           {
             id: supplierId,
             name: "Pending Supplier",
+            supplierType: "consultant",
             approvedSupplier: false,
             approvalStatus: "pending",
           },
@@ -498,6 +504,7 @@ if (!isDbConfigured()) {
           {
             id: supplierId,
             name: "Pending Supplier",
+            supplierType: "consultant",
             approvedSupplier: false,
             approvalStatus: "pending",
           },
@@ -506,11 +513,17 @@ if (!isDbConfigured()) {
       );
       trackSupplier(supplierId);
 
-      const poNumber = `S-PEND-SUP-${Date.now()}`;
+      const poNumber = `M-PEND-SUP-${Date.now()}`;
       await savePo(
         active.id,
-        buildPendingPo({ poNumber, development, supplierId })
+        buildPendingPo({ poNumber, development, supplierId, type: "M" })
       );
+
+      const requestRes = await request(app)
+        .post(`/api/po/${poNumber}/request-approval`)
+        .send({ approverName: "Tester" });
+      assert.equal(requestRes.status, 400);
+      assert.match(requestRes.body.message, /supplier must be approved/i);
 
       const res = await approvePo(poNumber);
       assert.equal(res.status, 400);
