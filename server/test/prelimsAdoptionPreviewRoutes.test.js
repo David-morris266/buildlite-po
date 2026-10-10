@@ -153,6 +153,19 @@ async function makeCvrReady(active, developmentId, code = "5231", amount = "5028
     testAuth()
   );
   assert.equal(budget.ok, true, budget.message || JSON.stringify(budget));
+  // These adoption-preview regressions exercise the compatibility path for an
+  // already-established legacy Development whose next Draft uses the verified
+  // Development Budget. A genuinely new Development now correctly requires
+  // Land Appraisal -> Site Start -> P01 and must not be pushed through this path.
+  await pool.query(
+    `INSERT INTO cvr_periods (
+       client_id, development_id, period_key, period_label, reporting_month,
+       period_type, status, commentary, version, created_by, updated_by,
+       submitted_at, submitted_by, approved_at, approved_by, budget_source
+     ) VALUES ($1,$2,'LEGACY_BASE','Legacy baseline','2026-07-01',
+       'monthly_cvr','locked','{}'::jsonb,1,$3,$3,NOW(),$3,NOW(),$3,'legacy_cvr')`,
+    [active.id, developmentId, testAuth().displayName]
+  );
   return costCode;
 }
 

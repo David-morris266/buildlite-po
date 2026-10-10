@@ -40,6 +40,21 @@ function moneyLabel(value) {
   return formatCvrMoney(value);
 }
 
+function matrixStatusLabel(line, draft, calculation) {
+  if (!line.enabled) return 'Disabled company line';
+  if (line.alreadyApplied) {
+    return calculation?.state === 'resolved' && calculation.totalForecast === 0
+      ? 'Already on this development · £0 forecast'
+      : 'Already on this development';
+  }
+  if (calculation?.state === 'resolved' && calculation.totalForecast === 0) {
+    return draft.selected ? 'Selected · £0 forecast' : 'Available · £0 forecast';
+  }
+  const state = readyStateLabel(line, draft);
+  if (state === 'Not selected') return 'Available · ready';
+  return state;
+}
+
 export default function DevelopmentPrelimsSetupWorksheet({
   developmentId,
   persistedItems = [],
@@ -63,6 +78,7 @@ export default function DevelopmentPrelimsSetupWorksheet({
   const [saving, setSaving] = useState(false);
   const [editingMappings, setEditingMappings] = useState(() => new Set());
   const [mappingEditOriginals, setMappingEditOriginals] = useState({});
+  const [expandedLines, setExpandedLines] = useState(() => new Set());
   const creatingRef = useRef(false);
   const { registerUnsavedChanges, requestNavigation } = useUnsavedChanges();
 
@@ -320,6 +336,15 @@ export default function DevelopmentPrelimsSetupWorksheet({
     });
   }
 
+  function toggleLineDetail(templateLineId) {
+    setExpandedLines((current) => {
+      const next = new Set(current);
+      if (next.has(templateLineId)) next.delete(templateLineId);
+      else next.add(templateLineId);
+      return next;
+    });
+  }
+
   function beginMappingEdit(line, draft) {
     setMappingEditOriginals((current) => ({
       ...current,
@@ -469,13 +494,18 @@ export default function DevelopmentPrelimsSetupWorksheet({
           <table className="dev-prelims-setup__table">
             <thead>
               <tr>
-                <th>Sel</th>
-                <th>Prelim</th>
-                <th>Driver</th>
                 <th>Cost code</th>
-                <th>Assumption</th>
+                <th>Prelim item</th>
+                <th>Driver</th>
+                <th>Start</th>
+                <th>Offset</th>
+                <th>End</th>
+                <th>Offset</th>
+                <th>Months</th>
+                <th>Rate / amount</th>
                 <th>Forecast</th>
-                <th>State</th>
+                <th>Status</th>
+                <th><span className="visually-hidden">Details</span></th>
               </tr>
             </thead>
             <tbody>
@@ -524,7 +554,7 @@ export default function DevelopmentPrelimsSetupWorksheet({
                 const identity = displayPrelimIdentity(line);
                 const editingMapping = editingMappings.has(line.templateLineId);
                 const searchFirst = provenance.state === 'company_unmapped';
-                const showDetail = isTime || stateChips.length > 0;
+                const showDetail = expandedLines.has(line.templateLineId);
                 const group = groupByLineId.get(line.templateLineId);
                 const previousGroup = lineIndex ? groupByLineId.get(activeLines[lineIndex - 1].templateLineId) : null;
                 const firstInGroup = previousGroup?.key !== group?.key;
@@ -541,7 +571,7 @@ export default function DevelopmentPrelimsSetupWorksheet({
                   <Fragment key={line.templateLineId}>
                     {firstInGroup ? (
                       <tr className="dev-prelims-setup__group" aria-label={`${group.costCodeKey || 'Unmapped'} Cost Code group`}>
-                        <td colSpan={7}>
+                        <td colSpan={12}>
                           <div className="dev-prelims-setup__group-summary">
                             <div>
                               <strong>{group.costCodeKey ? costCodeLabel(group.costCodeKey) : 'Cost Code not selected'}</strong>
@@ -566,37 +596,6 @@ export default function DevelopmentPrelimsSetupWorksheet({
                       </tr>
                     ) : null}
                     <tr className={`dev-prelims-setup__primary ${rowClass}`.trim()}>
-                      <td data-label="Select">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(draft.selected) && line.selectable}
-                          disabled={!line.selectable || saving}
-                          onChange={(event) =>
-                            updateDraft(line.templateLineId, 'selected', event.target.checked)
-                          }
-                          aria-label={`Select ${line.name}`}
-                        />
-                      </td>
-                      <td data-label="Prelim">
-                        <strong>{identity.name}</strong>
-                        {identity.guidance ? (
-                          <span className="dev-prelims-setup__guidance">{identity.guidance}</span>
-                        ) : null}
-                      </td>
-                      <td data-label="Driver">
-                        <select
-                          className="input"
-                          value={driver}
-                          disabled={!line.selectable || saving}
-                          onChange={(event) =>
-                            updateDraft(line.templateLineId, 'forecastDriver', event.target.value)
-                          }
-                          aria-label={`${line.name} forecast driver`}
-                        >
-                          <option value={PRELIMS_DRIVERS.TIME}>Time based</option>
-                          <option value={PRELIMS_DRIVERS.LUMP_SUM}>Lump sum</option>
-                        </select>
-                      </td>
                       <td data-label="Cost code">
                         {searchFirst || editingMapping ? (
                           <CommercialHeadCostCodePicker
@@ -616,52 +615,58 @@ export default function DevelopmentPrelimsSetupWorksheet({
                             {costCodeLabel(draft.costCodeKey)}
                           </p>
                         )}
-                        <span
-                          className={`dev-prelims-setup__mapping-source dev-prelims-setup__mapping-source--${provenance.state}`}
-                        >
-                          <strong>{provenance.label}</strong>
-                          <span>{provenance.detail}</span>
-                          {provenance.state === 'company_unmapped' ? (
-                            <span>
-                              Add your ready lines to Site Prelims before leaving to complete
-                              reusable company mapping in Administration.
-                            </span>
-                          ) : null}
-                        </span>
-                        {!searchFirst && !line.alreadyApplied ? (
-                          <div className="dev-prelims-setup__mapping-actions">
-                            {editingMapping ? (
-                              <button
-                                className="btn"
-                                type="button"
-                                onClick={() => cancelMappingEdit(line)}
-                              >
-                                Cancel
-                              </button>
-                            ) : (
-                              <button
-                                className="btn"
-                                type="button"
-                                onClick={() => beginMappingEdit(line, draft)}
-                              >
-                                {provenance.state === 'development_override'
-                                  ? 'Change'
-                                  : 'Change for this development'}
-                              </button>
-                            )}
-                            {provenance.state === 'development_override' ? (
-                              <button
-                                className="btn"
-                                type="button"
-                                onClick={() => revertToCompanyMapping(line)}
-                              >
-                                Revert to company mapping
-                              </button>
-                            ) : null}
-                          </div>
-                        ) : null}
+                        <small className={`dev-prelims-setup__mapping-compact dev-prelims-setup__mapping-source--${provenance.state}`}>
+                          {provenance.label}
+                        </small>
                       </td>
-                      <td data-label="Assumption">
+                      <td data-label="Prelim item">
+                        <label className="dev-prelims-setup__line-name">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(draft.selected) && line.selectable}
+                            disabled={!line.selectable || saving}
+                            onChange={(event) =>
+                              updateDraft(line.templateLineId, 'selected', event.target.checked)
+                            }
+                            aria-label={`Select ${line.name}`}
+                          />
+                          <span><strong>{identity.name}</strong>{line.category ? <small>{line.category}</small> : null}</span>
+                        </label>
+                      </td>
+                      <td data-label="Driver">
+                        <select className="input" value={driver} disabled={!line.selectable || saving}
+                          onChange={(event) => updateDraft(line.templateLineId, 'forecastDriver', event.target.value)}
+                          aria-label={`${line.name} forecast driver`}>
+                          <option value={PRELIMS_DRIVERS.TIME}>Monthly</option>
+                          <option value={PRELIMS_DRIVERS.LUMP_SUM}>Lump sum</option>
+                        </select>
+                      </td>
+                      <td data-label="Start">
+                        {isTime ? <select className="input" value={draft.startBasis || 'SITE_START'} disabled={!line.selectable || saving}
+                          onChange={(event) => updateDraft(line.templateLineId, 'startBasis', event.target.value)} aria-label={`${line.name} start basis`}>
+                          <option value="SITE_START">Site start</option><option value="FIRST_COMPLETION">First completion</option>
+                          <option value="FINAL_COMPLETION">Final completion</option><option value="FIXED_DATE">Fixed date</option>
+                        </select> : '—'}
+                      </td>
+                      <td data-label="Start offset">
+                        {isTime && draft.startBasis !== 'FIXED_DATE' ? <input className="input" type="number" min="-60" max="60" step="1"
+                          value={draft.startOffsetMonths ?? 0} disabled={!line.selectable || saving}
+                          onChange={(event) => updateDraft(line.templateLineId, 'startOffsetMonths', event.target.value)} aria-label={`${line.name} start offset months`} /> : '—'}
+                      </td>
+                      <td data-label="End">
+                        {isTime ? <select className="input" value={draft.endBasis || 'FINAL_COMPLETION'} disabled={!line.selectable || saving}
+                          onChange={(event) => updateDraft(line.templateLineId, 'endBasis', event.target.value)} aria-label={`${line.name} end basis`}>
+                          <option value="SITE_START">Site start</option><option value="FIRST_COMPLETION">First completion</option>
+                          <option value="FINAL_COMPLETION">Final completion</option><option value="FIXED_DATE">Fixed date</option>
+                        </select> : '—'}
+                      </td>
+                      <td data-label="End offset">
+                        {isTime && draft.endBasis !== 'FIXED_DATE' ? <input className="input" type="number" min="-60" max="60" step="1"
+                          value={draft.endOffsetMonths ?? 0} disabled={!line.selectable || saving}
+                          onChange={(event) => updateDraft(line.templateLineId, 'endOffsetMonths', event.target.value)} aria-label={`${line.name} end offset months`} /> : '—'}
+                      </td>
+                      <td data-label="Months">{isTime && live.span.totalMonths != null ? `${live.span.totalMonths} months` : '—'}</td>
+                      <td data-label="Rate / amount">
                         {isTime ? (
                           <input
                             className="input"
@@ -691,6 +696,11 @@ export default function DevelopmentPrelimsSetupWorksheet({
                             placeholder="£ amount"
                           />
                         )}
+                        {!line.alreadyApplied &&
+                        ((isTime && line.monthlyRate != null) ||
+                          (!isTime && line.lumpSumAmount != null)) ? (
+                          <small className="dev-prelims-setup__default-source">Company default</small>
+                        ) : null}
                       </td>
                       <td data-label="Forecast">
                         {forecastUnresolved
@@ -704,16 +714,32 @@ export default function DevelopmentPrelimsSetupWorksheet({
                             : '—'
                           : moneyLabel(live.calc.totalForecast)}
                       </td>
-                      <td data-label="State">{readyStateLabel(line, draft)}</td>
+                      <td data-label="Status">{matrixStatusLabel(line, draft, live.calc)}</td>
+                      <td data-label="Details">
+                        <button className="dev-prelims-setup__detail-toggle" type="button"
+                          aria-expanded={showDetail} aria-label={`${showDetail ? 'Hide' : 'Show'} ${line.name} details`}
+                          onClick={() => toggleLineDetail(line.templateLineId)}>⌄</button>
+                      </td>
                     </tr>
                     {showDetail ? (
                       <tr
                         className={`dev-prelims-setup__detail ${rowClass}`.trim()}
                         aria-label={`${line.name} line detail`}
                       >
-                        <td />
-                        <td colSpan={6}>
-                          {isTime ? (
+                        <td colSpan={12}>
+                          <div className="dev-prelims-setup__detail-grid">
+                            <div><strong>{identity.name}</strong><p>{identity.guidance || 'No additional description.'}</p></div>
+                            <div>
+                              <strong>{provenance.label}</strong><p>{provenance.detail}</p>
+                              {!searchFirst && !line.alreadyApplied ? <div className="dev-prelims-setup__mapping-actions">
+                                {editingMapping ? <button className="btn" type="button" onClick={() => cancelMappingEdit(line)}>Cancel</button>
+                                  : <button className="btn" type="button" onClick={() => beginMappingEdit(line, draft)}>Change for this development</button>}
+                                {provenance.state === 'development_override' ? <button className="btn" type="button" onClick={() => revertToCompanyMapping(line)}>Revert to company mapping</button> : null}
+                              </div> : null}
+                              {line.alreadyApplied ? <p>Amend this saved line from the Site Prelims schedule; setup will not overwrite it.</p> : null}
+                            </div>
+                          </div>
+                          {isTime && (draft.startBasis === 'FIXED_DATE' || draft.endBasis === 'FIXED_DATE') ? (
                             <PrelimsTimeSpanFields
                               compact
                               disabled={!line.selectable || saving}
@@ -733,6 +759,7 @@ export default function DevelopmentPrelimsSetupWorksheet({
                               }
                             />
                           ) : null}
+                          {isTime ? <p className="dev-prelims-setup__phasing">Resolved {live.span.resolvedStart || '—'} to {live.span.resolvedEnd || '—'} · Forecast to date {moneyLabel(live.calc.forecastToDate)} · Remaining {moneyLabel(live.calc.forecastToComplete)}</p> : null}
                           {stateChips.length ? (
                             <div className="dev-prelims-setup__chips">
                               {stateChips.map((chip) => (

@@ -167,7 +167,9 @@ describe('Development Prelims setup worksheet', () => {
       const row = Array.from(container.querySelectorAll('.dev-prelims-setup__primary')).find((item) =>
         item.textContent.includes(lineName)
       );
-      const change = Array.from(row.querySelectorAll('button')).find((button) =>
+      await act(async () => row.querySelector(`[aria-label="Show ${lineName} details"]`).click());
+      const detail = row.nextElementSibling;
+      const change = Array.from(detail.querySelectorAll('button')).find((button) =>
         button.textContent.includes('Change')
       );
       await act(async () => change.click());
@@ -385,23 +387,22 @@ describe('Development Prelims setup worksheet', () => {
 
   it('renders a commercial setup worksheet and live TIME forecast', async () => {
     await renderSheet();
+    expect(container.querySelectorAll('.dev-prelims-setup__primary')).toHaveLength(4);
     expect(container.textContent).toMatch(/Prelims setup worksheet/);
     expect(container.textContent).toMatch(/Site Manager/);
-    expect(container.textContent).toMatch(/Full-time site management/);
     expect(container.textContent).toMatch(/38 months/);
     expect(container.textContent).not.toMatch(/Review & Adopt/);
-    expect(container.querySelector('[aria-label="Site Manager line detail"]')).toBeTruthy();
+    expect(container.querySelector('[aria-label="Site Manager line detail"]')).toBeNull();
     expect(container.querySelector('[aria-label="Site Manager start basis"]')).toBeTruthy();
     expect(container.querySelector('[aria-label="BL-033D.x.2 CUSTOM UAT start basis"]')).toBeNull();
     expect(container.textContent).toContain('Company mapping');
     expect(container.textContent).toContain('Company template unmapped');
-    expect(container.textContent).toContain('complete the reusable company mapping in Administration');
     expect(container.querySelector('[aria-label="Site Manager cost code search"]')).toBeNull();
     expect(container.querySelector('[aria-label="Site Manager cost code"]')).toBeNull();
     expect(container.textContent).toContain('5210 — Site management');
     expect(
       container.querySelector('[aria-label="Site Manager forecast driver"] option:checked').textContent
-    ).toBe('Time based');
+    ).toBe('Monthly');
     expect(
       container.querySelector('[aria-label="Site Manager start basis"] option:checked').textContent
     ).toBe('Site start');
@@ -413,6 +414,45 @@ describe('Development Prelims setup worksheet', () => {
       setInputValue(container.querySelector('[aria-label="Site Manager monthly rate"]'), '5500');
     });
     expect(container.textContent).toMatch(/£209,000/);
+  });
+
+  it('keeps detail collapsed until requested and exposes description, timing and phasing together', async () => {
+    await renderSheet();
+    const toggle = container.querySelector('[aria-label="Show Site Manager details"]');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(container.textContent).not.toContain('Full-time site management');
+    await act(async () => toggle.click());
+    expect(container.querySelector('[aria-label="Site Manager line detail"]')).toBeTruthy();
+    expect(container.textContent).toContain('Full-time site management');
+    expect(container.textContent).toContain('Forecast to date');
+  });
+
+  it('shows explicit company defaults as unselected forecasts rather than authorised development rows', async () => {
+    const next = previewBody();
+    next.lines[0] = { ...next.lines[0], monthlyRate: 1250 };
+    previewDevelopmentPrelimsSetup.mockResolvedValueOnce(next);
+    await renderSheet();
+    expect(container.querySelector('[aria-label="Site Manager monthly rate"]').value).toBe('1250');
+    expect(container.textContent).toContain('Company default');
+    expect(container.textContent).toContain('£47,500.00');
+    expect(container.querySelector('[aria-label="Select Site Manager"]').checked).toBe(false);
+    expect(applyDevelopmentPrelimsSetup).not.toHaveBeenCalled();
+  });
+
+  it('distinguishes an explicit zero forecast from an incomplete assumption', async () => {
+    const next = previewBody();
+    next.lines[0] = { ...next.lines[0], monthlyRate: 0 };
+    previewDevelopmentPrelimsSetup.mockResolvedValueOnce(next);
+    await renderSheet();
+    const siteManager = Array.from(container.querySelectorAll('.dev-prelims-setup__primary')).find(
+      (row) => row.textContent.includes('Site Manager')
+    );
+    const cleaning = Array.from(container.querySelectorAll('.dev-prelims-setup__primary')).find(
+      (row) => row.textContent.includes('Ongoing Site Cleaning')
+    );
+    expect(siteManager.textContent).toContain('£0.00');
+    expect(siteManager.textContent).toContain('Available · £0 forecast');
+    expect(cleaning.textContent).toContain('Enter £/month');
   });
 
   it('labels a site-specific Cost Code change as a development override without writing the template', async () => {
@@ -427,7 +467,7 @@ describe('Development Prelims setup worksheet', () => {
     const row = Array.from(container.querySelectorAll('.dev-prelims-setup__primary')).find((item) =>
       item.textContent.includes('Site Manager')
     );
-    const revert = Array.from(row.querySelectorAll('button')).find((button) =>
+    const revert = Array.from(row.nextElementSibling.querySelectorAll('button')).find((button) =>
       button.textContent.includes('Revert to company mapping')
     );
     await act(async () => revert.click());
@@ -440,12 +480,13 @@ describe('Development Prelims setup worksheet', () => {
     const row = Array.from(container.querySelectorAll('.dev-prelims-setup__primary')).find((item) =>
       item.textContent.includes('Site Manager')
     );
-    const change = Array.from(row.querySelectorAll('button')).find((button) =>
+    await act(async () => row.querySelector('[aria-label="Show Site Manager details"]').click());
+    const change = Array.from(row.nextElementSibling.querySelectorAll('button')).find((button) =>
       button.textContent.includes('Change for this development')
     );
     await act(async () => change.click());
     expect(container.querySelector('[aria-label="Site Manager cost code search"]')).toBeTruthy();
-    const cancel = Array.from(row.querySelectorAll('button')).find(
+    const cancel = Array.from(row.nextElementSibling.querySelectorAll('button')).find(
       (button) => button.textContent.trim() === 'Cancel'
     );
     await act(async () => cancel.click());
@@ -470,7 +511,8 @@ describe('Development Prelims setup worksheet', () => {
     expect(css).toMatch(
       /\.dev-prelims-setup__detail \.dev-prelims-time--compact\s*\{[\s\S]*grid-template-columns:\s*minmax\(13\.5rem, 1fr\) minmax\(13\.5rem, 1fr\)/
     );
-    expect(css).toMatch(/\.dev-prelims-setup__table\s*\{[\s\S]*min-width:\s*72rem/);
+    expect(css).toMatch(/\.dev-prelims-setup__table\s*\{[\s\S]*min-width:\s*104rem/);
+    expect(css).toMatch(/\.dev-prelims-setup__table th\s*\{[\s\S]*position:\s*sticky/);
     expect(css).toMatch(/@media \(max-width: 900px\)[\s\S]*\.dev-prelims-setup__table,[\s\S]*min-width:\s*0/);
   });
 
@@ -865,6 +907,8 @@ describe('Development Prelims setup worksheet', () => {
     expect(container.querySelector(`[aria-label="${lineName} lump-sum amount"]`)).toBeNull();
     expect(container.querySelector(`[aria-label="${lineName} monthly rate"]`)).toBeTruthy();
     expect(container.querySelector(`[aria-label="${lineName} start basis"]`)).toBeTruthy();
+    expect(container.querySelector(`[aria-label="${lineName} line detail"]`)).toBeNull();
+    await act(async () => container.querySelector(`[aria-label="Show ${lineName} details"]`).click());
     expect(container.querySelector(`[aria-label="${lineName} line detail"]`)).toBeTruthy();
 
     await chooseCostCode(lineName, '5210');

@@ -239,6 +239,13 @@ if (!isDbConfigured()) {
         endBasis: "FINAL_COMPLETION",
       });
     const { template, siteManager, cleaning, custom, disabled } = await createTemplate();
+    await pool.query(
+      `UPDATE client_prelims_template_lines
+       SET monthly_rate = CASE WHEN id = $1 THEN 1250 ELSE monthly_rate END,
+           lump_sum_amount = CASE WHEN id = $2 THEN 500 ELSE lump_sum_amount END
+       WHERE id IN ($1, $2)`,
+      [siteManager.id, custom.id]
+    );
     const itemsBefore = await pool.query(
       `SELECT COUNT(*)::int AS n FROM development_prelims_items WHERE development_id = $1`,
       [developmentId]
@@ -258,11 +265,15 @@ if (!isDbConfigured()) {
     const customLine = preview.body.lines.find((row) => row.templateLineId === custom.id);
     const disabledLine = preview.body.lines.find((row) => row.templateLineId === disabled.id);
     assert.equal(sm.duration.totalMonths, 38);
+    assert.equal(Number(sm.monthlyRate), 1250);
+    assert.equal(sm.lumpSumAmount, null);
     assert.equal(sm.defaultSelected, false);
     assert.equal(clean.overlap, true);
     assert.equal(clean.defaultSelected, false);
     assert.ok(clean.overlapExistingNames.includes("BL-033D.1 TIME UAT"));
     assert.equal(customLine.costCodeKey, null);
+    assert.equal(Number(customLine.lumpSumAmount), 500);
+    assert.equal(customLine.monthlyRate, null);
     assert.equal(customLine.classification.tone, "unmapped");
     assert.equal(customLine.defaultSelected, false);
     assert.equal(customLine.selectable, true);

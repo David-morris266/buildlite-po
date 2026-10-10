@@ -10605,7 +10605,7 @@
 
 .dev-prelims-setup__table {
   width: 100%;
-  min-width: 72rem;
+  min-width: 104rem;
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -10621,6 +10621,9 @@
 }
 
 .dev-prelims-setup__table th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   background: #12181b;
   color: rgba(255, 255, 255, 0.92);
   font-weight: 600;
@@ -10629,53 +10632,61 @@
 }
 
 /* Primary commercial columns: keep scan width tight but separate money fields. */
+.dev-prelims-setup__table th:nth-child(2),
+.dev-prelims-setup__primary td:nth-child(2) {
+  width: 18rem;
+}
+
 .dev-prelims-setup__table th:nth-child(1),
 .dev-prelims-setup__primary td:nth-child(1) {
-  width: 2.4rem;
-  padding-left: 0.45rem;
-  padding-right: 0.25rem;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 12rem;
+  min-width: 12rem;
+  background: #171e22;
 }
 
 .dev-prelims-setup__table th:nth-child(2),
 .dev-prelims-setup__primary td:nth-child(2) {
-  width: 21%;
+  position: sticky;
+  left: 12rem;
+  z-index: 2;
+  background: #171e22;
+}
+
+.dev-prelims-setup__table th:nth-child(1),
+.dev-prelims-setup__table th:nth-child(2) {
+  z-index: 4;
+  background: #12181b;
 }
 
 .dev-prelims-setup__table th:nth-child(3),
-.dev-prelims-setup__primary td:nth-child(3) {
-  width: 8rem;
-}
-
+.dev-prelims-setup__primary td:nth-child(3) { width: 7rem; }
 .dev-prelims-setup__table th:nth-child(4),
-.dev-prelims-setup__primary td:nth-child(4) {
-  width: 25%;
-  min-width: 14rem;
-}
-
-.dev-prelims-setup__table th:nth-child(5),
-.dev-prelims-setup__primary td:nth-child(5) {
-  width: 9.5rem;
-  padding-right: 0.9rem;
-}
-
+.dev-prelims-setup__primary td:nth-child(4),
 .dev-prelims-setup__table th:nth-child(6),
-.dev-prelims-setup__primary td:nth-child(6) {
-  width: 7.75rem;
-  text-align: right;
-  padding-left: 0.9rem;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
+.dev-prelims-setup__primary td:nth-child(6) { width: 9rem; }
+.dev-prelims-setup__table th:nth-child(5),
+.dev-prelims-setup__primary td:nth-child(5),
 .dev-prelims-setup__table th:nth-child(7),
-.dev-prelims-setup__primary td:nth-child(7) {
-  width: 7.25rem;
-  padding-left: 0.65rem;
+.dev-prelims-setup__primary td:nth-child(7) { width: 5rem; }
+.dev-prelims-setup__table th:nth-child(8),
+.dev-prelims-setup__primary td:nth-child(8) { width: 5rem; text-align: right; }
+.dev-prelims-setup__table th:nth-child(9),
+.dev-prelims-setup__primary td:nth-child(9) { width: 8rem; }
+.dev-prelims-setup__table th:nth-child(10),
+.dev-prelims-setup__primary td:nth-child(10) {
+  width: 8rem; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
 }
+.dev-prelims-setup__table th:nth-child(11),
+.dev-prelims-setup__primary td:nth-child(11) { width: 9rem; }
+.dev-prelims-setup__table th:nth-child(12),
+.dev-prelims-setup__primary td:nth-child(12) { width: 2.5rem; text-align: center; }
 
 .dev-prelims-setup__primary td {
   border-bottom: none;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .dev-prelims-setup__group td {
@@ -10774,6 +10785,47 @@
   height: 2rem;
 }
 
+.dev-prelims-setup__detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1.25rem;
+}
+
+.dev-prelims-setup__detail-grid p,
+.dev-prelims-setup__phasing { margin: 0.2rem 0; }
+
+.dev-prelims-setup__line-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+
+.dev-prelims-setup__line-name small,
+.dev-prelims-setup__default-source {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--muted, #9aa4b2);
+  font-size: 0.7rem;
+}
+
+.dev-prelims-setup__mapping-compact {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--muted, #9aa4b2);
+  font-size: 0.68rem;
+}
+
+.dev-prelims-setup__detail-toggle {
+  border: 0;
+  background: transparent;
+  color: var(--text, #eef2f7);
+  cursor: pointer;
+  min-width: 1.75rem;
+  min-height: 1.75rem;
+}
+
+.dev-prelims-setup__detail-toggle[aria-expanded='true'] { transform: rotate(180deg); }
+
 .dev-prelims-setup__detail .dev-prelims-time__basis {
   box-sizing: border-box;
   width: 100%;
@@ -10805,13 +10857,7 @@
   box-sizing: border-box;
 }
 
-.dev-prelims-setup__primary td:nth-child(3) .input {
-  max-width: none;
-}
-
-.dev-prelims-setup__primary td:nth-child(5) .input {
-  max-width: 8.75rem;
-}
+.dev-prelims-setup__primary td:nth-child(9) .input { max-width: 8.75rem; }
 
 .dev-prelims-setup__cost-code-picker {
   position: relative;
@@ -12218,8 +12264,13 @@
   }
 
   .dev-prelims-setup__primary td:nth-child(2),
-  .dev-prelims-setup__primary td:nth-child(4) {
+  .dev-prelims-setup__primary td:nth-child(1) {
     grid-column: 1 / -1;
+  }
+
+  .dev-prelims-setup__primary td:nth-child(1),
+  .dev-prelims-setup__primary td:nth-child(2) {
+    position: static;
   }
 
   .dev-prelims-setup__detail {
@@ -12239,6 +12290,8 @@
   .dev-prelims-setup__detail .dev-prelims-time--compact {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .dev-prelims-setup__detail-grid { grid-template-columns: minmax(0, 1fr); }
 
   .dev-prelims-setup__detail .dev-prelims-time__duration-side {
     grid-column: 1 / -1;

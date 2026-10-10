@@ -132,6 +132,8 @@ function buildPreviewLines({ template, existingRows, classificationsByKey, progr
       description: line.description || null,
       category: line.category || null,
       forecastDriver: line.forecastDriver,
+      monthlyRate: line.monthlyRate,
+      lumpSumAmount: line.lumpSumAmount,
       startBasis: line.startBasis,
       endBasis: line.endBasis,
       costCodeKey,

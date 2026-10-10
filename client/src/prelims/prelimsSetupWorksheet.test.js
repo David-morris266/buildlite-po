@@ -140,6 +140,23 @@ describe('Prelims setup worksheet helpers', () => {
     expect(readyStateLabel(next.lines[3], drafts[3], false)).toMatch(/Disabled/);
   });
 
+  it('hydrates explicit company monetary defaults without selecting or persisting the line', () => {
+    const next = preview({
+      siteManager: { monthlyRate: 1250 },
+      custom: { lumpSumAmount: 500 },
+    });
+    const drafts = draftsFromPreview(next);
+    expect(drafts.find((row) => row.templateLineId === 'sm')).toMatchObject({
+      selected: false,
+      monthlyRate: '1250',
+    });
+    expect(drafts.find((row) => row.templateLineId === 'custom')).toMatchObject({
+      selected: false,
+      lumpSumAmount: '500',
+    });
+    expect(applyPayloadFromDrafts(next, drafts).lines).toHaveLength(0);
+  });
+
   it('shows TIME duration without a rate and live forecast once £/month is entered', () => {
     const next = preview();
     const empty = livePreviewCalculation(
