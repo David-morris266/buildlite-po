@@ -417,6 +417,30 @@ describe('Development Prelims setup worksheet', () => {
     expect(container.querySelector('[aria-label="5210 Cost Code group"]').textContent).toContain(
       'Configured forecast'
     );
+    const headerRow = container.querySelector('.dev-prelims-setup__table thead tr');
+    const siteManagerGroup = container.querySelector('[aria-label="5210 Cost Code group"]');
+    const siteManagerRow = container.querySelector('.dev-prelims-setup__primary');
+    const effectiveColumns = (row) =>
+      Array.from(row.children).reduce(
+        (total, cell) => total + Number(cell.getAttribute('colspan') || 1),
+        0
+      );
+    expect(effectiveColumns(headerRow)).toBe(7);
+    expect(effectiveColumns(siteManagerGroup)).toBe(7);
+    expect(effectiveColumns(siteManagerRow)).toBe(7);
+    expect(siteManagerGroup.querySelectorAll(':scope > td')).toHaveLength(3);
+    expect(
+      Array.from(siteManagerGroup.querySelectorAll(':scope > td')).map((cell) =>
+        Number(cell.getAttribute('colspan'))
+      )
+    ).toEqual([3, 2, 2]);
+    expect(siteManagerGroup.querySelector('.dev-prelims-setup__group-summary')).toBeNull();
+    expect(siteManagerGroup.querySelector('.dev-prelims-setup__group-budget').textContent).toContain(
+      'Current Budget'
+    );
+    expect(siteManagerGroup.querySelector('.dev-prelims-setup__group-forecast').textContent).toContain(
+      'Configured forecast'
+    );
     expect(
       container.querySelector('[aria-label="Site Manager forecast driver"] option:checked').textContent
     ).toBe('Monthly');
@@ -434,7 +458,9 @@ describe('Development Prelims setup worksheet', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(container.textContent).not.toContain('Full-time site management');
     await act(async () => toggle.click());
-    expect(container.querySelector('[aria-label="Site Manager line detail"]')).toBeTruthy();
+    const detailRow = container.querySelector('[aria-label="Site Manager line detail"]');
+    expect(detailRow).toBeTruthy();
+    expect(Number(detailRow.querySelector(':scope > td').getAttribute('colspan'))).toBe(7);
     expect(container.textContent).toContain('Full-time site management');
     expect(container.textContent).toContain('Forecast to date');
     expect(
@@ -529,12 +555,17 @@ describe('Development Prelims setup worksheet', () => {
     expect(css).toMatch(
       /\.dev-prelims-setup__detail \.dev-prelims-time--compact\s*\{[\s\S]*grid-template-columns:\s*minmax\(13\.5rem, 1fr\) minmax\(13\.5rem, 1fr\)/
     );
-    expect(css).toMatch(/\.dev-prelims-setup__table\s*\{[\s\S]*min-width:\s*76rem/);
+    expect(css).toMatch(
+      /\.dev-prelims-setup__table\s*\{[\s\S]*width:\s*max-content;[\s\S]*min-width:\s*100%/
+    );
     expect(css).toMatch(/\.dev-prelims-setup__table th\s*\{[\s\S]*position:\s*sticky/);
     expect(css).toMatch(
       /\.dev-prelims-setup__table th:nth-child\(1\),[\s\S]*\.dev-prelims-setup__primary td:nth-child\(1\)\s*\{[\s\S]*position:\s*sticky/
     );
     expect(css).toMatch(/@media \(max-width: 900px\)[\s\S]*\.dev-prelims-setup__table,[\s\S]*min-width:\s*0/);
+    expect(css).toMatch(
+      /@media \(max-width: 900px\)[\s\S]*\.dev-prelims-setup__group\s*\{[\s\S]*display:\s*grid/
+    );
   });
 
   it('presents the Site Start setup month as Forecast as at', async () => {

@@ -10604,8 +10604,8 @@
 }
 
 .dev-prelims-setup__table {
-  width: 100%;
-  min-width: 76rem;
+  width: max-content;
+  min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -10689,20 +10689,32 @@
   border-top: 1px solid var(--line, rgba(255, 255, 255, 0.12));
 }
 
-.dev-prelims-setup__group-summary {
+.dev-prelims-setup__group-identity,
+.dev-prelims-setup__group-budget,
+.dev-prelims-setup__group-forecast {
   display: grid;
-  grid-template-columns: minmax(12rem, 1fr) repeat(2, minmax(9rem, auto));
-  gap: 0.75rem 1.25rem;
-  align-items: start;
-}
-
-.dev-prelims-setup__group-summary > div {
-  display: grid;
+  align-content: start;
   gap: 0.15rem;
+  min-width: 0;
 }
 
-.dev-prelims-setup__group-summary span,
-.dev-prelims-setup__group-summary small {
+.dev-prelims-setup__group-identity {
+  overflow-wrap: anywhere;
+}
+
+.dev-prelims-setup__group-budget,
+.dev-prelims-setup__group-forecast {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.dev-prelims-setup__group-budget strong,
+.dev-prelims-setup__group-forecast strong {
+  white-space: nowrap;
+}
+
+.dev-prelims-setup__group span,
+.dev-prelims-setup__group small {
   color: var(--muted, #9aa4b2);
 }
 
@@ -12232,6 +12244,35 @@
     display: none;
   }
 
+  .dev-prelims-setup__group {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(9rem, auto);
+    margin: 0 0 0.75rem;
+    border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  .dev-prelims-setup__group td,
+  .dev-prelims-setup__group td:nth-child(n) {
+    display: grid;
+    width: auto;
+    min-width: 0;
+    padding: 0.55rem;
+    border: 0;
+    background: transparent;
+  }
+
+  .dev-prelims-setup__group-identity {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.08)) !important;
+  }
+
+  .dev-prelims-setup__group-budget,
+  .dev-prelims-setup__group-forecast {
+    text-align: left;
+  }
+
   .dev-prelims-setup__primary {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -12296,6 +12337,7 @@
 }
 
 @media (max-width: 640px) {
+  .dev-prelims-setup__group,
   .dev-prelims-setup__primary,
   .dev-prelims-setup__detail .dev-prelims-time--compact {
     grid-template-columns: minmax(0, 1fr);

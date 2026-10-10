@@ -166,3 +166,10 @@ Owner-review the complete SS-1 through SS-5 tranche locally, then bank and relea
 - The matrix minimum width is reduced from 104rem to 76rem so item, duration, assumption and calculated forecast remain visible together in the full-width commercial workspace at normal desktop widths. The item column and header remain sticky; numeric assumption/forecast columns remain right-aligned; the existing responsive card layout remains below 900px.
 - Financial and persistence authority is unchanged: calculation drivers, effective month, company defaults, Development overrides, transactional Apply, version checks, persisted-line edit boundary and CVR/Site Start adoption are untouched.
 - Automated structural and interaction coverage passed locally. Direct running-browser inspection was unavailable; 1440px/1920px, 100%-zoom visual acceptance remains owner UAT.
+
+## PM-1D Cost Code group alignment
+
+- Cost Code group headings now use real table cells whose spans align with the seven-column estimating schedule: identity spans the descriptive columns, Current Budget spans Months and Rate/Amount, and Configured forecast spans Forecast and Status.
+- The previous independently sized group-summary grid has been removed. Budget and forecast values remain right-aligned and untruncated, while Cost Code descriptions and supporting evidence can wrap naturally.
+- The worksheet follows the CVR scroll contract with `width: max-content`, `min-width: 100%` and the existing worksheet wrapper as the sole desktop horizontal scroll owner. The sticky item column no longer paints over group financial content.
+- Below 900px, group evidence uses the existing responsive card model. Direct authenticated browser inspection remains unavailable; 1440px and 1920px at 100% zoom remain required owner visual acceptance.

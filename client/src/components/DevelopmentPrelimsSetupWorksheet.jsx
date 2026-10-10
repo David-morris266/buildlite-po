@@ -585,27 +585,23 @@ export default function DevelopmentPrelimsSetupWorksheet({
                   <Fragment key={line.templateLineId}>
                     {firstInGroup ? (
                       <tr className="dev-prelims-setup__group" aria-label={`${group.costCodeKey || 'Unmapped'} Cost Code group`}>
-                        <td colSpan={7}>
-                          <div className="dev-prelims-setup__group-summary">
-                            <div>
-                              <strong>{group.costCodeKey ? costCodeLabel(group.costCodeKey) : 'Cost Code not selected'}</strong>
-                              {group.lines.length > 1 ? <span>{group.lines.length} lines share this Cost Code</span> : null}
-                            </div>
-                            <div>
-                              <span>Current Budget</span>
-                              <strong>{budgetLoading ? 'Loading…' : budgetError ? 'Unavailable' : moneyLabel(currentBudget ?? 0)}</strong>
-                              {openingBudget != null && currentBudget != null && openingBudget !== currentBudget ? (
-                                <small>Opening {moneyLabel(openingBudget)} · Movement {moneyLabel(currentBudget - openingBudget)}</small>
-                              ) : null}
-                            </div>
-                            <div>
-                              <span>Configured forecast</span>
-                              <strong>{groupSummary.forecast == null ? (groupSummary.configuredCount ? 'Pending programme' : '—') : moneyLabel(groupSummary.forecast)}</strong>
-                              {groupSummary.forecast != null && currentBudget != null ? (
-                                <small>Variance {moneyLabel(groupSummary.forecast - currentBudget)}</small>
-                              ) : null}
-                            </div>
-                          </div>
+                        <td className="dev-prelims-setup__group-identity" colSpan={3}>
+                          <strong>{group.costCodeKey ? costCodeLabel(group.costCodeKey) : 'Cost Code not selected'}</strong>
+                          {group.lines.length > 1 ? <span>{group.lines.length} lines share this Cost Code</span> : null}
+                        </td>
+                        <td className="dev-prelims-setup__group-budget" colSpan={2}>
+                          <span>Current Budget</span>
+                          <strong>{budgetLoading ? 'Loading…' : budgetError ? 'Unavailable' : moneyLabel(currentBudget ?? 0)}</strong>
+                          {openingBudget != null && currentBudget != null && openingBudget !== currentBudget ? (
+                            <small>Opening {moneyLabel(openingBudget)} · Movement {moneyLabel(currentBudget - openingBudget)}</small>
+                          ) : null}
+                        </td>
+                        <td className="dev-prelims-setup__group-forecast" colSpan={2}>
+                          <span>Configured forecast</span>
+                          <strong>{groupSummary.forecast == null ? (groupSummary.configuredCount ? 'Pending programme' : '—') : moneyLabel(groupSummary.forecast)}</strong>
+                          {groupSummary.forecast != null && currentBudget != null ? (
+                            <small>Variance {moneyLabel(groupSummary.forecast - currentBudget)}</small>
+                          ) : null}
                         </td>
                       </tr>
                     ) : null}
