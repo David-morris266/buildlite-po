@@ -248,6 +248,48 @@ describe('CVR Summary Cost Code interaction', () => {
     expect(approvePeriod).toHaveBeenCalledTimes(1);
   });
 
+  it('governs Site Start approval with reference and reason', async () => {
+    summaryState.current = model();
+    summaryState.current.periodKey = 'SITE_START';
+    summaryState.current.period = { status: 'submitted', periodType: 'site_start', forecastAsAtMonth: '2026-10-01' };
+    summaryState.current.status = { label: 'Submitted', modifier: 'submitted' };
+    summaryState.current.workflow = { showApprove: true, showReject: true };
+    await render({ activeSubview: 'summary' });
+    act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Approve & Lock').click());
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog.textContent).toContain('Approve & Lock Site Start Budget');
+    const confirm = [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Approve & Lock');
+    expect(confirm.disabled).toBe(true);
+    const input = dialog.querySelector('input');
+    const textarea = dialog.querySelector('textarea');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'ASH-SS-APP-001');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(textarea, 'Approved Site Start evidence reviewed.');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(confirm.disabled).toBe(false);
+    await act(async () => { confirm.click(); await Promise.resolve(); });
+    expect(approvePeriod).toHaveBeenCalledWith('hawthorn', 'P04', {
+      approvalReference: 'ASH-SS-APP-001',
+      comment: 'Approved Site Start evidence reviewed.',
+    });
+  });
+
+  it('requires explicit confirmation before submitting Site Start', async () => {
+    summaryState.current = model();
+    summaryState.current.periodKey = 'SITE_START';
+    summaryState.current.period = { status: 'draft', periodType: 'site_start', forecastAsAtMonth: '2026-10-01' };
+    summaryState.current.workflow = { showSubmit: true };
+    await render({ activeSubview: 'summary' });
+    act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Submit for Approval').click());
+    expect(submitPeriod).not.toHaveBeenCalled();
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog.textContent).toContain('Submit Site Start for Approval');
+    await act(async () => { [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Submit for Approval').click(); await Promise.resolve(); });
+    expect(submitPeriod).toHaveBeenCalledTimes(1);
+  });
+
   it('retains actionable Variation Account blockers and opens the affected item', async () => {
     const onOpenVariationAccount = vi.fn();
     summaryState.current = model();

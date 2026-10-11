@@ -66,6 +66,7 @@ import { formatCvrSubmissionBlockers } from '../cvr/cvrSubmissionBlockerPresenta
 import CvrPeriodSubviewNav from './CvrPeriodSubviewNav';
 import { buildCvrPeriodComparisonForPeriod } from '../cvr/cvrPeriodMovement';
 import { buildCvrCommercialHierarchyPresentation } from '../cvr/cvrCommercialHierarchyPresentation';
+import { CvrWorkflowDialog, SiteStartApprovalDialog } from './CvrLifecycleDialog';
 
 function StatusBadge({ status }) {
   return (
@@ -135,25 +136,6 @@ function CvrAuditHistory({ items }) {
         ))}
       </ul>
     </details>
-  );
-}
-
-function WorkflowDialog({ title, children, confirmLabel, onCancel, onConfirm, confirmDisabled = false }) {
-  return (
-    <div className="dev-cvr-add-backdrop" role="presentation">
-      <div className="dev-cvr-add modal" role="dialog" aria-modal="true">
-        <h3>{title}</h3>
-        {children}
-        <div className="dev-cvr-add__actions modal-actions">
-          <button type="button" className="po-list-btn-secondary" onClick={onCancel}>
-            Cancel
-          </button>
-          <button type="button" className="po-btn-primary" onClick={onConfirm} disabled={confirmDisabled}>
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -721,8 +703,8 @@ export default function CVRWorkspace({
     <div className="dev-cvr dev-cvr-workspace dev-cvr-workspace--focused">
       <ApplicationPageHeader
         breadcrumbs={pageNavigation?.breadcrumbs || []}
-        title={siteStart ? 'Site Start Forecast' : workspace.developmentName}
-        lead={siteStart ? `${workspace.developmentName} · Working EFC${readOnly ? ' · Read-only period' : ''}` : `Development ${workspace.developmentNumber || '—'}${readOnly ? ' · Read-only period' : ''}`}
+        title={siteStart ? (locked ? 'Approved Site Start Budget' : 'Working Site Start Forecast') : workspace.developmentName}
+        lead={siteStart ? `${workspace.developmentName} · ${locked ? 'Approved Site Start Budget' : 'Working EFC'}${readOnly ? ' · Read-only period' : ''}` : `Development ${workspace.developmentNumber || '—'}${readOnly ? ' · Read-only period' : ''}`}
         onBack={onBackToSummary}
         actions={(
           <div className="dev-cvr-period__actions dev-cvr-period__actions--inline">
@@ -835,7 +817,7 @@ export default function CVRWorkspace({
 
       <CvrAuditHistory items={auditItems} />
 
-      {siteStart ? (
+      {siteStart && !locked ? (
         <section className="dev-cvr__notes-panel" aria-label="Site Start forecast period">
           <h3>Working Site Start Forecast</h3>
           <p>The Land Purchase Appraisal is the immutable baseline. Projected Adjustments change Working EFC without rewriting that historical authority.</p>
@@ -850,7 +832,7 @@ export default function CVRWorkspace({
         </section>
       ) : null}
 
-      {siteStart ? <div className="po-list-feedback po-list-feedback--info" role="status">Land Appraisal Baseline is immutable. Use Projected Adjustments to develop the Working EFC.</div> : developmentBudgetAdopted ? <div className="po-list-feedback po-list-feedback--info" role="status">{period?.budgetSourceMode === 'site_start_budget' ? 'Original Budget is the Approved Site Start EFC. Current Budget also includes authorised Development Budget movements after Site Start.' : 'Original and Current Budget are controlled by Development Budget. Manage budget movements from Development → Budget.'}</div> : budgetSource?.adoptionAvailable && !readOnly ? <div className="po-list-feedback po-list-feedback--warning" role="status">A Development Budget is available. This existing Draft still uses its established CVR budget until you choose to adopt it. <button type="button" className="po-list-btn-secondary" onClick={handleAdoptDevelopmentBudget}>Use Development Budget</button></div> : null}
+      {siteStart ? <div className="po-list-feedback po-list-feedback--info" role="status">{locked ? 'This Approved Site Start Budget is immutable historical evidence and the opening authority for P01.' : 'Land Appraisal Baseline is immutable. Use Projected Adjustments to develop the Working EFC.'}</div> : developmentBudgetAdopted ? <div className="po-list-feedback po-list-feedback--info" role="status">{period?.budgetSourceMode === 'site_start_budget' ? 'Original Budget is the Approved Site Start EFC. Current Budget also includes authorised Development Budget movements after Site Start.' : 'Original and Current Budget are controlled by Development Budget. Manage budget movements from Development → Budget.'}</div> : budgetSource?.adoptionAvailable && !readOnly ? <div className="po-list-feedback po-list-feedback--warning" role="status">A Development Budget is available. This existing Draft still uses its established CVR budget until you choose to adopt it. <button type="button" className="po-list-btn-secondary" onClick={handleAdoptDevelopmentBudget}>Use Development Budget</button></div> : null}
       {budgetSource?.authorityUnavailable ? <div className="po-list-feedback po-list-feedback--error" role="alert">{budgetSource.authorityMessage || 'Budget authority unavailable. BuildLite could not confirm whether this CVR should use the Development Budget. No budget action has been taken.'}</div> : null}
       {submitted && budgetSource?.stale ? <div className="po-list-feedback po-list-feedback--error" role="alert">Development Budget changed after this CVR was submitted. Reject to Draft, review the current budget and resubmit before Lock.</div> : null}
 
@@ -960,7 +942,7 @@ export default function CVRWorkspace({
       />
 
       {dialog === 'submit' ? (
-        <WorkflowDialog
+        <CvrWorkflowDialog
           title={siteStart ? 'Submit Site Start for Approval' : 'Submit CVR for Approval'}
           confirmLabel="Submit for Approval"
           onCancel={() => setDialog(null)}
@@ -969,30 +951,38 @@ export default function CVRWorkspace({
           <p className="dev-cvr-add__lead">
             {siteStart ? 'The Working EFC will be recomposed from authoritative evidence and become read-only while awaiting approval.' : 'This period will become read-only while awaiting approval.'}
           </p>
-        </WorkflowDialog>
+        </CvrWorkflowDialog>
       ) : null}
 
-      {dialog === 'approve' ? (
-        <WorkflowDialog
-          title={siteStart ? 'Approve & Lock Site Start Budget' : 'Approve & Lock CVR'}
+      {dialog === 'approve' && siteStart ? (
+        <SiteStartApprovalDialog
+          reference={siteStartApprovalReference}
+          reason={siteStartApprovalReason}
+          onReferenceChange={setSiteStartApprovalReference}
+          onReasonChange={setSiteStartApprovalReason}
+          onCancel={() => setDialog(null)}
+          onConfirm={handleApprove}
+          confirmDisabled={Boolean(variationExposure?.stale || budgetSource?.stale || missingAcknowledgements.length)}
+        >
+          {missingAcknowledgements.length ? <p className="po-list-feedback po-list-feedback--warning">Acknowledge {missingAcknowledgements.length} submitted Variation Account exposure exception{missingAcknowledgements.length === 1 ? '' : 's'} before Lock.</p> : null}
+        </SiteStartApprovalDialog>
+      ) : dialog === 'approve' ? (
+        <CvrWorkflowDialog
+          title="Approve & Lock CVR"
           confirmLabel="Approve & Lock"
           onCancel={() => setDialog(null)}
           onConfirm={handleApprove}
-          confirmDisabled={Boolean(variationExposure?.stale || budgetSource?.stale || missingAcknowledgements.length || (siteStart && (!siteStartApprovalReference.trim() || !siteStartApprovalReason.trim())))}
+          confirmDisabled={Boolean(variationExposure?.stale || budgetSource?.stale || missingAcknowledgements.length)}
         >
           <p className="dev-cvr-add__lead">
-            {siteStart ? 'The locked EFC by Cost Code becomes the immutable Approved Site Start Budget.' : 'Locked periods become permanent historical records.'}
+            Locked periods become permanent historical records.
           </p>
-          {siteStart ? <>
-            <label className="dev-form__field"><span className="dev-form__label">Approval reference</span><input className="input" value={siteStartApprovalReference} onChange={(event) => setSiteStartApprovalReference(event.target.value)} /></label>
-            <label className="dev-form__field"><span className="dev-form__label">Approval reason</span><textarea className="input" rows={3} value={siteStartApprovalReason} onChange={(event) => setSiteStartApprovalReason(event.target.value)} /></label>
-          </> : null}
           {missingAcknowledgements.length ? <p className="po-list-feedback po-list-feedback--warning">Acknowledge {missingAcknowledgements.length} submitted Variation Account exposure exception{missingAcknowledgements.length === 1 ? '' : 's'} before Lock.</p> : null}
-        </WorkflowDialog>
+        </CvrWorkflowDialog>
       ) : null}
 
       {dialog === 'reject' ? (
-        <WorkflowDialog
+        <CvrWorkflowDialog
           title="Reject CVR"
           confirmLabel="Reject to Draft"
           onCancel={() => {
@@ -1011,7 +1001,7 @@ export default function CVRWorkspace({
               placeholder="Required — explain what must be revised."
             />
           </label>
-        </WorkflowDialog>
+        </CvrWorkflowDialog>
       ) : null}
 
       <CvrReportingMonthDialog

@@ -133,8 +133,9 @@ export function buildCvrPeriodHeaderMeta(period) {
       { label: 'Forecast as at', value: formatReportingPeriod(period.forecastAsAtMonth) },
       { label: 'Period', value: 'Site Start' },
       { label: 'Created', value: formatPoDate(period.createdAt) },
-      { label: 'Submitted', value: '—' },
-      { label: 'Approved', value: '—' },
+      { label: 'Submitted', value: period.submittedAt ? formatPoDate(period.submittedAt) : '—' },
+      { label: 'Approved', value: period.approvedAt ? formatPoDate(period.approvedAt) : '—' },
+      { label: 'Approved By', value: period.approvedBy || '—' },
     ];
   }
 

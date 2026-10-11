@@ -31,4 +31,20 @@ describe('CVR Reporting Period header presentation', () => {
       { label: 'Period', value: 'Site Start' },
     ]));
   });
+
+  it('presents persisted Site Start workflow evidence', () => {
+    const items = buildCvrPeriodHeaderMeta({
+      periodKey: 'SITE_START',
+      periodType: 'site_start',
+      forecastAsAtMonth: '2026-10-01',
+      submittedAt: '2026-10-10T10:00:00.000Z',
+      approvedAt: '2026-10-10T11:00:00.000Z',
+      approvedBy: 'Commercial Director',
+    });
+    expect(items).toEqual(expect.arrayContaining([
+      { label: 'Submitted', value: '10 Oct 2026' },
+      { label: 'Approved', value: '10 Oct 2026' },
+      { label: 'Approved By', value: 'Commercial Director' },
+    ]));
+  });
 });

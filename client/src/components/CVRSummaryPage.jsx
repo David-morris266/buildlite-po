@@ -9,6 +9,7 @@ import { formatSignedMovement } from '../cvr/cvrPeriodMovement';
 import { formatCvrSubmissionBlockers } from '../cvr/cvrSubmissionBlockerPresentation';
 import {
   approveCvrPeriod,
+  createFirstCvrFromSiteStart,
   createNextCvrPeriod,
   getCvrPeriod,
   rejectCvrPeriod,
@@ -33,6 +34,7 @@ import {
 } from '../ledger/ledgerServerCache';
 import { isRevenueServerAuthorityEnabled } from '../revenue/revenueAuthority';
 import { ensureRevenueSettingsReady } from '../revenue/revenueSettingsServerCache';
+import { CvrWorkflowDialog, SiteStartApprovalDialog } from './CvrLifecycleDialog';
 
 function StatusBadge({ status }) {
   if (!status) return '—';
@@ -313,6 +315,9 @@ export default function CVRSummaryPage({
   const [reportingMonthBusy, setReportingMonthBusy] = useState(false);
   const [approveOpen, setApproveOpen] = useState(false);
   const [approveBusy, setApproveBusy] = useState(false);
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [siteStartApprovalReference, setSiteStartApprovalReference] = useState('');
+  const [siteStartApprovalReason, setSiteStartApprovalReason] = useState('');
   const [submissionBlockers, setSubmissionBlockers] = useState([]);
   const movementReportRef = useRef(null);
   const movementOriginRef = useRef(null);
@@ -398,6 +403,13 @@ export default function CVRSummaryPage({
     const period = getCvrPeriod(development.id, periodKey);
     return buildCvrSummaryModel(development, { pos, periodKey, period });
   }, [development, pos, periodKey, refreshToken, localRefresh, certificatesReady]);
+  const siteStart = summary?.period?.periodType === 'site_start';
+  const siteStartRequirements = summary?.period?.variationExposure?.acknowledgementRequirements || [];
+  const siteStartAcknowledged = new Set((summary?.period?.variationExposure?.acknowledgements || [])
+    .map((entry) => `${entry.variationAccountItemId}:${entry.exceptionCode}`));
+  const siteStartMissingAcknowledgements = siteStartRequirements.filter(
+    (entry) => !siteStartAcknowledged.has(`${entry.variationAccountItemId}:${entry.exceptionCode}`)
+  );
 
   useEffect(() => {
     if (!summary) return;
@@ -441,6 +453,7 @@ export default function CVRSummaryPage({
       return;
     }
     setSubmissionBlockers([]);
+    setSubmitOpen(false);
     refresh();
   }
 
@@ -448,12 +461,17 @@ export default function CVRSummaryPage({
     if (approveBusy) return;
     setApproveBusy(true);
     try {
-      const result = await Promise.resolve(approveCvrPeriod(development.id, periodKey));
+      const result = await Promise.resolve(approveCvrPeriod(development.id, periodKey, siteStart ? {
+        approvalReference: siteStartApprovalReference,
+        comment: siteStartApprovalReason,
+      } : {}));
       if (!result.ok) {
         window.alert(result.errors?.[0] || 'Could not approve CVR.');
         return;
       }
       setApproveOpen(false);
+      setSiteStartApprovalReference('');
+      setSiteStartApprovalReason('');
       refresh();
     } finally {
       setApproveBusy(false);
@@ -473,7 +491,9 @@ export default function CVRSummaryPage({
   async function handleCreateNextPeriod() {
     const action = resolveCreateNextReportingMonthAction(development.id);
     if (action.kind === 'recover') {
-      const result = await Promise.resolve(createNextCvrPeriod(development.id));
+      const result = await Promise.resolve(siteStart
+        ? createFirstCvrFromSiteStart(development.id, { reportingMonth: action.reportingMonth })
+        : createNextCvrPeriod(development.id));
       if (!result.ok) {
         window.alert(result.errors?.[0] || 'Could not create next CVR period.');
         return;
@@ -493,7 +513,9 @@ export default function CVRSummaryPage({
     setReportingMonthBusy(true);
     try {
       const result = await Promise.resolve(
-        createNextCvrPeriod(development.id, { reportingMonth })
+        siteStart
+          ? createFirstCvrFromSiteStart(development.id, { reportingMonth })
+          : createNextCvrPeriod(development.id, { reportingMonth })
       );
       if (!result.ok) {
         window.alert(result.errors?.[0] || 'Could not create next CVR period.');
@@ -614,12 +636,12 @@ export default function CVRSummaryPage({
       <ApplicationPageHeader
         breadcrumbs={pageNavigation?.breadcrumbs || []}
         title={summary.header.developmentName}
-        lead={`Development ${summary.header.developmentNumber}`}
+        lead={`Development ${summary.header.developmentNumber}${siteStart ? ` · ${summary.period?.status === 'locked' ? 'Approved Site Start Budget' : 'Working Site Start Forecast'}` : ''}`}
         onBack={onBackToRegister}
         actions={(
           <>
             {summary.workflow.showSubmit ? (
-              <button type="button" className="po-list-btn-secondary pilot-lifecycle-action" onClick={handleSubmit}>
+              <button type="button" className="po-list-btn-secondary pilot-lifecycle-action" onClick={() => siteStart ? setSubmitOpen(true) : handleSubmit()}>
                 Submit for Approval
               </button>
             ) : null}
@@ -639,7 +661,7 @@ export default function CVRSummaryPage({
             ) : null}
             {summary.workflow.showCreateNext ? (
               <button type="button" className="po-list-btn-secondary pilot-lifecycle-action" onClick={handleCreateNextPeriod}>
-                Create Next Period
+                {siteStart ? 'Create first CVR (P01)' : 'Create Next Period'}
               </button>
             ) : null}
           </>
@@ -648,8 +670,9 @@ export default function CVRSummaryPage({
         <div className="cvr-summary__header-meta">
           <StatusBadge status={summary.status} />
           <dl className="cvr-summary__meta-grid">
+            {siteStart ? <div><dt>Period</dt><dd>Site Start</dd></div> : null}
             <div>
-              <dt>Reporting Period</dt>
+              <dt>{siteStart ? 'Forecast as at' : 'Reporting Period'}</dt>
               <dd>{summary.header.reportingPeriodLabel}</dd>
             </div>
             <div>
@@ -899,13 +922,36 @@ export default function CVRSummaryPage({
           </div>
         </div>
       </div> : null}
-      <ApproveLockDialog
+      {submitOpen ? <CvrWorkflowDialog
+        title="Submit Site Start for Approval"
+        confirmLabel="Submit for Approval"
+        onCancel={() => setSubmitOpen(false)}
+        onConfirm={handleSubmit}
+      >
+        <p className="dev-cvr-add__lead">The Working EFC will be recomposed from authoritative evidence and become read-only while awaiting approval.</p>
+      </CvrWorkflowDialog> : null}
+      {approveOpen && siteStart ? <SiteStartApprovalDialog
+        reference={siteStartApprovalReference}
+        reason={siteStartApprovalReason}
+        onReferenceChange={setSiteStartApprovalReference}
+        onReasonChange={setSiteStartApprovalReason}
+        busy={approveBusy}
+        confirmDisabled={Boolean(
+          summary.period?.variationExposure?.stale ||
+          summary.period?.budgetSource?.stale ||
+          siteStartMissingAcknowledgements.length
+        )}
+        onCancel={() => { if (!approveBusy) setApproveOpen(false); }}
+        onConfirm={handleApprove}
+      >
+        {siteStartMissingAcknowledgements.length ? <p className="po-list-feedback po-list-feedback--warning">Acknowledge {siteStartMissingAcknowledgements.length} submitted Variation Account exposure exception{siteStartMissingAcknowledgements.length === 1 ? '' : 's'} before Lock.</p> : null}
+      </SiteStartApprovalDialog> : <ApproveLockDialog
         open={approveOpen}
         summary={summary}
         busy={approveBusy}
         onCancel={() => { if (!approveBusy) setApproveOpen(false); }}
         onConfirm={handleApprove}
-      />
+      />}
       <CvrReportingMonthDialog
         open={Boolean(reportingMonthPrompt)}
         nextPeriodKey={reportingMonthPrompt?.nextPeriodKey || ''}

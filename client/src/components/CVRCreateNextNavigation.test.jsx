@@ -11,6 +11,9 @@ const listPOs = vi.hoisted(() => vi.fn(async () => []));
 const createNextCvrPeriod = vi.hoisted(() =>
   vi.fn(async () => ({ ok: true, periodKey: 'P02' }))
 );
+const createFirstCvrFromSiteStart = vi.hoisted(() =>
+  vi.fn(async () => ({ ok: true, periodKey: 'P01' }))
+);
 
 vi.mock('../cvr/cvrPeriodAuthority', () => ({
   isCvrServerAuthorityEnabled: () => cvrAuthorityEnabled.value,
@@ -35,6 +38,7 @@ vi.mock('../cvr/cvrPeriodStore', async (importOriginal) => {
   return {
     ...actual,
     createNextCvrPeriod: (...args) => createNextCvrPeriod(...args),
+    createFirstCvrFromSiteStart: (...args) => createFirstCvrFromSiteStart(...args),
   };
 });
 
@@ -72,6 +76,7 @@ describe('Create Next Period navigation (BL-031F)', () => {
     networkGuard = installNetworkGuard();
     cvrAuthorityEnabled.value = true;
     createNextCvrPeriod.mockClear();
+    createFirstCvrFromSiteStart.mockClear();
     createNextCvrPeriod.mockResolvedValue({ ok: true, periodKey: 'P02' });
     __resetCvrPeriodServerCacheForTests();
     resetCvrPeriodApiStore();
@@ -194,6 +199,49 @@ describe('Create Next Period navigation (BL-031F)', () => {
     expect(createNextCvrPeriod).not.toHaveBeenCalled();
     expect(onBackToRegister).not.toHaveBeenCalled();
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('Summary creates P01 from locked Site Start only through the dedicated cutover', async () => {
+    __resetCvrPeriodServerCacheForTests();
+    resetCvrPeriodApiStore();
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({
+      id: PERIOD_ID,
+      developmentId: DEV.id,
+      periodKey: 'SITE_START',
+      periodLabel: 'Site Start',
+      periodType: 'site_start',
+      forecastAsAtMonth: '2026-10-01',
+      reportingMonth: null,
+      status: 'locked',
+      version: 3,
+      snapshot: buildServerCvrSnapshotFixture({ developmentId: DEV.id, periodId: PERIOD_ID }),
+      snapshotDeferred: false,
+      approvedAt: '2026-10-10T12:00:00.000Z',
+    }));
+    const onBackToRegister = vi.fn();
+    await act(async () => {
+      root.render(<CVRSummaryPage development={DEV} periodKey="SITE_START" certificatesReady onBackToRegister={onBackToRegister} />);
+    });
+    await flush(); await flush();
+    expect(container.textContent).toContain('Approved Site Start Budget');
+    expect(container.textContent).toContain('Forecast as at');
+    expect(container.textContent).toContain('October 2026');
+    const button = [...container.querySelectorAll('button')].find(item => item.textContent === 'Create first CVR (P01)');
+    expect(button).toBeTruthy();
+    await act(async () => button.click()); await flush();
+    const dialog = document.body.querySelector('[role="dialog"]');
+    const input = dialog.querySelector('input[type="month"]');
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    await act(async () => {
+      setter.call(input, '2026-09');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => [...dialog.querySelectorAll('button')].find(item => /Create P01/i.test(item.textContent || '')).click());
+    await flush();
+    expect(createFirstCvrFromSiteStart).toHaveBeenCalledWith(DEV.id, { reportingMonth: '2026-09' });
+    expect(createNextCvrPeriod).not.toHaveBeenCalled();
+    expect(onBackToRegister).toHaveBeenCalledTimes(1);
   });
 
   it('Summary refreshes authoritative submitted state, warns when stale and gates approval only', async () => {

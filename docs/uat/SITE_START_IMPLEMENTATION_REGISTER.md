@@ -185,3 +185,10 @@ Owner-review the complete SS-1 through SS-5 tranche locally, then bank and relea
 
 - Save & Send for Approval now has a narrowly scoped PO-form action class with an explicitly green normal and hover treatment, visible keyboard focus, distinguishable pressed state and retained disabled/loading treatment.
 - No submission logic or global button styling changed. Owner visual UAT remains required at 100% zoom to confirm the action stays green across normal, hover, keyboard-focus, pressed and loading states in the deployed browser.
+
+## SS-UAT-08 Summary and Worksheet lifecycle convergence
+
+- CVR Summary now recognises first-class Site Start identity for every lifecycle action. Draft submission requires an explicit Site Start confirmation, and Submitted approval uses the same governed approval-reference and approval-reason dialogue as the Worksheet.
+- Locked Site Start Summary exposes `Create first CVR (P01)` and calls only the existing dedicated Site Start cutover adapter after explicit Reporting Month selection. Ordinary monthly periods retain the established Create Next Period authority.
+- Site Start presentation uses the friendly `Site Start` identity and `Forecast as at` date authority. Draft and Submitted periods are labelled `Working Site Start Forecast`; Locked periods are labelled `Approved Site Start Budget`, retain Submitted/Approved/approver evidence, and no longer show active Working-EFC guidance.
+- No server endpoint, financial formula, persistence authority, schema, migration or RBAC rule changed. Server optimistic-version, duplicate cutover and canonical milestone/snapshot protections remain authoritative.
