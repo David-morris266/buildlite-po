@@ -217,3 +217,9 @@ Owner-review the complete SS-1 through SS-5 tranche locally, then bank and relea
 - Live Draft rows and immutable locked Site Start/monthly snapshot rows use their existing hydrated `committedLabel`; no client calculation or new commitment authority was introduced.
 - Existing horizontal scrolling, sticky Cost Code/Description columns and monetary alignment remain unchanged. Owner visual UAT should confirm heading readability and scrolling at normal desktop widths.
 - PO/package recognition, certification, ledger actuals, recognised obligation, Uncommitted, CTC, EFC, movement, workflow-owned adjustments, Commercial Head aggregation and snapshot authority are unchanged.
+
+## SS-UX-10 Site Start Summary comparison presentation
+
+- Commercial Cost Summary no longer presents `Since Site Start £0.00` while viewing the Site Start period itself. Commercial Head and Total rows use one explicit presentation flag.
+- The approved Site Start benchmark, current EFC and derived cumulative movement remain calculated and reconciled unchanged; only the redundant self-comparison label is suppressed.
+- Monthly CVRs continue to show positive, negative and zero cumulative movement against the immutable approved Site Start benchmark, independently of movement from the previous locked monthly period.

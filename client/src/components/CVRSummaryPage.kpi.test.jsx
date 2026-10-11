@@ -93,6 +93,29 @@ describe('Commercial Cost Summary authority presentation', () => {
     act(() => container.querySelector('button').click());
     expect(onOpen).toHaveBeenCalledWith({ ...filter, routeKey: 'resolution:unresolved_legacy' });
   });
+
+  it('suppresses Site Start self-comparison while retaining monthly benchmark comparisons', () => {
+    const makeSummary = (showCumulativeSiteStartMovement) => ({
+      available: true,
+      showCumulativeSiteStartMovement,
+      items: [
+        { headKey: 'positive', head: 'House Build', filter: {}, siteStartBudgetLabel: '£100.00', cumulativeSiteStartMovement: 25, cumulativeSiteStartMovementLabel: '+£25.00', currentForecastLabel: '£125.00', costPerFt2Label: '—', costToCompleteLabel: '£125.00', uncommittedForecastLabel: '£0.00', changeExposureLabel: '£0.00', movementLabel: '—', movementState: 'neutral', varianceLabel: '—', varianceState: 'neutral' },
+        { headKey: 'negative', head: 'Prelims', filter: {}, siteStartBudgetLabel: '£100.00', cumulativeSiteStartMovement: -10, cumulativeSiteStartMovementLabel: '−£10.00', currentForecastLabel: '£90.00', costPerFt2Label: '—', costToCompleteLabel: '£90.00', uncommittedForecastLabel: '£0.00', changeExposureLabel: '£0.00', movementLabel: '—', movementState: 'neutral', varianceLabel: '—', varianceState: 'neutral' },
+        { headKey: 'zero', head: 'Selling Costs', filter: {}, siteStartBudgetLabel: '£100.00', cumulativeSiteStartMovement: 0, cumulativeSiteStartMovementLabel: '£0.00', currentForecastLabel: '£100.00', costPerFt2Label: '—', costToCompleteLabel: '£100.00', uncommittedForecastLabel: '£0.00', changeExposureLabel: '£0.00', movementLabel: '—', movementState: 'neutral', varianceLabel: '—', varianceState: 'neutral' },
+      ],
+      totals: { siteStartBudgetLabel: '£300.00', cumulativeSiteStartMovement: 15, cumulativeSiteStartMovementLabel: '+£15.00', currentForecastLabel: '£315.00', costPerFt2Label: '—', costToCompleteLabel: '£315.00', uncommittedForecastLabel: '£0.00', changeExposureLabel: '£0.00', movementLabel: '—', movementState: 'neutral', varianceLabel: '—', varianceState: 'neutral' },
+    });
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    act(() => root.render(<CommercialCostSummaryTable summary={makeSummary(false)} />));
+    expect(container.textContent).not.toContain('Since Site Start');
+    expect(container.textContent).toContain('£300.00');
+    expect(container.textContent).toContain('£315.00');
+
+    act(() => root.render(<CommercialCostSummaryTable summary={makeSummary(true)} />));
+    expect([...container.querySelectorAll('.cvr-summary__benchmark-movement')].map((node) => node.textContent)).toEqual([
+      'Since Site Start +£25.00', 'Since Site Start −£10.00', 'Since Site Start £0.00', 'Since Site Start +£15.00',
+    ]);
+  });
 });
 
 describe('CVR Movement Report presentation', () => {

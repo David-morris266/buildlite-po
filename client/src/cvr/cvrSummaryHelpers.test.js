@@ -418,6 +418,60 @@ describe('buildCommercialCostMovementSummary', () => {
     });
     expect(summary.items[0]).toMatchObject({ siteStartBudget: 100, movement: 5, cumulativeSiteStartMovement: 25 });
     expect(summary.totals).toMatchObject({ siteStartBudget: 100, movement: 5, cumulativeSiteStartMovement: 25 });
+    expect(summary.showCumulativeSiteStartMovement).toBe(true);
+  });
+
+  it('retains the locked Site Start self-comparison calculation but suppresses its presentation', () => {
+    const hierarchy = period([allocated('4120', 'house-build', 'House Build')]);
+    const currentPeriod = {
+      ...hierarchy,
+      periodType: 'site_start',
+      status: 'locked',
+      snapshot: { commercialHierarchy: hierarchy.commercialHierarchy, rows: [{ costCodeKey: '4120', finalForecast: 100 }] },
+    };
+    const summary = buildCommercialCostMovementSummary({
+      currentRows: [{ costCodeKey: '4120', currentBudget: 80, finalForecast: 100, variance: -20 }],
+      currentPeriod,
+      currentTotals: { currentBudget: 80, finalForecast: 100, variance: -20 },
+      movementReport: { available: false, rows: [] },
+    });
+    expect(summary.items[0]).toMatchObject({ siteStartBudget: 100, currentForecast: 100, cumulativeSiteStartMovement: 0 });
+    expect(summary.totals).toMatchObject({ siteStartBudget: 100, currentForecast: 100, cumulativeSiteStartMovement: 0, reconciles: true });
+    expect(summary.showCumulativeSiteStartMovement).toBe(false);
+  });
+
+  it.each(['draft', 'submitted'])('does not offer a cumulative comparison for %s Site Start', (status) => {
+    const hierarchy = period([allocated('4120', 'house-build', 'House Build')]);
+    const summary = buildCommercialCostMovementSummary({
+      currentRows: [{ costCodeKey: '4120', currentBudget: 80, finalForecast: 100, variance: -20 }],
+      currentPeriod: { ...hierarchy, periodType: 'site_start', status },
+      currentTotals: { currentBudget: 80, finalForecast: 100, variance: -20 },
+      movementReport: { available: false, rows: [] },
+    });
+    expect(summary.showCumulativeSiteStartMovement).toBe(false);
+  });
+
+  it.each([
+    ['P01', 125, 25],
+    ['P02', 90, -10],
+    ['P03', 100, 0],
+  ])('retains the cumulative Site Start comparison for %s', (periodKey, finalForecast, expectedMovement) => {
+    const currentPeriod = period([allocated('4120', 'house-build', 'House Build')]);
+    Object.assign(currentPeriod, {
+      periodType: 'monthly_cvr',
+      periodKey,
+      budgetSourceMode: 'site_start_budget',
+      budgetSource: { document: { positions: [{ costCode: '4120', originalPence: 10000 }] } },
+    });
+    const summary = buildCommercialCostMovementSummary({
+      currentRows: [{ costCodeKey: '4120', currentBudget: 100, finalForecast, variance: 100 - finalForecast }],
+      currentPeriod,
+      currentTotals: { currentBudget: 100, finalForecast, variance: 100 - finalForecast },
+      movementReport: { available: false, rows: [] },
+    });
+    expect(summary.showCumulativeSiteStartMovement).toBe(true);
+    expect(summary.items[0].cumulativeSiteStartMovement).toBe(expectedMovement);
+    expect(summary.totals.cumulativeSiteStartMovement).toBe(expectedMovement);
   });
 
   it('shows a hierarchy transfer as equal movement out and in without recasting either period', () => {

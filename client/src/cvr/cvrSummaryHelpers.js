@@ -146,6 +146,7 @@ export function buildCommercialCostMovementSummary({
       ? (budgetAuthority?.document?.positions || []).map(position => ({ costCode: position.costCode, amountPence: position.originalPence }))
       : legacySiteStart?.positions || [];
   const siteStartAvailable = siteStartPositions.length > 0 || Number.isFinite(Number(legacySiteStart?.totalPence));
+  const showCumulativeSiteStartMovement = currentPeriod?.periodType !== 'site_start' && siteStartAvailable;
   const siteStartTotal = siteStartPositions.length > 0
     ? roundMoney(siteStartPositions.reduce((sum, position) => sum + Number(position.amountPence || 0) / 100, 0))
     : Number.isFinite(Number(legacySiteStart?.totalPence)) ? Number(legacySiteStart.totalPence) / 100 : null;
@@ -221,7 +222,7 @@ export function buildCommercialCostMovementSummary({
       && (totals.previousForecast == null || roundMoney(items.reduce((sum, item) => sum + (item.previousForecast || 0), 0)) === roundMoney(totals.previousForecast))
       && (totals.movement == null || roundMoney(items.reduce((sum, item) => sum + (item.movement || 0), 0)) === roundMoney(totals.movement)),
   });
-  return { available: items.length > 0, emptyMessage: 'Commercial Cost Summary will populate once Cost Codes are available.', items, totals };
+  return { available: items.length > 0, emptyMessage: 'Commercial Cost Summary will populate once Cost Codes are available.', showCumulativeSiteStartMovement, items, totals };
 }
 
 function moneyValueExists(value) {
