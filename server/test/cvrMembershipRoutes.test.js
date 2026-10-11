@@ -24,6 +24,7 @@ const developmentBudget = require("../services/developmentBudgetRepository");
 const { PERMISSIONS } = require("../auth/permissions");
 
 let authenticatedClientId = null;
+let authenticatedPermissions = [...new Set(Object.values(PERMISSIONS))];
 const testAuth = () => ({
   userId: "00000000-0000-0000-0000-000000000001",
   providerUserId: "test-user",
@@ -33,7 +34,7 @@ const testAuth = () => ({
   membershipId: "00000000-0000-0000-0000-000000000002",
   roleKey: "commercial_manager",
   roleName: "Commercial Manager",
-  permissions: [...new Set(Object.values(PERMISSIONS))],
+  permissions: authenticatedPermissions,
   memberships: [],
 });
 const app = createApp({ testPrincipal: testAuth });
@@ -222,6 +223,17 @@ async function createDraftPeriod(developmentId) {
     testAuth()
   );
   assert.equal(budget.ok, true, budget.message || JSON.stringify(budget));
+  // Membership regressions exercise an established Development-Budget-backed
+  // CVR. A genuinely new Development must use Land Appraisal -> Site Start.
+  await pool.query(
+    `INSERT INTO cvr_periods (
+       client_id, development_id, period_key, period_label, reporting_month,
+       period_type, status, commentary, version, created_by, updated_by,
+       submitted_at, submitted_by, approved_at, approved_by, budget_source
+     ) VALUES ($1,$2,'LEGACY_BASE','Legacy baseline','2026-07-01',
+       'monthly_cvr','locked','{}'::jsonb,1,$3,$3,NOW(),$3,NOW(),$3,'legacy_cvr')`,
+    [client.id, developmentId, testAuth().displayName]
+  );
   const res = await request(app)
     .post(`/api/developments/${encodeURIComponent(developmentId)}/cvr/periods`)
     .send({ periodKey: "P01", reportingMonth: "2026-08-01", actor: "Commercial Manager" });
@@ -477,6 +489,32 @@ if (!isDbConfigured()) {
         actor: "QS",
       });
       assert.equal(res.status, 201, `${code}: ${res.body?.message || JSON.stringify(res.body)}`);
+    }
+  });
+
+  test("membership mutation requires cvr.edit and permits legitimate Site Start editors", async () => {
+    const client = await getActiveClient();
+    const development = await createDevelopment();
+    const period = await createDraftPeriod(development.id);
+    const blockedCode = await createMaster(client.id, { code: uniqueCode("DENY") });
+    const allowedCode = await createMaster(client.id, { code: uniqueCode("ALLOW") });
+    const allPermissions = authenticatedPermissions;
+
+    try {
+      authenticatedPermissions = allPermissions.filter((permission) => permission !== PERMISSIONS.CVR_EDIT);
+      const blocked = await request(app).post(memberUrl(development.id, period.id)).send({
+        costCodeKey: blockedCode.code,
+      });
+      assert.equal(blocked.status, 403);
+      assert.match(blocked.body.message, /cvr\.edit/);
+
+      authenticatedPermissions = [PERMISSIONS.SITE_START_MANAGE, PERMISSIONS.CVR_EDIT];
+      const allowed = await request(app).post(memberUrl(development.id, period.id)).send({
+        costCodeKey: allowedCode.code,
+      });
+      assert.equal(allowed.status, 201, allowed.body?.message || JSON.stringify(allowed.body));
+    } finally {
+      authenticatedPermissions = allPermissions;
     }
   });
 

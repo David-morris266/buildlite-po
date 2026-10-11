@@ -67,6 +67,8 @@ import CvrPeriodSubviewNav from './CvrPeriodSubviewNav';
 import { buildCvrPeriodComparisonForPeriod } from '../cvr/cvrPeriodMovement';
 import { buildCvrCommercialHierarchyPresentation } from '../cvr/cvrCommercialHierarchyPresentation';
 import { CvrWorkflowDialog, SiteStartApprovalDialog } from './CvrLifecycleDialog';
+import { listActiveCostCodesForSelect } from '../admin/costCodeMasterStore';
+import { buildCostCodeCompleteness, representedCostCodeKeys } from '../cvr/cvrCostCodeCompleteness';
 
 function StatusBadge({ status }) {
   return (
@@ -184,6 +186,9 @@ export default function CVRWorkspace({
   const [forecastAsAtFeedback, setForecastAsAtFeedback] = useState('');
   const [siteStartApprovalReference, setSiteStartApprovalReference] = useState('');
   const [siteStartApprovalReason, setSiteStartApprovalReason] = useState('');
+  const [companyCostCodes, setCompanyCostCodes] = useState([]);
+  const [costCodeCompletenessError, setCostCodeCompletenessError] = useState('');
+  const [costCodeCompletenessLoading, setCostCodeCompletenessLoading] = useState(true);
 
   const period = useMemo(() => {
     void refreshToken;
@@ -328,17 +333,39 @@ export default function CVRWorkspace({
   }, [workspace?.rows, displayedRows, resolvedHierarchyFilter]);
 
   const memberKeys = useMemo(() => {
-    const keys = new Set();
-    for (const centre of period?.costCentres || []) {
-      if (centre?.costCodeKey) keys.add(centre.costCodeKey);
-    }
-    for (const row of workspace?.rows || []) {
-      if (row?.costCodeKey && !String(row.id || '').startsWith('auto-')) {
-        keys.add(row.costCodeKey);
-      }
-    }
-    return [...keys];
+    return [...representedCostCodeKeys({
+      inputs: period?.costCentres || [],
+      rows: workspace?.rows || [],
+    })];
   }, [period?.costCentres, workspace?.rows]);
+
+  const costCodeCompleteness = useMemo(
+    () => buildCostCodeCompleteness(companyCostCodes, memberKeys),
+    [companyCostCodes, memberKeys]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    setCostCodeCompletenessError('');
+    setCostCodeCompletenessLoading(true);
+    listActiveCostCodesForSelect({ fresh: true })
+      .then((codes) => {
+        if (!cancelled) {
+          setCompanyCostCodes(codes || []);
+          setCostCodeCompletenessLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCompanyCostCodes([]);
+          setCostCodeCompletenessError('Cost Code completeness is unavailable.');
+          setCostCodeCompletenessLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [development.id]);
 
   useEffect(() => {
     setNotes(workspace?.developmentNotes || '');
@@ -722,7 +749,7 @@ export default function CVRWorkspace({
                   className="po-list-btn-secondary dev-cvr__shell-btn"
                   onClick={() => setAddOpen(true)}
                 >
-                  Add Cost Code
+                  Cost Code Completeness{costCodeCompletenessError || costCodeCompletenessLoading ? '' : ` (${costCodeCompleteness.unrepresentedCount})`} · Add Cost Code
                 </button>
                 <button
                   type="button"
@@ -937,6 +964,10 @@ export default function CVRWorkspace({
         open={addOpen}
         periodKey={period?.periodKey || periodKey}
         memberKeys={memberKeys}
+        masterCodes={companyCostCodes}
+        masterLoadError={costCodeCompletenessError}
+        masterLoading={costCodeCompletenessLoading}
+        canAdd={!readOnly}
         onCancel={() => setAddOpen(false)}
         onSave={handleAddCostCentre}
       />
@@ -951,6 +982,7 @@ export default function CVRWorkspace({
           <p className="dev-cvr-add__lead">
             {siteStart ? 'The Working EFC will be recomposed from authoritative evidence and become read-only while awaiting approval.' : 'This period will become read-only while awaiting approval.'}
           </p>
+          {siteStart && !costCodeCompletenessLoading && !costCodeCompletenessError && costCodeCompleteness.unrepresentedCount > 0 ? <p className="po-list-feedback po-list-feedback--warning">{costCodeCompleteness.unrepresentedCount} active Company Cost Code{costCodeCompleteness.unrepresentedCount === 1 ? ' is' : 's are'} not represented. Review Cost Code Completeness if needed; this does not prevent submission.</p> : null}
         </CvrWorkflowDialog>
       ) : null}
 

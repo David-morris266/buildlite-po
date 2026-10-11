@@ -1,127 +1,108 @@
 import { useEffect, useMemo, useState } from 'react';
 import { listActiveCostCodesForSelect } from '../admin/costCodeMasterStore';
-import { normaliseCostCodeKey } from '../cvr/cvrCalculations';
-import PrelimsCostCodePicker from './PrelimsCostCodePicker';
 import { COST_CODE_MASTER_UNAVAILABLE_MESSAGE } from '../admin/costCodeMessages';
+import {
+  buildCostCodeCompleteness,
+  completenessCommercialHeads,
+  filterUnrepresentedCostCodes,
+} from '../cvr/cvrCostCodeCompleteness';
 
 export default function CvrAddCostCodeDialog({
   open,
   periodKey,
   memberKeys = [],
+  masterCodes = null,
+  masterLoadError = '',
+  masterLoading = false,
+  canAdd = true,
   onCancel,
   onSave,
 }) {
-  const [options, setOptions] = useState([]);
+  const [loadedOptions, setLoadedOptions] = useState([]);
   const [loadError, setLoadError] = useState('');
-  const [selectedCode, setSelectedCode] = useState('');
+  const [query, setQuery] = useState('');
+  const [commercialHead, setCommercialHead] = useState('');
   const [errors, setErrors] = useState([]);
-  const [busy, setBusy] = useState(false);
+  const [busyCode, setBusyCode] = useState('');
 
-  const excluded = useMemo(
-    () => new Set((memberKeys || []).map((key) => normaliseCostCodeKey(key)).filter(Boolean)),
-    [memberKeys]
+  const options = masterCodes == null ? loadedOptions : masterCodes;
+  const completeness = useMemo(
+    () => buildCostCodeCompleteness(options, memberKeys),
+    [options, memberKeys]
   );
-
+  const heads = useMemo(
+    () => completenessCommercialHeads(completeness.unrepresented),
+    [completeness.unrepresented]
+  );
   const available = useMemo(
-    () =>
-      (options || []).filter((row) => {
-        const code = normaliseCostCodeKey(row.code || row.value);
-        return code && !excluded.has(code);
-      }),
-    [options, excluded]
+    () => filterUnrepresentedCostCodes(completeness.unrepresented, { query, commercialHead }),
+    [completeness.unrepresented, query, commercialHead]
   );
 
   useEffect(() => {
     if (!open) return undefined;
-    setSelectedCode('');
+    setQuery('');
+    setCommercialHead('');
     setErrors([]);
     setLoadError('');
+    if (masterCodes != null) return undefined;
     let cancelled = false;
-    // Membership candidates must reflect the active tenant at the moment the
-    // command is opened; an earlier company/cache view is not authority.
     listActiveCostCodesForSelect({ fresh: true })
       .then((codes) => {
-        if (!cancelled) setOptions(codes || []);
+        if (!cancelled) setLoadedOptions(codes || []);
       })
       .catch(() => {
         if (!cancelled) {
-          setOptions([]);
+          setLoadedOptions([]);
           setLoadError(COST_CODE_MASTER_UNAVAILABLE_MESSAGE);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [masterCodes, open]);
 
   if (!open) return null;
 
-  async function handleSave() {
-    if (!selectedCode) {
-      setErrors(['Select a cost code from Cost Code Master.']);
-      return;
-    }
-    setBusy(true);
+  async function handleSave(costCodeKey) {
+    setBusyCode(costCodeKey);
     setErrors([]);
     try {
-      const result = await onSave?.({ costCodeKey: selectedCode });
-      if (result?.ok === false) {
-        setErrors(result.errors || ['Could not add cost code.']);
-      }
+      const result = await onSave?.({ costCodeKey });
+      if (result?.ok === false) setErrors(result.errors || ['Could not add cost code.']);
     } catch (err) {
       setErrors([err.message || 'Could not add cost code.']);
     } finally {
-      setBusy(false);
+      setBusyCode('');
     }
   }
 
   return (
     <div className="dev-cvr-add-backdrop" role="presentation">
-      <div className="dev-cvr-add modal" role="dialog" aria-modal="true" aria-labelledby="cvr-add-cost-code-title">
-        <h3 id="cvr-add-cost-code-title">Add Cost Code</h3>
+      <div className="dev-cvr-add dev-cvr-completeness modal" role="dialog" aria-modal="true" aria-labelledby="cvr-cost-code-completeness-title">
+        <h3 id="cvr-cost-code-completeness-title">Cost Code Completeness</h3>
         <p className="dev-cvr-add__lead">
-          Choose an active company cost code to add to {periodKey || 'this Draft CVR'}. Budget,
-          adjustment and accrual stay empty until you enter them.
+          {completeness.unrepresentedCount} active Company Cost Code{completeness.unrepresentedCount === 1 ? ' is' : 's are'} not represented in {periodKey || 'this Draft CVR'}. This does not necessarily mean they were omitted.
         </p>
-        {loadError ? (
-          <p className="po-list-feedback po-list-feedback--error" role="alert">
-            {loadError}
-          </p>
-        ) : null}
-        {errors.length ? (
-          <div className="po-list-feedback po-list-feedback--error" role="alert">
-            <ul>
-              {errors.map((message) => (
-                <li key={message}>{message}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        <label className="dev-cvr-budget-editor__field">
-          <span>Cost Code Master</span>
-          <PrelimsCostCodePicker
-            options={available}
-            value={selectedCode}
-            onChange={(code) => {
-              setSelectedCode(code);
-              setErrors([]);
-            }}
-            name="CVR add"
-            overlayClassName="dev-cvr-add__cost-code-menu"
-          />
-        </label>
+        <p className="dev-cvr-completeness__authority">Adding a code creates a review row with a zero authoritative baseline. It does not change the Land Appraisal or Approved Site Start Budget.</p>
+        {masterLoading ? <p role="status">Loading Company Cost Code Master…</p> : null}
+        {loadError || masterLoadError ? <p className="po-list-feedback po-list-feedback--error" role="alert">{loadError || masterLoadError}</p> : null}
+        {errors.length ? <div className="po-list-feedback po-list-feedback--error" role="alert"><ul>{errors.map((message) => <li key={message}>{message}</li>)}</ul></div> : null}
+        <div className="dev-cvr-completeness__filters">
+          <label><span>Search</span><input className="input" type="search" aria-label="Search unrepresented Cost Codes" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+          <label><span>Commercial Head</span><select className="input" aria-label="Filter by Commercial Head" value={commercialHead} onChange={(event) => setCommercialHead(event.target.value)}><option value="">All Heads</option>{heads.map((head) => <option key={head} value={head}>{head}</option>)}</select></label>
+        </div>
+        <div className="dev-cvr-completeness__list" role="list" aria-label="Unrepresented Cost Codes">
+          {!masterLoading && !loadError && !masterLoadError && !available.length ? <p className="po-list-feedback po-list-feedback--info">{completeness.unrepresentedCount ? 'No Cost Codes match these filters.' : 'All active Company Cost Codes are represented.'}</p> : null}
+          {available.map((item) => (
+            <article className="dev-cvr-completeness__row" role="listitem" key={item.code} data-cost-code={item.code}>
+              <div><strong>{item.code} — {item.description || 'No description'}</strong><span>{[item.commercialHead || 'Unclassified', item.commercialFamily].filter(Boolean).join(' · ')}</span></div>
+              {canAdd ? <button type="button" className="po-list-btn-secondary" disabled={Boolean(busyCode)} onClick={() => handleSave(item.code)}>{busyCode === item.code ? 'Adding…' : 'Add Cost Code'}</button> : null}
+            </article>
+          ))}
+        </div>
         <div className="dev-cvr-add__actions modal-actions">
-          <button type="button" className="po-list-btn-secondary" onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="po-btn-primary"
-            onClick={handleSave}
-            disabled={busy || !selectedCode}
-          >
-            {busy ? 'Adding…' : 'Add Cost Code'}
-          </button>
+          <button type="button" className="po-list-btn-secondary" onClick={onCancel} disabled={Boolean(busyCode)}>Close</button>
         </div>
       </div>
     </div>

@@ -166,13 +166,13 @@ describe('Development P01 Add Cost Code production path', () => {
     await flush();
 
     const open = [...container.querySelectorAll('button')]
-      .find((button) => button.textContent.trim() === 'Add Cost Code');
+      .find((button) => button.textContent.includes('Cost Code Completeness'));
     expect(open).toBeTruthy();
     act(() => open.click());
     await flush();
     expect(listCandidates).toHaveBeenCalledWith({ fresh: true });
 
-    const search = document.body.querySelector('input[aria-label="CVR add cost code search"]');
+    const search = document.body.querySelector('input[aria-label="Search unrepresented Cost Codes"]');
     expect(search).toBeTruthy();
     await act(async () => {
       search.focus();
@@ -183,7 +183,7 @@ describe('Development P01 Add Cost Code production path', () => {
       setter.call(search, 'Selling Costs');
       search.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    expect(document.body.querySelector('[role="option"][data-cost-code="5400"]')).toBeTruthy();
+    expect(document.body.querySelector('[data-cost-code="5400"]')).toBeTruthy();
 
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(
@@ -194,16 +194,17 @@ describe('Development P01 Add Cost Code production path', () => {
       search.dispatchEvent(new Event('input', { bubbles: true }));
     });
 
-    const result = document.body.querySelector('[role="option"][data-cost-code="5400"]');
+    const result = document.body.querySelector('[data-cost-code="5400"]');
     expect(result).toBeTruthy();
     expect(result.textContent).toContain('5400 — Selling Costs General Allowance');
-    act(() => result.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
-    expect(search.value).toContain('5400 — Selling Costs General Allowance');
-    expect(search.dataset.costCode).toBe('5400');
-
-    const add = [...container.querySelectorAll('button')]
-      .find((button) => button.textContent.trim() === 'Add Cost Code' && button !== open);
+    const add = result.querySelector('button');
     expect(add.disabled).toBe(false);
-    expect(document.body.querySelector('[role="option"][data-cost-code="5400"]')).toBeNull();
+    await act(async () => {
+      add.click();
+      await Promise.resolve();
+    });
+    await flush();
+    expect(container.textContent).toContain('5400 added to P01');
+    expect(container.textContent).toContain('Cost Code Completeness (35)');
   });
 });

@@ -26,6 +26,7 @@ const CRITICAL_ROUTE_PERMISSIONS = Object.freeze({
   'POST /api/developments/:developmentId/ledger/transactions/:transactionId/reverse': P.LEDGER_MANAGE,
     'POST /api/developments/:developmentId/cvr/periods/:periodId/approve': P.CVR_LOCK,
     'POST /api/developments/:developmentId/cvr/site-start-period/create-p01': P.CVR_EDIT,
+    'POST /api/developments/:developmentId/cvr/periods/:periodId/cost-code-members': P.CVR_EDIT,
     'POST /api/developments/:developmentId/cvr/periods/:periodId/variation-exposure/acknowledgements': P.CVR_LOCK,
   'POST /api/packages/:packageId/certificates/:certificateId/approve': P.CERTIFICATE_LOCK,
   'POST /api/packages/:packageId/certificates/:certificateId/submit': P.CERTIFICATE_SUBMIT,

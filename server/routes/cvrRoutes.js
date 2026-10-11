@@ -332,7 +332,7 @@ router.put("/cvr/periods/:periodId/inputs", async (req, res) => {
  * BL-037A — Authoritative Draft CVR membership. Empty overlay from Cost Code
  * Master. Does not replace POST /inputs (legacy overlay create).
  */
-router.post("/cvr/periods/:periodId/cost-code-members", async (req, res) => {
+router.post("/cvr/periods/:periodId/cost-code-members", requirePermission(PERMISSIONS.CVR_EDIT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });

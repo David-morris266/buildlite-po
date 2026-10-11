@@ -200,3 +200,12 @@ Owner-review the complete SS-1 through SS-5 tranche locally, then bank and relea
 - The shared reporting-month dialogue applies the same minimum-month boundary, suggests the earliest eligible month only once it has closed, and explains when no eligible closed month yet exists. Server validation remains final authority.
 - Historic legacy CVRs with no persisted reporting month retain their established compatibility path. No snapshot, financial formula, budget authority, absorbed adjustment, commitment, schema, migration or RBAC behavior changed.
 - Release-gate note: the explicit established-legacy continuation regression passes. Five other cases in `cvrDevelopmentBudgetIntegration.test.js` remain stale new-development readiness fixtures under the governed Site Start lifecycle; they fail before chronology handling, were not weakened or concealed in SS-UAT-09, and require a separately bounded fixture-debt correction.
+
+## CC-UAT-01 Cost Code completeness
+
+- Draft CVR Worksheets now expose a lightweight Cost Code Completeness review. It compares the active tenant Company Cost Code Master with the authoritative rows currently represented by budget positions, live commercial facts and explicit CVR input overlays.
+- The review reports the unrepresented count and provides search plus Commercial Head filtering. Unrepresented is presented as a review prompt, not proof that cost was omitted.
+- Adding a Cost Code reuses the existing Draft-only, tenant-Master-backed membership command. It creates one empty audited overlay with a zero authoritative baseline; it does not rewrite Land Appraisal, Approved Site Start Budget or Development Budget authority.
+- Draft Site Start submission displays a concise non-blocking reminder while active Master Cost Codes remain unrepresented. Monthly CVRs retain optional access without an acknowledgement state or recurring submission gate.
+- The existing membership route now explicitly requires `cvr.edit`. QS, Commercial Manager and Commercial Director roles already hold both `cvr.edit` and the applicable Site Start lifecycle permissions.
+- No schema, migration, persisted reviewed/excluded state or automatic financial rows were introduced. Owner UAT should verify the count against an Ashfield-shaped period, exercise Head/search filtering, add one genuine zero-baseline code and confirm the count refreshes before testing its governed Projected Adjustment.

@@ -1,180 +1,67 @@
-/**
- * @vitest-environment jsdom
- */
+/** @vitest-environment jsdom */
 import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 const listActiveCostCodesForSelect = vi.hoisted(() => vi.fn());
-
-vi.mock('../admin/costCodeMasterStore', () => ({
-  listActiveCostCodesForSelect,
-}));
-
+vi.mock('../admin/costCodeMasterStore', () => ({ listActiveCostCodesForSelect }));
 import CvrAddCostCodeDialog from './CvrAddCostCodeDialog';
 
 const MASTER = [
-  {
-    code: '1110',
-    description: 'Stamp Duty',
-    reportingGroup: 'Land',
-    label: '1110 — Stamp Duty',
-  },
-  {
-    code: '5400',
-    description: 'Selling Costs — General Allowance',
-    reportingGroup: 'Selling',
-    label: '5400 — Selling Costs — General Allowance',
-  },
-  {
-    code: '5231',
-    description: 'Cleaning',
-    reportingGroup: 'Prelims',
-    label: '5231 — Cleaning',
-  },
+  { code: '1110', description: 'Stamp Duty', commercialHead: 'Land', active: true },
+  { code: '5400', description: 'Selling Costs General Allowance', commercialHead: 'Sales & Marketing', commercialFamily: 'Selling', active: true },
+  { code: '5231', description: 'Cleaning', commercialHead: 'Preliminaries', active: true },
+  { code: '9999', description: 'Archived', commercialHead: 'Build', active: false },
 ];
 
-describe('CvrAddCostCodeDialog', () => {
+describe('CvrAddCostCodeDialog completeness review', () => {
   let container;
   let root;
-
-  beforeEach(() => {
-    listActiveCostCodesForSelect.mockResolvedValue(MASTER);
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-  });
-
-  afterEach(() => {
-    act(() => {
-      root.unmount();
-    });
-    container.remove();
-  });
-
-  async function flush() {
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-  }
-
-  function setSearch(value) {
-    const search = container.querySelector('input[aria-label="CVR add cost code search"]');
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    setter.call(search, value);
-    search.dispatchEvent(new Event('input', { bubbles: true }));
-    search.dispatchEvent(new Event('focus', { bubbles: true }));
-    return search;
-  }
+  beforeEach(() => { listActiveCostCodesForSelect.mockResolvedValue(MASTER); container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); });
+  afterEach(() => { act(() => root.unmount()); container.remove(); vi.clearAllMocks(); });
 
   async function renderDialog(props = {}) {
-    const onSave = props.onSave || vi.fn(async () => ({ ok: true, input: { costCodeKey: '5400' } }));
-    await act(async () => {
-      root.render(
-        <CvrAddCostCodeDialog
-          open
-          periodKey="P04"
-          memberKeys={props.memberKeys || ['1110']}
-          onCancel={props.onCancel || vi.fn()}
-          onSave={onSave}
-        />
-      );
-    });
-    await flush();
+    const onSave = props.onSave || vi.fn(async () => ({ ok: true }));
+    await act(async () => root.render(<CvrAddCostCodeDialog open periodKey="SITE_START" memberKeys={props.memberKeys || ['1110']} masterCodes={props.masterCodes || MASTER} canAdd={props.canAdd !== false} onCancel={vi.fn()} onSave={onSave} />));
     return { onSave };
   }
 
-  it('loads active Master codes and excludes existing CVR members', async () => {
+  async function setValue(selector, value) {
+    const input = container.querySelector(selector);
+    const prototype = input.tagName === 'SELECT' ? window.HTMLSelectElement.prototype : window.HTMLInputElement.prototype;
+    await act(async () => { Object.getOwnPropertyDescriptor(prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('change', { bubbles: true })); });
+  }
+
+  it('lists only active unrepresented codes with hierarchy and authority guidance', async () => {
     await renderDialog();
-    expect(listActiveCostCodesForSelect).toHaveBeenCalledWith({ fresh: true });
-    expect(container.textContent).toContain('Add Cost Code');
-    expect(container.querySelector('input[placeholder="e.g. BRK01 — Brickwork"]')).toBeNull();
-    await act(async () => {
-      container.querySelector('input[aria-label="CVR add cost code search"]').focus();
-    });
-    await flush();
-    expect(document.querySelector('[data-cost-code="5400"]')).toBeTruthy();
-    expect(document.querySelector('[data-cost-code="5231"]')).toBeTruthy();
-    expect(document.querySelector('[data-cost-code="1110"]')).toBeNull();
-    expect(document.querySelector('[role="listbox"]')?.parentElement).toBe(document.body);
-    expect(document.querySelector('[role="listbox"]')?.classList).toContain(
-      'dev-cvr-add__cost-code-menu'
-    );
-    const styles = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '../styles/po-module.css'),
-      'utf8'
-    );
-    expect(styles).toMatch(
-      /\.dev-prelims-setup__cost-code-menu--portal\.dev-cvr-add__cost-code-menu\s*\{[^}]*z-index:\s*1210/s
-    );
+    expect(container.textContent).toContain('2 active Company Cost Codes are not represented');
+    expect(container.querySelector('[data-cost-code="1110"]')).toBeNull();
+    expect(container.querySelector('[data-cost-code="9999"]')).toBeNull();
+    expect(container.querySelector('[data-cost-code="5400"]').textContent).toContain('Sales & Marketing · Selling');
+    expect(container.textContent).toContain('zero authoritative baseline');
   });
 
-  it('searches by code then posts only the selected key', async () => {
-    const { onSave } = await renderDialog();
-    await act(async () => {
-      setSearch('5400');
-    });
-    await flush();
-    expect(document.querySelector('[data-cost-code="5400"]')).toBeTruthy();
-    expect(document.querySelector('[data-cost-code="5231"]')).toBeNull();
-    await act(async () => {
-      document
-        .querySelector('[data-cost-code="5400"]')
-        .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    });
-    await flush();
-    const add = [...container.querySelectorAll('button')].find((btn) =>
-      btn.textContent.includes('Add Cost Code')
-    );
-    await act(async () => {
-      add.click();
-      await Promise.resolve();
-    });
+  it('searches and filters the unrepresented population', async () => {
+    await renderDialog();
+    await setValue('[aria-label="Search unrepresented Cost Codes"]', 'clean');
+    expect(container.querySelector('[data-cost-code="5231"]')).toBeTruthy();
+    expect(container.querySelector('[data-cost-code="5400"]')).toBeNull();
+    await setValue('[aria-label="Search unrepresented Cost Codes"]', '');
+    await setValue('[aria-label="Filter by Commercial Head"]', 'Sales & Marketing');
+    expect(container.querySelector('[data-cost-code="5400"]')).toBeTruthy();
+    expect(container.querySelector('[data-cost-code="5231"]')).toBeNull();
+  });
+
+  it('uses the existing single-code command and shows server failures', async () => {
+    const onSave = vi.fn(async () => ({ ok: false, errors: ['A cost-code input already exists for this period.'] }));
+    await renderDialog({ onSave });
+    await act(async () => { container.querySelector('[data-cost-code="5400"] button').click(); await Promise.resolve(); });
     expect(onSave).toHaveBeenCalledWith({ costCodeKey: '5400' });
-    expect(onSave.mock.calls[0][0].originalBudget).toBeUndefined();
+    expect(container.textContent).toContain('already exists');
   });
 
-  it('searches by description', async () => {
-    await renderDialog();
-    await act(async () => {
-      setSearch('Selling Costs');
-    });
-    await flush();
-    expect(document.querySelector('[data-cost-code="5400"]')).toBeTruthy();
-    expect(document.querySelector('[data-cost-code="5231"]')).toBeNull();
-  });
-
-  it('shows a 409 duplicate error from the server', async () => {
-    await renderDialog({
-      memberKeys: [],
-      onSave: vi.fn(async () => ({
-        ok: false,
-        errors: ['A cost-code input already exists for this period.'],
-      })),
-    });
-    await act(async () => {
-      setSearch('5400');
-    });
-    await flush();
-    await act(async () => {
-      document
-        .querySelector('[data-cost-code="5400"]')
-        .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    });
-    await flush();
-    const add = [...container.querySelectorAll('button')].find((btn) =>
-      btn.textContent.includes('Add Cost Code')
-    );
-    await act(async () => {
-      add.click();
-      await Promise.resolve();
-    });
-    await flush();
-    expect(container.textContent).toMatch(/already exists/);
+  it('is review-only when the period is immutable', async () => {
+    await renderDialog({ canAdd: false });
+    expect(container.querySelectorAll('[data-cost-code] button')).toHaveLength(0);
   });
 });

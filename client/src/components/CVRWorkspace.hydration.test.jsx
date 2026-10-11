@@ -8,6 +8,7 @@ import { installNetworkGuard } from '../test/networkGuard';
 
 const cvrAuthorityEnabled = vi.hoisted(() => ({ value: false }));
 const listPOs = vi.hoisted(() => vi.fn());
+const listActiveCostCodesForSelect = vi.hoisted(() => vi.fn());
 
 vi.mock('../cvr/cvrPeriodAuthority', () => ({
   isCvrServerAuthorityEnabled: () => cvrAuthorityEnabled.value,
@@ -15,6 +16,10 @@ vi.mock('../cvr/cvrPeriodAuthority', () => ({
 
 vi.mock('../api', () => ({
   listPOs,
+}));
+
+vi.mock('../admin/costCodeMasterStore', () => ({
+  listActiveCostCodesForSelect,
 }));
 
 vi.mock('../api/cvrPeriods', () => import('../test/mockCvrPeriodApi'));
@@ -55,6 +60,11 @@ describe('CVRWorkspace input hydration (BL-031B)', () => {
     resetCvrPeriodApiStore();
     localStorage.clear();
     listPOs.mockResolvedValue([]);
+    listActiveCostCodesForSelect.mockResolvedValue([
+      { code: 'LAND-100', description: 'Land purchase', commercialHead: 'Land', active: true },
+      { code: '2400', description: 'Rendering', commercialHead: 'Build', active: true },
+      { code: 'OLD-1', description: 'Inactive', commercialHead: 'Build', active: false },
+    ]);
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -198,6 +208,11 @@ describe('CVRWorkspace input hydration (BL-031B)', () => {
     expect(container.textContent).toContain('£1,250,000.00');
     expect(container.textContent).not.toContain('Import Budget');
     expect([...container.querySelectorAll('button')].some((button) => button.textContent === 'Submit')).toBe(true);
+    expect(container.textContent).toContain('Cost Code Completeness (1)');
+    const submit = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Submit');
+    act(() => submit.click());
+    expect(container.textContent).toContain('1 active Company Cost Code is not represented');
+    expect(container.textContent).toContain('this does not prevent submission');
     const month = container.querySelector('input[type="month"]');
     expect(month.value).toBe('2027-03');
     act(() => {
