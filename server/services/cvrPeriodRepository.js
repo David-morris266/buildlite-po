@@ -31,10 +31,21 @@ const { stampMovementExplanations } = require('./cvrMovementExplanations');
 const {
   REPORTING_PERIOD_STATES,
   classifyReportingPeriod,
+  reportingMonthAfterPrevious,
+  reportingMonthForInstant,
+  reportingMonthOnOrAfterApproval,
 } = require('./cvrReportingPeriod');
 
 function isUniqueViolation(err) {
   return err && err.code === "23505";
+}
+
+function yearMonth(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}`;
+  }
+  const match = String(value || '').match(/^(\d{4})-(\d{2})/);
+  return match ? `${match[1]}-${match[2]}` : null;
 }
 
 function provisionalActor(body = {}) {
@@ -326,6 +337,21 @@ async function createCvrPeriod(clientId, developmentId, body = {}, {
       };
     }
 
+    const precedingMonthly = [...existing]
+      .filter((row) => (row.period_type || CVR_PERIOD_TYPES.monthly) === CVR_PERIOD_TYPES.monthly && isCvrPeriodLocked(row.status))
+      .sort((left, right) => String(right.period_key).localeCompare(String(left.period_key), undefined, { numeric: true }))[0];
+    const precedingMonth = yearMonth(precedingMonthly?.reporting_month);
+    const requestedMonth = yearMonth(validated.value.reportingMonth);
+    if (precedingMonth && !reportingMonthAfterPrevious(requestedMonth, precedingMonth)) {
+      await dbClient.query("ROLLBACK");
+      return {
+        ok: false,
+        status: 409,
+        code: 'CVR_REPORTING_PERIOD_NOT_AFTER_PREVIOUS',
+        message: `Reporting Period must be later than the preceding locked CVR (${precedingMonth}).`,
+      };
+    }
+
     const periodKey = validated.value.periodKey || nextPeriodKey(existing.map((row) => row.period_key));
     const latestMonthly = [...existing].reverse().find((item) => (item.period_type || CVR_PERIOD_TYPES.monthly) === CVR_PERIOD_TYPES.monthly);
     const continuesSiteStartBudget = latestMonthly?.budget_source === 'site_start_budget' && latestMonthly.site_start_source_snapshot_id;
@@ -505,6 +531,11 @@ async function createFirstCvrFromSiteStart(clientId, developmentId, body = {}, o
     const siteStart = (await dbClient.query("SELECT * FROM cvr_periods WHERE client_id=$1 AND development_id=$2 AND period_type='site_start' FOR UPDATE",[clientId,developmentId])).rows[0];
     if (!siteStart || siteStart.status !== CVR_PERIOD_STATUSES.locked) { await dbClient.query('ROLLBACK'); return {ok:false,status:409,message:'A locked Site Start is required before P01 can be created.'}; }
     if (Number(siteStart.version) !== expectedVersion) { await dbClient.query('ROLLBACK'); return {ok:false,status:409,message:'Site Start version conflict.',period:await hydratePeriod(clientId,siteStart,dbClient)}; }
+    const approvalMonth = reportingMonthForInstant(siteStart.approved_at);
+    if (!approvalMonth || !reportingMonthOnOrAfterApproval(reportingMonth, siteStart.approved_at)) {
+      await dbClient.query('ROLLBACK');
+      return {ok:false,status:409,code:'CVR_REPORTING_PERIOD_BEFORE_SITE_START_APPROVAL',message:`P01 Reporting Period must be ${approvalMonth || 'the Site Start approval month'} or later, after that month has closed.`};
+    }
     const milestone = (await dbClient.query(`SELECT * FROM development_budget_milestones WHERE client_id=$1 AND development_id=$2 AND authority_version=2 AND site_start_period_id=$3`,[clientId,developmentId,siteStart.id])).rows[0];
     if (!milestone) { await dbClient.query('ROLLBACK'); return {ok:false,status:409,message:'The Approved Site Start Budget milestone is unavailable.'}; }
     await require('./cvrSiteStartBudgetSource').authority(dbClient,clientId,developmentId,milestone.site_start_snapshot_id);

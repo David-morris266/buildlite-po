@@ -192,3 +192,11 @@ Owner-review the complete SS-1 through SS-5 tranche locally, then bank and relea
 - Locked Site Start Summary exposes `Create first CVR (P01)` and calls only the existing dedicated Site Start cutover adapter after explicit Reporting Month selection. Ordinary monthly periods retain the established Create Next Period authority.
 - Site Start presentation uses the friendly `Site Start` identity and `Forecast as at` date authority. Draft and Submitted periods are labelled `Working Site Start Forecast`; Locked periods are labelled `Approved Site Start Budget`, retain Submitted/Approved/approver evidence, and no longer show active Working-EFC guidance.
 - No server endpoint, financial formula, persistence authority, schema, migration or RBAC rule changed. Server optimistic-version, duplicate cutover and canonical milestone/snapshot protections remain authoritative.
+
+## SS-UAT-09 CVR reporting chronology
+
+- P01 remains a dedicated Site Start cutover. Its Reporting Period must be closed and its calendar month must contain or follow the precise persisted Site Start `approved_at` timestamp; Forecast-as-at and the milestone's derived effective date are not chronology substitutes.
+- P02 onward must use a Reporting Period strictly later than the preceding locked monthly CVR. Gaps are deliberate and supported: quarterly and irregular reporting do not manufacture intermediate P-numbers, and movement remains anchored to the previous locked snapshot.
+- The shared reporting-month dialogue applies the same minimum-month boundary, suggests the earliest eligible month only once it has closed, and explains when no eligible closed month yet exists. Server validation remains final authority.
+- Historic legacy CVRs with no persisted reporting month retain their established compatibility path. No snapshot, financial formula, budget authority, absorbed adjustment, commitment, schema, migration or RBAC behavior changed.
+- Release-gate note: the explicit established-legacy continuation regression passes. Five other cases in `cvrDevelopmentBudgetIntegration.test.js` remain stale new-development readiness fixtures under the governed Site Start lifecycle; they fail before chronology handling, were not weakened or concealed in SS-UAT-09, and require a separately bounded fixture-debt correction.

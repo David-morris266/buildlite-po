@@ -7,6 +7,7 @@ import {
   buildCreateNextReportingMonthPrompt,
   classifyReportingPeriod,
   formatReportingPeriod,
+  earliestReportingMonthAfter,
   isValidReportingYearMonth,
   previousClosedCalendarMonth,
   reportingMonthForNextCvrPeriod,
@@ -92,8 +93,27 @@ describe('closed Reporting Period semantics', () => {
     expect(buildCreateNextReportingMonthPrompt({
       sourcePeriod: { reportingMonth: '2026-09' },
       currentDate: now,
-    })).toMatchObject({ suggestedMonth: '2026-10', reportingPeriodState: 'current' });
+    })).toMatchObject({ suggestedMonth: null, minimumMonth: '2026-10', reportingPeriodState: null });
     expect(reportingMonthForNextCvrPeriod({ reportingMonth: '2026-12' })).toBe('2027-01');
+  });
+
+  it('uses Site Start approval month as P01 boundary and suggests it only after close', () => {
+    const sourcePeriod = { periodType: 'site_start', approvedAt: '2026-10-11T15:30:00.000Z' };
+    expect(earliestReportingMonthAfter(sourcePeriod)).toBe('2026-10');
+    expect(buildCreateNextReportingMonthPrompt({ sourcePeriod, currentDate: now })).toMatchObject({
+      suggestedMonth: null,
+      minimumMonth: '2026-10',
+      chronologySource: 'site_start_approval',
+    });
+    expect(buildCreateNextReportingMonthPrompt({ sourcePeriod, currentDate: new Date('2026-11-02T12:00:00Z') })).toMatchObject({
+      suggestedMonth: '2026-10',
+      reportingPeriodState: 'closed',
+    });
+  });
+
+  it('allows an explicitly selected quarterly or irregular month beyond the minimum', () => {
+    expect(earliestReportingMonthAfter({ periodType: 'monthly_cvr', reportingMonth: '2026-09' })).toBe('2026-10');
+    expect(classifyReportingPeriod('2026-12', new Date('2027-02-01T12:00:00Z'))).toBe('closed');
   });
 
   it('formats Reporting Period for people and never infers a missing historic month', () => {

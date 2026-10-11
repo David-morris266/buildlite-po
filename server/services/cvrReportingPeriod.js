@@ -27,6 +27,12 @@ function currentYearMonth(currentDate = new Date()) {
   };
 }
 
+function reportingMonthForInstant(value) {
+  const current = currentYearMonth(value);
+  if (!current) return null;
+  return `${current.year}-${String(current.month).padStart(2, '0')}`;
+}
+
 function classifyReportingPeriod(reportingMonth, currentDate = new Date()) {
   const reporting = yearMonthParts(reportingMonth);
   const current = currentYearMonth(currentDate);
@@ -38,8 +44,25 @@ function classifyReportingPeriod(reportingMonth, currentDate = new Date()) {
   return REPORTING_PERIOD_STATES.FUTURE;
 }
 
+function reportingMonthOnOrAfterApproval(reportingMonth, approvedAt) {
+  const reporting = yearMonthParts(reportingMonth);
+  const approval = currentYearMonth(approvedAt);
+  if (!reporting || !approval) return false;
+  return reporting.year * 12 + reporting.month >= approval.year * 12 + approval.month;
+}
+
+function reportingMonthAfterPrevious(reportingMonth, previousReportingMonth) {
+  const reporting = yearMonthParts(reportingMonth);
+  const previous = yearMonthParts(previousReportingMonth);
+  if (!reporting || !previous) return false;
+  return reporting.year * 12 + reporting.month > previous.year * 12 + previous.month;
+}
+
 module.exports = {
   REPORTING_PERIOD_STATES,
   UK_TIME_ZONE,
   classifyReportingPeriod,
+  reportingMonthAfterPrevious,
+  reportingMonthOnOrAfterApproval,
+  reportingMonthForInstant,
 };

@@ -129,4 +129,21 @@ describe('CvrReportingMonthDialog (BL-033C.1)', () => {
     });
     expect(dialog.textContent).toMatch(/in the future/i);
   });
+
+  it('blocks a closed month before the Site Start approval boundary and allows a later closed month', async () => {
+    const onConfirm = vi.fn();
+    await act(async () => {
+      root.render(<CvrReportingMonthDialog open nextPeriodKey="P01" suggestedMonth="" minimumMonth="2026-10" chronologySource="site_start_approval" currentDate={new Date('2026-12-02T12:00:00Z')} onCancel={() => {}} onConfirm={onConfirm} />);
+    });
+    const dialog = document.body.querySelector('[role="dialog"]');
+    const input = dialog.querySelector('input[type="month"]');
+    await act(async () => setInputValue(input, '2026-09'));
+    expect(dialog.textContent).toMatch(/cannot precede the approved Site Start/i);
+    const create = [...dialog.querySelectorAll('button')].find((item) => /Create P01/i.test(item.textContent));
+    expect(create.disabled).toBe(true);
+    await act(async () => setInputValue(input, '2026-11'));
+    expect(create.disabled).toBe(false);
+    await act(async () => create.click());
+    expect(onConfirm).toHaveBeenCalledWith('2026-11');
+  });
 });

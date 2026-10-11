@@ -44,5 +44,7 @@ export function resolveCreateNextReportingMonthAction(developmentId, { currentDa
     requiresExplicitSelection: prompt.requiresExplicitSelection,
     sourcePeriodKey: sourcePeriod?.periodKey || null,
     reportingPeriodState: prompt.reportingPeriodState,
+    minimumMonth: prompt.minimumMonth,
+    chronologySource: prompt.chronologySource,
   };
 }

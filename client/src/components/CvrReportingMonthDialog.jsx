@@ -13,6 +13,8 @@ export default function CvrReportingMonthDialog({
   suggestedMonth = '',
   busy = false,
   currentDate,
+  minimumMonth = null,
+  chronologySource = null,
   onCancel,
   onConfirm,
 }) {
@@ -30,16 +32,26 @@ export default function CvrReportingMonthDialog({
   const valid = isValidReportingYearMonth(value);
   const reportingPeriodState = valid ? classifyReportingPeriod(value, currentDate) : null;
   const closed = reportingPeriodState === REPORTING_PERIOD_STATES.CLOSED;
+  const chronologyValid = !minimumMonth || value >= minimumMonth;
   const createLabel = nextPeriodKey ? `Create ${nextPeriodKey}` : 'Create period';
-  const availabilityMessage = reportingPeriodState === REPORTING_PERIOD_STATES.CURRENT
+  const chronologyMessage = valid && !chronologyValid
+    ? chronologySource === 'site_start_approval'
+      ? `Select ${formatReportingPeriod(minimumMonth)} or a later closed month. P01 cannot precede the approved Site Start benchmark.`
+      : `Select ${formatReportingPeriod(minimumMonth)} or a later closed month. Each CVR must follow the preceding locked CVR.`
+    : '';
+  const minimumState = minimumMonth ? classifyReportingPeriod(minimumMonth, currentDate) : null;
+  const noEligibleClosedMonthMessage = !value && minimumMonth && minimumState !== REPORTING_PERIOD_STATES.CLOSED
+    ? `${formatReportingPeriod(minimumMonth)} is the earliest eligible Reporting Period. It must close before this CVR can be created.`
+    : '';
+  const availabilityMessage = chronologyMessage || (reportingPeriodState === REPORTING_PERIOD_STATES.CURRENT
     ? `${formatReportingPeriod(value)} is still the current open month. Its CVR can be created after month end.`
     : reportingPeriodState === REPORTING_PERIOD_STATES.FUTURE
       ? `${formatReportingPeriod(value)} is in the future. Select a closed commercial month.`
-      : '';
+      : '');
 
   function handleConfirm() {
     if (busy) return;
-    if (!valid || !closed) {
+    if (!valid || !closed || !chronologyValid) {
       setError(availabilityMessage || 'Select a closed Reporting Period before creating the CVR.');
       return;
     }
@@ -74,6 +86,7 @@ export default function CvrReportingMonthDialog({
           </p>
         ) : null}
         {!error && availabilityMessage ? <p className="dev-cvr-add__error" role="status">{availabilityMessage}</p> : null}
+        {!error && !availabilityMessage && noEligibleClosedMonthMessage ? <p className="dev-cvr-add__error" role="status">{noEligibleClosedMonthMessage}</p> : null}
         <div className="dev-cvr-add__actions modal-actions">
           <button
             type="button"
@@ -87,7 +100,7 @@ export default function CvrReportingMonthDialog({
             type="button"
             className="po-btn-primary"
             onClick={handleConfirm}
-            disabled={busy || !valid || !closed}
+            disabled={busy || !valid || !closed || !chronologyValid}
           >
             {createLabel}
           </button>

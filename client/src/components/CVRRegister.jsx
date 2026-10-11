@@ -281,6 +281,8 @@ export default function CVRRegister({
       nextPeriodKey={reportingMonthPrompt?.nextPeriodKey || ''}
       suggestedMonth={reportingMonthPrompt?.suggestedMonth || ''}
       busy={reportingMonthBusy}
+      minimumMonth={reportingMonthPrompt?.minimumMonth || null}
+      chronologySource={reportingMonthPrompt?.chronologySource || null}
       onCancel={() => {
         if (reportingMonthBusy) return;
         setReportingMonthPrompt(null);

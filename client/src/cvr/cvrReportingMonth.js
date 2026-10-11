@@ -68,12 +68,23 @@ export function reportingMonthForNextCvrPeriod(sourcePeriod, explicitReportingMo
   return suggestNextReportingMonth(sourcePeriod?.reportingMonth);
 }
 
+export function earliestReportingMonthAfter(sourcePeriod) {
+  if (!sourcePeriod) return null;
+  if (sourcePeriod.periodType === 'site_start') return toYearMonth(sourcePeriod.approvedAt);
+  return suggestNextReportingMonth(sourcePeriod.reportingMonth);
+}
+
 export function buildCreateNextReportingMonthPrompt({ periods = [], sourcePeriod = null, currentDate } = {}) {
+  const minimumMonth = earliestReportingMonthAfter(sourcePeriod);
   const suggestedMonth = sourcePeriod
-    ? reportingMonthForNextCvrPeriod(sourcePeriod)
+    ? minimumMonth && classifyReportingPeriod(minimumMonth, currentDate) === REPORTING_PERIOD_STATES.CLOSED
+      ? minimumMonth
+      : null
     : previousClosedCalendarMonth(currentDate);
   return {
     suggestedMonth,
+    minimumMonth,
+    chronologySource: sourcePeriod?.periodType === 'site_start' ? 'site_start_approval' : sourcePeriod ? 'previous_cvr' : null,
     nextPeriodKey: formatNextPeriodKey((periods || []).map((period) => period.periodKey)),
     requiresExplicitSelection: !suggestedMonth,
     reportingPeriodState: classifyReportingPeriod(suggestedMonth, currentDate),

@@ -216,7 +216,7 @@ describe('Create Next Period navigation (BL-031F)', () => {
       version: 3,
       snapshot: buildServerCvrSnapshotFixture({ developmentId: DEV.id, periodId: PERIOD_ID }),
       snapshotDeferred: false,
-      approvedAt: '2026-10-10T12:00:00.000Z',
+      approvedAt: '2026-09-10T12:00:00.000Z',
     }));
     const onBackToRegister = vi.fn();
     await act(async () => {
