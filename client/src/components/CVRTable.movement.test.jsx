@@ -15,13 +15,14 @@ afterEach(() => { if (root) act(() => root.unmount()); container?.remove(); root
 const row = {
   id: 'r1', costCodeKey: '4120', costCodeLabel: '4120 — Brickwork', description: 'Brickwork',
   currentBudget: 120, currentBudgetLabel: '£120.00', finalForecastLabel: '£125.00', varianceLabel: '−£5.00', varianceState: 'negative',
-  currentCostLabel: '£45.00', uncommittedForecastLabel: '£20.00', changeExposureLabel: '£15.00', commercialAdjustmentLabel: '+£10.00', costToCompleteLabel: '£80.00',
+  committedLabel: '£100.00', currentCostLabel: '£45.00', uncommittedForecastLabel: '£20.00', changeExposureLabel: '£15.00', commercialAdjustmentLabel: '+£10.00', costToCompleteLabel: '£80.00',
 };
-const totals = { currentBudgetLabel: '£120.00', currentCostLabel: '£45.00', costToCompleteLabel: '£80.00', uncommittedForecastLabel: '£20.00', changeExposureLabel: '£15.00', finalForecastLabel: '£125.00', varianceLabel: '−£5.00', varianceState: 'negative' };
+const totals = { currentBudgetLabel: '£120.00', committedLabel: '£100.00', currentCostLabel: '£45.00', costToCompleteLabel: '£80.00', uncommittedForecastLabel: '£20.00', changeExposureLabel: '£15.00', finalForecastLabel: '£125.00', varianceLabel: '−£5.00', varianceState: 'negative' };
 const comparison = { available: true, totalMovementLabel: '+£25.00', rows: [{ costCodeKey: '4120', previousForecast: 100, previousForecastLabel: '£100.00', currentForecastLabel: '£125.00', movement: 25, movementLabel: '+£25.00', hierarchyChanged: false }] };
+const effectiveColumnCount = (cells) => [...cells].reduce((count, cell) => count + Number(cell.colSpan || 1), 0);
 
 describe('CVR Worksheet commercial review presentation', () => {
-  it('uses a compact ten-column width contract without a forced KPI scrollbar', () => {
+  it('uses the balanced worksheet width contract without a forced KPI scrollbar', () => {
     const styles = readFileSync(join(cwd(), 'src/styles/po-module.css'), 'utf8');
     expect(styles).toMatch(/\.dev-cvr__table--balanced\s*{[^}]*min-width:\s*1080px/s);
     expect(styles).not.toMatch(/\.dev-cvr__table--balanced\s*{[^}]*min-width:\s*1180px/s);
@@ -34,10 +35,15 @@ describe('CVR Worksheet commercial review presentation', () => {
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
     act(() => root.render(<CVRTable rows={[row]} totals={totals} comparison={comparison} onRowSelect={vi.fn()} readOnly />));
     expect([...container.querySelectorAll('thead th')].map((node) => node.textContent)).toEqual([
-      'Cost Code', 'Description', 'Budget', 'Current Cost', 'CTC', 'Uncommitted', 'Change Exposure', 'Proj. Adj.', 'EFC', 'Movement', 'Variance',
+      'Cost Code', 'Description', 'Budget', 'Committed', 'Current Cost', 'CTC', 'Uncommitted', 'Change Exposure', 'Proj. Adj.', 'EFC', 'Movement', 'Variance',
     ]);
+    expect(container.querySelector('thead th[title="Total recognised approved net PO and contract value. Not the outstanding balance after certification or payment."]')).not.toBeNull();
     const cells = [...container.querySelectorAll('tbody td')].map((node) => node.textContent);
-    expect(cells.slice(2)).toEqual(['£120.00', '£45.00', '£80.00', '£20.00', '£15.00', '+£10.00', '£125.00', '+£25.00', '−£5.00']);
+    expect(cells.slice(2)).toEqual(['£120.00', '£100.00', '£45.00', '£80.00', '£20.00', '£15.00', '+£10.00', '£125.00', '+£25.00', '−£5.00']);
+    expect([...container.querySelectorAll('tfoot td')].map((node) => node.textContent)).toContain('£100.00');
+    expect(effectiveColumnCount(container.querySelectorAll('thead th'))).toBe(12);
+    expect(effectiveColumnCount(container.querySelectorAll('tbody td'))).toBe(12);
+    expect(effectiveColumnCount(container.querySelectorAll('tfoot td'))).toBe(12);
     expect(container.textContent).not.toContain('Previous CVR');
     expect(container.textContent).not.toContain('View detail');
     const action = container.querySelector('.dev-cvr__row-link');
@@ -47,7 +53,13 @@ describe('CVR Worksheet commercial review presentation', () => {
   it('keeps first-period Movement unavailable', () => {
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
     act(() => root.render(<CVRTable rows={[row]} totals={totals} comparison={{ available: false, rows: [] }} readOnly />));
-    expect([...container.querySelectorAll('tbody td')][9].textContent).toBe('—');
+    expect([...container.querySelectorAll('tbody td')][10].textContent).toBe('—');
+  });
+
+  it('keeps the empty state aligned to the complete worksheet', () => {
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    act(() => root.render(<CVRTable rows={[]} totals={totals} comparison={{ available: false, rows: [] }} readOnly />));
+    expect(container.querySelector('.po-data-table__empty').colSpan).toBe(12);
   });
 
   it('selects a middle row without changing the Cost Code population', () => {
@@ -58,8 +70,8 @@ describe('CVR Worksheet commercial review presentation', () => {
     }
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
     act(() => root.render(<Harness />));
-    expect(container.querySelectorAll('colgroup col')).toHaveLength(11);
-    expect(container.querySelectorAll('col.dev-cvr__column-money')).toHaveLength(9);
+    expect(container.querySelectorAll('colgroup col')).toHaveLength(12);
+    expect(container.querySelectorAll('col.dev-cvr__column-money')).toHaveLength(10);
     const button3640 = [...container.querySelectorAll('.dev-cvr__row-link')].find((button) => button.textContent === '3640');
     act(() => button3640.click());
     expect(container.querySelectorAll('tbody > tr')).toHaveLength(5);

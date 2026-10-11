@@ -75,9 +75,11 @@ describe('CVRTable Storyboard selection contract', () => {
       (header) => header.textContent.trim()
     );
     expect(headers).toEqual([
-      'Cost Code', 'Description', 'Budget', 'Current Cost', 'CTC', 'Uncommitted',
+      'Cost Code', 'Description', 'Budget', 'Committed', 'Current Cost', 'CTC', 'Uncommitted',
       'Change Exposure', 'Proj. Adj.', 'EFC', 'Movement', 'Variance',
     ]);
+    expect(container.querySelector('tbody tr').children[3].textContent).toBe('£50,250.00');
+    expect(container.querySelector('tfoot tr').children[2].textContent).toBe('£2,364,873.00');
     const action = container.querySelector('.dev-cvr__row-link');
     act(() => action.click());
     expect(onRowSelect).toHaveBeenCalledOnce();

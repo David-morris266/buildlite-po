@@ -209,3 +209,11 @@ Owner-review the complete SS-1 through SS-5 tranche locally, then bank and relea
 - Draft Site Start submission displays a concise non-blocking reminder while active Master Cost Codes remain unrepresented. Monthly CVRs retain optional access without an acknowledgement state or recurring submission gate.
 - The existing membership route now explicitly requires `cvr.edit`. QS, Commercial Manager and Commercial Director roles already hold both `cvr.edit` and the applicable Site Start lifecycle permissions.
 - No schema, migration, persisted reviewed/excluded state or automatic financial rows were introduced. Owner UAT should verify the count against an Ashfield-shaped period, exercise Head/search filtering, add one genuine zero-baseline code and confirm the count refreshes before testing its governed Projected Adjustment.
+
+## CVR-UX-01 Cost Code commitment visibility
+
+- The CVR Worksheet now displays the existing server-authoritative `Committed` value between Budget and Current Cost for each Cost Code and in the worksheet total.
+- The column defines Committed as total recognised approved net PO and contract value, not an outstanding balance after certification or payment.
+- Live Draft rows and immutable locked Site Start/monthly snapshot rows use their existing hydrated `committedLabel`; no client calculation or new commitment authority was introduced.
+- Existing horizontal scrolling, sticky Cost Code/Description columns and monetary alignment remain unchanged. Owner visual UAT should confirm heading readability and scrolling at normal desktop widths.
+- PO/package recognition, certification, ledger actuals, recognised obligation, Uncommitted, CTC, EFC, movement, workflow-owned adjustments, Commercial Head aggregation and snapshot authority are unchanged.
