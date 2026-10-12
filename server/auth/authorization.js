@@ -70,7 +70,8 @@ async function recordAuthorization(auth,permission,req) {
   }
 }
 function requirePermission(permission) { return async (req,res,next)=>{ try { assertPermission(req.buildliteAuth,permission); await recordAuthorization(req.buildliteAuth,permission,req); req.requiredPermission=permission; next(); } catch(error) { res.status(error.status||500).json({message:error.message,code:error.code}); } }; }
+function requireAnyPermission(permissions) { return async (req,res,next)=>{ try { const matched=(permissions||[]).find(permission=>hasPermission(req.buildliteAuth,permission)); if(!matched)throw forbidden(`Permission required: ${(permissions||[]).join(' or ')}`); await recordAuthorization(req.buildliteAuth,matched,req); req.requiredPermission=matched; next(); } catch(error) { res.status(error.status||500).json({message:error.message,code:error.code}); } }; }
 function requireAuthenticated(req,res,next) { if(!req.buildliteAuth)return res.status(401).json({message:'Authentication required'}); next(); }
 function actorFromAuth(auth, permission = null) { if(!auth?.userId)throw unauthenticated(); return { actor:auth.displayName, actorEnvelope:{userId:auth.userId,displayName:auth.displayName,membershipId:auth.membershipId,roleKey:auth.roleKey,permission:permission||null,providerUserId:auth.providerUserId} }; }
 
-module.exports={resolveBuildLitePrincipal,resolvePlatformBootstrapPrincipal,hasPermission,assertPermission,assertPlatformPermission,platformPermissions,isPlatformOperator,assertServicePermission,requirePermission,requireAuthenticated,actorFromAuth,unauthenticated,forbidden};
+module.exports={resolveBuildLitePrincipal,resolvePlatformBootstrapPrincipal,hasPermission,assertPermission,assertPlatformPermission,platformPermissions,isPlatformOperator,assertServicePermission,requirePermission,requireAnyPermission,requireAuthenticated,actorFromAuth,unauthenticated,forbidden};

@@ -79,6 +79,24 @@ test('critical financial route is denied before domain execution when permission
   assert.match(response.body.message, /po\.approve/);
 });
 
+test('PO, supplier and Commercial Event import mutations deny before domain execution', async () => {
+  const app = createApp({authAdapter:createTestAuthAdapter(principal)});
+  const attempts = [
+    ['post', '/api/po', PERMISSIONS.PO_CREATE],
+    ['put', '/api/po/M001', PERMISSIONS.PO_EDIT],
+    ['post', '/api/po/M001/request-approval', PERMISSIONS.PO_SUBMIT],
+    ['delete', '/api/po/M001', PERMISSIONS.PO_DELETE_DRAFT],
+    ['post', '/api/po/suppliers', PERMISSIONS.PO_CREATE],
+    ['put', '/api/po/suppliers/supplier-1', PERMISSIONS.PO_EDIT],
+    ['post', '/api/commercial-events/import', PERMISSIONS.CE_APPROVE],
+  ];
+  for (const [method, route, permission] of attempts) {
+    const response = await request(app)[method](route).send({name:'Forged',status:'Approved'});
+    assert.equal(response.status, 403, `${method.toUpperCase()} ${route}`);
+    assert.match(response.body.message, new RegExp(permission.replace('.', '\\.')));
+  }
+});
+
 test('certificate submit requires its permission rather than a role name', async () => {
   const app = createApp({authAdapter:createTestAuthAdapter({...principal,roleKey:'commercial_director',roleName:'Commercial Director',permissions:[]})});
   const response = await request(app).post('/api/packages/00000000-0000-0000-0000-000000000010/certificates/00000000-0000-0000-0000-000000000011/submit').send({version:1,actor:'Forged'});
@@ -111,4 +129,9 @@ test('critical-route manifest protects certificate Return to Draft with certific
   assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/packages/:packageId/certificates/:certificateId/reject'], PERMISSIONS.CERTIFICATE_LOCK);
   assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/subcontract-terms/purchase-orders/:poNumber/confirm-legacy'], PERMISSIONS.TERMS_ASSIGN_OVERRIDE);
   assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/commercial-events/:id/reject'], PERMISSIONS.CE_APPROVE);
+  assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/po'], PERMISSIONS.PO_CREATE);
+  assert.equal(CRITICAL_ROUTE_PERMISSIONS['PUT /api/po/:poNumber'], PERMISSIONS.PO_EDIT);
+  assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/po/:poNumber/request-approval'], PERMISSIONS.PO_SUBMIT);
+  assert.equal(CRITICAL_ROUTE_PERMISSIONS['DELETE /api/po/:poNumber'], PERMISSIONS.PO_DELETE_DRAFT);
+  assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/commercial-events/import'], PERMISSIONS.CE_APPROVE);
 });

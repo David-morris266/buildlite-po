@@ -2,7 +2,7 @@
  * BL-027B.1 — Materialise server Package identity from approved subcontract POs.
  */
 
-const { query } = require("../db");
+const { query, pool } = require("../db");
 const {
   extractEligiblePoForPackage,
   getPoDevelopmentIdFromPayload,
@@ -231,7 +231,7 @@ async function materialisePackagesFromApprovedPos(clientId, options = {}) {
   };
 }
 
-async function materialisePackageFromPoNumber(clientId, poNumber, options = {}) {
+async function materialisePackageFromPoNumberInTransaction(clientId, poNumber, options = {}) {
   const { actor = null, dbClient = null, requirePackage = false } = options;
 
   const { rows } = await runQuery(
@@ -278,6 +278,16 @@ async function materialisePackageFromPoNumber(clientId, poNumber, options = {}) 
     };
   }
 
+  // Package membership is rebuilt from the complete eligible PO set. Serialize
+  // that read/rebuild boundary so concurrent approvals for the same commercial
+  // package cannot replace one another with stale membership lists.
+  if (dbClient) {
+    await dbClient.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+      [packageMaterialisationLockKey(clientId, seed.orderKey)]
+    );
+  }
+
   const pos = await listPurchaseOrdersForClient(clientId, dbClient);
   const eligible = [];
 
@@ -315,10 +325,37 @@ async function materialisePackageFromPoNumber(clientId, poNumber, options = {}) 
   };
 }
 
+async function materialisePackageFromPoNumber(clientId, poNumber, options = {}) {
+  if (options.dbClient) {
+    return materialisePackageFromPoNumberInTransaction(clientId, poNumber, options);
+  }
+
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query("BEGIN");
+    const result = await materialisePackageFromPoNumberInTransaction(clientId, poNumber, {
+      ...options,
+      dbClient,
+    });
+    await dbClient.query("COMMIT");
+    return result;
+  } catch (error) {
+    try { await dbClient.query("ROLLBACK"); } catch (_) { /* original error wins */ }
+    throw error;
+  } finally {
+    dbClient.release();
+  }
+}
+
+function packageMaterialisationLockKey(clientId, orderKey) {
+  return `package-materialisation:${clientId}:${orderKey}`;
+}
+
 module.exports = {
   materialisePackagesFromApprovedPos,
   materialisePackageFromPoNumber,
   listPurchaseOrdersForClient,
   buildEligiblePoRecord,
   groupEligiblePos,
+  packageMaterialisationLockKey,
 };

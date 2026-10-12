@@ -5,6 +5,7 @@
 const express = require("express");
 const { isDbConfigured } = require("../db");
 const { getActiveClient } = require("../services/activeClient");
+const { isProduction } = require('../utils/env');
 const {
   listCommercialEvents,
   findCommercialEventById,
@@ -59,8 +60,9 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/import", async (req, res) => {
+router.post("/import", requirePermission(PERMISSIONS.CE_APPROVE), async (req, res) => {
   try {
+    if(isProduction() || process.env.BUILDLITE_ENABLE_CE_IMPORT !== '1')return res.status(404).json({message:'Not found'});
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
     }

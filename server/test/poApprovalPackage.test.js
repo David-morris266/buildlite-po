@@ -13,6 +13,7 @@ const { PERMISSIONS } = require('../auth/permissions');
 const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { buildSubcontractOrderKey } = require("../services/packageKey");
+const { packageMaterialisationLockKey } = require("../services/packageMaterialisation");
 
 const app = createApp();
 const MIGRATION_004 = path.join(__dirname, "..", "migrations", "004_developments.sql");
@@ -197,6 +198,23 @@ async function countPackages(clientId) {
   return rows[0].count;
 }
 
+async function waitForAdvisoryWaiters(minimum, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const result = await pool.query(
+      `SELECT COUNT(*)::int AS count
+       FROM pg_stat_activity
+       WHERE datname = current_database()
+         AND wait_event_type = 'Lock'
+         AND wait_event = 'advisory'
+         AND query LIKE '%pg_advisory_xact_lock%'`
+    );
+    if (result.rows[0].count >= minimum) return result.rows[0].count;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  return 0;
+}
+
 if (!isDbConfigured()) {
   test("po approval package tests skipped — TEST_DATABASE_URL not configured", () => {
     assert.ok(true);
@@ -308,6 +326,48 @@ if (!isDbConfigured()) {
       assert.deepEqual(pkgAfterSecond.poNumbers.sort(), [po1, po2].sort());
     });
 
+    await t.test("concurrent approval of different POs serializes package membership before reread", async () => {
+      const active = await getActiveClient();
+      const development = await createDevelopment(active, { developmentName: "Concurrent Package Dev" });
+      const supplierId = `sup-package-race-${Date.now()}`;
+      await createApprovedSupplier(active.id, supplierId, "Concurrent Package Supplier");
+      const po1 = `S-PACKAGE-RACE-A-${Date.now()}`;
+      const po2 = `S-PACKAGE-RACE-B-${Date.now()}`;
+      const orderKey = buildSubcontractOrderKey(development.id, supplierId, "5218");
+      await savePo(active.id, buildPendingPo({ poNumber: po1, development, supplierId }));
+      await savePo(active.id, buildPendingPo({ poNumber: po2, development, supplierId }));
+
+      const blocker = await pool.connect();
+      try {
+        await blocker.query("BEGIN");
+        await blocker.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+          [packageMaterialisationLockKey(active.id, orderKey)]
+        );
+        const first = approvePo(po1);
+        const second = approvePo(po2);
+        assert.ok(await waitForAdvisoryWaiters(2), "both independent approval transactions reached the package lock");
+        await blocker.query("COMMIT");
+        const [firstResult, secondResult] = await Promise.all([first, second]);
+        assert.equal(firstResult.status, 200);
+        assert.equal(secondResult.status, 200);
+      } finally {
+        try { await blocker.query("ROLLBACK"); } catch (_) { /* already committed */ }
+        blocker.release();
+      }
+
+      const pkg = await getPackageByOrderKey(active.id, orderKey);
+      assert.ok(pkg);
+      testPackageIds.push(pkg.id);
+      assert.deepEqual(pkg.poNumbers.sort(), [po1, po2].sort());
+      const bindings = await pool.query(
+        `SELECT po_number FROM purchase_order_terms_bindings
+         WHERE client_id=$1 AND po_number=ANY($2::text[]) ORDER BY po_number`,
+        [active.id, [po1, po2]]
+      );
+      assert.deepEqual(bindings.rows.map(row => row.po_number), [po1, po2].sort());
+    });
+
     await t.test("different supplier or cost code or development creates different Package", async () => {
       const active = await getActiveClient();
       const devA = await createDevelopment(active, { developmentName: "Dev A" });
@@ -397,7 +457,11 @@ if (!isDbConfigured()) {
       );
       await savePo(
         active.id,
-        buildPendingPo({ poNumber: pendingPoNumber, development, supplierId })
+        {
+          ...buildPendingPo({ poNumber: pendingPoNumber, development, supplierId }),
+          status: "Draft",
+          approval: { status: "Draft", history: [] },
+        }
       );
 
       const beforeCount = await countPackages(active.id);
@@ -514,10 +578,16 @@ if (!isDbConfigured()) {
       trackSupplier(supplierId);
 
       const poNumber = `M-PEND-SUP-${Date.now()}`;
+      const approvalPoNumber = `M-PEND-SUP-APPROVE-${Date.now()}`;
       await savePo(
         active.id,
-        buildPendingPo({ poNumber, development, supplierId, type: "M" })
+        {
+          ...buildPendingPo({ poNumber, development, supplierId, type: "M" }),
+          status: "Draft",
+          approval: { status: "Draft", history: [] },
+        }
       );
+      await savePo(active.id, buildPendingPo({ poNumber: approvalPoNumber, development, supplierId, type: "M" }));
 
       const requestRes = await request(app)
         .post(`/api/po/${poNumber}/request-approval`)
@@ -525,7 +595,7 @@ if (!isDbConfigured()) {
       assert.equal(requestRes.status, 400);
       assert.match(requestRes.body.message, /supplier must be approved/i);
 
-      const res = await approvePo(poNumber);
+      const res = await approvePo(approvalPoNumber);
       assert.equal(res.status, 400);
       assert.match(res.body.message, /supplier is pending approval/i);
     });
@@ -563,6 +633,49 @@ if (!isDbConfigured()) {
         [active.id, pkgSecond.id, poNumber]
       );
       assert.equal(membershipRows[0].count, 1);
+    });
+
+    await t.test("concurrent approval of the same subcontract PO materialises one package and terms binding", async () => {
+      const active = await getActiveClient();
+      const development = await createDevelopment(active);
+      const supplierId = `sup-concurrent-${Date.now()}`;
+      await createApprovedSupplier(active.id, supplierId);
+
+      const poNumber = `S-CONCURRENT-${Date.now()}`;
+      await savePo(
+        active.id,
+        buildPendingPo({ poNumber, development, supplierId, costCode: "5218" })
+      );
+
+      const [first, second] = await Promise.all([approvePo(poNumber), approvePo(poNumber)]);
+      assert.equal(first.status, 200);
+      assert.equal(second.status, 200);
+
+      const orderKey = buildSubcontractOrderKey(development.id, supplierId, "5218");
+      const pkg = await getPackageByOrderKey(active.id, orderKey);
+      testPackageIds.push(pkg.id);
+      assert.deepEqual(pkg.poNumbers, [poNumber]);
+
+      const membership = await pool.query(
+        `SELECT COUNT(*)::int AS count FROM package_purchase_orders
+         WHERE client_id=$1 AND package_id=$2 AND po_number=$3`,
+        [active.id, pkg.id, poNumber]
+      );
+      const bindings = await pool.query(
+        `SELECT COUNT(*)::int AS count FROM purchase_order_terms_bindings
+         WHERE client_id=$1 AND po_number=$2`,
+        [active.id, poNumber]
+      );
+      const stored = await pool.query(
+        `SELECT payload FROM purchase_orders WHERE client_id=$1 AND po_number=$2`,
+        [active.id, poNumber]
+      );
+      assert.equal(membership.rows[0].count, 1);
+      assert.equal(bindings.rows[0].count, 1);
+      assert.equal(
+        stored.rows[0].payload.approval.history.filter(entry => entry.action === "APPROVED").length,
+        1
+      );
     });
   });
 }

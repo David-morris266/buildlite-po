@@ -1,5 +1,6 @@
 // server/routes/poRoutes.js
 const express = require("express");
+const { randomUUID } = require("crypto");
 const { pool } = require("../db"); // keep pool for consistency with your existing DB helper style
 const { getActiveClient } = require("../services/activeClient");
 const {
@@ -12,8 +13,9 @@ const {
 const { isProduction } = require("../utils/env");
 const { mapPOToContext, renderPOToPDF } = require("../services/pdf");
 const { bindOnApproval, resolveForPo } = require("../services/subcontractTermsRepository");
-const { requirePermission, actorFromAuth } = require('../auth/authorization');
+const { requirePermission, requireAnyPermission, actorFromAuth } = require('../auth/authorization');
 const { PERMISSIONS } = require('../auth/permissions');
+const { asyncRoute } = require('../middleware/asyncRoute');
 
 const router = express.Router();
 
@@ -28,38 +30,57 @@ const router = express.Router();
 
 async function dbReadSuppliers(clientId) {
   const { rows } = await pool.query(
-    "SELECT payload FROM suppliers WHERE client_id = $1 ORDER BY name ASC",
+    "SELECT id, name, payload FROM suppliers WHERE client_id = $1 ORDER BY name ASC",
     [clientId]
   );
-  return rows.map((r) => r.payload);
+  return rows.map((r) => ({ ...r.payload, id: r.id, name: r.payload?.name || r.name }));
 }
 
 async function dbCreateSupplier(clientId, supplier) {
-  await pool.query(
+  try {
+    await pool.query(
     `
     INSERT INTO suppliers (id, name, payload, client_id)
     VALUES ($1, $2, $3, $4)
-    ON CONFLICT (id)
-    DO UPDATE SET name = EXCLUDED.name, payload = EXCLUDED.payload, client_id = EXCLUDED.client_id
     `,
     [supplier.id, supplier.name, supplier, clientId]
+    );
+  } catch (error) {
+    if (error.code === '23505') return false;
+    throw error;
+  }
+  return true;
+}
+
+async function dbUpdateSupplier(clientId, supplier, dbClient = pool) {
+  const result = await dbClient.query(
+    `UPDATE suppliers SET name=$1,payload=$2 WHERE client_id=$3 AND id=$4`,
+    [supplier.name, supplier, clientId, supplier.id]
   );
+  return result.rowCount === 1;
 }
 
 async function dbFindSupplierByName(clientId, name) {
   const { rows } = await pool.query(
-    "SELECT payload FROM suppliers WHERE client_id = $1 AND lower(name) = lower($2) LIMIT 1",
+    "SELECT id, name, payload FROM suppliers WHERE client_id = $1 AND lower(name) = lower($2) LIMIT 1",
     [clientId, name]
   );
-  return rows[0]?.payload || null;
+  const row = rows[0];
+  return row ? { ...row.payload, id: row.id, name: row.payload?.name || row.name } : null;
 }
 
-async function dbFindSupplierById(clientId, id) {
-  const { rows } = await pool.query(
-    "SELECT payload FROM suppliers WHERE client_id = $1 AND id = $2 LIMIT 1",
+async function dbFindSupplierById(clientId, id, dbClient = pool, { forUpdate = false } = {}) {
+  const lockClause = forUpdate === "keyShare"
+    ? " FOR KEY SHARE"
+    : forUpdate
+      ? " FOR UPDATE"
+      : "";
+  const { rows } = await dbClient.query(
+    `SELECT id, name, payload FROM suppliers WHERE client_id = $1 AND id = $2 LIMIT 1${lockClause}`,
     [clientId, id]
   );
-  return rows[0]?.payload || null;
+  const row = rows[0];
+  return row ? { ...row.payload, id: row.id, name: row.payload?.name || row.name } : null;
 }
 
 function pushSupplierApprovalHistory(supplier, action, by = "", note = "") {
@@ -72,14 +93,45 @@ function pushSupplierApprovalHistory(supplier, action, by = "", note = "") {
   });
 }
 
+const SUPPLIER_IDENTITY_FIELDS = Object.freeze([
+  "name", "address1", "address2", "city", "postcode", "vatNumber",
+  "supplierType", "termsDays", "creditAccount", "cisStatus", "defaultVat", "vatStatus",
+]);
+
+function normaliseSupplierIdentityValue(field, value) {
+  if (field === "termsDays") return Number(value || 0);
+  if (field === "creditAccount") return Boolean(value);
+  const text = String(value ?? "").trim();
+  if (field === "vatNumber" || field === "postcode") {
+    return text.replace(/\s+/g, "").toUpperCase();
+  }
+  return text.toLowerCase().replace(/\s+/g, " ");
+}
+
+function changedSupplierIdentityFields(before, after) {
+  return SUPPLIER_IDENTITY_FIELDS.filter(
+    (field) => normaliseSupplierIdentityValue(field, before?.[field])
+      !== normaliseSupplierIdentityValue(field, after?.[field])
+  );
+}
+
+function supplierApprovalState(supplier = {}) {
+  const status = String(supplier.approvalStatus || "").trim().toLowerCase();
+  if (!status && supplier.approvedSupplier == null) return "legacy_approved";
+  if (status === "pending" && supplier.approvedSupplier !== true) return "pending";
+  if (status === "approved" && supplier.approvedSupplier === true) return "approved";
+  return "unknown";
+}
+
 function resolveSupplierApprovalStatus(base = {}, body = {}, { isCreate = false } = {}) {
-  if (body.approvalStatus) return String(body.approvalStatus);
-  if (body.pendingApproval || body.createdFromPo) return "pending";
-  if (body.approvedSupplier === true) return "approved";
-  if (body.approvedSupplier === false) return "pending";
+  if (isCreate) return "pending";
   if (base.approvalStatus) return base.approvalStatus;
   if (base.approvedSupplier === false) return "pending";
-  return isCreate ? "approved" : base.approvalStatus || "approved";
+  // A supplier predating the governed approval fields is the one explicit
+  // compatibility case. Modernise it as approved on a routine amendment;
+  // identity-critical amendments are demoted by the locked update route.
+  if (base.approvedSupplier == null) return "approved";
+  return "pending";
 }
 
 function buildSupplierPayload(base = {}, body = {}, { isCreate = false } = {}) {
@@ -91,7 +143,7 @@ function buildSupplierPayload(base = {}, body = {}, { isCreate = false } = {}) {
 
   const payload = {
     ...base,
-    id: base.id || body.id || `sup-${Date.now()}`,
+    id: base.id || `sup-${randomUUID()}`,
     name:
       body.name != null ? String(body.name).trim() : String(base.name || "").trim(),
     address1: body.address1 ?? base.address1 ?? "",
@@ -121,54 +173,63 @@ function buildSupplierPayload(base = {}, body = {}, { isCreate = false } = {}) {
       body.bankDetailsPlaceholder ?? base.bankDetailsPlaceholder ?? "Future module",
     creditLimitPlaceholder:
       body.creditLimitPlaceholder ?? base.creditLimitPlaceholder ?? "Future module",
-    approvalHistory: Array.isArray(body.approvalHistory)
-      ? body.approvalHistory
-      : base.approvalHistory || [],
+    approvalHistory: base.approvalHistory || [],
     createdAt: base.createdAt || now,
     updatedAt: now,
   };
 
-  if (isCreate && (body.pendingApproval || body.createdFromPo)) {
+  if (isCreate) {
     pushSupplierApprovalHistory(
       payload,
       "CREATED_PENDING",
       body.createdBy || "",
-      "Created during Purchase Order entry"
+      body.createdFromPo
+        ? "Created during Purchase Order entry"
+        : "Created pending governed supplier approval"
     );
   }
 
   return payload;
 }
 
-async function findPendingSupplierForPo(clientId, po) {
+async function resolveSupplierApprovalForPo(clientId, po, dbClient = pool, { lock = false } = {}) {
   const supplierId = po?.supplierId || po?.supplierSnapshot?.id;
-  if (!supplierId) return null;
+  if (!supplierId) return { state: "missing_identity", supplier: null };
 
-  const supplier = await dbFindSupplierById(clientId, String(supplierId));
-  if (!supplier) return null;
-
-  const pending =
-    supplier.approvalStatus === "pending" || supplier.approvedSupplier === false;
-  return pending ? supplier : null;
+  const supplier = await dbFindSupplierById(
+    clientId,
+    String(supplierId),
+    dbClient,
+    { forUpdate: lock ? "keyShare" : false }
+  );
+  if (!supplier) return { state: "missing_record", supplier: null };
+  if (supplier.active === false) return { state: "inactive", supplier };
+  return { state: supplierApprovalState(supplier), supplier };
 }
 
-async function assertSupplierApprovedForPoApproval(clientId, po) {
-  const pending = await findPendingSupplierForPo(clientId, po);
-  if (!pending) return null;
+async function assertSupplierApprovedForPoApproval(clientId, po, dbClient = pool, options = {}) {
+  const approval = await resolveSupplierApprovalForPo(clientId, po, dbClient, options);
+  if (["approved", "legacy_approved"].includes(approval.state)) return null;
 
   return {
-    message:
-      "This supplier is pending approval. Approve the supplier in Administration before approving this Purchase Order.",
+    message: approval.state === "pending"
+      ? "This supplier is pending approval. Approve the supplier in Administration before approving this Purchase Order."
+      : approval.state === "inactive"
+        ? "This supplier is inactive and cannot be used to approve a Purchase Order."
+      : "This Purchase Order must reference a valid tenant supplier before approval (missing-supplier-id).",
   };
 }
 
-async function assertSupplierApprovedForPoRequestApproval(clientId, po) {
-  const pending = await findPendingSupplierForPo(clientId, po);
-  if (!pending) return null;
+async function assertSupplierApprovedForPoRequestApproval(clientId, po, dbClient = pool, options = {}) {
+  const approval = await resolveSupplierApprovalForPo(clientId, po, dbClient, options);
+  if (["approved", "legacy_approved"].includes(approval.state)) return null;
 
   return {
-    message:
-      "The supplier must be approved before this order can be sent for approval.",
+    message: approval.state === "pending"
+      ? "The supplier must be approved before this order can be sent for approval."
+      : approval.state === "inactive"
+        ? "The supplier is inactive and cannot be used to send this order for approval."
+      : "This Purchase Order must reference a valid tenant supplier before it can be sent for approval.",
   };
 }
 
@@ -184,43 +245,51 @@ async function dbReadPOs(clientId) {
   return rows.map((r) => r.payload);
 }
 
-async function dbGetPO(clientId, poNumber) {
-  const { rows } = await pool.query(
-    "SELECT payload FROM purchase_orders WHERE client_id = $1 AND po_number = $2 LIMIT 1",
+async function dbGetPO(clientId, poNumber, dbClient = pool, { forUpdate = false } = {}) {
+  const { rows } = await dbClient.query(
+    `SELECT payload FROM purchase_orders WHERE client_id = $1 AND po_number = $2 LIMIT 1${forUpdate ? " FOR UPDATE" : ""}`,
     [clientId, poNumber]
   );
   return rows[0]?.payload || null;
 }
 
 async function dbSavePO(clientId, po) {
-  await pool.query(
-    `
-    INSERT INTO purchase_orders (po_number, payload, client_id)
-    VALUES ($1, $2, $3)
-    ON CONFLICT (po_number)
-    DO UPDATE SET payload = EXCLUDED.payload, client_id = EXCLUDED.client_id
-    `,
-    [po.poNumber, po, clientId]
-  );
+  try {
+    await pool.query(`INSERT INTO purchase_orders (po_number,payload,client_id) VALUES($1,$2,$3)`,[po.poNumber,po,clientId]);
+  } catch (error) {
+    if (error.code === '23505') return false;
+    throw error;
+  }
+  return true;
 }
 
 async function dbSavePOWithClient(dbClient, clientId, po) {
-  await dbClient.query(
-    `
-    INSERT INTO purchase_orders (po_number, payload, client_id)
-    VALUES ($1, $2, $3)
-    ON CONFLICT (po_number)
-    DO UPDATE SET payload = EXCLUDED.payload, client_id = EXCLUDED.client_id
-    `,
-    [po.poNumber, po, clientId]
-  );
+  const result=await dbClient.query(`UPDATE purchase_orders SET payload=$1 WHERE client_id=$2 AND po_number=$3`,[po,clientId,po.poNumber]);
+  if(result.rowCount!==1)throw Object.assign(new Error('Purchase Order changed or is unavailable for this tenant.'),{status:409});
 }
 
-async function dbDeletePO(clientId, poNumber) {
-  await pool.query(
+async function dbUpdatePO(clientId, po, dbClient = pool) {
+  const result=await dbClient.query(`UPDATE purchase_orders SET payload=$1 WHERE client_id=$2 AND po_number=$3`,[po,clientId,po.poNumber]);
+  return result.rowCount===1;
+}
+
+async function dbDeletePO(clientId, poNumber, dbClient = pool) {
+  await dbClient.query(
     "DELETE FROM purchase_orders WHERE client_id = $1 AND po_number = $2",
     [clientId, poNumber]
   );
+}
+
+async function dbHasPoDependencies(clientId, poNumber, dbClient = pool) {
+  const result=await dbClient.query(`
+    SELECT EXISTS(
+      SELECT 1 FROM package_purchase_orders WHERE client_id=$1 AND po_number=$2
+      UNION ALL SELECT 1 FROM purchase_order_terms_overrides WHERE client_id=$1 AND po_number=$2
+      UNION ALL SELECT 1 FROM purchase_order_terms_bindings WHERE client_id=$1 AND po_number=$2
+      UNION ALL SELECT 1 FROM commercial_events WHERE client_id=$1 AND po_number=$2
+      UNION ALL SELECT 1 FROM variation_orders WHERE client_id=$1 AND source_po_number=$2
+    ) AS has_dependencies`,[clientId,poNumber]);
+  return Boolean(result.rows[0]?.has_dependencies);
 }
 
 /* =========================================
@@ -264,12 +333,59 @@ function pushHistory(po, action, by = "", note = "") {
   po.approval.history.push({ at: now, by, action, note });
 }
 
+function hasApprovedHistory(po) {
+  return (po?.approval?.history || []).some(
+    (entry) => String(entry?.action || "").toUpperCase() === "APPROVED"
+  );
+}
+
+function hasApprovedAuthority(po) {
+  return String(po?.status || "").toLowerCase() === "approved"
+    || String(po?.approval?.status || "").toLowerCase() === "approved"
+    || hasApprovedHistory(po);
+}
+
+function routeError(status, message) {
+  return Object.assign(new Error(message), { status });
+}
+
+async function resolveAuthoritativeSupplier(
+  clientId,
+  body = {},
+  fallbackPo = null,
+  dbClient = pool,
+  { lock = false } = {}
+) {
+  const bodySupplierId = String(body.supplierId || "").trim();
+  const snapshotSupplierId = String(body.supplierSnapshot?.id || "").trim();
+  if (bodySupplierId && snapshotSupplierId && bodySupplierId !== snapshotSupplierId) {
+    throw routeError(400, "Supplier reference does not match the selected tenant supplier.");
+  }
+  const supplierId = bodySupplierId
+    || snapshotSupplierId
+    || String(fallbackPo?.supplierId || fallbackPo?.supplierSnapshot?.id || "").trim();
+  if (!supplierId) {
+    throw routeError(400, "A valid tenant supplier is required.");
+  }
+  const supplier = await dbFindSupplierById(clientId, supplierId, dbClient, {
+    forUpdate: lock ? "keyShare" : false,
+  });
+  if (!supplier) {
+    throw routeError(400, "The selected supplier is unavailable for this tenant.");
+  }
+  return { supplierId: supplier.id, supplierSnapshot: supplier };
+}
+
+async function rollbackQuietly(dbClient) {
+  try { await dbClient.query("ROLLBACK"); } catch (_) { /* original error wins */ }
+}
+
 /* =========================================
  * ROUTES — DEBUG / LOOKUPS
  * ======================================= */
 
 // Debug POs (disabled in production)
-router.get("/po/_debug", async (_req, res) => {
+router.get("/po/_debug", asyncRoute(async (_req, res) => {
   if (isProduction()) {
     return res.status(404).json({ message: "Not found" });
   }
@@ -284,10 +400,10 @@ router.get("/po/_debug", async (_req, res) => {
     count: items.length,
     first: items[0]?.poNumber || null,
   });
-});
+}));
 
 // ✅ Cost codes from DB (active client)
-router.get("/po/cost-codes", async (_req, res) => {
+router.get("/po/cost-codes", asyncRoute(async (_req, res) => {
   try {
     const active = await getActiveClient();
     if (!active) return res.status(404).json({ error: "No active client set" });
@@ -317,18 +433,18 @@ router.get("/po/cost-codes", async (_req, res) => {
     console.error("GET /po/cost-codes failed:", err);
     res.status(500).json({ error: "Server error" });
   }
-});
+}));
 
 // Suppliers
-router.get("/po/suppliers", async (_req, res) => {
+router.get("/po/suppliers", asyncRoute(async (_req, res) => {
   const active = await getActiveClient();
   if (!active) return res.status(404).json({ error: "No active client set" });
 
   const suppliers = await dbReadSuppliers(active.id);
   res.json(suppliers);
-});
+}));
 
-router.post("/po/suppliers", async (req, res) => {
+router.post("/po/suppliers", requireAnyPermission([PERMISSIONS.PO_CREATE,PERMISSIONS.TENANT_CONFIGURE]), asyncRoute(async (req, res) => {
   const active = await getActiveClient();
   if (!active) return res.status(404).json({ error: "No active client set" });
 
@@ -343,59 +459,95 @@ router.post("/po/suppliers", async (req, res) => {
   }
 
   const now = new Date().toISOString();
-  const sup = buildSupplierPayload({}, b, { isCreate: true });
+  const authenticatedActor = actorFromAuth(req.buildliteAuth, req.requiredPermission).actor;
+  const sup = buildSupplierPayload({}, { ...b, createdBy: authenticatedActor }, { isCreate: true });
   sup.createdAt = now;
   sup.updatedAt = now;
 
-  await dbCreateSupplier(active.id, sup);
+  if(!await dbCreateSupplier(active.id, sup))return res.status(409).json({message:'Supplier identity already exists.'});
   res.status(201).json(sup);
-});
+}));
 
-router.put("/po/suppliers/:id", async (req, res) => {
+router.put("/po/suppliers/:id", requireAnyPermission([PERMISSIONS.PO_EDIT,PERMISSIONS.TENANT_CONFIGURE]), asyncRoute(async (req, res) => {
   const active = await getActiveClient();
   if (!active) return res.status(404).json({ error: "No active client set" });
 
-  const existing = await dbFindSupplierById(active.id, req.params.id);
-  if (!existing) return res.status(404).json({ message: "Supplier not found" });
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query("BEGIN");
+    const existing = await dbFindSupplierById(active.id, req.params.id, dbClient, { forUpdate: true });
+    if (!existing) throw routeError(404, "Supplier not found");
+    const sup = buildSupplierPayload(existing, req.body || {});
+    if (!sup.name) throw routeError(400, "Field 'name' is required");
 
-  const b = req.body || {};
-  const sup = buildSupplierPayload(existing, b);
-
-  if (!sup.name) {
-    return res.status(400).json({ message: "Field 'name' is required" });
+    const changedFields = changedSupplierIdentityFields(existing, sup);
+    if (["approved", "legacy_approved"].includes(supplierApprovalState(existing)) && changedFields.length) {
+      sup.approvalStatus = "pending";
+      sup.approvedSupplier = false;
+      pushSupplierApprovalHistory(
+        sup,
+        "IDENTITY_CHANGED_REAPPROVAL_REQUIRED",
+        actorFromAuth(req.buildliteAuth, req.requiredPermission).actor,
+        `Identity fields changed: ${changedFields.join(", ")}`
+      );
+    }
+    if (!await dbUpdateSupplier(active.id, sup, dbClient)) {
+      throw routeError(409, "Supplier changed or is unavailable for this tenant.");
+    }
+    await dbClient.query("COMMIT");
+    res.json(sup);
+  } catch (error) {
+    await rollbackQuietly(dbClient);
+    throw error;
+  } finally {
+    dbClient.release();
   }
+}));
 
-  await dbCreateSupplier(active.id, sup);
-  res.json(sup);
-});
-
-router.post("/po/suppliers/:id/approve", async (req, res) => {
+router.post("/po/suppliers/:id/approve", requireAnyPermission([PERMISSIONS.PO_APPROVE,PERMISSIONS.TENANT_CONFIGURE]), asyncRoute(async (req, res) => {
   const active = await getActiveClient();
   if (!active) return res.status(404).json({ error: "No active client set" });
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query("BEGIN");
+    const existing = await dbFindSupplierById(active.id, req.params.id, dbClient, { forUpdate: true });
+    if (!existing) throw routeError(404, "Supplier not found");
+    if (supplierApprovalState(existing) === "approved") {
+      await dbClient.query("COMMIT");
+      return res.json(existing);
+    }
+    if (!["pending", "legacy_approved"].includes(supplierApprovalState(existing))) {
+      throw routeError(409, "Supplier approval state is invalid. Review the supplier before approval.");
+    }
+    if (existing.active === false) throw routeError(409, "Inactive suppliers cannot be approved.");
 
-  const existing = await dbFindSupplierById(active.id, req.params.id);
-  if (!existing) return res.status(404).json({ message: "Supplier not found" });
-
-  const sup = buildSupplierPayload(existing, {
-    approvedSupplier: true,
-    approvalStatus: "approved",
-  });
-  pushSupplierApprovalHistory(
-    sup,
-    "APPROVED",
-    req.body?.by || req.body?.approverName || "",
-    req.body?.note || "Approved in Administration"
-  );
-
-  await dbCreateSupplier(active.id, sup);
-  res.json(sup);
-});
+    const sup = buildSupplierPayload(existing, {});
+    sup.approvalStatus = "approved";
+    sup.approvedSupplier = true;
+    pushSupplierApprovalHistory(
+      sup,
+      "APPROVED",
+      actorFromAuth(req.buildliteAuth, req.requiredPermission).actor,
+      req.body?.note || "Approved in Administration"
+    );
+    if (!await dbUpdateSupplier(active.id, sup, dbClient)) {
+      throw routeError(409, "Supplier changed or is unavailable for this tenant.");
+    }
+    await dbClient.query("COMMIT");
+    res.json(sup);
+  } catch (error) {
+    await rollbackQuietly(dbClient);
+    throw error;
+  } finally {
+    dbClient.release();
+  }
+}));
 
 /* =========================================
  * ROUTES — LIST
  * ======================================= */
 
-router.get("/po", async (req, res) => {
+router.get("/po", asyncRoute(async (req, res) => {
   const active = await getActiveClient();
   if (!active) return res.status(404).json({ error: "No active client set" });
 
@@ -453,13 +605,13 @@ router.get("/po", async (req, res) => {
   });
 
   res.json({ items });
-});
+}));
 
 /* =========================================
  * ROUTES — PDF
  * ======================================= */
 
-router.get("/po/:poNumber/pdf", async (req, res) => {
+router.get("/po/:poNumber/pdf", asyncRoute(async (req, res) => {
   try {
     const active = await getActiveClient();
     if (!active) return res.status(404).json({ error: "No active client set" });
@@ -489,26 +641,26 @@ router.get("/po/:poNumber/pdf", async (req, res) => {
     console.error("PDF failed:", err);
     res.status(500).type("text/plain").send(`PDF failed: ${err.message || err}`);
   }
-});
+}));
 
 /* =========================================
  * ROUTES — APPROVAL HISTORY
  * ======================================= */
 
-router.get("/po/:poNumber/history", async (req, res) => {
+router.get("/po/:poNumber/history", asyncRoute(async (req, res) => {
   const active = await getActiveClient();
   if (!active) return res.status(404).json({ error: "No active client set" });
 
   const po = await dbGetPO(active.id, req.params.poNumber);
   if (!po) return res.status(404).json({ message: "PO not found" });
   res.json(po.approval?.history || []);
-});
+}));
 
 /* =========================================
  * ROUTES — CREATE
  * ======================================= */
 
-router.post("/po", async (req, res) => {
+router.post("/po", requirePermission(PERMISSIONS.PO_CREATE), asyncRoute(async (req, res) => {
   const active = await getActiveClient();
   if (!active) return res.status(404).json({ error: "No active client set" });
 
@@ -519,30 +671,14 @@ router.post("/po", async (req, res) => {
   const poNumber = body.poNumber || nextNumberForType(all, type);
   const now = new Date().toISOString();
 
-  let status = body.status || "Draft";
-  const statusLc = String(status).toLowerCase();
+  const status = "Draft";
+  const approvalStatus = "Draft";
 
-  let approvalStatus;
-  if (statusLc === "draft") {
-    approvalStatus = "Draft";
-  } else if (statusLc === "rejected") {
-    approvalStatus = "Rejected";
-  } else if (statusLc === "approved") {
-    approvalStatus = "Approved";
-  } else {
-    status = "Issued";
-    approvalStatus = "Pending";
-  }
-
-  // --- supplier snapshot ---
-  let supplierSnapshot = body.supplierSnapshot || null;
-  let supplierId = body.supplierId || "";
-  if (supplierId) {
-    const found = await dbFindSupplierById(active.id, String(supplierId));
-    supplierSnapshot =
-      found ||
-      supplierSnapshot ||
-      { id: supplierId, name: body.supplierName || String(supplierId) };
+  let supplier;
+  try {
+    supplier = await resolveAuthoritativeSupplier(active.id, body);
+  } catch (error) {
+    return res.status(error.status || 500).json({ message: error.message });
   }
 
   const items = Array.isArray(body.items)
@@ -569,8 +705,8 @@ router.post("/po", async (req, res) => {
     poNumber,
     type,
 
-    supplierId,
-    supplierSnapshot,
+    supplierId: supplier.supplierId,
+    supplierSnapshot: supplier.supplierSnapshot,
 
     costRef: {
       jobId: body.costRef?.jobId || "",
@@ -602,10 +738,10 @@ router.post("/po", async (req, res) => {
     requiredBy: body.requiredBy || "",
     notes: body.notes || "",
 
-    createdBy: body.createdBy || "system",
-    createdByEmail: body.createdByEmail || "",
-    createdByName: body.createdByName || "",
-    updatedBy: body.createdBy || "system",
+    createdBy: req.buildliteAuth.displayName,
+    createdByEmail: req.buildliteAuth.email || "",
+    createdByName: req.buildliteAuth.displayName,
+    updatedBy: req.buildliteAuth.displayName,
     createdAt: now,
     updatedAt: now,
     archived: false,
@@ -614,226 +750,199 @@ router.post("/po", async (req, res) => {
   pushHistory(
     po,
     "CREATED",
-    body.createdByName || body.createdByEmail || "system",
-    status === "Draft" ? "Draft created" : `Created with status ${status}`
+    req.buildliteAuth.displayName,
+    "Draft created"
   );
 
-  await dbSavePO(active.id, po);
+  if(!await dbSavePO(active.id, po))return res.status(409).json({message:'Purchase Order number is unavailable. Choose another number.'});
   res.status(201).json(po);
-});
+}));
 
 /* =========================================
  * ROUTES — UPDATE
  * ======================================= */
 
-router.put("/po/:poNumber", async (req, res) => {
+router.put("/po/:poNumber", requirePermission(PERMISSIONS.PO_EDIT), asyncRoute(async (req, res) => {
   const active = await getActiveClient();
   if (!active) return res.status(404).json({ error: "No active client set" });
 
   const body = req.body || {};
-  const po = await dbGetPO(active.id, req.params.poNumber);
-  if (!po) return res.status(404).json({ message: "PO not found" });
-
-  const currentStatus = String(po.status || "").toLowerCase();
-  const editableStatuses = ["draft", "rejected"];
-
-  if (!editableStatuses.includes(currentStatus)) {
-    return res.status(400).json({
-      message: `Cannot edit a PO with status '${po.status}'. Only Draft or Rejected can be changed.`,
-    });
-  }
-
-  const now = new Date().toISOString();
-
-  // supplier snapshot
-  let supplierId = po.supplierId;
-  let supplierSnapshot = po.supplierSnapshot;
-
-  if (body.supplierId || body.supplierSnapshot) {
-    supplierId = body.supplierId || supplierId;
-    if (body.supplierSnapshot) {
-      supplierSnapshot = body.supplierSnapshot;
-    } else if (supplierId) {
-      const found = await dbFindSupplierById(active.id, String(supplierId));
-      supplierSnapshot =
-        found ||
-        supplierSnapshot ||
-        { id: supplierId, name: body.supplierName || String(supplierId) };
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query("BEGIN");
+    const po = await dbGetPO(active.id, req.params.poNumber, dbClient, { forUpdate: true });
+    if (!po) throw routeError(404, "PO not found");
+    const currentStatus = String(po.status || "").toLowerCase();
+    if (!["draft", "rejected"].includes(currentStatus) || hasApprovedAuthority(po)) {
+      throw routeError(409, "Approved Purchase Orders are immutable. Only a never-approved Draft or Rejected order can be changed.");
     }
+
+    const supplier = await resolveAuthoritativeSupplier(active.id, body, po, dbClient);
+    let items = po.items || [];
+    if (Array.isArray(body.items)) {
+      items = body.items.map((it) => ({
+        description: it.description || "",
+        uom: it.uom || it.unit || "nr",
+        qty: Number(it.qty || it.quantity || 0),
+        rate: Number(it.rate || it.unitRate || 0),
+        amount: it.amount != null ? Number(it.amount) || 0 : Number(it.qty || 0) * Number(it.rate || 0),
+        costCode: it.costCode || body.costRef?.costCode || po.costRef?.costCode || "",
+      }));
+    }
+    const vatRateDefault = Number(body.vatRateDefault == null ? po.vatRateDefault == null ? 0.2 : po.vatRateDefault : body.vatRateDefault) || 0;
+    const retentionRateDefault = Number(body.retentionRateDefault == null ? po.retentionRateDefault == null ? 0.05 : po.retentionRateDefault : body.retentionRateDefault) || 0;
+    const totals = computeTotals(items, vatRateDefault);
+
+    po.supplierId = supplier.supplierId;
+    po.supplierSnapshot = supplier.supplierSnapshot;
+    if (body.type) po.type = String(body.type).toUpperCase();
+    po.costRef = {
+      jobId: body.costRef?.jobId ?? po.costRef?.jobId ?? "",
+      developmentId: body.costRef?.developmentId ?? po.costRef?.developmentId ?? "",
+      jobCode: body.costRef?.jobCode ?? po.costRef?.jobCode ?? "",
+      costCode: body.costRef?.costCode ?? po.costRef?.costCode ?? "",
+      element: body.costRef?.element ?? po.costRef?.element ?? "",
+    };
+    po.developmentId = body.developmentId ?? po.developmentId ?? "";
+    po.developmentNumber = body.developmentNumber ?? po.developmentNumber ?? "";
+    po.developmentName = body.developmentName ?? po.developmentName ?? "";
+    po.developmentStatus = body.developmentStatus ?? po.developmentStatus ?? "";
+    po.development = body.development ?? po.development ?? null;
+    po.job = body.job ?? po.job ?? null;
+    po.title = body.title ?? po.title ?? "";
+    po.clauses = body.clauses ?? po.clauses ?? {};
+    po.items = items;
+    po.subtotal = totals.net;
+    po.vatRateDefault = totals.vatRate;
+    po.retentionRateDefault = retentionRateDefault;
+    po.totals = totals;
+    po.requiredBy = body.requiredBy ?? po.requiredBy ?? "";
+    po.notes = body.notes ?? po.notes ?? "";
+    po.updatedBy = req.buildliteAuth.displayName;
+    po.updatedAt = new Date().toISOString();
+    pushHistory(po, "UPDATED", req.buildliteAuth.displayName, body.updateNote || "Draft/Rejected PO amended");
+    if(!await dbUpdatePO(active.id, po, dbClient))throw routeError(409, 'Purchase Order changed or is unavailable for this tenant.');
+    await dbClient.query("COMMIT");
+    res.json(po);
+  } catch (error) {
+    await rollbackQuietly(dbClient);
+    res.status(error.status || 500).json({ message: error.status ? error.message : "Failed to update Purchase Order." });
+  } finally {
+    dbClient.release();
   }
-
-  // items
-  let items = po.items || [];
-  if (Array.isArray(body.items)) {
-    items = body.items.map((it) => ({
-      description: it.description || "",
-      uom: it.uom || it.unit || "nr",
-      qty: Number(it.qty || it.quantity || 0),
-      rate: Number(it.rate || it.unitRate || 0),
-      amount:
-        it.amount != null
-          ? Number(it.amount) || 0
-          : Number(it.qty || 0) * Number(it.rate || 0),
-      costCode: it.costCode || body.costRef?.costCode || po.costRef?.costCode || "",
-    }));
-  }
-
-  const vatRateDefault =
-    Number(
-      body.vatRateDefault == null
-        ? po.vatRateDefault == null
-          ? 0.2
-          : po.vatRateDefault
-        : body.vatRateDefault
-    ) || 0;
-
-  const retentionRateDefault =
-    Number(
-      body.retentionRateDefault == null
-        ? po.retentionRateDefault == null
-          ? 0.05
-          : po.retentionRateDefault
-        : body.retentionRateDefault
-    ) || 0;
-
-  const totals = computeTotals(items, vatRateDefault);
-
-  po.supplierId = supplierId;
-  po.supplierSnapshot = supplierSnapshot;
-
-  if (body.type) {
-    po.type = String(body.type).toUpperCase();
-  }
-
-  po.costRef = {
-    jobId: body.costRef?.jobId ?? po.costRef?.jobId ?? "",
-    developmentId: body.costRef?.developmentId ?? po.costRef?.developmentId ?? "",
-    jobCode: body.costRef?.jobCode ?? po.costRef?.jobCode ?? "",
-    costCode: body.costRef?.costCode ?? po.costRef?.costCode ?? "",
-    element: body.costRef?.element ?? po.costRef?.element ?? "",
-  };
-
-  po.developmentId = body.developmentId ?? po.developmentId ?? "";
-  po.developmentNumber = body.developmentNumber ?? po.developmentNumber ?? "";
-  po.developmentName = body.developmentName ?? po.developmentName ?? "";
-  po.developmentStatus = body.developmentStatus ?? po.developmentStatus ?? "";
-  po.development = body.development ?? po.development ?? null;
-
-  po.job = body.job ?? po.job ?? null;
-  po.title = body.title ?? po.title ?? "";
-  po.clauses = body.clauses ?? po.clauses ?? {};
-
-  po.items = items;
-  po.subtotal = totals.net;
-  po.vatRateDefault = totals.vatRate;
-  po.retentionRateDefault = retentionRateDefault;
-  po.totals = totals;
-
-  po.requiredBy = body.requiredBy ?? po.requiredBy ?? "";
-  po.notes = body.notes ?? po.notes ?? "";
-
-  const updatedBy =
-    body.updatedBy || body.updatedByEmail || body.updatedByName || body.createdBy || "system";
-
-  po.updatedBy = updatedBy;
-  po.updatedAt = now;
-
-  pushHistory(po, "UPDATED", updatedBy, body.updateNote || "Draft/Rejected PO amended");
-
-  await dbSavePO(active.id, po);
-  res.json(po);
-});
+}));
 
 /* =========================================
  * ROUTES — APPROVALS
  * ======================================= */
 
-router.post("/po/:poNumber/request-approval", async (req, res) => {
+router.post("/po/:poNumber/request-approval", requirePermission(PERMISSIONS.PO_SUBMIT), asyncRoute(async (req, res) => {
   const active = await getActiveClient();
   if (!active) return res.status(404).json({ error: "No active client set" });
-
-  const po = await dbGetPO(active.id, req.params.poNumber);
-  if (!po) return res.status(404).json({ message: "PO not found" });
-
-  if (String(po.status || "").toLowerCase() === "approved") {
-    return res.status(400).json({ message: "Cannot request approval for an Approved PO" });
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query("BEGIN");
+    const po = await dbGetPO(active.id, req.params.poNumber, dbClient, { forUpdate: true });
+    if (!po) throw routeError(404, "PO not found");
+    if (hasApprovedAuthority(po)) {
+      throw routeError(409, "Approved Purchase Orders are immutable. Use a governed correction workflow.");
+    }
+    if (po.archived) throw routeError(409, "Archived Purchase Orders cannot be sent for approval.");
+    const currentStatus = String(po.status || "").toLowerCase();
+    const currentApprovalStatus = String(po.approval?.status || "").toLowerCase();
+    if (!["draft", "rejected"].includes(currentStatus)
+      || !["draft", "rejected"].includes(currentApprovalStatus)) {
+      throw routeError(409, "Only a Draft or Rejected Purchase Order can be sent for approval.");
+    }
+    const supplierError = await assertSupplierApprovedForPoRequestApproval(active.id, po, dbClient, { lock: true });
+    if (supplierError) throw routeError(400, supplierError.message);
+    const supplier = await resolveAuthoritativeSupplier(active.id, {}, po, dbClient, { lock: true });
+    po.supplierId = supplier.supplierId;
+    po.supplierSnapshot = supplier.supplierSnapshot;
+    po.status = "Issued";
+    po.approval = {
+      ...(po.approval || {}),
+      status: "Pending",
+      approverMode: req.body?.approverMode || po.approval?.approverMode || "",
+      approverName: req.body?.approverName || po.approval?.approverName || "",
+      approverEmail: req.body?.approverEmail || po.approval?.approverEmail || "",
+    };
+    pushHistory(po, "SENT", actorFromAuth(req.buildliteAuth, PERMISSIONS.PO_SUBMIT).actor, req.body?.note || "");
+    po.updatedAt = new Date().toISOString();
+    if(!await dbUpdatePO(active.id, po, dbClient))throw routeError(409, 'Purchase Order changed or is unavailable for this tenant.');
+    await dbClient.query("COMMIT");
+    res.json(po);
+  } catch (error) {
+    await rollbackQuietly(dbClient);
+    res.status(error.status || 500).json({ message: error.status ? error.message : "Failed to submit Purchase Order." });
+  } finally {
+    dbClient.release();
   }
+}));
 
-  const supplierError = await assertSupplierApprovedForPoRequestApproval(active.id, po);
-  if (supplierError) {
-    return res.status(400).json(supplierError);
-  }
-
-  po.status = "Issued";
-  po.approval = {
-    ...(po.approval || {}),
-    status: "Pending",
-    approverMode: req.body?.approverMode || po.approval?.approverMode || "",
-    approverName: req.body?.approverName || po.approval?.approverName || "",
-    approverEmail: req.body?.approverEmail || po.approval?.approverEmail || "",
-  };
-  pushHistory(po, "SENT", req.body?.by || req.body?.approverName || "", req.body?.note || "");
-  po.updatedAt = new Date().toISOString();
-
-  await dbSavePO(active.id, po);
-  res.json(po);
-});
-
-router.post("/po/:poNumber/approve", requirePermission(PERMISSIONS.PO_APPROVE), async (req, res) => {
+router.post("/po/:poNumber/approve", requirePermission(PERMISSIONS.PO_APPROVE), asyncRoute(async (req, res) => {
   const authenticatedActor = actorFromAuth(req.buildliteAuth, PERMISSIONS.PO_APPROVE).actor;
-  req.body = { ...req.body, approvedBy: authenticatedActor, actor: authenticatedActor, approver: authenticatedActor, approverEmail: req.buildliteAuth.email || "" };
   const active = await getActiveClient();
   if (!active) return res.status(404).json({ error: "No active client set" });
-
-  const po = await dbGetPO(active.id, req.params.poNumber);
-  if (!po) return res.status(404).json({ message: "PO not found" });
-
-  const { status = "Approved", approver = "", note = "" } = req.body || {};
+  const { status = "Approved", note = "" } = req.body || {};
   const norm = String(status).toLowerCase();
   if (!["approved", "rejected"].includes(norm)) {
     return res.status(400).json({ message: "status must be 'Approved' or 'Rejected'" });
   }
-
-  if (norm === "approved") {
-    const supplierError = await assertSupplierApprovedForPoApproval(active.id, po);
-    if (supplierError) {
-      return res.status(400).json(supplierError);
-    }
-  }
-
-  const now = new Date().toISOString();
-  const proposedTerms = norm === "approved" ? await resolveForPo(active.id, po.poNumber) : null;
-
-  po.status = norm === "approved" ? "Approved" : "Rejected";
-  po.approval = {
-    ...(po.approval || {}),
-    status: po.status,
-    approver,
-    approverEmail: req.body?.approverEmail || po.approval?.approverEmail || "",
-    note,
-    decidedAt: now,
-  };
-  pushHistory(po, norm === "approved" ? "APPROVED" : "REJECTED", approver, note);
-  po.updatedAt = now;
-
-  const requiresPackageMaterialisation = norm === "approved" && isSubcontractPoType(po);
-
   const dbClient = await pool.connect();
   try {
     await dbClient.query("BEGIN");
+    const po = await dbGetPO(active.id, req.params.poNumber, dbClient, { forUpdate: true });
+    if (!po) throw routeError(404, "PO not found");
+    if (hasApprovedAuthority(po)) {
+      if (norm === "approved" && String(po.status || "").toLowerCase() === "approved") {
+        await dbClient.query("COMMIT");
+        return res.json(po);
+      }
+      throw routeError(409, "Approved Purchase Orders are immutable. Use a governed correction workflow.");
+    }
+    if (po.archived) throw routeError(409, "Archived Purchase Orders cannot receive an approval decision.");
+    if (String(po.status || "").toLowerCase() !== "issued"
+      || String(po.approval?.status || "").toLowerCase() !== "pending") {
+      throw routeError(409, "Only an Issued Purchase Order pending approval can receive an approval decision.");
+    }
+
+    let proposedTerms = null;
+    if (norm === "approved") {
+      const supplierError = await assertSupplierApprovedForPoApproval(active.id, po, dbClient, { lock: true });
+      if (supplierError) throw routeError(400, supplierError.message);
+      const supplier = await resolveAuthoritativeSupplier(active.id, {}, po, dbClient, { lock: true });
+      po.supplierId = supplier.supplierId;
+      po.supplierSnapshot = supplier.supplierSnapshot;
+      proposedTerms = await resolveForPo(active.id, po.poNumber, dbClient);
+    }
+
+    const now = new Date().toISOString();
+    po.status = norm === "approved" ? "Approved" : "Rejected";
+    po.approval = {
+      ...(po.approval || {}),
+      status: po.status,
+      approver: authenticatedActor,
+      approverEmail: req.buildliteAuth.email || "",
+      note,
+      decidedAt: now,
+    };
+    pushHistory(po, norm === "approved" ? "APPROVED" : "REJECTED", authenticatedActor, note);
+    po.updatedAt = now;
+    const requiresPackageMaterialisation = norm === "approved" && isSubcontractPoType(po);
     await dbSavePOWithClient(dbClient, active.id, po);
 
     if (norm === "approved") {
       po.governingTerms = await bindOnApproval(active.id, po.poNumber, {
         dbClient,
-        actor: approver || null,
+        actor: authenticatedActor,
         resolvedTerms: proposedTerms,
       });
     }
 
     const materialiseResult = requiresPackageMaterialisation ? await materialisePackageFromPoNumber(active.id, po.poNumber, {
       dbClient,
-      actor: approver || null,
+      actor: authenticatedActor,
       requirePackage: true,
     }) : { ok: true };
 
@@ -848,19 +957,19 @@ router.post("/po/:poNumber/approve", requirePermission(PERMISSIONS.PO_APPROVE), 
     await dbClient.query("COMMIT");
     res.json(po);
   } catch (err) {
-    await dbClient.query("ROLLBACK");
-    console.error("[PO] approve + package materialisation error:", err);
-    res.status(500).json({ message: "Failed to approve PO and materialise package." });
+    await rollbackQuietly(dbClient);
+    if (!err.status) console.error("[PO] approve + package materialisation error:", err);
+    res.status(err.status || 500).json({ message: err.status ? err.message : "Failed to approve PO and materialise package." });
   } finally {
     dbClient.release();
   }
-});
+}));
 
 /* =========================================
  * ROUTES — READ & DELETE
  * ======================================= */
 
-router.get("/po/:poNumber", async (req, res) => {
+router.get("/po/:poNumber", asyncRoute(async (req, res) => {
   const active = await getActiveClient();
   if (!active) return res.status(404).json({ error: "No active client set" });
 
@@ -868,21 +977,33 @@ router.get("/po/:poNumber", async (req, res) => {
   if (!po) return res.status(404).json({ message: "PO not found" });
   po.governingTerms = await resolveForPo(active.id, po.poNumber);
   res.json(po);
-});
+}));
 
-router.delete("/po/:poNumber", async (req, res) => {
+router.delete("/po/:poNumber", requirePermission(PERMISSIONS.PO_DELETE_DRAFT), asyncRoute(async (req, res) => {
   const active = await getActiveClient();
   if (!active) return res.status(404).json({ error: "No active client set" });
-
-  const po = await dbGetPO(active.id, req.params.poNumber);
-  if (!po) return res.status(404).json({ message: "PO not found" });
-
-  if ((po.approval?.status || "").toLowerCase() === "approved") {
-    return res.status(400).json({ message: "Cannot delete an Approved PO" });
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query("BEGIN");
+    const po = await dbGetPO(active.id, req.params.poNumber, dbClient, { forUpdate: true });
+    if (!po) throw routeError(404, "PO not found");
+    if (String(po.status||'').toLowerCase() !== 'draft'
+      || String(po.approval?.status || "").toLowerCase() !== 'draft'
+      || hasApprovedAuthority(po)) {
+      throw routeError(409, "Only a never-approved, never-submitted Draft Purchase Order can be deleted.");
+    }
+    if(await dbHasPoDependencies(active.id,req.params.poNumber,dbClient)) {
+      throw routeError(409, 'Purchase Order has governed commercial dependencies and cannot be deleted.');
+    }
+    await dbDeletePO(active.id, req.params.poNumber, dbClient);
+    await dbClient.query("COMMIT");
+    res.json({ ok: true });
+  } catch (error) {
+    await rollbackQuietly(dbClient);
+    res.status(error.status || 500).json({ message: error.status ? error.message : "Failed to delete Purchase Order." });
+  } finally {
+    dbClient.release();
   }
-
-  await dbDeletePO(active.id, req.params.poNumber);
-  res.json({ ok: true });
-});
+}));
 
 module.exports = router;

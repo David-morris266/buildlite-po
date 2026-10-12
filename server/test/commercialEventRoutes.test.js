@@ -14,6 +14,7 @@ const { buildSubcontractOrderKey } = require("../services/packageKey");
 const { COMMERCIAL_EVENT_ID_PATTERN } = require("../services/commercialEventConstants");
 
 const app = createApp();
+const previousCeImportFlag = process.env.BUILDLITE_ENABLE_CE_IMPORT;
 const MIGRATION_004 = path.join(__dirname, "..", "migrations", "004_developments.sql");
 const MIGRATION_005 = path.join(__dirname, "..", "migrations", "005_packages.sql");
 const MIGRATION_006 = path.join(__dirname, "..", "migrations", "006_commercial_events.sql");
@@ -219,12 +220,15 @@ if (!isDbConfigured()) {
   });
 } else {
   test.before(async () => {
+    process.env.BUILDLITE_ENABLE_CE_IMPORT = '1';
     await prepareIntegrationTestDatabase(pool);
     await ensureSchema();
   });
 
   test.after(async () => {
     await cleanup();
+    if (previousCeImportFlag == null) delete process.env.BUILDLITE_ENABLE_CE_IMPORT;
+    else process.env.BUILDLITE_ENABLE_CE_IMPORT = previousCeImportFlag;
   });
 
   test("1. new CE creates server id + eventNumber", async () => {

@@ -1,6 +1,14 @@
 const { PERMISSIONS: P } = require('./permissions');
 const CRITICAL_ROUTE_PERMISSIONS = Object.freeze({
+  'POST /api/po': P.PO_CREATE,
+  'PUT /api/po/:poNumber': P.PO_EDIT,
+  'POST /api/po/:poNumber/request-approval': P.PO_SUBMIT,
   'POST /api/po/:poNumber/approve': P.PO_APPROVE,
+  'DELETE /api/po/:poNumber': P.PO_DELETE_DRAFT,
+  'POST /api/po/suppliers': `${P.PO_CREATE}|${P.TENANT_CONFIGURE}`,
+  'PUT /api/po/suppliers/:id': `${P.PO_EDIT}|${P.TENANT_CONFIGURE}`,
+  'POST /api/po/suppliers/:id/approve': `${P.PO_APPROVE}|${P.TENANT_CONFIGURE}`,
+  'POST /api/commercial-events/import': P.CE_APPROVE,
   'POST /api/commercial-events/:id/approve': P.CE_APPROVE,
   'POST /api/commercial-events/:id/reject': P.CE_APPROVE,
   'RECOVERY_WRITE_OFF': P.CE_RECOVERY_WRITE_OFF,

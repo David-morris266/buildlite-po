@@ -8,7 +8,7 @@ import { ensureAdminCostCodesReady, listAdminCostCodeRecords, saveAdminCostCode 
 import { saveApprovalSettings } from '../admin/approvalSettingsStore';
 import { listClients, addClient } from '../admin/clientStore';
 import { generateNextDevelopmentNumber } from '../admin/numberingService';
-import { createSupplier } from '../api';
+import { approveSupplier, createOrGetSupplier, updateSupplier } from '../api';
 import { createDevelopment } from '../developments/developmentStore';
 import { DEMO_COST_CODES } from './demoCostCodes';
 import {
@@ -129,16 +129,16 @@ export async function commitSupplierSection(supplier = EMPTY_SUPPLIER) {
     termsDays: Number(supplier.termsDays) || 30,
     preferredTrade: supplier.preferredTrade || '',
     supplierType: 'subcontractor',
-    approvedSupplier: true,
     active: true,
   };
 
-  let saved = null;
-  if (supplier.supplierId) {
-    saved = { id: supplier.supplierId, ...payload };
-  } else {
-    saved = await createSupplier(payload);
-  }
+  const existingOrCreated = supplier.supplierId
+    ? { id: supplier.supplierId }
+    : await createOrGetSupplier(payload);
+  const pending = await updateSupplier(existingOrCreated.id, payload);
+  const saved = await approveSupplier(pending.id, {
+    note: 'Approved through governed company onboarding',
+  });
 
   markSectionComplete('supplier');
   syncLegacySetupDraft({ supplier: { ...supplier, supplierId: saved?.id || supplier.supplierId } });
