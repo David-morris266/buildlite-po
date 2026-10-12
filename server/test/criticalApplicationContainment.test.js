@@ -201,6 +201,93 @@ test('inactive and unknown supplier approval states fail closed', async t => {
   assert.equal((await request(app).post(`/api/po/${unknownNumber}/request-approval`).send()).status, 400);
 });
 
+test('contradictory supplier approval evidence cannot be promoted by routine edit', async t => {
+  if (!isDbConfigured()) return t.skip('guarded buildlite_test is not configured');
+  const clientId = await makeClient('Containment contradictory supplier tenant');
+  const supplierId = `sup-contradictory-${randomUUID()}`;
+  supplierIds.push(supplierId);
+  await pool.query(
+    'INSERT INTO suppliers(id,name,payload,client_id) VALUES($1,$2,$3,$4)',
+    [supplierId, 'Contradictory Supplier', {
+      id: supplierId,
+      name: 'Contradictory Supplier',
+      approvalStatus: 'approved',
+      approvedSupplier: false,
+      notes: 'Historic contradiction',
+    }, clientId]
+  );
+  const app = appFor(
+    clientId,
+    [PERMISSIONS.PO_CREATE, PERMISSIONS.PO_EDIT, PERMISSIONS.PO_SUBMIT, PERMISSIONS.PO_APPROVE],
+    'Supplier State Reviewer'
+  );
+
+  const edited = await request(app).put(`/api/po/suppliers/${supplierId}`).send({
+    contactName: 'Accounts Team',
+    notes: 'Routine review only',
+    approvedSupplier: true,
+    approvalStatus: 'approved',
+  });
+  assert.equal(edited.status, 200);
+  assert.equal(edited.body.approvalStatus, 'approved');
+  assert.equal(edited.body.approvedSupplier, false);
+  assert.equal(edited.body.contactName, 'Accounts Team');
+  assert.equal(
+    edited.body.approvalHistory?.some(entry => entry.action === 'IDENTITY_CHANGED_REAPPROVAL_REQUIRED') || false,
+    false
+  );
+
+  const number = `M-CONTRADICTORY-${Date.now()}`;
+  poNumbers.push(number);
+  assert.equal((await request(app).post('/api/po').send(poPayload(number, edited.body))).status, 201);
+  assert.equal((await request(app).post(`/api/po/${number}/request-approval`).send()).status, 400);
+  assert.equal((await request(app).post(`/api/po/suppliers/${supplierId}/approve`).send()).status, 409);
+
+  const missingFlagId = `sup-missing-approval-flag-${randomUUID()}`;
+  supplierIds.push(missingFlagId);
+  await pool.query(
+    'INSERT INTO suppliers(id,name,payload,client_id) VALUES($1,$2,$3,$4)',
+    [missingFlagId, 'Missing Approval Flag Supplier', {
+      id: missingFlagId,
+      name: 'Missing Approval Flag Supplier',
+      approvalStatus: 'approved',
+    }, clientId]
+  );
+  const missingFlagEdit = await request(app)
+    .put(`/api/po/suppliers/${missingFlagId}`)
+    .send({ notes: 'Routine review only', approvedSupplier: true });
+  assert.equal(missingFlagEdit.status, 200);
+  assert.equal(missingFlagEdit.body.approvalStatus, 'approved');
+  assert.equal(missingFlagEdit.body.approvedSupplier, undefined);
+  assert.equal(
+    (await request(app).post(`/api/po/suppliers/${missingFlagId}/approve`).send()).status,
+    409
+  );
+
+  for (const malformedFlag of ['false', 0]) {
+    const malformedId = `sup-malformed-${String(malformedFlag)}-${randomUUID()}`;
+    supplierIds.push(malformedId);
+    await pool.query(
+      'INSERT INTO suppliers(id,name,payload,client_id) VALUES($1,$2,$3,$4)',
+      [malformedId, 'Malformed Approval Supplier', {
+        id: malformedId,
+        name: 'Malformed Approval Supplier',
+        approvedSupplier: malformedFlag,
+      }, clientId]
+    );
+    const malformedNumber = `M-MALFORMED-${Date.now()}-${String(malformedFlag)}`;
+    poNumbers.push(malformedNumber);
+    assert.equal(
+      (await request(app).post('/api/po').send(poPayload(malformedNumber, { id: malformedId }))).status,
+      201
+    );
+    assert.equal(
+      (await request(app).post(`/api/po/${malformedNumber}/request-approval`).send()).status,
+      400
+    );
+  }
+});
+
 test('PO approval decisions require an Issued and Pending lifecycle state', async t => {
   if (!isDbConfigured()) return t.skip('guarded buildlite_test is not configured');
   const clientId = await makeClient('Containment lifecycle transition tenant');
@@ -300,8 +387,13 @@ test('legacy supplier defaults do not fabricate identity changes', async t => {
     contactEmail: 'accounts@example.invalid',
   });
   assert.equal(contactOnly.status, 200);
-  assert.equal(contactOnly.body.approvalStatus, 'approved');
-  assert.equal(contactOnly.body.approvedSupplier, true);
+  assert.equal(contactOnly.body.approvalStatus, undefined);
+  assert.equal(contactOnly.body.approvedSupplier, undefined);
+  assert.equal(contactOnly.body.supplierType, undefined);
+  assert.equal(contactOnly.body.termsDays, undefined);
+  assert.equal(contactOnly.body.defaultVat, undefined);
+  assert.equal(contactOnly.body.vatStatus, undefined);
+  assert.equal(contactOnly.body.creditAccount, undefined);
   assert.equal(
     contactOnly.body.approvalHistory.some(entry => entry.action === 'IDENTITY_CHANGED_REAPPROVAL_REQUIRED'),
     false

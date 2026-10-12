@@ -122,62 +122,66 @@ function changedSupplierIdentityFields(before, after) {
 
 function supplierApprovalState(supplier = {}) {
   const status = String(supplier.approvalStatus || "").trim().toLowerCase();
-  if (!status && supplier.approvedSupplier == null) return "legacy_approved";
+  if (!status && (supplier.approvedSupplier == null || supplier.approvedSupplier === true)) {
+    return "legacy_approved";
+  }
   if (status === "pending" && supplier.approvedSupplier !== true) return "pending";
   if (status === "approved" && supplier.approvedSupplier === true) return "approved";
   return "unknown";
 }
 
-function resolveSupplierApprovalStatus(base = {}, body = {}, { isCreate = false } = {}) {
-  if (isCreate) return "pending";
-  if (base.approvalStatus) return base.approvalStatus;
-  if (base.approvedSupplier === false) return "pending";
-  // A supplier predating the governed approval fields is the one explicit
-  // compatibility case. Modernise it as approved on a routine amendment;
-  // identity-critical amendments are demoted by the locked update route.
-  if (base.approvedSupplier == null) return "approved";
-  return "pending";
+function supplierField(base, body, field, createDefault, { isCreate = false } = {}) {
+  if (Object.prototype.hasOwnProperty.call(body, field)) return body[field];
+  if (Object.prototype.hasOwnProperty.call(base, field)) return base[field];
+  return isCreate ? createDefault : undefined;
+}
+
+function resolveSupplierApprovalEvidence(base = {}, { isCreate = false } = {}) {
+  if (isCreate) return { approvalStatus: "pending", approvedSupplier: false };
+  const state = supplierApprovalState(base);
+  if (state === "approved") return { approvalStatus: "approved", approvedSupplier: true };
+  if (state === "pending") return { approvalStatus: "pending", approvedSupplier: false };
+  // Ordinary edits must neither invent nor repair approval authority.
+  return {
+    approvalStatus: base.approvalStatus,
+    approvedSupplier: base.approvedSupplier,
+  };
 }
 
 function buildSupplierPayload(base = {}, body = {}, { isCreate = false } = {}) {
   const now = new Date().toISOString();
-  const termsDays =
-    body.termsDays != null ? Number(body.termsDays || 30) : Number(base.termsDays || 30);
-  const approvalStatus = resolveSupplierApprovalStatus(base, body, { isCreate });
-  const approvedSupplier = approvalStatus === "approved";
+  const rawTermsDays = supplierField(base, body, "termsDays", 30, { isCreate });
+  const termsDays = rawTermsDays == null ? undefined : Number(rawTermsDays || 30);
+  const approvalEvidence = resolveSupplierApprovalEvidence(base, { isCreate });
 
   const payload = {
     ...base,
     id: base.id || `sup-${randomUUID()}`,
     name:
       body.name != null ? String(body.name).trim() : String(base.name || "").trim(),
-    address1: body.address1 ?? base.address1 ?? "",
-    address2: body.address2 ?? base.address2 ?? "",
-    city: body.city ?? base.city ?? "",
-    postcode: body.postcode ?? base.postcode ?? "",
-    contactName: body.contactName ?? base.contactName ?? "",
-    contactEmail: body.contactEmail ?? base.contactEmail ?? "",
-    contactPhone: body.contactPhone ?? base.contactPhone ?? "",
-    vatNumber: body.vatNumber ?? base.vatNumber ?? "",
+    address1: supplierField(base, body, "address1", "", { isCreate }),
+    address2: supplierField(base, body, "address2", "", { isCreate }),
+    city: supplierField(base, body, "city", "", { isCreate }),
+    postcode: supplierField(base, body, "postcode", "", { isCreate }),
+    contactName: supplierField(base, body, "contactName", "", { isCreate }),
+    contactEmail: supplierField(base, body, "contactEmail", "", { isCreate }),
+    contactPhone: supplierField(base, body, "contactPhone", "", { isCreate }),
+    vatNumber: supplierField(base, body, "vatNumber", "", { isCreate }),
     termsDays,
-    supplierType: body.supplierType ?? base.supplierType ?? "other",
-    notes: body.notes ?? base.notes ?? "",
-    preferredTrade: body.preferredTrade ?? base.preferredTrade ?? "",
-    preferredCommercialHead:
-      body.preferredCommercialHead ?? base.preferredCommercialHead ?? "",
-    creditAccount:
-      body.creditAccount != null ? Boolean(body.creditAccount) : Boolean(base.creditAccount),
-    cisStatus: body.cisStatus ?? base.cisStatus ?? "",
-    insuranceExpiry: body.insuranceExpiry ?? base.insuranceExpiry ?? "",
-    approvalStatus,
-    approvedSupplier,
-    defaultVat: body.defaultVat ?? base.defaultVat ?? "Standard",
-    vatStatus: body.vatStatus ?? base.vatStatus ?? "",
-    active: body.active != null ? body.active !== false : base.active !== false,
-    bankDetailsPlaceholder:
-      body.bankDetailsPlaceholder ?? base.bankDetailsPlaceholder ?? "Future module",
-    creditLimitPlaceholder:
-      body.creditLimitPlaceholder ?? base.creditLimitPlaceholder ?? "Future module",
+    supplierType: supplierField(base, body, "supplierType", "other", { isCreate }),
+    notes: supplierField(base, body, "notes", "", { isCreate }),
+    preferredTrade: supplierField(base, body, "preferredTrade", "", { isCreate }),
+    preferredCommercialHead: supplierField(base, body, "preferredCommercialHead", "", { isCreate }),
+    creditAccount: supplierField(base, body, "creditAccount", false, { isCreate }),
+    cisStatus: supplierField(base, body, "cisStatus", "", { isCreate }),
+    insuranceExpiry: supplierField(base, body, "insuranceExpiry", "", { isCreate }),
+    approvalStatus: approvalEvidence.approvalStatus,
+    approvedSupplier: approvalEvidence.approvedSupplier,
+    defaultVat: supplierField(base, body, "defaultVat", "Standard", { isCreate }),
+    vatStatus: supplierField(base, body, "vatStatus", "", { isCreate }),
+    active: supplierField(base, body, "active", true, { isCreate }),
+    bankDetailsPlaceholder: supplierField(base, body, "bankDetailsPlaceholder", "Future module", { isCreate }),
+    creditLimitPlaceholder: supplierField(base, body, "creditLimitPlaceholder", "Future module", { isCreate }),
     approvalHistory: base.approvalHistory || [],
     createdAt: base.createdAt || now,
     updatedAt: now,

@@ -9,13 +9,29 @@ export const SUPPLIER_APPROVAL_STATUS = {
 
 export function getSupplierApprovalStatus(supplier) {
   if (!supplier) return SUPPLIER_APPROVAL_STATUS.APPROVED;
-  if (supplier.approvalStatus === SUPPLIER_APPROVAL_STATUS.PENDING) {
+  const status = String(supplier.approvalStatus || '').trim().toLowerCase();
+  if (!status && (supplier.approvedSupplier == null || supplier.approvedSupplier === true)) {
+    return SUPPLIER_APPROVAL_STATUS.APPROVED;
+  }
+  if (status === SUPPLIER_APPROVAL_STATUS.APPROVED && supplier.approvedSupplier === true) {
+    return SUPPLIER_APPROVAL_STATUS.APPROVED;
+  }
+  if (status === SUPPLIER_APPROVAL_STATUS.PENDING && supplier.approvedSupplier !== true) {
     return SUPPLIER_APPROVAL_STATUS.PENDING;
   }
-  if (supplier.approvedSupplier === false) {
-    return SUPPLIER_APPROVAL_STATUS.PENDING;
-  }
-  return SUPPLIER_APPROVAL_STATUS.APPROVED;
+  return SUPPLIER_APPROVAL_STATUS.PENDING;
+}
+
+export function hasInvalidSupplierApprovalEvidence(supplier) {
+  if (!supplier) return false;
+  const status = String(supplier.approvalStatus || '').trim().toLowerCase();
+  const legacyApproved = !status
+    && (supplier.approvedSupplier == null || supplier.approvedSupplier === true);
+  const pending = status === SUPPLIER_APPROVAL_STATUS.PENDING
+    && supplier.approvedSupplier !== true;
+  const approved = status === SUPPLIER_APPROVAL_STATUS.APPROVED
+    && supplier.approvedSupplier === true;
+  return !legacyApproved && !pending && !approved;
 }
 
 export function isSupplierApproved(supplier) {
@@ -23,6 +39,9 @@ export function isSupplierApproved(supplier) {
 }
 
 export function getSupplierApprovalBadge(supplier) {
+  if (hasInvalidSupplierApprovalEvidence(supplier)) {
+    return { label: 'Approval evidence requires review', modifier: 'warning' };
+  }
   const status = getSupplierApprovalStatus(supplier);
   if (status === SUPPLIER_APPROVAL_STATUS.PENDING) {
     return { label: 'Pending Supplier', modifier: 'pending' };

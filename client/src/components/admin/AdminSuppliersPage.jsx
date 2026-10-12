@@ -16,22 +16,13 @@ import {
   AdminSkeleton,
   AdminStatusBadge,
 } from './adminUi';
+import {
+  EMPTY_SUPPLIER_ADMIN_FORM,
+  buildAdminSupplierSavePayload,
+  supplierToAdminForm,
+} from './adminSupplierForm';
 
-const EMPTY_FORM = {
-  name: '',
-  supplierType: 'subcontractor',
-  preferredTrade: '',
-  preferredCommercialHead: '',
-  termsDays: 30,
-  creditAccount: false,
-  cisStatus: '',
-  insuranceExpiry: '',
-  approvedSupplier: true,
-  defaultVat: 'Standard',
-  vatStatus: 'VAT Registered',
-  active: true,
-  notes: '',
-};
+const EMPTY_FORM = EMPTY_SUPPLIER_ADMIN_FORM;
 
 function isInsuranceExpiring(value) {
   if (!value) return false;
@@ -45,9 +36,12 @@ export default function AdminSuppliersPage({ onBack }) {
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const [actionSuccess, setActionSuccess] = useState('');
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [initialForm, setInitialForm] = useState(null);
   const [isNew, setIsNew] = useState(false);
   const [catalogue,setCatalogue]=useState({heads:[],reportingGroups:[]});
   const [catalogueState,setCatalogueState]=useState({loading:true,error:''});
@@ -59,7 +53,9 @@ export default function AdminSuppliersPage({ onBack }) {
     setLoading(true);
     try {
       const data = await listSuppliers('');
-      setSuppliers(Array.isArray(data) ? data : []);
+      const nextSuppliers = Array.isArray(data) ? data : [];
+      setSuppliers(nextSuppliers);
+      return nextSuppliers;
     } finally {
       setLoading(false);
     }
@@ -86,6 +82,7 @@ export default function AdminSuppliersPage({ onBack }) {
       return haystack.includes(needle);
     });
   }, [suppliers, search]);
+  const selectedSupplier = suppliers.find((item) => item.id === selectedId) || null;
 
   const pendingCount = suppliers.filter((item) => !isSupplierApproved(item)).length;
   const inactiveCount = suppliers.filter((item) => item.active === false).length;
@@ -93,43 +90,60 @@ export default function AdminSuppliersPage({ onBack }) {
   const cisVerified = suppliers.filter((item) => item.cisStatus && item.cisStatus !== 'Not Applicable').length;
 
   function selectSupplier(supplier) {
+    const nextForm = supplierToAdminForm(supplier);
     setSelectedId(supplier.id);
     setIsNew(false);
-    setForm({
-      name: supplier.name || '',
-      supplierType: supplier.supplierType || 'subcontractor',
-      preferredTrade: supplier.preferredTrade || '',
-      preferredCommercialHead: supplier.preferredCommercialHead || '',
-      termsDays: supplier.termsDays ?? 30,
-      creditAccount: Boolean(supplier.creditAccount),
-      cisStatus: supplier.cisStatus || '',
-      insuranceExpiry: supplier.insuranceExpiry || '',
-      approvedSupplier: supplier.approvedSupplier !== false,
-      defaultVat: supplier.defaultVat || 'Standard',
-      vatStatus: supplier.vatStatus || 'VAT Registered',
-      active: supplier.active !== false,
-      notes: supplier.notes || '',
-    });
+    setForm(nextForm);
+    setInitialForm(nextForm);
+    setActionError('');
   }
 
   function startNew() {
     setSelectedId('new');
     setIsNew(true);
     setForm(EMPTY_FORM);
+    setInitialForm(null);
+    setActionError('');
+    setActionSuccess('');
+  }
+
+  function applyAuthoritativeSupplier(saved) {
+    if (!saved?.id || !saved?.name || !saved?.updatedAt) return false;
+    setSuppliers((current) => {
+      const exists = current.some((supplier) => supplier.id === saved.id);
+      return exists
+        ? current.map((supplier) => supplier.id === saved.id ? saved : supplier)
+        : [...current, saved];
+    });
+    selectSupplier(saved);
+    return true;
+  }
+
+  async function convergeSavedSupplier(saved, supplierId) {
+    if (applyAuthoritativeSupplier(saved)) return saved;
+    const refreshed = await loadSuppliers();
+    const authoritative = refreshed.find((supplier) => supplier.id === (saved?.id || supplierId));
+    if (!authoritative) throw new Error('Saved supplier was not returned by the supplier master.');
+    selectSupplier(authoritative);
+    return authoritative;
   }
 
   async function handleApproveSupplier() {
     if (!selectedId || selectedId === 'new') return;
     setSaving(true);
+    setActionError('');
+    setActionSuccess('');
     try {
       const approverName = localStorage.getItem('userName') || 'Administrator';
       const saved = await approveSupplier(selectedId, {
         by: approverName,
         note: 'Approved in Administration',
       });
-      await loadSuppliers();
-      selectSupplier(saved);
+      await convergeSavedSupplier(saved, selectedId);
+      setActionSuccess('Supplier approved.');
       notifyMasterDataChanged('suppliers');
+    } catch {
+      setActionError('BuildLite could not approve this supplier. Review its approval evidence and try again.');
     } finally {
       setSaving(false);
     }
@@ -137,23 +151,19 @@ export default function AdminSuppliersPage({ onBack }) {
 
   async function saveSupplier() {
     setSaving(true);
+    setActionError('');
+    setActionSuccess('');
     try {
-      const payload = {
-        ...form,
-        termsDays: Number(form.termsDays) || 30,
-        creditAccount: Boolean(form.creditAccount),
-        approvedSupplier: Boolean(form.approvedSupplier),
-        active: Boolean(form.active),
-      };
-
-      if (isNew) {
-        const created = await createSupplier(payload);
-        setSelectedId(created.id);
-        setIsNew(false);
-      } else {
-        await updateSupplier(selectedId, payload);
-      }
-      await loadSuppliers();
+      const payload = buildAdminSupplierSavePayload(form, { isNew, initialForm });
+      const supplierId = selectedId;
+      const saved = isNew
+        ? await createSupplier(payload)
+        : await updateSupplier(selectedId, payload);
+      await convergeSavedSupplier(saved, supplierId);
+      setActionSuccess(isNew ? 'Supplier created and awaiting approval.' : 'Supplier saved.');
+      notifyMasterDataChanged('suppliers');
+    } catch {
+      setActionError('BuildLite could not save this supplier. Check the details and try again.');
     } finally {
       setSaving(false);
     }
@@ -176,6 +186,8 @@ export default function AdminSuppliersPage({ onBack }) {
         ]}
       />
       {catalogueState.error ? <p className="admin-inline-warning" role="alert">{catalogueState.error}</p> : null}
+      {actionError ? <p className="admin-inline-warning" role="alert">{actionError}</p> : null}
+      {actionSuccess ? <p className="admin-inline-success" role="status">{actionSuccess}</p> : null}
 
       <div className="admin-split-layout">
         <aside className="admin-split-layout__sidebar po-module-card">
@@ -237,6 +249,7 @@ export default function AdminSuppliersPage({ onBack }) {
                 <label className="dev-form__field">
                   <span className="dev-form__label">Supplier Type</span>
                   <select className="input" value={form.supplierType} onChange={(e) => setForm((p) => ({ ...p, supplierType: e.target.value }))}>
+                    <option value="">Not recorded</option>
                     {SUPPLIER_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
                   </select>
                 </label>
@@ -280,15 +293,9 @@ export default function AdminSuppliersPage({ onBack }) {
                   <input className="input" type="date" value={form.insuranceExpiry} onChange={(e) => setForm((p) => ({ ...p, insuranceExpiry: e.target.value }))} />
                 </label>
                 <label className="dev-form__field">
-                  <span className="dev-form__label">Approved Supplier</span>
-                  <select className="input" value={form.approvedSupplier ? 'yes' : 'no'} onChange={(e) => setForm((p) => ({ ...p, approvedSupplier: e.target.value === 'yes' }))}>
-                    <option value="yes">Yes</option>
-                    <option value="no">No</option>
-                  </select>
-                </label>
-                <label className="dev-form__field">
                   <span className="dev-form__label">Default VAT</span>
                   <select className="input" value={form.defaultVat} onChange={(e) => setForm((p) => ({ ...p, defaultVat: e.target.value }))}>
+                    <option value="">Not recorded</option>
                     <option value="Standard">Standard</option>
                     <option value="Zero Rated">Zero Rated</option>
                     <option value="Reverse Charge">Reverse Charge</option>
@@ -297,6 +304,7 @@ export default function AdminSuppliersPage({ onBack }) {
                 <label className="dev-form__field">
                   <span className="dev-form__label">VAT Status</span>
                   <select className="input" value={form.vatStatus} onChange={(e) => setForm((p) => ({ ...p, vatStatus: e.target.value }))}>
+                    <option value="">Not recorded</option>
                     <option value="VAT Registered">VAT Registered</option>
                     <option value="Not VAT Registered">Not VAT Registered</option>
                   </select>
@@ -323,7 +331,7 @@ export default function AdminSuppliersPage({ onBack }) {
               </div>
 
               <div className="admin-form__actions">
-                {!isNew && selectedId && !isSupplierApproved(form) ? (
+                {!isNew && selectedSupplier && !isSupplierApproved(selectedSupplier) ? (
                   <AdminButton variant="primary" loading={saving} onClick={handleApproveSupplier}>
                     Approve Supplier
                   </AdminButton>
@@ -332,12 +340,12 @@ export default function AdminSuppliersPage({ onBack }) {
                 <AdminButton variant="secondary" onClick={() => { setSelectedId(null); setIsNew(false); }}>Close</AdminButton>
               </div>
 
-              {!isNew && Array.isArray(suppliers.find((item) => item.id === selectedId)?.approvalHistory)
-                && suppliers.find((item) => item.id === selectedId)?.approvalHistory?.length ? (
+              {!isNew && Array.isArray(selectedSupplier?.approvalHistory)
+                && selectedSupplier.approvalHistory.length ? (
                 <section className="admin-supplier-history po-module-card">
                   <h3 className="admin-panel__title">Approval history</h3>
                   <ul className="admin-supplier-history__list">
-                    {suppliers.find((item) => item.id === selectedId).approvalHistory.map((entry, index) => (
+                    {selectedSupplier.approvalHistory.map((entry, index) => (
                       <li key={`${entry.at}-${index}`}>
                         <strong>{formatSupplierApprovalAction(entry.action)}</strong>
                         <span>{entry.by || 'System'}</span>

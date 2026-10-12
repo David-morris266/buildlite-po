@@ -20,6 +20,12 @@ describe('supplierApproval', () => {
     expect(getSupplierApprovalBadge({ approvedSupplier: true }).label).toBe('Approved');
     expect(isSupplierApproved({ approvedSupplier: true })).toBe(true);
     expect(isSupplierApproved({ approvalStatus: 'pending' })).toBe(false);
+    expect(isSupplierApproved({ approvalStatus: 'approved' })).toBe(false);
+    expect(isSupplierApproved({ approvalStatus: 'approved', approvedSupplier: false })).toBe(false);
+    expect(isSupplierApproved({ approvalStatus: 'mystery', approvedSupplier: true })).toBe(false);
+    expect(isSupplierApproved({ approvedSupplier: 'false' })).toBe(false);
+    expect(isSupplierApproved({ approvedSupplier: 0 })).toBe(false);
+    expect(isSupplierApproved({})).toBe(true);
   });
 
   it('records approval history entries', () => {
