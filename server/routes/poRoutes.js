@@ -99,9 +99,14 @@ const SUPPLIER_IDENTITY_FIELDS = Object.freeze([
 ]);
 
 function normaliseSupplierIdentityValue(field, value) {
-  if (field === "termsDays") return Number(value || 0);
+  if (field === "termsDays") return Number(value || 30);
   if (field === "creditAccount") return Boolean(value);
-  const text = String(value ?? "").trim();
+  const effectiveValue = field === "supplierType" && (value == null || value === "")
+    ? "other"
+    : field === "defaultVat" && (value == null || value === "")
+      ? "Standard"
+      : value;
+  const text = String(effectiveValue ?? "").trim();
   if (field === "vatNumber" || field === "postcode") {
     return text.replace(/\s+/g, "").toUpperCase();
   }

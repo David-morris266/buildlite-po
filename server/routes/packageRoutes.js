@@ -430,7 +430,7 @@ router.get("/:packageId", async (req, res) => {
   }
 });
 
-router.post("/materialise", async (req, res) => {
+router.post("/materialise", requirePermission(PERMISSIONS.PO_APPROVE), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -441,7 +441,7 @@ router.post("/materialise", async (req, res) => {
 
     const body = req.body || {};
     const result = await materialisePackagesFromApprovedPos(active.id, {
-      actor: provisionalActor(body),
+      actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.PO_APPROVE).actor,
       developmentId: body.developmentId || null,
     });
 
@@ -452,7 +452,7 @@ router.post("/materialise", async (req, res) => {
   }
 });
 
-router.post("/materialise-from-po/:poNumber", async (req, res) => {
+router.post("/materialise-from-po/:poNumber", requirePermission(PERMISSIONS.PO_APPROVE), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -464,7 +464,7 @@ router.post("/materialise-from-po/:poNumber", async (req, res) => {
     const result = await materialisePackageFromPoNumber(
       active.id,
       req.params.poNumber,
-      { actor: provisionalActor(req.body || {}) }
+      { actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.PO_APPROVE).actor }
     );
 
     if (!result.ok) {

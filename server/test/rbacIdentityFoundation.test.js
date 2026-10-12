@@ -88,6 +88,8 @@ test('PO, supplier and Commercial Event import mutations deny before domain exec
     ['delete', '/api/po/M001', PERMISSIONS.PO_DELETE_DRAFT],
     ['post', '/api/po/suppliers', PERMISSIONS.PO_CREATE],
     ['put', '/api/po/suppliers/supplier-1', PERMISSIONS.PO_EDIT],
+    ['post', '/api/packages/materialise', PERMISSIONS.PO_APPROVE],
+    ['post', '/api/packages/materialise-from-po/S001', PERMISSIONS.PO_APPROVE],
     ['post', '/api/commercial-events/import', PERMISSIONS.CE_APPROVE],
   ];
   for (const [method, route, permission] of attempts) {
@@ -133,5 +135,7 @@ test('critical-route manifest protects certificate Return to Draft with certific
   assert.equal(CRITICAL_ROUTE_PERMISSIONS['PUT /api/po/:poNumber'], PERMISSIONS.PO_EDIT);
   assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/po/:poNumber/request-approval'], PERMISSIONS.PO_SUBMIT);
   assert.equal(CRITICAL_ROUTE_PERMISSIONS['DELETE /api/po/:poNumber'], PERMISSIONS.PO_DELETE_DRAFT);
+  assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/packages/materialise'], PERMISSIONS.PO_APPROVE);
+  assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/packages/materialise-from-po/:poNumber'], PERMISSIONS.PO_APPROVE);
   assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/commercial-events/import'], PERMISSIONS.CE_APPROVE);
 });

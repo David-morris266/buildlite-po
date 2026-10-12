@@ -8,6 +8,8 @@ const fs = require("fs");
 const path = require("path");
 const request = require("supertest");
 const createApp = require("../app");
+const { createTestAuthAdapter } = require("../auth/authAdapters");
+const { PERMISSIONS } = require("../auth/permissions");
 const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { buildSubcontractOrderKey } = require("../services/packageKey");
@@ -423,6 +425,34 @@ if (!isDbConfigured()) {
     assert.equal(again.orderKey, pkg.orderKey);
     assert.equal(second.summary.updated, 1);
     assert.equal(second.summary.created, 0);
+  });
+
+  test("bulk materialisation requires PO approval authority and records the authenticated actor", async () => {
+    const active = await getActiveClient();
+    const development = await createDevelopment(active);
+    const poNumber = `S-AUTH-${Date.now()}`;
+    await savePo(active.id, buildPo({ poNumber, development, supplierId: "sup-auth" }));
+    const principal = {
+      userId: "package-auth-user",
+      providerUserId: "package-auth-provider",
+      displayName: "Authenticated Package Manager",
+      email: "package.manager@example.invalid",
+      clientId: active.id,
+      membershipId: "package-auth-membership",
+      roleKey: "commercial_manager",
+      roleName: "Commercial Manager",
+      permissions: [PERMISSIONS.PO_APPROVE],
+      memberships: [],
+    };
+    const authorised = createApp({ authAdapter: createTestAuthAdapter(principal) });
+    const response = await request(authorised)
+      .post("/api/packages/materialise")
+      .send({ developmentId: development.id, actor: "Forged Browser Actor" });
+    assert.equal(response.status, 200);
+    const pkg = response.body.packages[0];
+    trackPackage(pkg);
+    const stored = await pool.query("SELECT created_by FROM packages WHERE id=$1", [pkg.id]);
+    assert.equal(stored.rows[0].created_by, "Authenticated Package Manager");
   });
 
   test("GET package by UUID and orderKey are tenant scoped", async () => {

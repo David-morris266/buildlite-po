@@ -8,6 +8,8 @@ const CRITICAL_ROUTE_PERMISSIONS = Object.freeze({
   'POST /api/po/suppliers': `${P.PO_CREATE}|${P.TENANT_CONFIGURE}`,
   'PUT /api/po/suppliers/:id': `${P.PO_EDIT}|${P.TENANT_CONFIGURE}`,
   'POST /api/po/suppliers/:id/approve': `${P.PO_APPROVE}|${P.TENANT_CONFIGURE}`,
+  'POST /api/packages/materialise': P.PO_APPROVE,
+  'POST /api/packages/materialise-from-po/:poNumber': P.PO_APPROVE,
   'POST /api/commercial-events/import': P.CE_APPROVE,
   'POST /api/commercial-events/:id/approve': P.CE_APPROVE,
   'POST /api/commercial-events/:id/reject': P.CE_APPROVE,

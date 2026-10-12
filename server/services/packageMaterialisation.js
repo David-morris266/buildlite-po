@@ -186,9 +186,8 @@ async function upsertGroupedPackages(clientId, groups, { actor = null, dbClient 
   return { created, updated, packages };
 }
 
-async function materialisePackagesFromApprovedPos(clientId, options = {}) {
-  const { actor = null, developmentId: filterDevelopmentId = null } = options;
-  const pos = await listPurchaseOrdersForClient(clientId);
+async function collectEligiblePackageRecords(clientId, filterDevelopmentId, dbClient) {
+  const pos = await listPurchaseOrdersForClient(clientId, dbClient);
   const caches = {
     developments: new Map(),
     jobNumbers: new Map(),
@@ -198,7 +197,7 @@ async function materialisePackagesFromApprovedPos(clientId, options = {}) {
   const eligible = [];
 
   for (const po of pos) {
-    const record = await buildEligiblePoRecord(clientId, po, caches);
+    const record = await buildEligiblePoRecord(clientId, po, caches, dbClient);
     if (!record.ok) {
       skipped.push({ poNumber: record.poNumber, reason: record.reason });
       continue;
@@ -214,8 +213,49 @@ async function materialisePackagesFromApprovedPos(clientId, options = {}) {
     eligible.push(record);
   }
 
-  const groups = groupEligiblePos(eligible);
-  const upsertResult = await upsertGroupedPackages(clientId, groups, { actor });
+  return { eligible, skipped };
+}
+
+async function materialisePackagesFromApprovedPosInTransaction(clientId, options = {}) {
+  const {
+    actor = null,
+    developmentId: filterDevelopmentId = null,
+    dbClient,
+    afterDiscoveryForTest = null,
+  } = options;
+  const discovery = await collectEligiblePackageRecords(
+    clientId,
+    filterDevelopmentId,
+    dbClient
+  );
+  const candidateKeys = [...groupEligiblePos(discovery.eligible).keys()].sort();
+
+  if (typeof afterDiscoveryForTest === "function") {
+    await afterDiscoveryForTest(candidateKeys);
+  }
+
+  // Discovery identifies the finite set of Package identities to refresh. The
+  // locked reread below is the authoritative membership evidence. Sorting the
+  // keys also gives concurrent bulk operations a stable lock order.
+  for (const orderKey of candidateKeys) {
+    await dbClient.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+      [packageMaterialisationLockKey(clientId, orderKey)]
+    );
+  }
+
+  const authoritative = await collectEligiblePackageRecords(
+    clientId,
+    filterDevelopmentId,
+    dbClient
+  );
+  const authoritativeGroups = groupEligiblePos(authoritative.eligible);
+  const groups = new Map(
+    candidateKeys
+      .filter((orderKey) => authoritativeGroups.has(orderKey))
+      .map((orderKey) => [orderKey, authoritativeGroups.get(orderKey)])
+  );
+  const upsertResult = await upsertGroupedPackages(clientId, groups, { actor, dbClient });
 
   return {
     ok: true,
@@ -223,12 +263,34 @@ async function materialisePackagesFromApprovedPos(clientId, options = {}) {
       created: upsertResult.created,
       updated: upsertResult.updated,
       packageCount: upsertResult.packages.length,
-      eligiblePoCount: eligible.length,
-      skippedCount: skipped.length,
+      eligiblePoCount: authoritative.eligible.length,
+      skippedCount: authoritative.skipped.length,
     },
     packages: upsertResult.packages,
-    skipped,
+    skipped: authoritative.skipped,
   };
+}
+
+async function materialisePackagesFromApprovedPos(clientId, options = {}) {
+  if (options.dbClient) {
+    return materialisePackagesFromApprovedPosInTransaction(clientId, options);
+  }
+
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query("BEGIN");
+    const result = await materialisePackagesFromApprovedPosInTransaction(clientId, {
+      ...options,
+      dbClient,
+    });
+    await dbClient.query("COMMIT");
+    return result;
+  } catch (error) {
+    try { await dbClient.query("ROLLBACK"); } catch (_) { /* original error wins */ }
+    throw error;
+  } finally {
+    dbClient.release();
+  }
 }
 
 async function materialisePackageFromPoNumberInTransaction(clientId, poNumber, options = {}) {

@@ -13,7 +13,10 @@ const { PERMISSIONS } = require('../auth/permissions');
 const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { buildSubcontractOrderKey } = require("../services/packageKey");
-const { packageMaterialisationLockKey } = require("../services/packageMaterialisation");
+const {
+  materialisePackagesFromApprovedPos,
+  packageMaterialisationLockKey,
+} = require("../services/packageMaterialisation");
 
 const app = createApp();
 const MIGRATION_004 = path.join(__dirname, "..", "migrations", "004_developments.sql");
@@ -366,6 +369,54 @@ if (!isDbConfigured()) {
         [active.id, [po1, po2]]
       );
       assert.deepEqual(bindings.rows.map(row => row.po_number), [po1, po2].sort());
+    });
+
+    await t.test("bulk materialisation rereads membership after concurrent PO approval", async () => {
+      const active = await getActiveClient();
+      const development = await createDevelopment(active, { developmentName: "Bulk Concurrency Dev" });
+      const supplierId = `sup-bulk-race-${Date.now()}`;
+      await createApprovedSupplier(active.id, supplierId, "Bulk Concurrency Supplier");
+      const approvedPo = `S-BULK-RACE-A-${Date.now()}`;
+      const pendingPo = `S-BULK-RACE-B-${Date.now()}`;
+      const orderKey = buildSubcontractOrderKey(development.id, supplierId, "5218");
+      const alreadyApproved = buildPendingPo({ poNumber: approvedPo, development, supplierId });
+      alreadyApproved.status = "Approved";
+      alreadyApproved.approval.status = "Approved";
+      alreadyApproved.approval.history.push({ action: "APPROVED", by: "Earlier Approver" });
+      await savePo(active.id, alreadyApproved);
+      await savePo(active.id, buildPendingPo({ poNumber: pendingPo, development, supplierId }));
+
+      let releaseDiscovery;
+      let signalDiscovery;
+      const discovered = new Promise(resolve => { signalDiscovery = resolve; });
+      const resume = new Promise(resolve => { releaseDiscovery = resolve; });
+      const bulk = materialisePackagesFromApprovedPos(active.id, {
+        developmentId: development.id,
+        actor: "Bulk Recovery Operator",
+        afterDiscoveryForTest: async (keys) => {
+          assert.deepEqual(keys, [orderKey]);
+          signalDiscovery();
+          await resume;
+        },
+      });
+
+      await discovered;
+      const approval = await approvePo(pendingPo);
+      assert.equal(approval.status, 200);
+      releaseDiscovery();
+      const bulkResult = await bulk;
+      assert.equal(bulkResult.ok, true);
+
+      const pkg = await getPackageByOrderKey(active.id, orderKey);
+      assert.ok(pkg);
+      testPackageIds.push(pkg.id);
+      assert.deepEqual(pkg.poNumbers.sort(), [approvedPo, pendingPo].sort());
+      const binding = await pool.query(
+        `SELECT COUNT(*)::int AS count FROM purchase_order_terms_bindings
+         WHERE client_id=$1 AND po_number=$2`,
+        [active.id, pendingPo]
+      );
+      assert.equal(binding.rows[0].count, 1);
     });
 
     await t.test("different supplier or cost code or development creates different Package", async () => {

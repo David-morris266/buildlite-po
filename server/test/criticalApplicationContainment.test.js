@@ -284,6 +284,44 @@ test('legacy suppliers without modern approval fields remain usable but tenant-o
   assert.equal(submitted.status, 200);
 });
 
+test('legacy supplier defaults do not fabricate identity changes', async t => {
+  if (!isDbConfigured()) return t.skip('guarded buildlite_test is not configured');
+  const clientId = await makeClient('Containment legacy defaults tenant');
+  const supplierId = `sup-legacy-defaults-${randomUUID()}`;
+  supplierIds.push(supplierId);
+  await pool.query(
+    `INSERT INTO suppliers(id,name,payload,client_id) VALUES($1,$2,$3,$4)`,
+    [supplierId, 'Legacy Defaults Supplier', { name: 'Legacy Defaults Supplier' }, clientId]
+  );
+  const app = appFor(clientId, [PERMISSIONS.PO_EDIT, PERMISSIONS.PO_APPROVE], 'Legacy Supplier Editor');
+
+  const contactOnly = await request(app).put(`/api/po/suppliers/${supplierId}`).send({
+    contactName: 'Accounts Team',
+    contactEmail: 'accounts@example.invalid',
+  });
+  assert.equal(contactOnly.status, 200);
+  assert.equal(contactOnly.body.approvalStatus, 'approved');
+  assert.equal(contactOnly.body.approvedSupplier, true);
+  assert.equal(
+    contactOnly.body.approvalHistory.some(entry => entry.action === 'IDENTITY_CHANGED_REAPPROVAL_REQUIRED'),
+    false
+  );
+
+  const identityChange = await request(app).put(`/api/po/suppliers/${supplierId}`).send({
+    vatNumber: 'GB123456789',
+  });
+  assert.equal(identityChange.status, 200);
+  assert.equal(identityChange.body.approvalStatus, 'pending');
+  assert.equal(identityChange.body.approvedSupplier, false);
+  const evidence = identityChange.body.approvalHistory.filter(
+    entry => entry.action === 'IDENTITY_CHANGED_REAPPROVAL_REQUIRED'
+  );
+  assert.equal(evidence.length, 1);
+  assert.equal(evidence[0].by, 'Legacy Supplier Editor');
+  assert.match(evidence[0].note, /vatNumber/);
+  assert.doesNotMatch(evidence[0].note, /termsDays|supplierType|defaultVat/);
+});
+
 test('global PO-number collisions fail closed without transferring tenant ownership', async t => {
   if (!isDbConfigured()) return t.skip('guarded buildlite_test is not configured');
   const tenantA = await makeClient('Containment PO A');
