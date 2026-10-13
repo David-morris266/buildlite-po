@@ -36,7 +36,7 @@ Required production variable names:
 
 `BUILDLITE_PLATFORM_OPERATOR_IDS` is optional for server availability. When absent, assisted tenant provisioning is disabled because nobody receives `platform.tenant_provision`. Configure only reviewed Clerk provider user IDs when provisioning is required.
 
-Feature-specific email variables are `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `FROM_EMAIL` and `APPROVER_EMAILS`. `COST_CODE_IMPORT_REVIEW_SECRET` may be configured as a dedicated review secret.
+BuildLite does not currently provide SMTP workflow notifications. User invitations continue to be delivered through the configured Clerk production instance. `COST_CODE_IMPORT_REVIEW_SECRET` may be configured as a dedicated review secret.
 
 Production must never set `BUILDLITE_SERVER_TEST`, `TEST_DATABASE_URL`, or relax service authorization through `BUILDLITE_STRICT_SERVICE_AUTH=0`.
 

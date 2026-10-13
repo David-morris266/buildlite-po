@@ -1,6 +1,5 @@
 {
   "dependencies": {
-    "framer-motion": "^12.23.12",
-    "nodemailer": "^7.0.9"
+    "framer-motion": "^12.23.12"
   }
 }
