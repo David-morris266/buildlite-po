@@ -289,7 +289,7 @@ async function renderPOToPDF(ctx, { draft = false } = {}) {
   }
 
   const browser = await puppeteer.launch({
-    headless: 'new', // or true – fine on Render
+    headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
 
@@ -303,7 +303,7 @@ async function renderPOToPDF(ctx, { draft = false } = {}) {
       timeout: 15000,                // 15s cap – adjust if needed
     });
 
-    const pdf = await page.pdf({
+    const pdf = Buffer.from(await page.pdf({
       format: 'A4',
       printBackground: true,
       margin: {
@@ -312,7 +312,7 @@ async function renderPOToPDF(ctx, { draft = false } = {}) {
         bottom: '0mm',
         left: '10mm',
       },
-    });
+    }));
 
     if (!pdf || !pdf.length) {
       throw new Error('Puppeteer returned empty PDF buffer');
