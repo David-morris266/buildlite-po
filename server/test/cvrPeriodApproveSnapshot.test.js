@@ -656,6 +656,40 @@ async function assertRolledBack(clientId, developmentId, periodId) {
   const audit = await auditActions(periodId);
   assert.equal(audit.some((item) => item.action === "locked"), false);
   assert.equal(audit.some((item) => item.action === "approved"), false);
+  const milestone = await pool.query(
+    "SELECT COUNT(*)::int AS n FROM development_budget_milestones WHERE site_start_period_id=$1",
+    [periodId]
+  );
+  assert.equal(milestone.rows[0].n, 0);
+}
+
+async function assertReconciliationRejected(world, mutateCandidate, expectedInvariant) {
+  await submitPeriod(world.development.id, world.period.id);
+  const diagnostics = [];
+  const buildWholeCvrCloseCandidate = require("../services/cvrCommercialClose").buildWholeCvrCloseCandidate;
+  const result = await approveCvrPeriod(
+    world.client.id,
+    world.development.id,
+    world.period.id,
+    {},
+    {
+      actor: "Director",
+      reconciliationLogger: (...args) => diagnostics.push(args),
+      buildWholeCloseCandidate: async (options) => {
+        const candidate = await buildWholeCvrCloseCandidate(options);
+        mutateCandidate(candidate);
+        return candidate;
+      },
+    }
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 409);
+  assert.equal(result.code, "CVR_SNAPSHOT_RECONCILIATION_FAILED");
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0][1].invariant, expectedInvariant);
+  assert.deepEqual(Object.keys(diagnostics[0][1]).sort(), ["invariant", "periodType"]);
+  assert.doesNotMatch(result.message, /persisted|candidate|sql|committed|budget/i);
+  await assertRolledBack(world.client.id, world.development.id, world.period.id);
 }
 
 async function setupTestSite1Fixture() {
@@ -979,6 +1013,167 @@ if (!isDbConfigured()) {
     assert.match(result.message, /financial evidence did not reconcile/i);
     assert.doesNotMatch(result.message, /persisted|candidate|sql/i);
     await assertRolledBack(world.client.id, world.development.id, world.period.id);
+  });
+
+  test("P0-06 rejects manipulated candidate financial evidence and rolls back every approval side effect", async (t) => {
+    const cases = [
+      {
+        name: "recognised obligation",
+        invariant: "row_recognised_obligation_formula",
+        mutate(candidate) {
+          candidate.snapshot.rows[0].recognisedObligation += 1;
+        },
+      },
+      {
+        name: "committed value on a floored Cost Code",
+        invariant: "row_recognised_obligation_formula",
+        mutate(candidate) {
+          candidate.snapshot.rows[0].committed += 1;
+          candidate.snapshot.committed += 1;
+        },
+      },
+      {
+        name: "Change Exposure evidence",
+        invariant: "row_change_exposure_evidence",
+        mutate(candidate) {
+          candidate.snapshot.rows[0].changeExposureEvidence = [{ resultingExposure: 1 }];
+        },
+      },
+      {
+        name: "header-only financial value",
+        invariant: "header_row_sum_currentBudget",
+        mutate(candidate) {
+          candidate.snapshot.currentBudget += 1;
+        },
+      },
+      {
+        name: "System Forecast and Final Forecast raised together",
+        invariant: "row_system_forecast_formula",
+        mutate(candidate) {
+          candidate.snapshot.rows[0].systemForecast += 1;
+          candidate.snapshot.rows[0].finalForecast += 1;
+          candidate.snapshot.systemForecast += 1;
+          candidate.snapshot.finalForecast += 1;
+          candidate.snapshot.grossProfit -= 1;
+        },
+      },
+      {
+        name: "Cost Code-to-header aggregation",
+        invariant: "header_row_sum_currentBudget",
+        mutate(candidate) {
+          candidate.snapshot.rows[0].currentBudget += 1;
+        },
+      },
+    ];
+
+    for (const scenario of cases) {
+      await t.test(scenario.name, async () => {
+        const world = await setupBase();
+        await assertReconciliationRejected(world, scenario.mutate, scenario.invariant);
+      });
+    }
+  });
+
+  test("P0-06 rejects an incorrect persisted penny and rolls back", async () => {
+    const world = await setupBase();
+    await submitPeriod(world.development.id, world.period.id);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const periodRow = (await client.query(
+        "SELECT * FROM cvr_periods WHERE client_id=$1 AND development_id=$2 AND id=$3 FOR UPDATE",
+        [world.client.id, world.development.id, world.period.id]
+      )).rows[0];
+      const candidate = await require("../services/cvrCommercialClose").buildWholeCvrCloseCandidate({
+        clientId: world.client.id,
+        developmentId: world.development.id,
+        periodId: world.period.id,
+        dbClient: client,
+      });
+      const originalQuery = client.query.bind(client);
+      const verificationClient = { query: async (text, params) => {
+        const result = await originalQuery(text, params);
+        if (/INSERT INTO cvr_period_snapshot_rows/i.test(String(text)) && result.rows?.[0]) {
+          return {
+            ...result,
+            rows: [{ ...result.rows[0], final_forecast: Number(result.rows[0].final_forecast) + 0.01 }],
+          };
+        }
+        return result;
+      } };
+      await assert.rejects(
+        require("../services/cvrSnapshotRepository").persistCvrPeriodSnapshot(
+          verificationClient,
+          { clientId: world.client.id, developmentId: world.development.id, periodRow, candidate, actor: "Director" }
+        ),
+        (error) => error.code === "CVR_SNAPSHOT_RECONCILIATION_FAILED" && error.invariant === "persisted_row_finalForecast"
+      );
+      await client.query("ROLLBACK");
+    } finally {
+      try { await client.query("ROLLBACK"); } catch (_error) {}
+      client.release();
+    }
+    await assertRolledBack(world.client.id, world.development.id, world.period.id);
+  });
+
+  test("P0-06 positive approvals retain each governed floor and signed adjustment behaviour", async (t) => {
+    async function approve(world) {
+      await submitPeriod(world.development.id, world.period.id);
+      const locked = await request(app)
+        .post(`${periodUrl(world.development.id, world.period.id)}/approve`)
+        .send({ actor: "Director", comment: "Lock governed positive case" });
+      assert.equal(locked.status, 200, locked.body?.message || JSON.stringify(locked.body));
+      assert.equal(locked.body.status, "locked");
+      return locked.body.snapshot;
+    }
+
+    await t.test("Certified drives the recognised-obligation floor", async () => {
+      const world = await setupBase({
+        subtotal: 80,
+        inputs: [{ costCodeKey: "5231", currentBudget: 100, originalBudget: 100, commercialAdjustment: -20, adjustmentReason: "Certified floor" }],
+      });
+      await insertLockedCertificate({ clientId: world.client.id, development: world.development, pkg: world.pkg, grossValue: 110, netValue: 110 });
+      const snapshot = await approve(world);
+      assertRow(snapshot, "5231", { committed: 80, certified: 110, recognisedObligation: 110, finalForecast: 110 });
+    });
+
+    await t.test("Current Cost drives the recognised-obligation floor", async () => {
+      const world = await setupBase({
+        subtotal: 80,
+        inputs: [{ costCodeKey: "5231", currentBudget: 100, originalBudget: 100, commercialAdjustment: -20, adjustmentReason: "Current Cost floor" }],
+      });
+      await importLedger(world.development.id, [{ supplier: "Current Cost Test", invoiceNumber: uniquePo("INV"), transactionDate: "2026-04-02", costCodeKey: "5231", netAmount: 110, vatAmount: 22, grossAmount: 132 }]);
+      const snapshot = await approve(world);
+      assertRow(snapshot, "5231", { committed: 80, currentCost: 110, recognisedObligation: 110, finalForecast: 110 });
+    });
+
+    await t.test("£110 commitment with a £20 favourable adjustment remains £110", async () => {
+      const world = await setupBase({
+        subtotal: 110,
+        inputs: [{ costCodeKey: "5231", currentBudget: 100, originalBudget: 100, commercialAdjustment: -20, adjustmentReason: "Commitment floor" }],
+      });
+      const snapshot = await approve(world);
+      assertRow(snapshot, "5231", { committed: 110, recognisedObligation: 110, finalForecast: 110 });
+    });
+
+    await t.test("signed CE credit and negative Projected Adjustment remain signed", async () => {
+      const world = await setupBase({
+        subtotal: 0,
+        inputs: [{ costCodeKey: "5231", currentBudget: 100, originalBudget: 100, commercialAdjustment: -5, adjustmentReason: "Signed exposure" }],
+      });
+      await insertCommercialEvent({ clientId: world.client.id, development: world.development, pkg: world.pkg, value: -10, status: "submitted" });
+      const snapshot = await approve(world);
+      assertRow(snapshot, "5231", { changeExposure: -10, commercialAdjustment: -5, finalForecast: 85 });
+    });
+
+    await t.test("positive Projected Adjustment increases Final Forecast", async () => {
+      const world = await setupBase({
+        subtotal: 80,
+        inputs: [{ costCodeKey: "5231", currentBudget: 100, originalBudget: 100, commercialAdjustment: 10, adjustmentReason: "Positive adjustment" }],
+      });
+      const snapshot = await approve(world);
+      assertRow(snapshot, "5231", { systemForecast: 100, commercialAdjustment: 10, finalForecast: 110 });
+    });
   });
 
   test("BL-038E lock freezes Expected provenance and later approval recomposes Create Next", async () => {
@@ -1588,6 +1783,12 @@ if (!isDbConfigured()) {
     assert.equal(locked.body.snapshot.schemaVersion, 3);
     assert.equal(Number(locked.body.snapshot.forecastRevenue), 1000000);
     assert.equal(Number(locked.body.snapshot.securedRevenue), 0);
+    const expectedGrossProfit = 1000000 - Number(locked.body.snapshot.finalForecast);
+    assert.equal(Number(locked.body.snapshot.grossProfit), expectedGrossProfit);
+    assert.equal(
+      Number(locked.body.snapshot.grossMarginPercent),
+      (expectedGrossProfit / 1000000) * 100
+    );
     assert.notEqual(Number(locked.body.snapshot.grossProfit), 3);
   });
 

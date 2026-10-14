@@ -424,7 +424,7 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
   await pool.query(
     `INSERT INTO development_prelims_items(
        client_id,development_id,cost_code_key,name,forecast_driver,status,lump_sum_amount,version,created_by,updated_by
-     ) VALUES($1,$2,'5231','Site establishment','LUMP_SUM','active',1300000,1,'SS3','SS3')`,
+     ) VALUES($1,$2,'5231','Site establishment','LUMP_SUM','active',1200000,1,'SS3','SS3')`,
     [client.id, developmentId]
   );
   const liveCandidate = await buildCvrCloseCandidate({
@@ -490,7 +490,7 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
   assert.equal(adopted.ok, true);
   assert.equal(adopted.adoption.periodType, 'site_start');
   assert.equal(adopted.adoption.reportingMonth, '2027-04');
-  assert.equal(adopted.adoption.adopted[0].newFinal, 1300000);
+  assert.equal(adopted.adoption.adopted[0].newFinal, 1200000);
   const appraisalAfter = await pool.query(
     `SELECT a.evidence_sha256,l.amount FROM development_land_appraisals a
      JOIN development_land_appraisal_lines l ON l.appraisal_id=a.id WHERE a.id=$1`,
@@ -499,12 +499,35 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
   assert.equal(appraisalAfter.rows[0].evidence_sha256, captured.appraisal.evidenceSha256);
   assert.equal(Number(appraisalAfter.rows[0].amount), 1250000);
 
+  const floorPoNumber = `M-SS-FLOOR-${suffix}`;
+  await pool.query(
+    `INSERT INTO purchase_orders(po_number,client_id,payload) VALUES($1,$2,$3::jsonb)`,
+    [floorPoNumber, client.id, JSON.stringify({
+      poNumber: floorPoNumber,
+      type: 'M',
+      supplierId: `ss-floor-supplier-${suffix}`,
+      developmentId,
+      development: { id: developmentId },
+      costRef: { developmentId, costCode: '5231' },
+      items: [{ description: 'Approved Site Start commitment', qty: 1, rate: 1300000, amount: 1300000, costCode: '5231' }],
+      subtotal: 1300000,
+      totals: { net: 1300000, vat: 0, gross: 1300000 },
+      status: 'Approved',
+      approval: { status: 'Approved', history: [{ action: 'Approved', actor: 'SS1 Director' }] },
+      archived: false,
+    })]
+  );
+
   const approvedCandidate = await buildCvrCloseCandidate({
     clientId: client.id,
     developmentId,
     periodId: created.period.id,
     developmentBudgetDocument: captured.appraisal,
   });
+  assert.equal(approvedCandidate.snapshot.rows[0].committed, 1300000);
+  assert.equal(approvedCandidate.snapshot.rows[0].commercialAdjustment, -50000);
+  assert.equal(approvedCandidate.snapshot.rows[0].recognisedObligation, 1300000);
+  assert.equal(approvedCandidate.snapshot.rows[0].finalForecast, 1300000);
   const wholeCandidate = async () => ({
     ready: true, complete: true, canLock: true, blockers: [],
     snapshot: {
@@ -553,7 +576,7 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
   assert.equal(milestone.reference, 'BOARD-SS-001');
   assert.equal(milestone.evidence_snapshot.schemaVersion, 'site_start_budget_milestone_v2');
   assert.equal(milestone.evidence_snapshot.snapshot.totalEfcPence, 130000000);
-  assert.equal(milestone.evidence_snapshot.snapshot.rows[0].projectedAdjustmentPence, 5000000);
+  assert.equal(milestone.evidence_snapshot.snapshot.rows[0].projectedAdjustmentPence, -5000000);
   assert.equal(milestone.evidence_snapshot.snapshot.developmentBudgetEventFrontier, 0);
   await assert.rejects(
     createFirstCvrFromSiteStart(client.id,developmentId,{reportingMonth:'2027-04',siteStartVersion:approved.period.version},{actor:'Unauthorised',auth:{...approvalAuth,permissions:[]},currentDate:new Date('2027-05-02T12:00:00Z')}),

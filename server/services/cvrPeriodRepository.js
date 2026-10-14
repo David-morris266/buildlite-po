@@ -846,6 +846,7 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
 
   const dbClient = await pool.connect();
   let lockedRow = null;
+  let reconciliationPeriodType = "unknown";
   try {
     await dbClient.query("BEGIN");
     const row = await findPeriodRow(clientId, developmentId, periodId, dbClient, {
@@ -855,6 +856,7 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
       await dbClient.query("ROLLBACK");
       return { ok: false, status: 404, message: "CVR period not found." };
     }
+    reconciliationPeriodType = row.period_type || "unknown";
     if (row.status !== CVR_PERIOD_STATUSES.submitted) {
       await dbClient.query("ROLLBACK");
       if (isCvrPeriodLocked(row.status)) {
@@ -1059,6 +1061,15 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
   } catch (err) {
     await dbClient.query("ROLLBACK");
     if (err?.code === "CVR_SNAPSHOT_RECONCILIATION_FAILED") {
+      const reconciliationLogger = options.reconciliationLogger || console.error;
+      try {
+        reconciliationLogger("[CVR] Snapshot reconciliation rejected", {
+          invariant: err.invariant || "unknown_snapshot_invariant",
+          periodType: reconciliationPeriodType,
+        });
+      } catch (_loggingError) {
+        // A diagnostic sink must never change reconciliation rollback behaviour.
+      }
       return {
         ok: false,
         status: 409,
