@@ -412,12 +412,14 @@ function verifyPersistedSnapshotInternal(header, insertedRows, insertedPlots, sn
     "header_gross_profit_formula"
   );
   if (Number(header.plots_sold) !== Number(snapshot.plotsSold)) {
-    throw new Error(
+    reconciliationFailure(
+      "persisted_header_plots_sold",
       `CVR snapshot plotsSold mismatch: persisted ${header.plots_sold}, candidate ${snapshot.plotsSold}.`
     );
   }
   if (Number(header.plots_remaining) !== Number(snapshot.plotsRemaining)) {
-    throw new Error(
+    reconciliationFailure(
+      "persisted_header_plots_remaining",
       `CVR snapshot plotsRemaining mismatch: persisted ${header.plots_remaining}, candidate ${snapshot.plotsRemaining}.`
     );
   }
@@ -519,7 +521,8 @@ function verifyPersistedSnapshotInternal(header, insertedRows, insertedPlots, sn
   }
   const candidatePlots = snapshot.plots || [];
   if (insertedPlots.length !== candidatePlots.length) {
-    throw new Error(
+    reconciliationFailure(
+      "plot_count",
       `CVR snapshot plot count mismatch: persisted ${insertedPlots.length}, candidate ${candidatePlots.length}.`
     );
   }
@@ -527,10 +530,20 @@ function verifyPersistedSnapshotInternal(header, insertedRows, insertedPlots, sn
   for (const persisted of insertedPlots) {
     const candidate = plotsById.get(String(persisted.plot_id));
     if (!candidate) {
-      throw new Error(`CVR snapshot persisted unexpected plot ${persisted.plot_id}.`);
+      reconciliationFailure("unexpected_plot");
     }
-    assertSameMoney(persisted.forecast_revenue, candidate.forecastRevenue, `${persisted.plot_id}.forecastRevenue`);
-    assertSameMoney(persisted.secured_revenue, candidate.securedRevenue, `${persisted.plot_id}.securedRevenue`);
+    assertSameMoney(
+      persisted.forecast_revenue,
+      candidate.forecastRevenue,
+      `${persisted.plot_id}.forecastRevenue`,
+      "persisted_plot_forecast_revenue"
+    );
+    assertSameMoney(
+      persisted.secured_revenue,
+      candidate.securedRevenue,
+      `${persisted.plot_id}.securedRevenue`,
+      "persisted_plot_secured_revenue"
+    );
   }
 }
 

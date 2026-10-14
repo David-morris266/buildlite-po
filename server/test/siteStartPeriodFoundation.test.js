@@ -2,6 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const request = require('supertest');
+const createApp = require('../app');
 const {
   CVR_PERIOD_TYPES,
   SITE_START_PERIOD_KEY,
@@ -528,6 +530,17 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
   assert.equal(approvedCandidate.snapshot.rows[0].commercialAdjustment, -50000);
   assert.equal(approvedCandidate.snapshot.rows[0].recognisedObligation, 1300000);
   assert.equal(approvedCandidate.snapshot.rows[0].finalForecast, 1300000);
+  await pool.query(
+    `INSERT INTO development_revenue_settings(client_id,development_id,recognition_policy,created_by,updated_by)
+     VALUES($1,$2,'completion','SS1 fixture','SS1 fixture')`,
+    [client.id, developmentId]
+  );
+  await pool.query(
+    `UPDATE developments
+     SET payload=jsonb_set(payload,'{plotMaster}','{"plots":[]}'::jsonb,true)
+     WHERE client_id=$1 AND id=$2`,
+    [client.id, developmentId]
+  );
   const wholeCandidate = async () => ({
     ready: true, complete: true, canLock: true, blockers: [],
     snapshot: {
@@ -548,6 +561,61 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
   const directorRole = (await pool.query("SELECT id FROM roles WHERE key='commercial_director'")).rows[0];
   await pool.query('UPDATE client_user_memberships SET role_id=$1 WHERE id=$2', [directorRole.id, membership.id]);
   const approvalAuth = { ...auth, roleKey: 'commercial_director', permissions: [...auth.permissions, PERMISSIONS.CVR_LOCK] };
+  const approvalApp = createApp({
+    testPrincipal: {
+      ...approvalAuth,
+      roleName: 'Commercial Director',
+      memberships: [],
+    },
+  });
+  const triggerName = `test_ss_reconcile_${suffix}`;
+  const functionName = `test_ss_reconcile_fn_${suffix}`;
+  const diagnostics = [];
+  const originalConsoleError = console.error;
+  try {
+    await pool.query(`
+      CREATE FUNCTION ${functionName}() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF EXISTS(
+          SELECT 1 FROM cvr_period_snapshots
+          WHERE id=NEW.snapshot_id AND period_id='${created.period.id}'::uuid
+        ) THEN
+          NEW.final_forecast = NEW.final_forecast + 0.01;
+        END IF;
+        RETURN NEW;
+      END $$;
+      CREATE TRIGGER ${triggerName}
+      BEFORE INSERT ON cvr_period_snapshot_rows
+      FOR EACH ROW EXECUTE FUNCTION ${functionName}();
+    `);
+    console.error = (...args) => diagnostics.push(args);
+    const rejected = await request(approvalApp)
+      .post(`/api/developments/${encodeURIComponent(developmentId)}/cvr/periods/${created.period.id}/approve`)
+      .send({
+        version: submitted.period.version,
+        approvalReference: 'BOARD-SS-RECONCILIATION-FAIL',
+        comment: 'Exercise governed reconciliation rejection',
+      });
+    assert.equal(rejected.status, 409, JSON.stringify({ body: rejected.body, diagnostics: diagnostics.map((entry) => [entry[0], entry[1]?.message || entry[1]]) }));
+    assert.equal(rejected.body.code, 'CVR_SNAPSHOT_RECONCILIATION_FAILED', JSON.stringify(rejected.body));
+    assert.doesNotMatch(rejected.body.message, /persisted|candidate|sql|budget|committed|0\.01/i);
+    const diagnostic = diagnostics.find((entry) => entry[0] === '[CVR] Snapshot reconciliation rejected');
+    assert.ok(diagnostic);
+    assert.deepEqual(diagnostic[1], {
+      invariant: 'persisted_row_finalForecast',
+      periodType: 'site_start',
+    });
+    assert.equal((await pool.query('SELECT status FROM cvr_periods WHERE id=$1', [created.period.id])).rows[0].status, 'submitted');
+    assert.equal(Number((await pool.query('SELECT COUNT(*) n FROM cvr_period_snapshots WHERE period_id=$1', [created.period.id])).rows[0].n), 0);
+    assert.equal(Number((await pool.query('SELECT COUNT(*) n FROM cvr_period_snapshot_rows WHERE snapshot_id IN (SELECT id FROM cvr_period_snapshots WHERE period_id=$1)', [created.period.id])).rows[0].n), 0);
+    assert.equal(Number((await pool.query('SELECT COUNT(*) n FROM cvr_period_snapshot_plots WHERE snapshot_id IN (SELECT id FROM cvr_period_snapshots WHERE period_id=$1)', [created.period.id])).rows[0].n), 0);
+    assert.equal(Number((await pool.query("SELECT COUNT(*) n FROM cvr_period_audit WHERE period_id=$1 AND action IN ('approved','locked')", [created.period.id])).rows[0].n), 0);
+    assert.equal(Number((await pool.query('SELECT COUNT(*) n FROM development_budget_milestones WHERE site_start_period_id=$1', [created.period.id])).rows[0].n), 0);
+  } finally {
+    console.error = originalConsoleError;
+    await pool.query(`DROP TRIGGER IF EXISTS ${triggerName} ON cvr_period_snapshot_rows`);
+    await pool.query(`DROP FUNCTION IF EXISTS ${functionName}()`);
+  }
   await assert.rejects(approveCvrPeriod(client.id, developmentId, created.period.id, {
     version: submitted.period.version,
     approvalReference: 'BOARD-SS-ROLLBACK',
