@@ -60,8 +60,15 @@ const pick = ({ recognisedObligation, uncommittedForecast, systemForecast, final
   ({ recognisedObligation, uncommittedForecast, systemForecast, finalForecast, costToComplete });
 
 test('favourable adjustment cannot undercut obligation but can release residual baseline', () => {
+  assert.equal(row({ committed: 100, commercialAdjustment: -5 }).finalForecast, 100);
   assert.equal(row({ committed: 110, commercialAdjustment: -20 }).finalForecast, 110);
   assert.equal(row({ committed: 80, commercialAdjustment: -20 }).finalForecast, 80);
+});
+
+test('money composition is rounded to integer pence', () => {
+  const result = row({ currentBudget: 0.1, committed: 0, commercialAdjustment: 0.2 });
+  assert.equal(result.systemForecast, 0.1);
+  assert.equal(result.finalForecast, 0.3);
 });
 
 test('signed VA credit remains effective while favourable adjustment is floored separately', () => {

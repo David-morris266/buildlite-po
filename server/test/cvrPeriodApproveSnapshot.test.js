@@ -884,6 +884,103 @@ if (!isDbConfigured()) {
     assert.ok(audit.some((item) => item.action === "locked" && item.comment === "Lock P01"));
   });
 
+  test("P0-06 approval persists Cost Code floors and reconciles the header from verified rows", async () => {
+    const world = await setupBase({
+      subtotal: 100,
+      inputs: [
+        {
+          costCodeKey: "5231",
+          costCodeLabel: "5231 — Cleaning",
+          currentBudget: 100,
+          originalBudget: 100,
+          manualAccrual: 0,
+          commercialAdjustment: -5,
+          adjustmentReason: "Do not release committed authority",
+        },
+        {
+          costCodeKey: "6000",
+          costCodeLabel: "6000 — Other",
+          currentBudget: 100,
+          originalBudget: 100,
+          manualAccrual: 0,
+          commercialAdjustment: -20,
+          adjustmentReason: "Release uncommitted allowance",
+        },
+      ],
+    });
+    await submitPeriod(world.development.id, world.period.id);
+    const locked = await request(app)
+      .post(`${periodUrl(world.development.id, world.period.id)}/approve`)
+      .send({ actor: "Director", comment: "Lock floored forecast" });
+    assert.equal(locked.status, 200, locked.body?.message || JSON.stringify(locked.body));
+    assertRow(locked.body.snapshot, "5231", {
+      recognisedObligation: 100,
+      systemForecast: 100,
+      commercialAdjustment: -5,
+      finalForecast: 100,
+    });
+    assertRow(locked.body.snapshot, "6000", {
+      recognisedObligation: 0,
+      systemForecast: 100,
+      commercialAdjustment: -20,
+      finalForecast: 80,
+    });
+    assertMoney(locked.body.snapshot.systemForecast, 200, "header.systemForecast");
+    assertMoney(locked.body.snapshot.commercialAdjustment, -25, "header.commercialAdjustment");
+    assertMoney(locked.body.snapshot.finalForecast, 180, "header.finalForecast");
+    assertMoney(locked.body.snapshot.grossProfit, -180, "header.grossProfit");
+    assert.equal(locked.body.snapshot.grossMarginPercent, null);
+  });
+
+  test("P0-06 approval reconciles valid decimal-pence composition", async () => {
+    const world = await setupBase({
+      subtotal: 0,
+      inputs: [{
+        costCodeKey: "5231",
+        costCodeLabel: "5231 — Cleaning",
+        currentBudget: 0.1,
+        originalBudget: 0.1,
+        manualAccrual: 0,
+        commercialAdjustment: 0.2,
+        adjustmentReason: "Pence reconciliation",
+      }],
+    });
+    await submitPeriod(world.development.id, world.period.id);
+    const locked = await request(app)
+      .post(`${periodUrl(world.development.id, world.period.id)}/approve`)
+      .send({ actor: "Director", comment: "Lock pence forecast" });
+    assert.equal(locked.status, 200, locked.body?.message || JSON.stringify(locked.body));
+    assertRow(locked.body.snapshot, "5231", { systemForecast: 0.1, commercialAdjustment: 0.2, finalForecast: 0.3 });
+    assertMoney(locked.body.snapshot.finalForecast, 0.3, "header.finalForecast");
+  });
+
+  test("genuine snapshot reconciliation mismatch returns a controlled conflict and rolls back", async () => {
+    const world = await setupBase();
+    await submitPeriod(world.development.id, world.period.id);
+    const buildWholeCvrCloseCandidate = require("../services/cvrCommercialClose").buildWholeCvrCloseCandidate;
+    const result = await approveCvrPeriod(
+      world.client.id,
+      world.development.id,
+      world.period.id,
+      {},
+      {
+        actor: "Director",
+        buildWholeCloseCandidate: async (options) => {
+          const candidate = await buildWholeCvrCloseCandidate(options);
+          candidate.snapshot.rows[0].finalForecast += 1;
+          candidate.snapshot.finalForecast += 1;
+          return candidate;
+        },
+      }
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 409);
+    assert.equal(result.code, "CVR_SNAPSHOT_RECONCILIATION_FAILED");
+    assert.match(result.message, /financial evidence did not reconcile/i);
+    assert.doesNotMatch(result.message, /persisted|candidate|sql/i);
+    await assertRolledBack(world.client.id, world.development.id, world.period.id);
+  });
+
   test("BL-038E lock freezes Expected provenance and later approval recomposes Create Next", async () => {
     const world = await setupBase({ inputs: [] });
     const ceId = await insertCommercialEvent({

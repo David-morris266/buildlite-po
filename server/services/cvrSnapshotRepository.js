@@ -9,7 +9,13 @@
 const { query } = require("../db");
 const assert = require("node:assert/strict");
 const { CVR_SNAPSHOT_EXPECTED_LIABILITY_SCHEMA_VERSION } = require("./cvrCloseConstants");
+const {
+  calculateFinalForecast,
+  calculateRecognisedObligation,
+} = require("./cvrCloseFormulas");
 const { snapshotHeaderToDocument } = require("./cvrSnapshotMapper");
+
+const CVR_SNAPSHOT_RECONCILIATION_FAILED = "CVR_SNAPSHOT_RECONCILIATION_FAILED";
 
 const SNAPSHOT_MONEY_FIELDS = [
   ["currentBudget", "current_budget"],
@@ -81,10 +87,27 @@ function moneyOrNull(value) {
 }
 
 function assertSameMoney(actual, expected, label) {
-  const left = actual == null ? null : moneyNumber(actual, null);
-  const right = expected == null ? null : moneyNumber(expected, null);
+  const left = actual == null ? null : Math.round(moneyNumber(actual, null) * 100);
+  const right = expected == null ? null : Math.round(moneyNumber(expected, null) * 100);
   if (left !== right) {
-    throw new Error(`CVR snapshot ${label} mismatch: persisted ${left}, candidate ${right}.`);
+    throw new Error(`CVR snapshot ${label} mismatch: persisted ${actual}, candidate ${expected}.`);
+  }
+}
+
+function sumMoney(rows, field) {
+  return (rows || []).reduce(
+    (pence, row) => pence + Math.round(moneyNumber(row?.[field]) * 100),
+    0
+  ) / 100;
+}
+
+class CvrSnapshotReconciliationError extends Error {
+  constructor(cause) {
+    super("CVR snapshot financial evidence did not reconcile.");
+    this.name = "CvrSnapshotReconciliationError";
+    this.code = CVR_SNAPSHOT_RECONCILIATION_FAILED;
+    this.status = 409;
+    this.cause = cause;
   }
 }
 
@@ -334,7 +357,7 @@ async function insertSnapshotPlot(dbClient, { clientId, snapshotId, plot }) {
   return rows[0];
 }
 
-function verifyPersistedSnapshot(header, insertedRows, insertedPlots, snapshot) {
+function verifyPersistedSnapshotInternal(header, insertedRows, insertedPlots, snapshot) {
   const candidateRows = snapshot.rows || [];
   if (insertedRows.length !== candidateRows.length) {
     throw new Error(
@@ -344,13 +367,12 @@ function verifyPersistedSnapshot(header, insertedRows, insertedPlots, snapshot) 
   for (const [camel, column] of SNAPSHOT_MONEY_FIELDS) {
     assertSameMoney(header[column], snapshot[camel], `header.${camel}`);
   }
-  assertSameMoney(
-    snapshot.finalForecast,
-    moneyNumber(snapshot.systemForecast) +
-      changeExposureNumber(snapshot) +
-      moneyNumber(snapshot.commercialAdjustment),
-    "header.Final = System + Expected + VA Exposure + Adjustment"
-  );
+  for (const [field] of SNAPSHOT_MONEY_FIELDS) {
+    if (field === "expectedLiability") continue;
+    assertSameMoney(snapshot[field], sumMoney(candidateRows, field), `header.${field} row sum`);
+  }
+  assertSameMoney(snapshot.expectedLiability, sumMoney(candidateRows, "expectedLiability"), "header.expectedLiability row sum");
+  assertSameMoney(snapshot.changeExposure, sumMoney(candidateRows, "changeExposure"), "header.changeExposure row sum");
   for (const [camel, column] of SNAPSHOT_REVENUE_FIELDS) {
     assertSameMoney(header[column], snapshot[camel], `header.${camel}`);
   }
@@ -388,12 +410,28 @@ function verifyPersistedSnapshot(header, insertedRows, insertedPlots, snapshot) 
     for (const [camel, column] of ROW_MONEY_FIELDS) {
       assertSameMoney(persisted[column], candidate[camel], `${persisted.cost_code_key}.${camel}`);
     }
+    const recognisedObligation = calculateRecognisedObligation({
+      committed: persisted.committed,
+      certified: persisted.certified,
+      currentCost: persisted.current_cost,
+    });
+    assertSameMoney(candidate.recognisedObligation, recognisedObligation, `${persisted.cost_code_key}.recognisedObligation`);
+    assertSameMoney(
+      persisted.display_metadata?.changeExposure?.amount,
+      changeExposureNumber(candidate),
+      `${persisted.cost_code_key}.changeExposure evidence`
+    );
     assertSameMoney(
       candidate.finalForecast,
-      moneyNumber(candidate.systemForecast) +
-        changeExposureNumber(candidate) +
-        moneyNumber(candidate.commercialAdjustment),
-      `${persisted.cost_code_key}.Final = System + Expected + VA Exposure + Adjustment`
+      calculateFinalForecast(
+        candidate.systemForecast,
+        candidate.commercialAdjustment,
+        candidate.expectedLiability,
+        candidate.vaExposureUplift,
+        recognisedObligation,
+        changeExposureNumber(candidate)
+      ),
+      `${persisted.cost_code_key}.Final Forecast formula`
     );
     assert.deepStrictEqual(
       persisted.expected_liability_provenance || [],
@@ -415,6 +453,15 @@ function verifyPersistedSnapshot(header, insertedRows, insertedPlots, snapshot) 
     }
     assertSameMoney(persisted.forecast_revenue, candidate.forecastRevenue, `${persisted.plot_id}.forecastRevenue`);
     assertSameMoney(persisted.secured_revenue, candidate.securedRevenue, `${persisted.plot_id}.securedRevenue`);
+  }
+}
+
+function verifyPersistedSnapshot(header, insertedRows, insertedPlots, snapshot) {
+  try {
+    verifyPersistedSnapshotInternal(header, insertedRows, insertedPlots, snapshot);
+  } catch (error) {
+    if (error instanceof CvrSnapshotReconciliationError) throw error;
+    throw new CvrSnapshotReconciliationError(error);
   }
 }
 
@@ -583,4 +630,5 @@ module.exports = {
   getSnapshotForPeriod,
   persistCvrPeriodSnapshot,
   isUniqueViolation,
+  CVR_SNAPSHOT_RECONCILIATION_FAILED,
 };

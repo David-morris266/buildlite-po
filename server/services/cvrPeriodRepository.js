@@ -1058,6 +1058,14 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
     lockedRow = updated.rows[0];
   } catch (err) {
     await dbClient.query("ROLLBACK");
+    if (err?.code === "CVR_SNAPSHOT_RECONCILIATION_FAILED") {
+      return {
+        ok: false,
+        status: 409,
+        code: err.code,
+        message: "CVR snapshot financial evidence did not reconcile. Refresh the CVR and try again.",
+      };
+    }
     if (isUniqueViolation(err) || isSnapshotUnique(err)) {
       return {
         ok: false,
