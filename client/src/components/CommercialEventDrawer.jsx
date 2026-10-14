@@ -240,7 +240,16 @@ export default function CommercialEventDrawer({
 
   const isCreate = mode === 'create';
   const isSiteCreator = isCreate && principal?.roleKey === 'site';
-  const canDecideCommercialEvent = !principal || principal.permissions?.includes('ce.approve');
+  const hasPermission = (permission) => Boolean(principal?.permissions?.includes(permission));
+  const canDecideCommercialEvent = hasPermission('ce.approve');
+  const canEditCommercialEvent = hasPermission('ce.edit');
+  const canSubmitEvent = hasPermission('ce.submit');
+  const canCloseEvent = hasPermission('ce.close');
+  const canEditExpectedLiability = hasPermission('ce.expected_treatment');
+  const canCreateRecovery = hasPermission('ce.edit');
+  const canDismissRecovery = hasPermission('ce.recovery_write_off');
+  const canCreateVariationAccount = hasPermission('variation_account.create');
+  const canCreateVariationOrderAuthority = hasPermission('vo.create');
 
   const liveEvent = useMemo(() => {
     if (!event || !order?.developmentId) return event;
@@ -701,7 +710,8 @@ export default function CommercialEventDrawer({
                 <p>{liveEvent.potentialContraChargeNotes}</p>
               ) : null}
             </div>
-            <div className="po-ce-drawer__actions">
+            {canCreateRecovery || canDismissRecovery ? <div className="po-ce-drawer__actions">
+              {canCreateRecovery ? (
               <button
                 type="button"
                 className="po-btn-primary"
@@ -709,6 +719,8 @@ export default function CommercialEventDrawer({
               >
                 Create Recovery on Responsible Package
               </button>
+              ) : null}
+              {canDismissRecovery ? (
               <button
                 type="button"
                 className="po-list-btn-secondary"
@@ -716,7 +728,8 @@ export default function CommercialEventDrawer({
               >
                 Mark Not Required
               </button>
-            </div>
+              ) : null}
+            </div> : null}
           </section>
         ) : null}
 
@@ -738,7 +751,7 @@ export default function CommercialEventDrawer({
                 </dl>
               ) : null}
             </div>
-            {!recoveryComplete ? (
+            {!recoveryComplete && canDismissRecovery ? (
               <button type="button" className="po-list-btn-secondary" onClick={() => setDismissStep(true)}>
                 Mark Not Required
               </button>
@@ -879,7 +892,7 @@ export default function CommercialEventDrawer({
         {liveEvent && !editable && !isRecoveryEvent ? (
           <section className="po-ce-drawer__readonly-banner">
             {lockedEventMessage(liveEvent)}
-            {liveEvent.status === COMMERCIAL_EVENT_STATUSES.draft.key && onEdit ? (
+            {liveEvent.status === COMMERCIAL_EVENT_STATUSES.draft.key && onEdit && canEditCommercialEvent ? (
               <button type="button" className="po-list-btn-secondary" onClick={onEdit}>
                 Edit draft
               </button>
@@ -1208,8 +1221,8 @@ export default function CommercialEventDrawer({
                 </div>
               </section>
             ) : !isCreate &&
-            (canSubmitCommercialEvent(liveEvent.status) ||
-              (canCloseCommercialEvent(liveEvent.status) && !isRecoveryEvent)) ? (
+            ((canSubmitEvent && canSubmitCommercialEvent(liveEvent.status)) ||
+              (canCloseEvent && canCloseCommercialEvent(liveEvent.status) && !isRecoveryEvent)) ? (
               <DrawerSection title="Workflow" tone="workflow">
                 <label className="po-ce-drawer__field po-ce-drawer__field--wide">
                   <span>Comment (optional)</span>
@@ -1220,7 +1233,7 @@ export default function CommercialEventDrawer({
                   />
                 </label>
                 <div className="po-ce-drawer__actions">
-                  {canSubmitCommercialEvent(liveEvent.status) ? (
+                  {canSubmitEvent && canSubmitCommercialEvent(liveEvent.status) ? (
                     <button
                       type="button"
                       className="po-btn-primary"
@@ -1229,7 +1242,7 @@ export default function CommercialEventDrawer({
                       Submit
                     </button>
                   ) : null}
-                  {canCloseCommercialEvent(liveEvent.status) && !isRecoveryEvent ? (
+                  {canCloseEvent && canCloseCommercialEvent(liveEvent.status) && !isRecoveryEvent ? (
                     <button
                       type="button"
                       className="po-list-btn-secondary"
@@ -1242,14 +1255,14 @@ export default function CommercialEventDrawer({
               </DrawerSection>
             ) : null}
 
-            <CommercialEventExpectedLiabilityPanel
+            {canEditExpectedLiability ? <CommercialEventExpectedLiabilityPanel
               event={liveEvent}
               busy={expectedBusy}
               error={expectedError}
               onApply={handleExpectedLiabilityApply}
-            />
+            /> : null}
 
-            {liveEvent.status==='submitted' && !isRecoveryEvent && liveEvent.eventType!==COMMERCIAL_EVENT_TYPES.budgetTransfer.key ? (
+            {canCreateVariationAccount && liveEvent.status==='submitted' && !isRecoveryEvent && liveEvent.eventType!==COMMERCIAL_EVENT_TYPES.budgetTransfer.key ? (
               <DrawerSection title="Variation Account forecast" tone="workflow">
                 {variationAccountItem ? (
                   <div className="po-ce-drawer__linked-summary" role="status">
@@ -1279,7 +1292,7 @@ export default function CommercialEventDrawer({
               </DrawerSection>
             ) : null}
 
-            {variationOrder || canCreateVariationOrder(liveEvent) ? (
+            {variationOrder || (canCreateVariationOrderAuthority && canCreateVariationOrder(liveEvent)) ? (
               <DrawerSection title="Variation Order" tone="workflow">
                 {variationOrder ? (
                   <div className="po-ce-drawer__linked-summary">
@@ -1291,12 +1304,12 @@ export default function CommercialEventDrawer({
                     </p>
                     <button type="button" className="po-btn-primary" onClick={() => setVariationOrderOpen(true)}>Open Variation Order</button>
                   </div>
-                ) : (
+                ) : canCreateVariationOrderAuthority ? (
                   <div>
                     <p className="po-ce-drawer__helper">Create a formal order amendment from this approved Commercial Event. The CE fact and Current Contract calculation are not changed.</p>
                     <button type="button" disabled={variationOrderBusy} className="po-btn-primary" onClick={handleCreateVariationOrder}>{variationOrderBusy ? 'Creating…' : 'Create Variation Order'}</button>
                   </div>
-                )}
+                ) : null}
               </DrawerSection>
             ) : null}
 

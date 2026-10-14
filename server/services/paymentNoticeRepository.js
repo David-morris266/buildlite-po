@@ -38,6 +38,10 @@ async function hydrate(db,clientId,row){
   const audit=(await db.query(`SELECT * FROM package_payment_notice_audit WHERE client_id=$1 AND notice_id=$2 ORDER BY created_at`,[clientId,row.id])).rows;
   return mapNotice(row,snaps,audit);
 }
+async function findNoticeType(clientId,noticeId){
+  const row=(await query(`SELECT notice_type FROM package_payment_notices WHERE client_id=$1 AND id=$2`,[clientId,noticeId])).rows[0];
+  return row?.notice_type||null;
+}
 async function audit(db,clientId,noticeId,action,body,detail={}){await db.query(`INSERT INTO package_payment_notice_audit(client_id,notice_id,action,actor,detail) VALUES($1,$2,$3,$4,$5)`,[clientId,noticeId,action,actor(body),JSON.stringify(detail)]);}
 
 async function getWorkspace(clientId,packageId,certificateId,dbArg=null,asOfDate=null){
@@ -117,4 +121,4 @@ async function createPayLessAuthorized(clientId,packageId,certificateId,body={},
   require('../auth/authorization').assertServicePermission(options.auth,require('../auth/permissions').PERMISSIONS.PAY_LESS_PREPARE);
   return createPayLess(clientId,packageId,certificateId,body);
 }
-module.exports={getWorkspace,createPaymentNotice,patchDraft,prepare:(c,id,b,o)=>transition(c,id,'prepare',b,o),issue:(c,id,b,o)=>transition(c,id,'issue',b,o),createDecision:createDecisionAuthorized,createPayLess:createPayLessAuthorized};
+module.exports={getWorkspace,findNoticeType,createPaymentNotice,patchDraft,prepare:(c,id,b,o)=>transition(c,id,'prepare',b,o),issue:(c,id,b,o)=>transition(c,id,'issue',b,o),createDecision:createDecisionAuthorized,createPayLess:createPayLessAuthorized};

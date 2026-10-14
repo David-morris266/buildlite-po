@@ -294,7 +294,8 @@ if (!isDbConfigured()) {
     assert.equal(res.body.committedValue, 1500);
     assert.deepEqual(res.body.stages, ["Foundations", "Superstructure"]);
     assert.deepEqual(res.body.plots, [{ id: "plot-1", label: "Plot 1", values: [500, 1000] }]);
-    assert.equal(res.body.createdBy, "matrix-test");
+    assert.equal(res.body.createdBy, "Test Commercial Manager");
+    assert.notEqual(res.body.createdBy, validMatrixBody().createdBy);
     assert.ok(!Object.prototype.hasOwnProperty.call(res.body, "progress"));
     assert.ok(!Object.prototype.hasOwnProperty.call(res.body, "certificates"));
 

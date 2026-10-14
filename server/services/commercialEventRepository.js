@@ -138,8 +138,18 @@ async function findCommercialEventById(clientId, id, { includeAudit = true } = {
 
 function siteOriginDocument(body = {}) {
   return {
-    ...body,
-    eventType: body.eventType === 'contraCharge' || body.eventType === 'credit' ? 'variation' : body.eventType,
+    developmentId: body.developmentId,
+    packageId: body.packageId,
+    orderKey: body.orderKey,
+    packageUuid: body.packageUuid,
+    eventType: 'variation',
+    category: body.category,
+    subcategory: body.subcategory,
+    responsibility: body.responsibility,
+    description: body.description,
+    dateRaised: body.dateRaised,
+    notes: body.notes,
+    attachments: Array.isArray(body.attachments) ? body.attachments : undefined,
     value: 0,
     financialTreatment: null,
     vatTreatment: 'standard',
