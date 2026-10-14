@@ -180,7 +180,8 @@ async function listMatricesForDevelopmentOr404(clientId, developmentId) {
   return { ok: true, status: 200, matrices };
 }
 
-async function upsertMatrixForPackage(clientId, packageId, body, expectedVersion, { actor = null } = {}) {
+async function upsertMatrixForPackage(clientId, packageId, body, expectedVersion, { actor = null, auth = null } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.APPLICATION_RECORD);
   if (!isValidPackageUuid(packageId)) {
     return invalidPackageUuidResult();
   }

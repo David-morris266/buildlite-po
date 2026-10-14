@@ -723,7 +723,7 @@ if (!isDbConfigured()) {
     assert.equal(audit.comment, "Please revise the valuation");
   });
 
-  test("14A. Return to Draft requires certificate.lock and ignores forged actor provenance", async () => {
+  test("14A. Return to Draft requires certificate.reject and ignores forged actor provenance", async () => {
     const active = await getActiveClient();
     const seeded = await seedDraftWithProgress(active);
     const submitted = await submitCert(seeded.pkg.id, seeded.certificate.id, { version: seeded.certificate.version });
@@ -740,7 +740,12 @@ if (!isDbConfigured()) {
       assert.equal(denied.status, 403);
       assert.equal((await getCert(seeded.pkg.id, seeded.certificate.id)).body.status, 'submitted');
 
-      const authApp = createApp({ authAdapter: createTestAuthAdapter({ ...basePrincipal, permissions: [PERMISSIONS.CERTIFICATE_LOCK] }) });
+      const lockOnlyApp = createApp({ authAdapter: createTestAuthAdapter({ ...basePrincipal, permissions: [PERMISSIONS.CERTIFICATE_LOCK] }) });
+      const lockOnly = await request(lockOnlyApp).post(`${certBase(seeded.pkg.id, seeded.certificate.id)}/reject`).send({ version: submitted.body.version, comment: 'Return for correction' });
+      assert.equal(lockOnly.status, 403);
+      assert.equal((await getCert(seeded.pkg.id, seeded.certificate.id)).body.status, 'submitted');
+
+      const authApp = createApp({ authAdapter: createTestAuthAdapter({ ...basePrincipal, permissions: [PERMISSIONS.CERTIFICATE_REJECT] }) });
       const returned = await request(authApp).post(`${certBase(seeded.pkg.id, seeded.certificate.id)}/reject`).send({ version: submitted.body.version, comment: 'Return for correction', actor: 'Forged Browser Actor', updatedBy: 'Also Forged' });
       assert.equal(returned.status, 200, returned.body?.message);
       assert.equal(returned.body.status, 'draft');
@@ -748,7 +753,7 @@ if (!isDbConfigured()) {
       const lifecycle = returned.body.auditHistory.find((entry) => entry.action === 'rejected');
       assert.equal(lifecycle.actor, 'Authenticated Approver');
       assert.equal(lifecycle.comment, 'Return for correction');
-      const audit = await pool.query(`SELECT * FROM authorization_action_audit WHERE membership_id=$1 AND permission_key='certificate.lock' AND resource_params->>'certificateId'=$2`, [membershipId, seeded.certificate.id]);
+      const audit = await pool.query(`SELECT * FROM authorization_action_audit WHERE membership_id=$1 AND permission_key='certificate.reject' AND resource_params->>'certificateId'=$2`, [membershipId, seeded.certificate.id]);
       assert.equal(audit.rows.length, 1);
       assert.equal(audit.rows[0].user_id, userId);
       assert.equal(audit.rows[0].provider_user_id, providerUserId);

@@ -21,7 +21,6 @@ const {
   upsertMatrixForPackage,
 } = require("../services/orderMatrixRepository");
 const {
-  provisionalActor: certificateActor,
   listCertificatesForPackage,
   getCertificateForPackage,
   createCertificateForPackage,
@@ -52,10 +51,6 @@ router.post('/:packageId/certificates/:certificateId/variation-assessments',requ
 router.delete('/:packageId/certificates/:certificateId/variation-assessments/:assessmentId',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_ASSESS),async(req,res)=>{try{const active=await getActiveClient();assessmentResult(res,await vaAssessments.withdrawAssessment(active.id,req.params.packageId,req.params.certificateId,req.params.assessmentId,req.buildliteAuth));}catch(error){res.status(error.status||500).json({message:error.message||'Failed to withdraw VA assessment.'});}});
 router.get('/:packageId/certificates/:certificateId/variation-candidates',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_VIEW),async(req,res)=>{try{const active=await getActiveClient();assessmentResult(res,await certificateVariations.listCandidates(active.id,req.params.packageId,req.params.certificateId,req.buildliteAuth));}catch(error){res.status(error.status||500).json({message:error.message||'Failed to load certificate variations.'});}});
 router.post('/:packageId/certificates/:certificateId/payment-applications/:applicationId/variation-lines/:lineId/assess',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_ASSESS),async(req,res)=>{try{const active=await getActiveClient();assessmentResult(res,await certificateVariations.reconcileAndAssess(active.id,req.params.packageId,req.params.certificateId,req.params.applicationId,req.params.lineId,req.body||{},req.buildliteAuth));}catch(error){res.status(error.status||500).json({message:error.message||'Failed to assess certificate variation.'});}});
-
-function provisionalActor(body = {}) {
-  return body.updatedBy || body.createdBy || body.actor || null;
-}
 
 router.get("/by-order-key/:orderKey/matrix", async (req, res) => {
   try {
@@ -100,7 +95,7 @@ router.get("/:packageId/matrix", async (req, res) => {
   }
 });
 
-router.put("/:packageId/matrix", async (req, res) => {
+router.put("/:packageId/matrix", requirePermission(PERMISSIONS.APPLICATION_RECORD), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -115,7 +110,7 @@ router.put("/:packageId/matrix", async (req, res) => {
       req.params.packageId,
       body,
       body.version,
-      { actor: provisionalActor(body) }
+      { ...actorFromAuth(req.buildliteAuth, PERMISSIONS.APPLICATION_RECORD), auth: req.buildliteAuth }
     );
 
     if (!result.ok) {
@@ -152,12 +147,12 @@ router.get("/:packageId/payment-applications", async (req, res) => {
   }
 });
 
-router.post("/:packageId/payment-applications", async (req, res) => {
+router.post("/:packageId/payment-applications", requirePermission(PERMISSIONS.APPLICATION_RECORD), async (req, res) => {
   try {
     if (!isDbConfigured()) return res.status(500).json({ message: "Database not configured" });
     const active = await getActiveClient();
     if (!active) return res.status(404).json({ error: "No active client set" });
-    const result = await createApplication(active.id, req.params.packageId, req.body || {});
+    const result = await createApplication(active.id, req.params.packageId, req.body || {}, { ...actorFromAuth(req.buildliteAuth, PERMISSIONS.APPLICATION_RECORD), auth:req.buildliteAuth });
     if (!result.ok) return sendCertificateError(res, result);
     res.status(result.status || 201).json(result.application);
   } catch (err) {
@@ -166,12 +161,12 @@ router.post("/:packageId/payment-applications", async (req, res) => {
   }
 });
 
-router.post("/:packageId/payment-applications/:applicationId/revisions", async (req, res) => {
+router.post("/:packageId/payment-applications/:applicationId/revisions", requirePermission(PERMISSIONS.APPLICATION_RECORD), async (req, res) => {
   try {
     if (!isDbConfigured()) return res.status(500).json({ message: "Database not configured" });
     const active = await getActiveClient();
     if (!active) return res.status(404).json({ error: "No active client set" });
-    const result = await reviseApplication(active.id, req.params.packageId, req.params.applicationId, req.body || {});
+    const result = await reviseApplication(active.id, req.params.packageId, req.params.applicationId, req.body || {}, { ...actorFromAuth(req.buildliteAuth, PERMISSIONS.APPLICATION_RECORD), auth:req.buildliteAuth });
     if (!result.ok) return sendCertificateError(res, result);
     res.status(result.status || 201).json(result.application);
   } catch (err) {
@@ -180,12 +175,12 @@ router.post("/:packageId/payment-applications/:applicationId/revisions", async (
   }
 });
 
-router.post("/:packageId/payment-applications/:applicationId/link", async (req, res) => {
+router.post("/:packageId/payment-applications/:applicationId/link", requirePermission(PERMISSIONS.APPLICATION_RECORD), async (req, res) => {
   try {
     if (!isDbConfigured()) return res.status(500).json({ message: "Database not configured" });
     const active = await getActiveClient();
     if (!active) return res.status(404).json({ error: "No active client set" });
-    const result = await linkApplication(active.id, req.params.packageId, req.params.applicationId, req.body || {});
+    const result = await linkApplication(active.id, req.params.packageId, req.params.applicationId, req.body || {}, { ...actorFromAuth(req.buildliteAuth, PERMISSIONS.APPLICATION_RECORD), auth:req.buildliteAuth });
     if (!result.ok) return sendCertificateError(res, result);
     res.json(result.application);
   } catch (err) {
@@ -219,7 +214,7 @@ router.get("/:packageId/certificates", async (req, res) => {
   }
 });
 
-router.post("/:packageId/certificates", async (req, res) => {
+router.post("/:packageId/certificates", requirePermission(PERMISSIONS.CERTIFICATE_CREATE), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -230,7 +225,7 @@ router.post("/:packageId/certificates", async (req, res) => {
 
     const body = req.body || {};
     const result = await createCertificateForPackage(active.id, req.params.packageId, body, {
-      actor: certificateActor(body),
+      ...actorFromAuth(req.buildliteAuth, PERMISSIONS.CERTIFICATE_CREATE), auth:req.buildliteAuth,
     });
     if (!result.ok) return sendCertificateError(res, result);
     res.status(result.status || 201).json(result.certificate);
@@ -262,7 +257,7 @@ router.get("/:packageId/certificates/:certificateId", async (req, res) => {
   }
 });
 
-router.patch("/:packageId/certificates/:certificateId", async (req, res) => {
+router.patch("/:packageId/certificates/:certificateId", requirePermission(PERMISSIONS.CERTIFICATE_EDIT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -277,7 +272,7 @@ router.patch("/:packageId/certificates/:certificateId", async (req, res) => {
       req.params.packageId,
       req.params.certificateId,
       body,
-      { actor: certificateActor(body) }
+      { ...actorFromAuth(req.buildliteAuth, PERMISSIONS.CERTIFICATE_EDIT), auth:req.buildliteAuth }
     );
     if (!result.ok) return sendCertificateError(res, result);
     res.json(result.certificate);
@@ -337,7 +332,7 @@ router.post("/:packageId/certificates/:certificateId/approve", requirePermission
   }
 });
 
-router.post("/:packageId/certificates/:certificateId/reject", requirePermission(PERMISSIONS.CERTIFICATE_LOCK), async (req, res) => {
+router.post("/:packageId/certificates/:certificateId/reject", requirePermission(PERMISSIONS.CERTIFICATE_REJECT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -352,7 +347,7 @@ router.post("/:packageId/certificates/:certificateId/reject", requirePermission(
       req.params.packageId,
       req.params.certificateId,
       body,
-      { actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.CERTIFICATE_LOCK).actor, auth: req.buildliteAuth }
+      { actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.CERTIFICATE_REJECT).actor, auth: req.buildliteAuth }
     );
     if (!result.ok) return sendCertificateError(res, result);
     res.json(result.certificate);
@@ -362,7 +357,7 @@ router.post("/:packageId/certificates/:certificateId/reject", requirePermission(
   }
 });
 
-router.delete("/:packageId/certificates/:certificateId", async (req, res) => {
+router.delete("/:packageId/certificates/:certificateId", requirePermission(PERMISSIONS.CERTIFICATE_DELETE_DRAFT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -377,7 +372,7 @@ router.delete("/:packageId/certificates/:certificateId", async (req, res) => {
       req.params.packageId,
       req.params.certificateId,
       body,
-      { actor: certificateActor(body) }
+      { ...actorFromAuth(req.buildliteAuth, PERMISSIONS.CERTIFICATE_DELETE_DRAFT), auth:req.buildliteAuth }
     );
     if (!result.ok) return sendCertificateError(res, result);
     res.status(204).end();

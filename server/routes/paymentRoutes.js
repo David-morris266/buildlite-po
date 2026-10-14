@@ -5,6 +5,8 @@ const router = express.Router();
 const { pool, query } = require("../db");
 const { getActiveClient } = require("../services/activeClient");
 const { isProduction } = require("../utils/env");
+const { requirePermission } = require('../auth/authorization');
+const { PERMISSIONS } = require('../auth/permissions');
 
 /**
  * Utility: safe number
@@ -362,7 +364,8 @@ router.get("/po-lines", async (req, res) => {
  * - certificate_number / cert_no / period_to / period_end (aliases)
  * - status, payload (jsonb)
  */
-router.post("/certificates", async (req, res) => {
+router.post("/certificates", requirePermission(PERMISSIONS.CERTIFICATE_CREATE), async (req, res) => {
+  if (isProduction()) return res.status(404).json({ message: "Not found" });
   const dbClient = await pool.connect();
 
   try {

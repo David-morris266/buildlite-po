@@ -136,6 +136,26 @@ async function findCommercialEventById(clientId, id, { includeAudit = true } = {
   );
 }
 
+function siteOriginDocument(body = {}) {
+  return {
+    ...body,
+    eventType: body.eventType === 'contraCharge' || body.eventType === 'credit' ? 'variation' : body.eventType,
+    value: 0,
+    financialTreatment: null,
+    vatTreatment: 'standard',
+    linkedEventId: null,
+    recoveryPackageId: null,
+    potentialContraCharge: false,
+    potentialContraChargeNotes: '',
+    relationshipType: null,
+    recoveredAmount: 0,
+    certificateStatus: 'notIncluded',
+    recoveryStatus: 'notApplicable',
+    expectedTreatment: undefined,
+    expectedAmount: undefined,
+  };
+}
+
 async function listCommercialEvents(clientId, filters = {}, dbClient = null) {
   const clauses = ["client_id = $1"];
   const params = [clientId];
@@ -276,7 +296,7 @@ function normalizeCreateDocument(body = {}, packageRow, developmentId, actor = n
     financialTreatment: treated.financialTreatment || null,
     vatTreatment: treated.vatTreatment || "standard",
     dateRaised: treated.dateRaised || nowIso.slice(0, 10),
-    raisedBy: treated.raisedBy || actor,
+    raisedBy: forImport ? (treated.raisedBy || actor) : actor,
     status: forImport
       ? treated.status || COMMERCIAL_EVENT_STATUSES.draft
       : COMMERCIAL_EVENT_STATUSES.draft,
@@ -455,17 +475,19 @@ async function insertAuditEntry(
   return rows[0]?.id || null;
 }
 
-async function createCommercialEvent(clientId, body = {}, { actor = null } = {}) {
-  const developmentId = String(body.developmentId || "").trim();
-  const packageResolution = await resolvePackageForEvent(clientId, developmentId, body);
+async function createCommercialEvent(clientId, body = {}, { actor = null, auth = null } = {}) {
+  assertServicePermission(auth, PERMISSIONS.CE_CREATE);
+  const authoritativeBody = auth?.roleKey === 'site' ? siteOriginDocument(body) : body;
+  const developmentId = String(authoritativeBody.developmentId || "").trim();
+  const packageResolution = await resolvePackageForEvent(clientId, developmentId, authoritativeBody);
   if (!packageResolution.ok) return packageResolution;
 
-  const validationErrors = validateEventPayload(body);
+  const validationErrors = validateEventPayload(authoritativeBody);
   if (validationErrors.length) {
     return { ok: false, status: 400, message: validationErrors.join("; ") };
   }
 
-  const suppliedId = String(body.id || "").trim();
+  const suppliedId = String(authoritativeBody.id || "").trim();
   let id = null;
   if (suppliedId) {
     if (!isValidCommercialEventId(suppliedId)) {
@@ -481,7 +503,7 @@ async function createCommercialEvent(clientId, body = {}, { actor = null } = {})
   }
 
   const document = normalizeCreateDocument(
-    body,
+    authoritativeBody,
     packageResolution.packageRow,
     developmentId,
     actor
@@ -529,8 +551,9 @@ async function updateCommercialEventDraft(
   id,
   rawPatch = {},
   expectedVersion,
-  { actor = null } = {}
+  { actor = null, auth = null } = {}
 ) {
+  assertServicePermission(auth, PERMISSIONS.CE_EDIT);
   const patch = omitExpectedLiabilityWriteFields(rawPatch);
   const existing = await findCommercialEventById(clientId, id);
   if (!existing) {
@@ -630,7 +653,7 @@ async function updateCommercialEventDraft(
         nextFinancialTreatment,
         patch.vatTreatment ?? existing.vatTreatment,
         patch.dateRaised ?? existing.dateRaised,
-        patch.raisedBy ?? existing.raisedBy,
+        existing.raisedBy,
         nextLinkedEventId,
         nextRelationshipType,
         patch.potentialContraCharge != null
@@ -765,7 +788,8 @@ async function applyWorkflowAction(
   }
 }
 
-async function submitCommercialEvent(clientId, id, { actor = null, comment = "" } = {}) {
+async function submitCommercialEvent(clientId, id, { actor = null, comment = "" } = {}, options = {}) {
+  assertServicePermission(options.auth, PERMISSIONS.CE_SUBMIT);
   return applyWorkflowAction(clientId, id, {
     validate: (status) =>
       canSubmitCommercialEvent(status) ? null : "Only draft events can be submitted",
@@ -801,7 +825,8 @@ async function rejectCommercialEvent(clientId, id, { actor = null, comment = "" 
   });
 }
 
-async function closeCommercialEvent(clientId, id, { actor = null, comment = "" } = {}) {
+async function closeCommercialEvent(clientId, id, { actor = null, comment = "" } = {}, options = {}) {
+  assertServicePermission(options.auth, PERMISSIONS.CE_CLOSE);
   const existing = await findCommercialEventById(clientId, id);
   if (!existing) return { ok: false, status: 404, message: "Commercial event not found." };
   if (isRecoveryRelationshipType(existing.relationshipType)) {
@@ -922,8 +947,10 @@ async function dismissPotentialContraCharge(
 async function createLinkedRecoveryFromOrigin(
   clientId,
   originEventId,
-  { recoveryPackageId, recoveryPackageUuid = null, actor = null, comment = "" } = {}
+  { recoveryPackageId, recoveryPackageUuid = null, actor = null, comment = "" } = {},
+  options = {}
 ) {
+  assertServicePermission(options.auth, PERMISSIONS.CE_EDIT);
   const db = await pool.connect();
   try {
     await db.query("BEGIN");
@@ -1266,8 +1293,9 @@ async function updateCommercialEventExpectedLiability(
   clientId,
   id,
   body = {},
-  { actor = null } = {}
+  { actor = null, auth = null } = {}
 ) {
+  assertServicePermission(auth, PERMISSIONS.CE_EXPECTED_TREATMENT);
   const existing = await findCommercialEventById(clientId, id);
   if (!existing) {
     return { ok: false, status: 404, message: "Commercial event not found." };

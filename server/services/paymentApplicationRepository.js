@@ -2,6 +2,8 @@ const { pool, query } = require("../db");
 const { isValidPackageUuid, isValidCertificateUuid } = require("./paymentCertificateConstants");
 const { APPLICATION_BASES, moneyOrNull, validateApplicationBasis } = require("./paymentApplicationNormalization");
 const { rowToApplication } = require("./paymentApplicationMapper");
+const { assertServicePermission } = require('../auth/authorization');
+const { PERMISSIONS } = require('../auth/permissions');
 
 const VALID_BASES = new Set(Object.values(APPLICATION_BASES));
 const MONEY_COLUMNS = [
@@ -89,7 +91,9 @@ async function listApplications(clientId, packageId, certificateId = null) {
   return { ok: true, applications: await Promise.all(rows.map((row) => mapRow(clientId, row, cert))) };
 }
 
-async function createApplication(clientId, packageId, body = {}) {
+async function createApplication(clientId, packageId, body = {}, options = {}) {
+  assertServicePermission(options.auth, PERMISSIONS.APPLICATION_RECORD);
+  body = { ...body, actor: options.actor || null, recordedBy: options.actor || null };
   if (!isValidPackageUuid(packageId)) return fail(400, "packageId must be a valid UUID.");
   const valid = validate(body); if (!valid.ok) return valid;
   const db = await pool.connect();
@@ -125,7 +129,9 @@ async function createApplication(clientId, packageId, body = {}) {
   } finally { db.release(); }
 }
 
-async function reviseApplication(clientId, packageId, applicationId, body = {}) {
+async function reviseApplication(clientId, packageId, applicationId, body = {}, options = {}) {
+  assertServicePermission(options.auth, PERMISSIONS.APPLICATION_RECORD);
+  body = { ...body, actor: options.actor || null, recordedBy: options.actor || null };
   if (!isValidPackageUuid(packageId)) return fail(400, "packageId must be a valid UUID.");
   const valid = validate(body); if (!valid.ok) return valid;
   const db = await pool.connect();
@@ -155,7 +161,9 @@ async function loadActiveApplicationForCertificate(clientId, packageId, certific
   return rows[0]||null;
 }
 
-async function linkApplication(clientId, packageId, applicationId, body = {}) {
+async function linkApplication(clientId, packageId, applicationId, body = {}, options = {}) {
+  assertServicePermission(options.auth, PERMISSIONS.APPLICATION_RECORD);
+  body = { ...body, actor: options.actor || null, recordedBy: options.actor || null };
   if (!isValidPackageUuid(packageId)) return fail(400, "packageId must be a valid UUID.");
   const certificateId = text(body.certificateId);
   if (!isValidCertificateUuid(certificateId)) return fail(400, "certificateId must be a valid UUID.");

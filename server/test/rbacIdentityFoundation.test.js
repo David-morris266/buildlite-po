@@ -106,11 +106,11 @@ test('certificate submit requires its permission rather than a role name', async
   assert.match(response.body.message, /certificate\.submit/);
 });
 
-test('certificate Return to Draft requires certificate.lock rather than a role name', async () => {
+test('certificate Return to Draft requires certificate.reject rather than a role name', async () => {
   const app = createApp({authAdapter:createTestAuthAdapter({...principal,roleKey:'commercial_director',roleName:'Commercial Director',permissions:[]})});
   const response = await request(app).post('/api/packages/00000000-0000-0000-0000-000000000010/certificates/00000000-0000-0000-0000-000000000011/reject').send({version:1,comment:'Return',actor:'Forged'});
   assert.equal(response.status, 403);
-  assert.match(response.body.message, /certificate\.lock/);
+  assert.match(response.body.message, /certificate\.reject/);
 });
 
 test('Commercial Event approve and reject decisions both require ce.approve', async () => {
@@ -127,8 +127,8 @@ test('critical-route manifest covers the pilot high-risk boundary', () => {
   for (const permission of [PERMISSIONS.PO_APPROVE,PERMISSIONS.CE_APPROVE,PERMISSIONS.VO_ISSUE,PERMISSIONS.CVR_LOCK,PERMISSIONS.CERTIFICATE_SUBMIT,PERMISSIONS.CERTIFICATE_LOCK,PERMISSIONS.INTENDED_PAYMENT_CONFIRM,PERMISSIONS.PAYMENT_NOTICE_ISSUE,PERMISSIONS.PAY_LESS_ISSUE,PERMISSIONS.DOCUMENT_GENERATE,PERMISSIONS.DOCUMENT_ISSUE,PERMISSIONS.DOCUMENT_VIEW,PERMISSIONS.TERMS_PUBLISH,PERMISSIONS.PAYMENT_RELEASE_EXECUTE]) assert.match(values, new RegExp(permission.replace('.','\\.')));
 });
 
-test('critical-route manifest protects certificate Return to Draft with certificate.lock', () => {
-  assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/packages/:packageId/certificates/:certificateId/reject'], PERMISSIONS.CERTIFICATE_LOCK);
+test('critical-route manifest protects certificate Return to Draft with certificate.reject', () => {
+  assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/packages/:packageId/certificates/:certificateId/reject'], PERMISSIONS.CERTIFICATE_REJECT);
   assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/subcontract-terms/purchase-orders/:poNumber/confirm-legacy'], PERMISSIONS.TERMS_ASSIGN_OVERRIDE);
   assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/commercial-events/:id/reject'], PERMISSIONS.CE_APPROVE);
   assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/po'], PERMISSIONS.PO_CREATE);
@@ -138,4 +138,52 @@ test('critical-route manifest protects certificate Return to Draft with certific
   assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/packages/materialise'], PERMISSIONS.PO_APPROVE);
   assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/packages/materialise-from-po/:poNumber'], PERMISSIONS.PO_APPROVE);
   assert.equal(CRITICAL_ROUTE_PERMISSIONS['POST /api/commercial-events/import'], PERMISSIONS.CE_APPROVE);
+});
+
+test('commercial mutation surface denies before domain execution when permissions are absent', async () => {
+  const app = createApp({authAdapter:createTestAuthAdapter({...principal,permissions:[]})});
+  const id='00000000-0000-0000-0000-000000000010';
+  const attempts = [
+    ['post','/api/commercial-events',PERMISSIONS.CE_CREATE],
+    ['put','/api/commercial-events/ce-test',PERMISSIONS.CE_EDIT],
+    ['post','/api/commercial-events/ce-test/submit',PERMISSIONS.CE_SUBMIT],
+    ['patch','/api/commercial-events/ce-test/expected-liability',PERMISSIONS.CE_EXPECTED_TREATMENT],
+    ['post','/api/commercial-events/ce-test/create-linked-recovery',PERMISSIONS.CE_EDIT],
+    ['post','/api/variation-orders',PERMISSIONS.VO_CREATE],
+    ['put',`/api/variation-orders/${id}`,PERMISSIONS.VO_EDIT],
+    ['post',`/api/variation-orders/${id}/submit`,PERMISSIONS.VO_SUBMIT],
+    ['post',`/api/variation-orders/${id}/reject`,PERMISSIONS.VO_APPROVE],
+    ['put',`/api/packages/${id}/matrix`,PERMISSIONS.APPLICATION_RECORD],
+    ['post',`/api/packages/${id}/payment-applications`,PERMISSIONS.APPLICATION_RECORD],
+    ['post',`/api/packages/${id}/certificates`,PERMISSIONS.CERTIFICATE_CREATE],
+    ['patch',`/api/packages/${id}/certificates/${id}`,PERMISSIONS.CERTIFICATE_EDIT],
+    ['delete',`/api/packages/${id}/certificates/${id}`,PERMISSIONS.CERTIFICATE_DELETE_DRAFT],
+    ['post',`/api/packages/${id}/certificates/${id}/payment-notices`,PERMISSIONS.PAYMENT_NOTICE_PREPARE],
+    ['post',`/api/packages/${id}/certificates/${id}/pay-less-notices`,PERMISSIONS.PAY_LESS_PREPARE],
+  ];
+  for (const [method,route,permission] of attempts) {
+    const response=await request(app)[method](route).send({actor:'Forged Actor',version:1});
+    assert.equal(response.status,403,`${method.toUpperCase()} ${route}`);
+    assert.match(response.body.message,new RegExp(permission.replace('.','\\.')));
+  }
+});
+
+test('combined Variation Order approval and issue requires both authorities', async () => {
+  const id='00000000-0000-0000-0000-000000000010';
+  for (const permissions of [[PERMISSIONS.VO_APPROVE],[PERMISSIONS.VO_ISSUE]]) {
+    const app=createApp({authAdapter:createTestAuthAdapter({...principal,permissions})});
+    const response=await request(app).post(`/api/variation-orders/${id}/approve-and-issue`).send({actor:'Forged Actor'});
+    assert.equal(response.status,403);
+  }
+});
+
+test('critical-route manifest covers all approved commercial mutation permissions', () => {
+  const values=Object.values(CRITICAL_ROUTE_PERMISSIONS).join('|');
+  for (const permission of [
+    PERMISSIONS.CE_CREATE,PERMISSIONS.CE_EDIT,PERMISSIONS.CE_SUBMIT,PERMISSIONS.CE_EXPECTED_TREATMENT,
+    PERMISSIONS.VO_CREATE,PERMISSIONS.VO_EDIT,PERMISSIONS.VO_SUBMIT,PERMISSIONS.VO_APPROVE,
+    PERMISSIONS.APPLICATION_RECORD,PERMISSIONS.CERTIFICATE_CREATE,PERMISSIONS.CERTIFICATE_EDIT,
+    PERMISSIONS.CERTIFICATE_REJECT,PERMISSIONS.CERTIFICATE_DELETE_DRAFT,PERMISSIONS.INTENDED_PAYMENT_PROPOSE,
+    PERMISSIONS.PAYMENT_NOTICE_PREPARE,PERMISSIONS.PAY_LESS_PREPARE,
+  ]) assert.match(values,new RegExp(permission.replace('.','\\.')));
 });

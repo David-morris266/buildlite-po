@@ -2,7 +2,7 @@ const express = require("express");
 const { isDbConfigured } = require("../db");
 const { getActiveClient } = require("../services/activeClient");
 const repository = require("../services/variationOrderRepository");
-const { requirePermission, actorFromAuth } = require('../auth/authorization');
+const { requirePermission, requireAllPermissions, actorFromAuth } = require('../auth/authorization');
 const { PERMISSIONS } = require('../auth/permissions');
 
 const router = express.Router();
@@ -30,18 +30,18 @@ router.get("/certificate-readiness/:packageId", async (req, res) => {
   } catch (error) { console.error("[VariationOrders] certificate readiness error:", error); res.status(500).json({ message: "Failed to load Issued Variation Order certificate authority." }); }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", requirePermission(PERMISSIONS.VO_CREATE), async (req, res) => {
   try {
     const active = await activeClient(res); if (!active) return;
-    const result = await repository.createDraftVariationOrder(active.id, req.body || {}, { actor: repository.actorFrom(req.body) });
+    const result = await repository.createDraftVariationOrder(active.id, req.body || {}, { ...actorFromAuth(req.buildliteAuth, PERMISSIONS.VO_CREATE), auth:req.buildliteAuth });
     res.status(result.status).json(result.ok ? result.variationOrder : { message: result.message });
   } catch (error) { console.error("[VariationOrders] create error:", error); res.status(500).json({ message: "Failed to create Variation Order." }); }
 });
 
-router.post("/from-commercial-event/:commercialEventId", async (req, res) => {
+router.post("/from-commercial-event/:commercialEventId", requirePermission(PERMISSIONS.VO_CREATE), async (req, res) => {
   try {
     const active = await activeClient(res); if (!active) return;
-    const result = await repository.createDraftVariationOrderFromCommercialEvent(active.id, req.params.commercialEventId, req.body || {}, { actor: repository.actorFrom(req.body) });
+    const result = await repository.createDraftVariationOrderFromCommercialEvent(active.id, req.params.commercialEventId, req.body || {}, { ...actorFromAuth(req.buildliteAuth, PERMISSIONS.VO_CREATE), auth:req.buildliteAuth });
     const payload = result.ok ? result.variationOrder : { message: result.message, existingVariationOrder: result.existingVariationOrder || null };
     res.status(result.status).json(payload);
   } catch (error) { console.error("[VariationOrders] create from CE error:", error); res.status(500).json({ message: "Failed to create Variation Order." }); }
@@ -56,15 +56,15 @@ router.get("/:id", async (req, res) => {
   } catch (error) { console.error("[VariationOrders] get error:", error); res.status(500).json({ message: "Failed to load Variation Order." }); }
 });
 
-router.put("/:id", async (req, res) => {
+router.put("/:id", requirePermission(PERMISSIONS.VO_EDIT), async (req, res) => {
   try {
     const active = await activeClient(res); if (!active) return;
-    const result = await repository.updateDraftVariationOrder(active.id, req.params.id, req.body || {}, { actor: repository.actorFrom(req.body) });
+    const result = await repository.updateDraftVariationOrder(active.id, req.params.id, req.body || {}, { ...actorFromAuth(req.buildliteAuth, PERMISSIONS.VO_EDIT), auth:req.buildliteAuth });
     res.status(result.status).json(result.ok ? result.variationOrder : { message: result.message });
   } catch (error) { console.error("[VariationOrders] update error:", error); res.status(500).json({ message: "Failed to update Variation Order." }); }
 });
 
-router.post("/:id/approve-and-issue", requirePermission(PERMISSIONS.VO_ISSUE), async (req, res) => {
+router.post("/:id/approve-and-issue", requireAllPermissions([PERMISSIONS.VO_APPROVE, PERMISSIONS.VO_ISSUE]), async (req, res) => {
   try {
     const active = await activeClient(res); if (!active) return;
     const result = await repository.approveAndIssueVariationOrder(active.id, req.params.id, req.body || {}, { actor: actorFromAuth(req.buildliteAuth,PERMISSIONS.VO_ISSUE).actor, auth:req.buildliteAuth });
@@ -73,8 +73,8 @@ router.post("/:id/approve-and-issue", requirePermission(PERMISSIONS.VO_ISSUE), a
 });
 
 for (const action of ["submit", "approve", "issue", "reject"]) {
-  const permission=action==='approve'?PERMISSIONS.VO_APPROVE:action==='issue'?PERMISSIONS.VO_ISSUE:null;
-  const middleware=permission?[requirePermission(permission)]:[];
+  const permission=action==='submit'?PERMISSIONS.VO_SUBMIT:action==='approve'||action==='reject'?PERMISSIONS.VO_APPROVE:PERMISSIONS.VO_ISSUE;
+  const middleware=[requirePermission(permission)];
   router.post(`/:id/${action}`,...middleware, async (req, res) => {
     try {
       const active = await activeClient(res); if (!active) return;

@@ -260,7 +260,8 @@ async function validateCorrectiveRelationship(db, clientId, packageId, id, label
   return rows[0];
 }
 
-async function createDraftVariationOrder(clientId, body = {}, { actor = actorFrom(body) } = {}) {
+async function createDraftVariationOrder(clientId, body = {}, { actor = actorFrom(body), auth = null } = {}) {
+  assertServicePermission(auth, PERMISSIONS.VO_CREATE);
   const errors = validateCreate(body);
   if (errors.length) return fail(400, errors.join(" "));
   const db = await pool.connect();
@@ -351,7 +352,8 @@ async function createDraftVariationOrder(clientId, body = {}, { actor = actorFro
   }
 }
 
-async function createDraftVariationOrderFromCommercialEvent(clientId, commercialEventId, body = {}, { actor = actorFrom(body) } = {}) {
+async function createDraftVariationOrderFromCommercialEvent(clientId, commercialEventId, body = {}, { actor = actorFrom(body), auth = null } = {}) {
+  assertServicePermission(auth, PERMISSIONS.VO_CREATE);
   const { rows } = await query(
     `SELECT ce.*, p.supplier_id AS package_supplier_id, p.order_key AS package_order_key
      FROM commercial_events ce
@@ -397,7 +399,7 @@ async function createDraftVariationOrderFromCommercialEvent(clientId, commercial
     sourceCommercialEvents: [{ commercialEventId: ce.id, allocatedValue: Number(ce.value) }],
     normalSourceCommercialEventId: ce.id,
     actor,
-  }, { actor });
+  }, { actor, auth });
   if (!created.ok && created.status === 409) {
     const existing = await query(
       "SELECT id FROM variation_orders WHERE client_id=$1 AND normal_source_commercial_event_id=$2 AND status <> 'rejected' LIMIT 1",
@@ -408,7 +410,8 @@ async function createDraftVariationOrderFromCommercialEvent(clientId, commercial
   return created;
 }
 
-async function updateDraftVariationOrder(clientId, id, body = {}, { actor = actorFrom(body) } = {}) {
+async function updateDraftVariationOrder(clientId, id, body = {}, { actor = actorFrom(body), auth = null } = {}) {
+  assertServicePermission(auth, PERMISSIONS.VO_EDIT);
   const version = Number(body.version);
   if (!Number.isInteger(version) || version < 1) return fail(400, "version is required.");
   const errors = validateCreate({
@@ -626,7 +629,9 @@ async function validateVariationOrderForSubmit(db, clientId, row) {
 }
 
 async function transitionVariationOrder(clientId, id, action, body = {}, { actor = actorFrom(body), auth = null } = {}) {
+  if (action === 'submit') assertServicePermission(auth, PERMISSIONS.VO_SUBMIT);
   if (action === 'approve') assertServicePermission(auth, PERMISSIONS.VO_APPROVE);
+  if (action === 'reject') assertServicePermission(auth, PERMISSIONS.VO_APPROVE);
   if (action === 'issue') assertServicePermission(auth, PERMISSIONS.VO_ISSUE);
   const transition = VARIATION_ORDER_TRANSITIONS[action];
   if (!transition) return fail(400, "Unknown Variation Order action.");
@@ -673,6 +678,7 @@ async function transitionVariationOrder(clientId, id, action, body = {}, { actor
 }
 
 async function approveAndIssueVariationOrder(clientId, id, body = {}, { actor = actorFrom(body), auth = null } = {}) {
+  assertServicePermission(auth, PERMISSIONS.VO_APPROVE);
   assertServicePermission(auth, PERMISSIONS.VO_ISSUE);
   const version = Number(body.version);
   if (!Number.isInteger(version) || version < 1) return fail(400, "version is required.");

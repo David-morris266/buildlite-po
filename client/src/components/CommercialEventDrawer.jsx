@@ -239,6 +239,7 @@ export default function CommercialEventDrawer({
   const [variationAccountError, setVariationAccountError] = useState('');
 
   const isCreate = mode === 'create';
+  const isSiteCreator = isCreate && principal?.roleKey === 'site';
   const canDecideCommercialEvent = !principal || principal.permissions?.includes('ce.approve');
 
   const liveEvent = useMemo(() => {
@@ -472,6 +473,21 @@ export default function CommercialEventDrawer({
         ? form.potentialContraChargeNotes
         : undefined,
     };
+
+    if (isSiteCreator) {
+      return {
+        packageId: payload.packageId,
+        poNumber: payload.poNumber,
+        supplierId: payload.supplierId,
+        costCode: payload.costCode,
+        eventType: COMMERCIAL_EVENT_TYPES.variation.key,
+        category: payload.category,
+        subcategory: payload.subcategory,
+        responsibility: payload.responsibility,
+        description: payload.description,
+        dateRaised: payload.dateRaised,
+      };
+    }
 
     if (form.eventType === COMMERCIAL_EVENT_TYPES.contraCharge.key) {
       payload.financialTreatment = form.financialTreatment;
@@ -879,7 +895,7 @@ export default function CommercialEventDrawer({
                   <span>Event type</span>
                   <select
                     value={form.eventType}
-                    disabled={!editable || isRecoveryEvent}
+                    disabled={!editable || isRecoveryEvent || isSiteCreator}
                     onChange={(e) => updateField('eventType', e.target.value)}
                   >
                     {listCommercialEventTypeOptions().map((option) => (
@@ -950,7 +966,7 @@ export default function CommercialEventDrawer({
               </div>
             </DrawerSection>
 
-            <DrawerSection title="Financial details">
+            {!isSiteCreator ? <DrawerSection title="Financial details">
               <div className="po-ce-drawer__grid">
                 {isContraChargeForm && editable && !isRecoveryEvent ? (
                   <fieldset className="po-ce-drawer__field po-ce-drawer__field--wide">
@@ -1081,7 +1097,7 @@ export default function CommercialEventDrawer({
                   </div>
                 ) : null}
               </div>
-            </DrawerSection>
+            </DrawerSection> : null}
 
             {editable ? (
               <div className="po-ce-drawer__actions">

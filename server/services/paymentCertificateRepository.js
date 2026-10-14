@@ -346,7 +346,8 @@ async function getCertificateForPackage(clientId, packageId, certificateId) {
   };
 }
 
-async function createCertificateForPackage(clientId, packageId, body = {}, { actor } = {}) {
+async function createCertificateForPackage(clientId, packageId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CERTIFICATE_CREATE);
   if (!isValidPackageUuid(packageId)) return invalidPackageUuidResult();
 
   const dbClient = await pool.connect();
@@ -430,7 +431,8 @@ async function createCertificateForPackage(clientId, packageId, body = {}, { act
   }
 }
 
-async function patchCertificateForPackage(clientId, packageId, certificateId, body = {}, { actor } = {}) {
+async function patchCertificateForPackage(clientId, packageId, certificateId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CERTIFICATE_EDIT);
   if (!isValidPackageUuid(packageId)) return invalidPackageUuidResult();
   if (!isValidCertificateUuid(certificateId)) return invalidCertificateUuidResult();
 
@@ -893,7 +895,7 @@ async function approveCertificateForPackage(clientId, packageId, certificateId, 
 }
 
 async function rejectCertificateForPackage(clientId, packageId, certificateId, body = {}, { actor, auth } = {}) {
-  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CERTIFICATE_LOCK);
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CERTIFICATE_REJECT);
   if (!isValidPackageUuid(packageId)) return invalidPackageUuidResult();
   if (!isValidCertificateUuid(certificateId)) return invalidCertificateUuidResult();
 
@@ -971,7 +973,8 @@ async function rejectCertificateForPackage(clientId, packageId, certificateId, b
   }
 }
 
-async function deleteCertificateForPackage(clientId, packageId, certificateId, body = {}, { actor } = {}) {
+async function deleteCertificateForPackage(clientId, packageId, certificateId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CERTIFICATE_DELETE_DRAFT);
   if (!isValidPackageUuid(packageId)) return invalidPackageUuidResult();
   if (!isValidCertificateUuid(certificateId)) return invalidCertificateUuidResult();
 

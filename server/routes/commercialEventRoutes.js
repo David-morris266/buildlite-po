@@ -19,7 +19,6 @@ const {
   createLinkedRecoveryFromOrigin,
   importCommercialEvents,
   updateCommercialEventExpectedLiability,
-  provisionalActor,
 } = require("../services/commercialEventRepository");
 
 const router = express.Router();
@@ -108,7 +107,7 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", requirePermission(PERMISSIONS.CE_CREATE), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -119,7 +118,8 @@ router.post("/", async (req, res) => {
 
     const body = req.body || {};
     const result = await createCommercialEvent(active.id, body, {
-      actor: provisionalActor(body),
+      ...actorFromAuth(req.buildliteAuth, PERMISSIONS.CE_CREATE),
+      auth: req.buildliteAuth,
     });
 
     if (!result.ok) {
@@ -133,7 +133,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.put("/:id", async (req, res) => {
+router.put("/:id", requirePermission(PERMISSIONS.CE_EDIT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -148,7 +148,7 @@ router.put("/:id", async (req, res) => {
       req.params.id,
       body,
       body.version,
-      { actor: provisionalActor(body) }
+      { ...actorFromAuth(req.buildliteAuth, PERMISSIONS.CE_EDIT), auth: req.buildliteAuth }
     );
 
     if (!result.ok) {
@@ -164,13 +164,13 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-router.post("/:id/submit", async (req, res) => {
+router.post("/:id/submit", requirePermission(PERMISSIONS.CE_SUBMIT), async (req, res) => {
   try {
     if (!isDbConfigured()) return res.status(500).json({ message: "Database not configured" });
     const active = await getActiveClient();
     if (!active) return res.status(404).json({ error: "No active client set" });
 
-    const result = await submitCommercialEvent(active.id, req.params.id, workflowBody(req));
+    const result = await submitCommercialEvent(active.id, req.params.id, workflowBody(req), { auth: req.buildliteAuth });
     if (!result.ok) return res.status(result.status || 400).json({ message: result.message });
     res.json(result.event);
   } catch (err) {
@@ -215,7 +215,7 @@ router.post("/:id/close", requirePermission(PERMISSIONS.CE_CLOSE), async (req, r
     const active = await getActiveClient();
     if (!active) return res.status(404).json({ error: "No active client set" });
 
-    const result = await closeCommercialEvent(active.id, req.params.id, workflowBody(req));
+    const result = await closeCommercialEvent(active.id, req.params.id, workflowBody(req), { auth: req.buildliteAuth });
     if (!result.ok) return res.status(result.status || 400).json({ message: result.message });
     res.json(result.event);
   } catch (err) {
@@ -244,7 +244,7 @@ router.post("/:id/dismiss-potential-contra", requirePermission(PERMISSIONS.CE_RE
   }
 });
 
-router.patch("/:id/expected-liability", async (req, res) => {
+router.patch("/:id/expected-liability", requirePermission(PERMISSIONS.CE_EXPECTED_TREATMENT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -255,7 +255,8 @@ router.patch("/:id/expected-liability", async (req, res) => {
 
     const body = req.body || {};
     const result = await updateCommercialEventExpectedLiability(active.id, req.params.id, body, {
-      actor: provisionalActor(body),
+      ...actorFromAuth(req.buildliteAuth, PERMISSIONS.CE_EXPECTED_TREATMENT),
+      auth: req.buildliteAuth,
     });
 
     if (!result.ok) {
@@ -273,7 +274,7 @@ router.patch("/:id/expected-liability", async (req, res) => {
   }
 });
 
-router.post("/:id/create-linked-recovery", async (req, res) => {
+router.post("/:id/create-linked-recovery", requirePermission(PERMISSIONS.CE_EDIT), async (req, res) => {
   try {
     if (!isDbConfigured()) return res.status(500).json({ message: "Database not configured" });
     const active = await getActiveClient();
@@ -283,9 +284,9 @@ router.post("/:id/create-linked-recovery", async (req, res) => {
     const result = await createLinkedRecoveryFromOrigin(active.id, req.params.id, {
       recoveryPackageId: body.recoveryPackageId || body.packageId || body.orderKey,
       recoveryPackageUuid: body.recoveryPackageUuid || body.packageUuid || null,
-      actor: provisionalActor(body),
+      actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.CE_EDIT).actor,
       comment: body.comment || "",
-    });
+    }, { auth: req.buildliteAuth });
 
     if (!result.ok) {
       return res.status(result.status || 400).json({ message: result.message });
