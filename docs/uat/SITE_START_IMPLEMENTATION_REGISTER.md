@@ -223,3 +223,60 @@ Owner-review the complete SS-1 through SS-5 tranche locally, then bank and relea
 - Commercial Cost Summary no longer presents `Since Site Start £0.00` while viewing the Site Start period itself. Commercial Head and Total rows use one explicit presentation flag.
 - The approved Site Start benchmark, current EFC and derived cumulative movement remain calculated and reconciled unchanged; only the redundant self-comparison label is suppressed.
 - Monthly CVRs continue to show positive, negative and zero cumulative movement against the immutable approved Site Start benchmark, independently of movement from the previous locked monthly period.
+
+## GP-PILOT-03 dependency-security release closeout
+
+**Owner-only hosted release complete (14 October 2026).** Four bounded dependency-security commits through `7c6d275` were deployed to the Render API. Netlify was unchanged. No database migration accompanied this release; the hosted migration frontier remains `067`.
+
+- Render has Node `22.17.0` configured. The deployment completed successfully, API health reported ready and PostgreSQL readiness reported ready. The exact Node runtime used by the hosted process was not independently observed in deployment logs.
+- Production dependencies now resolve Express `4.22.3`, Handlebars `4.7.10`, Sharp `0.35.5` and Puppeteer `25.13.0`. Puppeteer targets Chrome for Testing `155.0.8059.39`; the exact hosted Chrome runtime version was not independently observed in deployment logs.
+- Dormant Nodemailer/SMTP workflow code was removed. Clerk invitations remain the established invitation mechanism; BuildLite does not claim SMTP workflow notifications.
+- The server and repository-root production npm audits reported zero findings at the released dependency boundary.
+- An existing hosted approved PO PDF was generated successfully and visually inspected after deployment, providing an operational smoke test of the hosted PO PDF path.
+
+**Deferred acceptance:** Hosted commercial-document PDF rendering remains unverified. No certificate or payment notice currently exists in the owner-only UAT environment. Complete this check during certificate UAT using an existing commercial document; do not create artificial financial evidence solely for infrastructure testing.
+
+### Outstanding pilot blockers
+
+GP-PILOT-03 closes the bounded dependency-security release only. BuildLite is **not externally pilot-ready**. The outstanding pilot-readiness programme still includes:
+
+1. P0-06 CVR locking/reconciliation correction and regression proof.
+2. Tenant-scoped PO and supplier identity migration, including the global-key / tenant-local numbering limitation.
+3. Wider Commercial Event and certificate RBAC review.
+4. The remaining pilot-readiness, hosted UAT and financial edge-case findings already recorded in this register and the programme continuity record.
+
+## GP-PILOT-04 P0-06 CVR snapshot-reconciliation closeout
+
+**Owner-only hosted release complete (14 October 2026).** The three bounded corrections through `4d9e454` were deployed to the Render API. No migration, seed, Netlify deployment, schema change or historical snapshot rewrite accompanied the release.
+
+- Snapshot verification reuses the shared authoritative forecast functions. The recognised-obligation floor remains a per-Cost-Code commercial invariant; no aggregate development-level substitute or new calculation authority was introduced.
+- Monetary reconciliation compares persisted `NUMERIC(14,2)` evidence in integer pence. Cost Code rows reconcile to headers, while Revenue, Gross Profit and Margin retain their established authority.
+- Negative integration coverage proves manipulated obligation, commitment, exposure, System Forecast, Final Forecast, aggregation and pence evidence fail closed with complete transactional rollback.
+- The governed Site Start regression reaches snapshot verification and proves HTTP 409 `CVR_SNAPSHOT_RECONCILIATION_FAILED`, Submitted status retention, and zero surviving snapshot header/rows/plots, approval/lock audits or Site Start milestone. Stable diagnostics identify invariant category and `site_start` period type without financial values.
+- Post-deployment read-only verification confirmed Ashfield's existing locked Site Start figures and Oakfield's existing P01 Draft figures remained unchanged. No hosted CVR was newly approved solely to test the release.
+
+The five stale new-development readiness cases in `cvrDevelopmentBudgetIntegration.test.js` remain separately bounded fixture debt. Hosted commercial-document PDF rendering remains deferred until certificate UAT can use an existing certificate or payment document without manufacturing financial evidence.
+
+P0-06 snapshot reconciliation is closed. This does not close the separate GP-PILOT-05 live-fact transaction-consistency investigation, the tenant-scoped PO/supplier identity migration, or wider Commercial Event and certificate RBAC review, and does not make BuildLite externally pilot-ready.
+
+## GP-PILOT-05 CVR approval transaction-consistency closeout
+
+**Owner-only hosted release complete (14 October 2026).** The bounded correction at `0369d66` was deployed successfully to the Render API. The hosted environment uses PostgreSQL major version 18 and Node.js `22.17.0`. No migration, seed or Netlify deployment accompanied the release.
+
+- CVR approval now uses PostgreSQL `REPEATABLE READ`, with all financial source reads, immutable snapshot persistence, status transition and approval audit sharing the same transaction client.
+- The existing CVR period `FOR UPDATE`, optimistic-version checks, submitted-evidence integrity checks and tenant/development scoping remain authoritative.
+- `SET LOCAL lock_timeout = '10s'` bounds approval row-lock waits without changing any global database setting.
+- PostgreSQL serialization (`40001`), lock-timeout (`55P03`) and deadlock (`40P01`) conflicts propagate through cost and revenue source loaders, roll back completely, and return controlled HTTP 409 refresh/retry guidance. Approval is not retried automatically.
+- Immutable snapshot authority, historic evidence and all financial formulas remain unchanged.
+- Guarded local PostgreSQL verification on `localhost:5432/buildlite_test` version `18.6` recorded 126 server tests passing with zero failures or skips. Client movement/Summary verification recorded 26 passing tests, and the production Vite build passed. These results are local test evidence.
+- Post-deployment checks confirmed the existing Ashfield Rise locked Site Start figures and Oakfield Rise P01 Draft figures remained unchanged. No newly submitted hosted CVR was approved for smoke testing.
+
+### Outstanding external-pilot blockers and deferred acceptance
+
+GP-PILOT-05 closes the live-fact transaction-consistency investigation. BuildLite remains **not externally pilot-ready**. Outstanding items include:
+
+1. Tenant-scoped PO and supplier identity migration, including the legacy global-key / tenant-local numbering limitation.
+2. Wider Commercial Event and certificate RBAC review.
+3. Five stale Development Budget integration fixtures.
+4. Hosted commercial-document PDF acceptance, deferred until certificate UAT can use an existing document without manufacturing financial evidence.
+5. Previously recorded UX/UAT issues, pilot-readiness findings and technical debt.
