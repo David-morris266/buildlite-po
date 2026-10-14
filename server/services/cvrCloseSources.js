@@ -35,6 +35,10 @@ function sourceOk(value, extra = {}) {
   return { loaded: true, ready: true, value, ...extra };
 }
 
+function rethrowApprovalConcurrencyFailure(error) {
+  if (["40001", "55P03", "40P01"].includes(error?.code)) throw error;
+}
+
 async function resolvePoDevelopmentId(clientId, po, caches, dbClient = null) {
   const direct = getPoDevelopmentIdFromPayload(po);
   if (direct) {
@@ -100,8 +104,19 @@ async function loadCertificates(clientId, developmentId, dbClient = null) {
   return rows.map((row) => certificateRowToDocument(row, []));
 }
 
-async function loadCvrCloseSources({ clientId, developmentId, periodId, dbClient = null } = {}) {
+async function loadCvrCloseSources({
+  clientId,
+  developmentId,
+  periodId,
+  dbClient = null,
+  afterSourceRead = null,
+} = {}) {
   const sources = emptySourceReadiness();
+  const sourceRead = async (source) => {
+    if (typeof afterSourceRead === "function") {
+      await afterSourceRead({ source });
+    }
+  };
 
   try {
     const development = await findDevelopmentById(clientId, developmentId, dbClient);
@@ -110,7 +125,9 @@ async function loadCvrCloseSources({ clientId, developmentId, periodId, dbClient
       return { ok: false, sources };
     }
     sources.development = sourceOk(development);
+    await sourceRead("development");
   } catch (err) {
+    rethrowApprovalConcurrencyFailure(err);
     sources.development = sourceFailure("development-query-failed", {
       error: err.message,
     });
@@ -127,7 +144,9 @@ async function loadCvrCloseSources({ clientId, developmentId, periodId, dbClient
       return { ok: false, sources };
     }
     sources.period = sourceOk(periodResult.period);
+    await sourceRead("period");
   } catch (err) {
+    rethrowApprovalConcurrencyFailure(err);
     sources.period = sourceFailure("period-query-failed", { error: err.message });
     return { ok: false, sources };
   }
@@ -142,7 +161,9 @@ async function loadCvrCloseSources({ clientId, developmentId, periodId, dbClient
       return { ok: false, sources };
     }
     sources.inputs = sourceOk(inputResult.inputs || []);
+    await sourceRead("inputs");
   } catch (err) {
+    rethrowApprovalConcurrencyFailure(err);
     sources.inputs = sourceFailure("inputs-query-failed", { error: err.message });
     return { ok: false, sources };
   }
@@ -151,7 +172,9 @@ async function loadCvrCloseSources({ clientId, developmentId, periodId, dbClient
     sources.purchaseOrders = sourceOk(
       await loadPurchaseOrders(clientId, developmentId, dbClient)
     );
+    await sourceRead("purchaseOrders");
   } catch (err) {
+    rethrowApprovalConcurrencyFailure(err);
     sources.purchaseOrders = sourceFailure("purchase-orders-query-failed", {
       error: err.message,
     });
@@ -162,7 +185,9 @@ async function loadCvrCloseSources({ clientId, developmentId, periodId, dbClient
     sources.commercialEvents = sourceOk(
       await listCommercialEvents(clientId, { developmentId }, dbClient)
     );
+    await sourceRead("commercialEvents");
   } catch (err) {
+    rethrowApprovalConcurrencyFailure(err);
     sources.commercialEvents = sourceFailure("commercial-events-query-failed", {
       error: err.message,
     });
@@ -173,7 +198,9 @@ async function loadCvrCloseSources({ clientId, developmentId, periodId, dbClient
     sources.variationOrders = sourceOk(
       await listVariationOrderAuthorityFacts(dbClient || { query }, clientId, { developmentId })
     );
+    await sourceRead("variationOrders");
   } catch (err) {
+    rethrowApprovalConcurrencyFailure(err);
     sources.variationOrders = sourceFailure("variation-orders-query-failed", { error: err.message });
     return { ok: false, sources };
   }
@@ -182,7 +209,9 @@ async function loadCvrCloseSources({ clientId, developmentId, periodId, dbClient
     sources.certificates = sourceOk(
       await loadCertificates(clientId, developmentId, dbClient)
     );
+    await sourceRead("certificates");
   } catch (err) {
+    rethrowApprovalConcurrencyFailure(err);
     sources.certificates = sourceFailure("certificates-query-failed", {
       error: err.message,
     });
@@ -207,7 +236,9 @@ async function loadCvrCloseSources({ clientId, developmentId, periodId, dbClient
           unresolvedValue: unresolved.reduce((sum, item) => sum + (Number(item.netAmount) || 0), 0),
         })
       : sourceOk(transactions);
+    await sourceRead("ledger");
   } catch (err) {
+    rethrowApprovalConcurrencyFailure(err);
     sources.ledger = sourceFailure("ledger-query-failed", { error: err.message });
     return { ok: false, sources };
   }

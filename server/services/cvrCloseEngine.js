@@ -323,8 +323,15 @@ async function buildCvrCloseCandidate({
   variationExposureDocument = null,
   developmentBudgetDocument = null,
   commercialHierarchyDocument = null,
+  afterSourceRead = null,
 } = {}) {
-  const loaded = await loadSources({ clientId, developmentId, periodId, dbClient });
+  const loaded = await loadSources({
+    clientId,
+    developmentId,
+    periodId,
+    dbClient,
+    afterSourceRead,
+  });
   const sources = loaded.sources || {};
   const sourceBlockers = collectSourceBlockers(sources);
 

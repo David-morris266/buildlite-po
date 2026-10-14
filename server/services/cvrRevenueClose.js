@@ -23,6 +23,10 @@ function sourceOk(value, extra = {}) {
   return { loaded: true, ready: true, value, ...extra };
 }
 
+function rethrowApprovalConcurrencyFailure(error) {
+  if (["40001", "55P03", "40P01"].includes(error?.code)) throw error;
+}
+
 function plotsFromDevelopment(development) {
   if (!development || typeof development !== "object") return null;
   const plotMaster = development.plotMaster;
@@ -261,6 +265,7 @@ async function buildCvrRevenueCloseCandidate({
       sources.plotMaster = sourceOk(plots);
     }
   } catch (err) {
+    rethrowApprovalConcurrencyFailure(err);
     sources.plotMaster = sourceFailure("plot-master-query-failed", { error: err.message });
     blockers.push({ source: "plotMaster", reason: "plot-master-query-failed" });
   }
@@ -279,6 +284,7 @@ async function buildCvrRevenueCloseCandidate({
       sources.revenueSettings = sourceOk(settingsDocument);
     }
   } catch (err) {
+    rethrowApprovalConcurrencyFailure(err);
     sources.revenueSettings = sourceFailure("revenue-settings-query-failed", {
       error: err.message,
     });

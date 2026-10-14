@@ -848,7 +848,8 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
   let lockedRow = null;
   let reconciliationPeriodType = "unknown";
   try {
-    await dbClient.query("BEGIN");
+    await dbClient.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
+    await dbClient.query("SET LOCAL lock_timeout = '10s'");
     const row = await findPeriodRow(clientId, developmentId, periodId, dbClient, {
       forUpdate: true,
     });
@@ -944,6 +945,7 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
       ...(loadSources ? { loadSources } : {}),
       ...(options.loadDevelopment ? { loadDevelopment: options.loadDevelopment } : {}),
       ...(options.loadSettingsRow ? { loadSettingsRow: options.loadSettingsRow } : {}),
+      ...(options.afterSourceRead ? { afterSourceRead: options.afterSourceRead } : {}),
       variationExposureDocument: variationExposure.submitted?.source_snapshot || null,
       developmentBudgetDocument: budgetComparison?.submitted?.source_snapshot || null,
       commercialHierarchyDocument: hierarchySubmission.document || null,
@@ -1060,6 +1062,14 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
     lockedRow = updated.rows[0];
   } catch (err) {
     await dbClient.query("ROLLBACK");
+    if (["40001", "55P03", "40P01"].includes(err?.code)) {
+      return {
+        ok: false,
+        status: 409,
+        code: "CVR_APPROVAL_CONCURRENCY_CONFLICT",
+        message: "CVR approval could not obtain a consistent financial view. Refresh the CVR and try again.",
+      };
+    }
     if (err?.code === "CVR_SNAPSHOT_RECONCILIATION_FAILED") {
       const reconciliationLogger = options.reconciliationLogger || console.error;
       try {

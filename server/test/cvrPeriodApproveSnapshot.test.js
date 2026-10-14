@@ -13,7 +13,11 @@ const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { buildSubcontractOrderKey } = require("../services/packageKey");
 const { buildCvrCloseCandidate } = require("../services/cvrCloseEngine");
-const { sourceFailure, sourceOk } = require("../services/cvrCloseSources");
+const {
+  loadCvrCloseSources,
+  sourceFailure,
+  sourceOk,
+} = require("../services/cvrCloseSources");
 const {
   SNAPSHOT_CREATED_NOTE,
   CVR_CLOSE_NOT_READY_CODE,
@@ -142,6 +146,11 @@ async function ensureSchema() {
 }
 
 async function cleanup() {
+  if (testDevelopmentIds.length) {
+    await pool.query("DELETE FROM variation_orders WHERE development_id = ANY($1::text[])", [
+      testDevelopmentIds,
+    ]);
+  }
   if (testPackageIds.length) {
     await pool.query(
       `DELETE FROM cvr_period_snapshot_rows WHERE snapshot_id IN (
@@ -1445,6 +1454,321 @@ if (!isDbConfigured()) {
     assert.equal(counts.headers, 1);
     const loaded = await getCvrPeriod(world.client.id, world.development.id, world.period.id);
     assert.equal(loaded.period.status, "locked");
+  });
+
+  test("approval freezes one repeatable-read view across PO, CE, VO, certificate, and ledger changes", async () => {
+    const world = await setupBase();
+    const latePo = buildPo({
+      poNumber: uniquePo(),
+      development: world.development,
+      supplierId: world.supplierId,
+      costCode: "5231",
+      subtotal: 1000,
+      type: "M",
+      approvalStatus: "Draft",
+    });
+    await savePo(world.client.id, latePo);
+    await submitPeriod(world.development.id, world.period.id);
+
+    let releaseApproval;
+    const approvalReleased = new Promise((resolve) => { releaseApproval = resolve; });
+    let sourceReached;
+    const sourceBarrier = new Promise((resolve) => { sourceReached = resolve; });
+    const approval = approveCvrPeriod(
+      world.client.id,
+      world.development.id,
+      world.period.id,
+      {},
+      {
+        actor: "Director",
+        afterSourceRead: async ({ source }) => {
+          if (source !== "purchaseOrders") return;
+          sourceReached();
+          await approvalReleased;
+        },
+      }
+    );
+
+    await sourceBarrier;
+    const inputWriter = await pool.connect();
+    try {
+      await inputWriter.query("BEGIN");
+      await inputWriter.query("SET LOCAL lock_timeout = '250ms'");
+      await assert.rejects(
+        () => inputWriter.query("SELECT id FROM cvr_periods WHERE id=$1 FOR UPDATE", [world.period.id]),
+        (error) => error?.code === "55P03"
+      );
+      await inputWriter.query("ROLLBACK");
+    } finally {
+      inputWriter.release();
+    }
+    const concurrent = await pool.connect();
+    try {
+      await concurrent.query("BEGIN");
+      const approvedPayload = {
+        ...latePo,
+        status: "Approved",
+        approval: { status: "Approved", history: [] },
+        updatedAt: new Date().toISOString(),
+      };
+      await concurrent.query(
+        "UPDATE purchase_orders SET payload=$1 WHERE client_id=$2 AND po_number=$3",
+        [approvedPayload, world.client.id, latePo.poNumber]
+      );
+      const ceId = `ce-overlap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      trackCe(ceId);
+      await concurrent.query(
+        `INSERT INTO commercial_events (
+           id, client_id, development_id, package_id, order_key, event_number,
+           event_type, category, responsibility, description, value, status,
+           vat_treatment, payload, expected_treatment, cost_code
+         ) VALUES ($1,$2,$3,$4,$5,$6,'variation','commercial','commercial',
+           'Concurrent expected liability',200,'submitted','standard','{}'::jsonb,'default','5231')`,
+        [ceId, world.client.id, world.development.id, world.pkg.id, world.pkg.orderKey, uniquePo("CE")]
+      );
+      const variation = await concurrent.query(
+        `INSERT INTO variation_orders (
+           client_id, development_id, package_id, order_key, source_po_number,
+           supplier_id, variation_order_number, description, status,
+           approved_at, approved_by, issued_at, issued_by
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,'Concurrent issued variation','issued',
+           NOW(),'Director',NOW(),'Director') RETURNING id`,
+        [world.client.id, world.development.id, world.pkg.id, world.pkg.orderKey,
+          world.po.poNumber, world.supplierId, uniquePo("VO")]
+      );
+      await concurrent.query(
+        `INSERT INTO variation_order_lines (
+           client_id, variation_order_id, line_number, cost_code, description, net_value
+         ) VALUES ($1,$2,1,'5231','Concurrent variation line',300)`,
+        [world.client.id, variation.rows[0].id]
+      );
+      await concurrent.query(
+        `INSERT INTO package_payment_certificates (
+           client_id, package_id, development_id, order_key, certificate_number,
+           status, gross_value, net_value, matrix_gross, commercial_event_gross,
+           recovery_signed, retention, vat, retention_rate, vat_rate, payload,
+           approved_at, approved_by
+         ) VALUES ($1,$2,$3,$4,99,'locked',250,250,250,0,0,0,0,0,0,'{}'::jsonb,NOW(),'Director')`,
+        [world.client.id, world.pkg.id, world.development.id, world.pkg.orderKey]
+      );
+      await concurrent.query("COMMIT");
+    } finally {
+      concurrent.release();
+    }
+    try {
+      await importLedger(world.development.id, [{
+        supplier: "Concurrent Ledger Supplier",
+        invoiceNumber: uniquePo("INV"),
+        transactionDate: "2026-04-03",
+        costCodeKey: "5231",
+        netAmount: 125,
+        vatAmount: 25,
+        grossAmount: 150,
+      }]);
+    } finally {
+      releaseApproval();
+    }
+
+    const result = await approval;
+    assert.equal(result.ok, true, result.message);
+    assert.equal(result.period.status, "locked");
+    assert.equal(Number(findRow(result.period.snapshot, "5231").committed), 50000);
+    assert.equal(Number(findRow(result.period.snapshot, "5231").certified), 0);
+    assert.equal(Number(findRow(result.period.snapshot, "5231").actualCost), 0);
+    assert.equal(Number(findRow(result.period.snapshot, "5231").expectedLiability), 0);
+
+    const live = await buildCvrCloseCandidate({
+      clientId: world.client.id,
+      developmentId: world.development.id,
+      periodId: world.period.id,
+    });
+    const liveRow = findRow(live.snapshot, "5231");
+    assert.equal(Number(liveRow.committed), 51300);
+    assert.equal(Number(liveRow.certified), 250);
+    assert.equal(Number(liveRow.actualCost), 125);
+    assert.equal(Number(liveRow.expectedLiability), 200);
+  });
+
+  test("a genuine repeatable-read serialization conflict fails closed with a controlled retry response", async () => {
+    const world = await setupBase();
+    await submitPeriod(world.development.id, world.period.id);
+
+    let releaseApproval;
+    const approvalReleased = new Promise((resolve) => { releaseApproval = resolve; });
+    let sourceReached;
+    const sourceBarrier = new Promise((resolve) => { sourceReached = resolve; });
+    const approval = approveCvrPeriod(
+      world.client.id,
+      world.development.id,
+      world.period.id,
+      {},
+      {
+        actor: "Director",
+        afterSourceRead: async ({ source }) => {
+          if (source !== "purchaseOrders") return;
+          sourceReached();
+          await approvalReleased;
+        },
+      }
+    );
+
+    await sourceBarrier;
+    const concurrent = await pool.connect();
+    try {
+      await concurrent.query("BEGIN");
+      await concurrent.query(
+        "UPDATE developments SET updated_at=NOW() WHERE client_id=$1 AND id=$2",
+        [world.client.id, world.development.id]
+      );
+      await concurrent.query("COMMIT");
+    } finally {
+      concurrent.release();
+      releaseApproval();
+    }
+
+    const result = await approval;
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 409);
+    assert.equal(result.code, "CVR_APPROVAL_CONCURRENCY_CONFLICT");
+    assert.match(result.message, /refresh the CVR and try again/i);
+    assert.doesNotMatch(result.message, /sql|40001|development|financial amount/i);
+    await assertRolledBack(world.client.id, world.development.id, world.period.id);
+  });
+
+  test("approval lock timeout returns a controlled conflict and leaves no approval evidence", async () => {
+    const world = await setupBase();
+    await submitPeriod(world.development.id, world.period.id);
+    const locker = await pool.connect();
+    try {
+      await locker.query("BEGIN");
+      await locker.query("SELECT id FROM cvr_periods WHERE id=$1 FOR UPDATE", [world.period.id]);
+      const startedAt = Date.now();
+      const response = await request(app)
+        .post(`${periodUrl(world.development.id, world.period.id)}/approve`)
+        .send({ actor: "Director" });
+      assert.equal(response.status, 409);
+      assert.equal(response.body.code, "CVR_APPROVAL_CONCURRENCY_CONFLICT");
+      assert.match(response.body.message, /refresh the CVR and try again/i);
+      assert.doesNotMatch(response.body.message, /sql|55P03|lock timeout|financial amount/i);
+      assert.ok(Date.now() - startedAt >= 9000, "approval should wait for the configured lock timeout");
+      await locker.query("ROLLBACK");
+    } finally {
+      locker.release();
+    }
+    await assertRolledBack(world.client.id, world.development.id, world.period.id);
+  });
+
+  test("a genuine PostgreSQL deadlock is propagated through revenue loading and fails approval closed", async () => {
+    const first = await pool.connect();
+    const second = await pool.connect();
+    let deadlockError;
+    try {
+      await first.query("BEGIN");
+      await second.query("BEGIN");
+      const firstPid = Number((await first.query("SELECT pg_backend_pid() AS pid")).rows[0].pid);
+      await first.query("SELECT pg_advisory_xact_lock(9100501)");
+      await second.query("SELECT pg_advisory_xact_lock(9100502)");
+      const firstWait = first.query("SELECT pg_advisory_xact_lock(9100502)");
+
+      let waiting = false;
+      for (let attempt = 0; attempt < 100 && !waiting; attempt += 1) {
+        const activity = await pool.query(
+          "SELECT wait_event_type, wait_event FROM pg_stat_activity WHERE pid=$1",
+          [firstPid]
+        );
+        waiting = activity.rows[0]?.wait_event_type === "Lock";
+      }
+      assert.equal(waiting, true, "first transaction must be waiting before completing the deadlock cycle");
+
+      const secondWait = second.query("SELECT pg_advisory_xact_lock(9100501)");
+      const outcomes = await Promise.allSettled([firstWait, secondWait]);
+      const rejected = outcomes.find((outcome) => outcome.status === "rejected");
+      assert.ok(rejected, "PostgreSQL must abort one deadlock participant");
+      assert.equal(rejected.reason?.code, "40P01");
+      deadlockError = rejected.reason;
+    } finally {
+      await first.query("ROLLBACK").catch(() => {});
+      await second.query("ROLLBACK").catch(() => {});
+      first.release();
+      second.release();
+    }
+
+    const world = await setupBase();
+    await submitPeriod(world.development.id, world.period.id);
+    const result = await approveCvrPeriod(
+      world.client.id,
+      world.development.id,
+      world.period.id,
+      {},
+      {
+        actor: "Director",
+        loadDevelopment: async () => { throw deadlockError; },
+      }
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 409);
+    assert.equal(result.code, "CVR_APPROVAL_CONCURRENCY_CONFLICT");
+    assert.match(result.message, /refresh the CVR and try again/i);
+    assert.doesNotMatch(result.message, /sql|40P01|deadlock|financial amount/i);
+    await assertRolledBack(world.client.id, world.development.id, world.period.id);
+  });
+
+  test("cost-source loading propagates concurrency SQLSTATEs and retains ordinary readiness failures", async (t) => {
+    const world = await setupBase();
+    const cases = [
+      { code: "40001", source: "purchaseOrders" },
+      { code: "55P03", source: "commercialEvents" },
+      { code: "40P01", source: "ledger" },
+    ];
+
+    for (const scenario of cases) {
+      await t.test(`${scenario.code} propagates from the ${scenario.source} catch boundary`, async () => {
+        const dbClient = await pool.connect();
+        try {
+          await assert.rejects(
+            () => loadCvrCloseSources({
+              clientId: world.client.id,
+              developmentId: world.development.id,
+              periodId: world.period.id,
+              dbClient,
+              afterSourceRead: async ({ source }) => {
+                if (source !== scenario.source) return;
+                await dbClient.query(
+                  `DO $block$ BEGIN RAISE EXCEPTION USING ERRCODE = '${scenario.code}'; END $block$`
+                );
+              },
+            }),
+            (error) => error?.code === scenario.code
+          );
+        } finally {
+          dbClient.release();
+        }
+      });
+    }
+
+    await t.test("an unrelated source error remains a readiness blocker", async () => {
+      const dbClient = await pool.connect();
+      try {
+        const result = await loadCvrCloseSources({
+          clientId: world.client.id,
+          developmentId: world.development.id,
+          periodId: world.period.id,
+          dbClient,
+          afterSourceRead: async ({ source }) => {
+            if (source !== "certificates") return;
+            await dbClient.query(
+              "DO $block$ BEGIN RAISE EXCEPTION USING ERRCODE = 'P0001'; END $block$"
+            );
+          },
+        });
+        assert.equal(result.ok, false);
+        assert.equal(result.sources.certificates.loaded, false);
+        assert.equal(result.sources.certificates.ready, false);
+        assert.equal(result.sources.certificates.reason, "certificates-query-failed");
+      } finally {
+        dbClient.release();
+      }
+    });
   });
 
   test("20. second approve after locked returns 409", async () => {
