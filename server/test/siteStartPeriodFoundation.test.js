@@ -38,6 +38,10 @@ const migration = fs.readFileSync(
   path.join(__dirname, '..', 'migrations', '067_site_start_period_foundation.sql'),
   'utf8'
 );
+const budgetSubmissionBoundaryMigration = fs.readFileSync(
+  path.join(__dirname, '..', 'migrations', '068_site_start_budget_submission_boundary.sql'),
+  'utf8'
+);
 
 test.after(async () => {
   if (isDbConfigured()) await pool.end();
@@ -86,6 +90,15 @@ test('migration defines immutable tenant-scoped appraisal and constrained Site S
   assert.match(migration, /site_start_snapshot_id UUID REFERENCES cvr_period_snapshots/i);
   assert.match(migration, /authority_version=2 AND created_permission_key='cvr\.lock'/i);
   assert.match(migration, /uq_development_budget_milestone_v2/i);
+});
+
+test('migration 068 admits only evidence matching the governed budget source', () => {
+  assert.match(budgetSubmissionBoundaryMigration, /p\.client_id=NEW\.client_id/i);
+  assert.match(budgetSubmissionBoundaryMigration, /p\.development_id=NEW\.development_id/i);
+  assert.match(budgetSubmissionBoundaryMigration, /cvr_development_budget_source_v1/i);
+  assert.match(budgetSubmissionBoundaryMigration, /cvr_site_start_budget_source_v1/i);
+  assert.match(budgetSubmissionBoundaryMigration, /m\.site_start_snapshot_id=period_site_start_snapshot_id/i);
+  assert.doesNotMatch(budgetSubmissionBoundaryMigration, /UPDATE\s+cvr_period_budget_submissions/i);
 });
 
 test('Land Appraisal line reconciliation detects appended or altered financial evidence', () => {
@@ -692,7 +705,70 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
   const newCodeCandidate = await buildCvrCloseCandidate({clientId:client.id,developmentId,periodId:p01.period.id,developmentBudgetDocument:withNewCode});
   assert.equal(newCodeCandidate.snapshot.rows.find(row=>row.costCodeKey==='6000').finalForecast,2500);
   assert.equal((await createFirstCvrFromSiteStart(client.id,developmentId,{reportingMonth:'2027-04',siteStartVersion:approved.period.version},{actor:'SS1 Director',auth:approvalAuth,currentDate:new Date('2027-05-02T12:00:00Z')})).status,409);
-  await pool.query("UPDATE cvr_periods SET status='locked',submitted_at=NOW(),submitted_by='SS1 Director',approved_at=NOW(),approved_by='SS1 Director' WHERE id=$1",[p01.period.id]);
+  const submittedP01 = await submitCvrPeriod(client.id, developmentId, p01.period.id, {
+    version: p01.period.version,
+    comment: 'Submit governed first monthly CVR from Site Start.',
+  }, { actor: 'SS1 Director', auth: approvalAuth });
+  assert.equal(submittedP01.ok, true, submittedP01.message);
+  const capturedBudget = (await pool.query(
+    'SELECT source_snapshot FROM cvr_period_budget_submissions WHERE client_id=$1 AND period_id=$2',
+    [client.id, p01.period.id]
+  )).rows[0];
+  assert.equal(capturedBudget.source_snapshot.schemaVersion, 'cvr_site_start_budget_source_v1');
+  await assert.rejects(
+    pool.query(
+      `INSERT INTO cvr_period_budget_submissions(
+         client_id,development_id,period_id,attempt_number,source_snapshot,
+         source_snapshot_hash_scheme,source_snapshot_sha256,captured_by
+       ) VALUES($1,$2,$3,2,$4,'canonical_json_sha256_v1',$5,'forged')`,
+      [client.id, developmentId, p01.period.id,
+        JSON.stringify({ ...capturedBudget.source_snapshot, schemaVersion: 'cvr_development_budget_source_v1' }),
+        '0'.repeat(64)]
+    ),
+    /Site Start Budget submission authority is invalid/
+  );
+  await pool.query('BEGIN');
+  try {
+    const developmentBudgetPeriod = (await pool.query(
+      `INSERT INTO cvr_periods(
+         client_id,development_id,period_key,period_label,reporting_month,
+         period_type,status,commentary,version,budget_source,
+         submitted_at,submitted_by,approved_at,approved_by
+       ) VALUES($1,$2,'P99','P99','2027-03-01','monthly_cvr','locked','{}',1,'development_budget',
+         NOW(),'test',NOW(),'test')
+       RETURNING id`,
+      [client.id, developmentId]
+    )).rows[0];
+    await pool.query(
+      `INSERT INTO cvr_period_budget_submissions(
+         client_id,development_id,period_id,attempt_number,source_snapshot,
+         source_snapshot_hash_scheme,source_snapshot_sha256,captured_by
+       ) VALUES($1,$2,$3,1,$4,'canonical_json_sha256_v1',$5,'test')`,
+      [client.id, developmentId, developmentBudgetPeriod.id,
+        JSON.stringify({ schemaVersion: 'cvr_development_budget_source_v1' }), '0'.repeat(64)]
+    );
+    await assert.rejects(
+      pool.query(
+        `INSERT INTO cvr_period_budget_submissions(
+           client_id,development_id,period_id,attempt_number,source_snapshot,
+           source_snapshot_hash_scheme,source_snapshot_sha256,captured_by
+         ) VALUES($1,$2,$3,2,$4,'canonical_json_sha256_v1',$5,'forged')`,
+        [client.id, developmentId, developmentBudgetPeriod.id,
+          JSON.stringify({ schemaVersion: 'cvr_site_start_budget_source_v1' }), '0'.repeat(64)]
+      ),
+      /budget submission authority is invalid/
+    );
+  } finally {
+    await pool.query('ROLLBACK');
+  }
+  const approvedP01 = await approveCvrPeriod(client.id, developmentId, p01.period.id, {
+    version: submittedP01.period.version,
+    comment: 'Approve governed first monthly CVR from Site Start.',
+  }, { actor: 'SS1 Director', auth: approvalAuth });
+  assert.equal(approvedP01.ok, true, approvedP01.message);
+  assert.equal(approvedP01.period.status, 'locked');
+  assert.equal(approvedP01.period.snapshot.budgetSource.document.schemaVersion, 'cvr_site_start_budget_source_v1');
+  assert.equal(approvedP01.period.snapshot.rows.reduce((sum, row) => sum + row.finalForecast, 0), approvedP01.period.snapshot.finalForecast);
   const lockedP01 = (await pool.query('SELECT period_type,status,reporting_month FROM cvr_periods WHERE id=$1',[p01.period.id])).rows[0];
   assert.deepEqual({periodType:lockedP01.period_type,status:lockedP01.status,reportingMonth:`${lockedP01.reporting_month.getFullYear()}-${String(lockedP01.reporting_month.getMonth()+1).padStart(2,'0')}`},{periodType:'monthly_cvr',status:'locked',reportingMonth:'2027-04'});
   const readiness = async()=>({ok:true,readiness:{canCreateFirstCvr:true,items:[],establishedLegacy:false}});

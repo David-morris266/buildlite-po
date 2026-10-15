@@ -152,6 +152,15 @@ async function prepareIntegrationTestDatabase(pool) {
           OR (period_type='monthly_cvr' AND period_key<>'SITE_START' AND forecast_as_at_month IS NULL AND ((budget_source='site_start_budget' AND site_start_source_snapshot_id IS NOT NULL) OR (budget_source<>'site_start_budget' AND site_start_source_snapshot_id IS NULL))))`);
     }
   }
+  const budgetSubmissionBoundary = await pool.query(
+    "SELECT pg_get_functiondef('validate_cvr_budget_submission_boundary()'::regprocedure) definition"
+  );
+  if (!budgetSubmissionBoundary.rows[0]?.definition?.includes('cvr_site_start_budget_source_v1')) {
+    await pool.query(fs.readFileSync(
+      path.join(__dirname, '..', 'migrations', '068_site_start_budget_submission_boundary.sql'),
+      'utf8'
+    ));
+  }
   const activeClientId = await ensureActiveTestClient(pool);
   await ensureDefaultTestPrincipal(pool, activeClientId);
 }
