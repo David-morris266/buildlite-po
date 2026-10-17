@@ -332,7 +332,8 @@ function validateSelectionAgainstCandidate({
 /**
  * Adopt selected Prelims cost codes into a Draft CVR period (atomic).
  */
-async function adoptPrelimsForecasts(clientId, developmentId, periodId, body = {}, { actor } = {}) {
+async function adoptPrelimsForecasts(clientId, developmentId, periodId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CVR_ADOPT);
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
   if (!isValidUuid(periodId)) {
@@ -362,7 +363,7 @@ async function adoptPrelimsForecasts(clientId, developmentId, periodId, body = {
   const parsed = parseSelections(body);
   if (!parsed.ok) return parsed;
 
-  const resolvedActor = actor || provisionalActor(body);
+  const resolvedActor = auth?.displayName || actor || provisionalActor(body);
   const dbClient = await pool.connect();
 
   try {
@@ -526,7 +527,7 @@ async function adoptPrelimsForecasts(clientId, developmentId, periodId, body = {
           developmentId,
           periodId,
           { costCodeKey: selection.costCodeKey },
-          { actor: resolvedActor, dbClient }
+          { actor: resolvedActor, auth, dbClient }
         );
         if (!membership.ok) {
           await dbClient.query("ROLLBACK");

@@ -12,7 +12,7 @@
 const express = require("express");
 const { isDbConfigured } = require("../db");
 const { getActiveClient } = require("../services/activeClient");
-const { requirePermission, actorFromAuth } = require('../auth/authorization');
+const { requirePermission, requireResolvedPermission, hasPermission, actorFromAuth } = require('../auth/authorization');
 const { PERMISSIONS } = require('../auth/permissions');
 const {
   acknowledgeVariationExposureException,
@@ -27,7 +27,6 @@ const {
   listCvrPeriods,
   patchCostCodeInput,
   patchCvrPeriod,
-  provisionalActor,
   rejectCvrPeriod,
   submitCvrPeriod,
   upsertCostCodeInputs,
@@ -37,6 +36,16 @@ const { addDraftCvrCostCodeMember } = require("../services/cvrMembershipService"
 const { importDraftCvrBudget } = require("../services/cvrBudgetImportService");
 
 const router = express.Router({ mergeParams: true });
+
+async function resolveSubmitPermission(req) {
+  if (!hasPermission(req.buildliteAuth, PERMISSIONS.CVR_SUBMIT) && !hasPermission(req.buildliteAuth, PERMISSIONS.SITE_START_MANAGE)) {
+    return PERMISSIONS.CVR_SUBMIT;
+  }
+  const result = await getCvrPeriod(req.buildliteAuth.clientId, req.params.developmentId, req.params.periodId);
+  return result.ok && result.period?.periodType === 'site_start'
+    ? PERMISSIONS.SITE_START_MANAGE
+    : PERMISSIONS.CVR_SUBMIT;
+}
 
 function sendResult(res, result, successStatus = 200, payloadKey) {
   if (!result.ok) {
@@ -133,7 +142,7 @@ router.get("/cvr/periods", async (req, res) => {
   }
 });
 
-router.post("/cvr/periods", async (req, res) => {
+router.post("/cvr/periods", requirePermission(PERMISSIONS.CVR_EDIT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -143,7 +152,8 @@ router.post("/cvr/periods", async (req, res) => {
 
     const body = req.body || {};
     const result = await createCvrPeriod(active.id, req.params.developmentId, body, {
-      actor: provisionalActor(body),
+      actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.CVR_EDIT).actor,
+      auth: req.buildliteAuth,
     });
     sendResult(res, result, 201, "period");
   } catch (err) {
@@ -172,7 +182,7 @@ router.get("/cvr/periods/:periodId", async (req, res) => {
   }
 });
 
-router.patch("/cvr/periods/:periodId", async (req, res) => {
+router.patch("/cvr/periods/:periodId", requirePermission(PERMISSIONS.CVR_EDIT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -186,7 +196,7 @@ router.patch("/cvr/periods/:periodId", async (req, res) => {
       req.params.developmentId,
       req.params.periodId,
       body,
-      { actor: req.buildliteAuth?.displayName || provisionalActor(body), auth: req.buildliteAuth }
+      { actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.CVR_EDIT).actor, auth: req.buildliteAuth }
     );
     sendResult(res, result, 200, "period");
   } catch (err) {
@@ -195,7 +205,7 @@ router.patch("/cvr/periods/:periodId", async (req, res) => {
   }
 });
 
-router.post("/cvr/periods/:periodId/submit", async (req, res) => {
+router.post("/cvr/periods/:periodId/submit", requireResolvedPermission(resolveSubmitPermission), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -209,7 +219,7 @@ router.post("/cvr/periods/:periodId/submit", async (req, res) => {
       req.params.developmentId,
       req.params.periodId,
       body,
-      { actor: req.buildliteAuth?.displayName || provisionalActor(body), auth: req.buildliteAuth }
+      { actor: actorFromAuth(req.buildliteAuth, req.requiredPermission).actor, auth: req.buildliteAuth }
     );
     sendResult(res, result, 200, "period");
   } catch (err) {
@@ -218,13 +228,13 @@ router.post("/cvr/periods/:periodId/submit", async (req, res) => {
   }
 });
 
-router.post('/cvr/periods/:periodId/development-budget-adoption', async (req,res)=>{
+router.post('/cvr/periods/:periodId/development-budget-adoption', requirePermission(PERMISSIONS.CVR_ADOPT), async (req,res)=>{
   try { if(!isDbConfigured())return res.status(500).json({message:'Database not configured'}); const active=await getActiveClient(); if(!active)return res.status(404).json({error:'No active client set'});
-    sendResult(res,await adoptDevelopmentBudget(active.id,req.params.developmentId,req.params.periodId,req.body||{},{actor:provisionalActor(req.body||{})}),200,'period');
+    sendResult(res,await adoptDevelopmentBudget(active.id,req.params.developmentId,req.params.periodId,req.body||{},{actor:actorFromAuth(req.buildliteAuth,PERMISSIONS.CVR_ADOPT).actor,auth:req.buildliteAuth}),200,'period');
   } catch(err){console.error('[CVR] Development Budget adoption error:',err);res.status(500).json({message:'Failed to adopt Development Budget.'});}
 });
 
-router.post("/cvr/periods/:periodId/reject", async (req, res) => {
+router.post("/cvr/periods/:periodId/reject", requirePermission(PERMISSIONS.CVR_REJECT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -238,7 +248,7 @@ router.post("/cvr/periods/:periodId/reject", async (req, res) => {
       req.params.developmentId,
       req.params.periodId,
       body,
-      { actor: provisionalActor(body) }
+      { actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.CVR_REJECT).actor, auth: req.buildliteAuth }
     );
     sendResult(res, result, 200, "period");
   } catch (err) {
@@ -304,7 +314,7 @@ router.get("/cvr/periods/:periodId/inputs", async (req, res) => {
   }
 });
 
-router.put("/cvr/periods/:periodId/inputs", async (req, res) => {
+router.put("/cvr/periods/:periodId/inputs", requirePermission(PERMISSIONS.CVR_EDIT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -318,7 +328,7 @@ router.put("/cvr/periods/:periodId/inputs", async (req, res) => {
       req.params.developmentId,
       req.params.periodId,
       body,
-      { actor: provisionalActor(body) }
+      { actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.CVR_EDIT).actor, auth: req.buildliteAuth }
     );
     if (!result.ok) return sendResult(res, result);
     res.json({ inputs: result.inputs });
@@ -346,7 +356,7 @@ router.post("/cvr/periods/:periodId/cost-code-members", requirePermission(PERMIS
       req.params.developmentId,
       req.params.periodId,
       body,
-      { actor: provisionalActor(body) }
+      { actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.CVR_EDIT).actor, auth: req.buildliteAuth }
     );
     sendResult(res, result, 201, "input");
   } catch (err) {
@@ -355,7 +365,7 @@ router.post("/cvr/periods/:periodId/cost-code-members", requirePermission(PERMIS
   }
 });
 
-router.post("/cvr/periods/:periodId/budget-import", async (req, res) => {
+router.post("/cvr/periods/:periodId/budget-import", requirePermission(PERMISSIONS.CVR_EDIT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -369,7 +379,7 @@ router.post("/cvr/periods/:periodId/budget-import", async (req, res) => {
       req.params.developmentId,
       req.params.periodId,
       body,
-      { actor: provisionalActor(body) }
+      { actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.CVR_EDIT).actor, auth: req.buildliteAuth }
     );
     sendResult(res, result);
   } catch (err) {
@@ -378,7 +388,7 @@ router.post("/cvr/periods/:periodId/budget-import", async (req, res) => {
   }
 });
 
-router.post("/cvr/periods/:periodId/inputs", async (req, res) => {
+router.post("/cvr/periods/:periodId/inputs", requirePermission(PERMISSIONS.CVR_EDIT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -392,7 +402,7 @@ router.post("/cvr/periods/:periodId/inputs", async (req, res) => {
       req.params.developmentId,
       req.params.periodId,
       body,
-      { actor: provisionalActor(body) }
+      { actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.CVR_EDIT).actor, auth: req.buildliteAuth }
     );
     sendResult(res, result, 201, "input");
   } catch (err) {
@@ -401,7 +411,7 @@ router.post("/cvr/periods/:periodId/inputs", async (req, res) => {
   }
 });
 
-router.patch("/cvr/periods/:periodId/inputs/:inputId", async (req, res) => {
+router.patch("/cvr/periods/:periodId/inputs/:inputId", requirePermission(PERMISSIONS.CVR_EDIT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -416,7 +426,7 @@ router.patch("/cvr/periods/:periodId/inputs/:inputId", async (req, res) => {
       req.params.periodId,
       req.params.inputId,
       body,
-      { actor: provisionalActor(body) }
+      { actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.CVR_EDIT).actor, auth: req.buildliteAuth }
     );
     sendResult(res, result, 200, "input");
   } catch (err) {
@@ -429,7 +439,7 @@ router.patch("/cvr/periods/:periodId/inputs/:inputId", async (req, res) => {
  * BL-033D.x.4C.1 — Atomic Prelims → Draft CVR adoption command.
  * No client UI trigger in this slice.
  */
-router.post("/cvr/periods/:periodId/prelims-adoption", async (req, res) => {
+router.post("/cvr/periods/:periodId/prelims-adoption", requirePermission(PERMISSIONS.CVR_ADOPT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -443,7 +453,7 @@ router.post("/cvr/periods/:periodId/prelims-adoption", async (req, res) => {
       req.params.developmentId,
       req.params.periodId,
       body,
-      { actor: provisionalActor(body) }
+      { actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.CVR_ADOPT).actor, auth: req.buildliteAuth }
     );
     sendResult(res, result, 200, "adoption");
   } catch (err) {

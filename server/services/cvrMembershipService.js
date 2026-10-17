@@ -123,8 +123,10 @@ async function addDraftCvrCostCodeMember(
   developmentId,
   periodId,
   body = {},
-  { actor, dbClient } = {}
+  { actor, auth, dbClient } = {}
 ) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CVR_EDIT);
+  actor = auth?.displayName || actor;
   const requestedIdentity = parseRequestedCostCodeIdentity(body);
   if (!requestedIdentity) {
     return fail(

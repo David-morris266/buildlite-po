@@ -342,7 +342,7 @@ if (!isDbConfigured()) {
     assert.equal(res.body.adjustmentReason, "");
     assert.equal(res.body.version, 1);
     assert.equal(res.body.active, true);
-    assert.equal(res.body.createdBy, "Commercial Manager");
+    assert.equal(res.body.createdBy, "Test Commercial Manager");
     assert.deepEqual(res.body.displayMetadata, {});
     assert.equal(Array.isArray(res.body.adjustmentHistory), true);
     assert.equal(res.body.adjustmentHistory.length, 0);
@@ -354,7 +354,7 @@ if (!isDbConfigured()) {
     assert.equal(loaded.body.snapshot, null);
     const added = addedAudits(loaded.body);
     assert.equal(added.length, 1);
-    assert.equal(added[0].actor, "Commercial Manager");
+    assert.equal(added[0].actor, "Test Commercial Manager");
     assert.match(added[0].comment, new RegExp(`Added cost code ${res.body.costCodeKey} to Draft CVR`));
     assert.equal(added[0].priorStatus, "draft");
     assert.equal(added[0].newStatus, "draft");
@@ -502,17 +502,27 @@ if (!isDbConfigured()) {
 
     try {
       authenticatedPermissions = allPermissions.filter((permission) => permission !== PERMISSIONS.CVR_EDIT);
+      const beforeDenied = await pool.query(`SELECT
+        (SELECT count(*)::int FROM cvr_cost_code_inputs WHERE period_id=$1) inputs,
+        (SELECT count(*)::int FROM cvr_period_audit WHERE period_id=$1) audits`, [period.id]);
       const blocked = await request(app).post(memberUrl(development.id, period.id)).send({
         costCodeKey: blockedCode.code,
       });
       assert.equal(blocked.status, 403);
       assert.match(blocked.body.message, /cvr\.edit/);
+      const afterDenied = await pool.query(`SELECT
+        (SELECT count(*)::int FROM cvr_cost_code_inputs WHERE period_id=$1) inputs,
+        (SELECT count(*)::int FROM cvr_period_audit WHERE period_id=$1) audits`, [period.id]);
+      assert.deepEqual(afterDenied.rows[0], beforeDenied.rows[0]);
 
       authenticatedPermissions = [PERMISSIONS.SITE_START_MANAGE, PERMISSIONS.CVR_EDIT];
       const allowed = await request(app).post(memberUrl(development.id, period.id)).send({
         costCodeKey: allowedCode.code,
+        actor: 'Forged Browser Actor',
       });
       assert.equal(allowed.status, 201, allowed.body?.message || JSON.stringify(allowed.body));
+      const audit = await pool.query(`SELECT actor FROM cvr_period_audit WHERE period_id=$1 AND action='cost_code_added' ORDER BY created_at DESC LIMIT 1`, [period.id]);
+      assert.equal(audit.rows[0].actor, 'Test Commercial Manager');
     } finally {
       authenticatedPermissions = allPermissions;
     }

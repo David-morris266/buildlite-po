@@ -10,12 +10,13 @@
 const express = require("express");
 const { isDbConfigured } = require("../db");
 const { getActiveClient } = require("../services/activeClient");
+const { requirePermission, actorFromAuth } = require('../auth/authorization');
+const { PERMISSIONS } = require('../auth/permissions');
 const {
   listPrelimsItems,
   getPrelimsItem,
   createPrelimsItem,
   updatePrelimsItem,
-  provisionalActor,
 } = require("../services/prelimsItemRepository");
 const { previewPrelimsSetup, applyPrelimsSetup } = require("../services/prelimsSetupService");
 const {
@@ -71,7 +72,7 @@ router.get("/prelims-setup/preview", async (req, res) => {
   }
 });
 
-router.post("/prelims-setup/apply", async (req, res) => {
+router.post("/prelims-setup/apply", requirePermission(PERMISSIONS.CVR_EDIT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -80,7 +81,8 @@ router.post("/prelims-setup/apply", async (req, res) => {
     if (!active) return res.status(404).json({ error: "No active client set" });
     const body = req.body || {};
     const result = await applyPrelimsSetup(active.id, req.params.developmentId, body, {
-      actor: provisionalActor(body),
+      actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.CVR_EDIT).actor,
+      auth: req.buildliteAuth,
     });
     sendResult(res, result, "apply");
   } catch (err) {
@@ -106,7 +108,7 @@ router.get("/prelims-items", async (req, res) => {
   }
 });
 
-router.post("/prelims-items", async (req, res) => {
+router.post("/prelims-items", requirePermission(PERMISSIONS.CVR_EDIT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -115,7 +117,8 @@ router.post("/prelims-items", async (req, res) => {
     if (!active) return res.status(404).json({ error: "No active client set" });
     const body = req.body || {};
     const result = await createPrelimsItem(active.id, req.params.developmentId, body, {
-      actor: provisionalActor(body),
+      actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.CVR_EDIT).actor,
+      auth: req.buildliteAuth,
     });
     sendResult(res, result, "item", 201);
   } catch (err) {
@@ -141,7 +144,7 @@ router.get("/prelims-items/:itemId", async (req, res) => {
   }
 });
 
-router.put("/prelims-items/:itemId", async (req, res) => {
+router.put("/prelims-items/:itemId", requirePermission(PERMISSIONS.CVR_EDIT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(500).json({ message: "Database not configured" });
@@ -154,7 +157,7 @@ router.put("/prelims-items/:itemId", async (req, res) => {
       req.params.developmentId,
       req.params.itemId,
       body,
-      { actor: provisionalActor(body) }
+      { actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.CVR_EDIT).actor, auth: req.buildliteAuth }
     );
     sendResult(res, result, "item");
   } catch (err) {

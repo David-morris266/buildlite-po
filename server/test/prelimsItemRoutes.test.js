@@ -11,6 +11,7 @@ const request = require("supertest");
 const createApp = require("../app");
 const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
+const { PERMISSIONS } = require("../auth/permissions");
 const { CLOSE_SOURCE_KEYS, CVR_SNAPSHOT_REVENUE_SCHEMA_VERSION } = require(
   "../services/cvrCloseConstants"
 );
@@ -20,7 +21,19 @@ const {
   calculateCostToComplete,
 } = require("../services/cvrCloseFormulas");
 
-const app = createApp();
+let authenticatedClientId = null;
+const app = createApp({ testPrincipal: () => ({
+  userId: "00000000-0000-0000-0000-000000000001",
+  providerUserId: "test-user",
+  displayName: "Test Commercial Manager",
+  email: "test@example.invalid",
+  clientId: authenticatedClientId,
+  membershipId: "00000000-0000-0000-0000-000000000002",
+  roleKey: "commercial_manager",
+  roleName: "Commercial Manager",
+  permissions: [...new Set(Object.values(PERMISSIONS))],
+  memberships: [],
+}) });
 const MIGRATION_004 = path.join(__dirname, "..", "migrations", "004_developments.sql");
 const MIGRATION_009 = path.join(__dirname, "..", "migrations", "009_cvr_and_purchase_ledger.sql");
 const MIGRATION_014 = path.join(__dirname, "..", "migrations", "014_development_programme.sql");
@@ -128,6 +141,8 @@ if (!isDbConfigured()) {
     assert.equal(db.rows[0].db, "buildlite_test");
     assert.notEqual(db.rows[0].db, "buildlite_clone");
     await ensureSchema();
+    authenticatedClientId = (await getActiveClient())?.id || null;
+    assert.ok(authenticatedClientId, "Default test principal must have an active tenant membership");
   });
 
   test.after(async () => {
@@ -203,12 +218,18 @@ if (!isDbConfigured()) {
 
     const time = await request(app)
       .post(`/api/developments/${developmentId}/prelims-items`)
-      .send(timeBody({ reportingMonth: "2026-08" }));
+      .send({ ...timeBody({ reportingMonth: "2026-08" }), actor: "Forged Browser Actor" });
     assert.equal(time.status, 201);
     assert.equal(time.body.costCodeKey, "5231");
     assert.equal(time.body.version, 1);
     assert.equal(time.body.calculation.totalMonths, 38);
     assert.equal(time.body.calculation.elapsedMonths, 0);
+    const persistedActor = await pool.query(
+      `SELECT created_by,updated_by FROM development_prelims_items WHERE id=$1`,
+      [time.body.id]
+    );
+    assert.equal(persistedActor.rows[0].created_by, "Test Commercial Manager");
+    assert.equal(persistedActor.rows[0].updated_by, "Test Commercial Manager");
 
     const lump = await request(app)
       .post(`/api/developments/${developmentId}/prelims-items`)

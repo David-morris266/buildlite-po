@@ -13,8 +13,22 @@ const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { createCostCode, setCostCodeActive } = require("../services/costCodeMasterRepository");
 const { CVR_BUDGET_IMPORT_ERROR_CODES } = require("../services/cvrBudgetImportService");
+const { PERMISSIONS } = require("../auth/permissions");
 
-const app = createApp();
+let authenticatedClientId = null;
+const testAuth = () => ({
+  userId: "00000000-0000-0000-0000-000000000001",
+  providerUserId: "test-user",
+  displayName: "Test Commercial Manager",
+  email: "test@example.invalid",
+  clientId: authenticatedClientId,
+  membershipId: "00000000-0000-0000-0000-000000000002",
+  roleKey: "commercial_manager",
+  roleName: "Commercial Manager",
+  permissions: [...new Set(Object.values(PERMISSIONS))],
+  memberships: [],
+});
+const app = createApp({ testPrincipal: testAuth });
 const ROOT = path.join(__dirname, "..");
 const MIGRATIONS = [
   "004_developments.sql",
@@ -31,6 +45,8 @@ const MIGRATIONS = [
 const testDevelopmentIds = [];
 const testTenantIds = [];
 const testCostCodeIds = [];
+const testHeadIds = [];
+const headByClient = new Map();
 
 function trackDevelopment(id) {
   if (id && !testDevelopmentIds.includes(id)) testDevelopmentIds.push(id);
@@ -102,6 +118,9 @@ async function cleanup() {
   if (testCostCodeIds.length) {
     await pool.query(`DELETE FROM cost_codes WHERE id = ANY($1::uuid[])`, [testCostCodeIds]);
   }
+  if (testHeadIds.length) {
+    await pool.query(`DELETE FROM commercial_structure_heads WHERE id = ANY($1::uuid[])`, [testHeadIds]);
+  }
   if (testTenantIds.length) {
     await pool.query(`DELETE FROM cost_codes WHERE client_id = ANY($1::uuid[])`, [testTenantIds]);
     await pool.query(`DELETE FROM developments WHERE client_id = ANY($1::uuid[])`, [testTenantIds]);
@@ -114,6 +133,19 @@ async function getActiveClient() {
     "SELECT id, code, name FROM clients WHERE is_active = true LIMIT 1"
   );
   return rows[0] || null;
+}
+
+async function ensureHead(clientId) {
+  if (headByClient.has(clientId)) return headByClient.get(clientId);
+  const inserted = await pool.query(
+    `INSERT INTO commercial_structure_heads (client_id, name, display_order)
+     VALUES ($1, $2, 999) RETURNING id`,
+    [clientId, `CVR budget import fixture ${uniqueCode("HEAD")}`]
+  );
+  const id = inserted.rows[0].id;
+  headByClient.set(clientId, id);
+  testHeadIds.push(id);
+  return id;
 }
 
 async function createDevelopment() {
@@ -144,14 +176,15 @@ async function createDraftPeriod(developmentId) {
       )`, [developmentId]);
   const res = await request(app)
     .post(`/api/developments/${encodeURIComponent(developmentId)}/cvr/periods`)
-    .send({ periodKey: "P01", actor: "Commercial Manager" });
+    .send({ periodKey: "P01", reportingMonth: "2026-08-01", actor: "Commercial Manager" });
   assert.equal(res.status, 201, res.body?.message || JSON.stringify(res.body));
   return res.body;
 }
 
 async function createMaster(clientId, overrides = {}) {
   const code = overrides.code || uniqueCode("CC");
-  const created = await createCostCode(clientId, masterPayload({ ...overrides, code }), {
+  const commercialHeadId = overrides.commercialHeadId || (await ensureHead(clientId));
+  const created = await createCostCode(clientId, masterPayload({ ...overrides, code, commercialHeadId }), {
     actor: "Commercial Manager",
   });
   assert.equal(created.ok, true, created.message || JSON.stringify(created));
@@ -205,6 +238,8 @@ if (!isDbConfigured()) {
     assert.equal(db.rows[0].db, "buildlite_test");
     assert.notEqual(db.rows[0].db, "buildlite_clone");
     await ensureSchema();
+    authenticatedClientId = (await getActiveClient())?.id || null;
+    assert.ok(authenticatedClientId, "Default test principal must have an active tenant membership");
   });
   test.after(async () => {
     await cleanup();
@@ -376,7 +411,7 @@ if (!isDbConfigured()) {
     trackTenant(other.rows[0].id);
     const foreign = await createCostCode(
       other.rows[0].id,
-      masterPayload({ code: uniqueCode("X") }),
+      masterPayload({ code: uniqueCode("X"), commercialHeadId: await ensureHead(other.rows[0].id) }),
       { actor: "Other" }
     );
     assert.equal(foreign.ok, true);

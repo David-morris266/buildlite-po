@@ -212,7 +212,9 @@ function findExistingMember(inputRows, masterCode, identityKey) {
   );
 }
 
-async function importDraftCvrBudget(clientId, developmentId, periodId, body = {}, { actor } = {}) {
+async function importDraftCvrBudget(clientId, developmentId, periodId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CVR_EDIT);
+  actor = auth?.displayName || actor;
   const parsed = parseImportRows(body);
   if (!parsed.ok) return parsed;
   if (!isValidUuid(periodId)) {
@@ -316,7 +318,7 @@ async function importDraftCvrBudget(clientId, developmentId, periodId, body = {}
           developmentId,
           periodId,
           { costCodeKey: item.masterDocument.code },
-          { actor, dbClient: tx }
+          { actor, auth, dbClient: tx }
         );
         if (!added.ok) {
           await tx.query("ROLLBACK");

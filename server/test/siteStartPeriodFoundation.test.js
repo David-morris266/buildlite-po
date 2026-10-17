@@ -23,6 +23,7 @@ const {
   createCvrPeriod,
   patchCvrPeriod,
   submitCvrPeriod,
+  rejectCvrPeriod,
   approveCvrPeriod,
 } = require('../services/cvrPeriodRepository');
 const { buildCvrCloseCandidate } = require('../services/cvrCloseEngine');
@@ -178,6 +179,7 @@ test('appraisal-backed Site Start supports governed fact-only drawer overlays wi
     permissions: [
       PERMISSIONS.COMMERCIAL_READ,
       PERMISSIONS.CVR_EDIT,
+      PERMISSIONS.CVR_SUBMIT,
       PERMISSIONS.LAND_APPRAISAL_CAPTURE,
       PERMISSIONS.SITE_START_MANAGE,
     ],
@@ -337,6 +339,7 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
     permissions: [
       PERMISSIONS.COMMERCIAL_READ,
       PERMISSIONS.CVR_EDIT,
+      PERMISSIONS.CVR_SUBMIT,
       PERMISSIONS.LAND_APPRAISAL_CAPTURE,
       PERMISSIONS.SITE_START_MANAGE,
       PERMISSIONS.DEVELOPMENT_BUDGET_POST,
@@ -564,16 +567,24 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
       grossMarginPercent: null, revenueAssumptions: { revenueMode: 'sales_register' }, plots: [],
     },
   });
+  const siteStartOnlyAuth = { ...auth, permissions: [PERMISSIONS.SITE_START_MANAGE] };
+  await assert.rejects(
+    submitCvrPeriod(client.id, developmentId, created.period.id, { version: 3 }, {
+      actor: 'Forged Browser Actor', auth: { ...auth, permissions: [PERMISSIONS.CVR_SUBMIT] }, buildWholeCloseCandidate: wholeCandidate,
+    }),
+    error => error.status === 403 && /site_start\.manage/.test(error.message)
+  );
   const submitted = await submitCvrPeriod(client.id, developmentId, created.period.id, { version: 3 }, {
-    actor: 'SS1 QS', auth, buildWholeCloseCandidate: wholeCandidate,
+    actor: 'Forged Browser Actor', auth: siteStartOnlyAuth, buildWholeCloseCandidate: wholeCandidate,
   });
   assert.equal(submitted.ok, true);
   assert.equal(submitted.period.status, 'submitted');
+  assert.equal(submitted.period.submittedBy, auth.displayName);
   assert.equal(submitted.period.forecastAsAtMonth, '2027-04-01');
 
   const directorRole = (await pool.query("SELECT id FROM roles WHERE key='commercial_director'")).rows[0];
   await pool.query('UPDATE client_user_memberships SET role_id=$1 WHERE id=$2', [directorRole.id, membership.id]);
-  const approvalAuth = { ...auth, roleKey: 'commercial_director', permissions: [...auth.permissions, PERMISSIONS.CVR_LOCK] };
+  const approvalAuth = { ...auth, roleKey: 'commercial_director', permissions: [...auth.permissions, PERMISSIONS.CVR_REJECT, PERMISSIONS.CVR_LOCK] };
   const approvalApp = createApp({
     testPrincipal: {
       ...approvalAuth,
@@ -705,11 +716,23 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
   const newCodeCandidate = await buildCvrCloseCandidate({clientId:client.id,developmentId,periodId:p01.period.id,developmentBudgetDocument:withNewCode});
   assert.equal(newCodeCandidate.snapshot.rows.find(row=>row.costCodeKey==='6000').finalForecast,2500);
   assert.equal((await createFirstCvrFromSiteStart(client.id,developmentId,{reportingMonth:'2027-04',siteStartVersion:approved.period.version},{actor:'SS1 Director',auth:approvalAuth,currentDate:new Date('2027-05-02T12:00:00Z')})).status,409);
+  await assert.rejects(
+    submitCvrPeriod(client.id, developmentId, p01.period.id, {
+      version: p01.period.version,
+      comment: 'Site Start authority must not submit a monthly CVR.',
+    }, { actor: 'Forged Browser Actor', auth: siteStartOnlyAuth }),
+    error => error.status === 403 && /cvr\.submit/.test(error.message)
+  );
   const submittedP01 = await submitCvrPeriod(client.id, developmentId, p01.period.id, {
     version: p01.period.version,
     comment: 'Submit governed first monthly CVR from Site Start.',
-  }, { actor: 'SS1 Director', auth: approvalAuth });
+  }, { actor: 'Forged Browser Actor', auth: approvalAuth });
   assert.equal(submittedP01.ok, true, submittedP01.message);
+  assert.equal(submittedP01.period.submittedBy, approvalAuth.displayName);
+  assert.equal((await pool.query(
+    `SELECT actor FROM cvr_period_audit WHERE period_id=$1 AND action='submitted' ORDER BY created_at DESC LIMIT 1`,
+    [p01.period.id]
+  )).rows[0].actor, approvalAuth.displayName);
   const capturedBudget = (await pool.query(
     'SELECT source_snapshot FROM cvr_period_budget_submissions WHERE client_id=$1 AND period_id=$2',
     [client.id, p01.period.id]
@@ -780,6 +803,16 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
   assert.equal(p02.period.periodKey,'P02');
   assert.equal(p02.period.budgetSourceMode,'site_start_budget');
   assert.equal(p02.period.siteStartSourceSnapshotId,approved.period.snapshot.id);
+  await pool.query("UPDATE cvr_periods SET status='submitted',submitted_at=NOW(),submitted_by='Fixture submitter' WHERE id=$1",[p02.period.id]);
+  const rejectedP02 = await rejectCvrPeriod(client.id, developmentId, p02.period.id, {
+    comment: 'Return the fixture period to Draft.',
+  }, { actor: 'Forged Browser Actor', auth: approvalAuth });
+  assert.equal(rejectedP02.ok, true, rejectedP02.message);
+  assert.equal(rejectedP02.period.status, 'draft');
+  assert.equal((await pool.query(
+    `SELECT actor FROM cvr_period_audit WHERE period_id=$1 AND action='rejected' ORDER BY created_at DESC LIMIT 1`,
+    [p02.period.id]
+  )).rows[0].actor, approvalAuth.displayName);
   await pool.query("UPDATE cvr_periods SET status='locked',submitted_at=NOW(),submitted_by='SS1 Director',approved_at=NOW(),approved_by='SS1 Director' WHERE id=$1",[p02.period.id]);
   const p03 = await createCvrPeriod(client.id,developmentId,{reportingMonth:'2028-02'},{actor:'SS1 Director',currentDate:new Date('2028-03-02T12:00:00Z'),loadReadiness:readiness});
   assert.equal(p03.ok,true,p03.message);

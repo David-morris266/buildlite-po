@@ -657,7 +657,7 @@ async function adoptSellingCostsForecasts(clientId, developmentId, body = {}, { 
           developmentId,
           periodId,
           { costCodeKey: selection.destinationCostCodeKey },
-          { actor: resolvedActor, dbClient }
+          { actor: resolvedActor, auth, dbClient }
         );
         if (!membership.ok) {
           await dbClient.query("ROLLBACK");

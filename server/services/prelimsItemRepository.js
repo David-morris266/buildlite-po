@@ -227,7 +227,9 @@ function insertParams(clientId, developmentId, value, actor) {
   ];
 }
 
-async function createPrelimsItem(clientId, developmentId, body = {}, { actor } = {}) {
+async function createPrelimsItem(clientId, developmentId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CVR_EDIT);
+  actor = auth?.displayName || actor;
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
   const programme = await loadProgrammeDocument(clientId, developmentId, scoped.development);
@@ -263,7 +265,9 @@ async function createPrelimsItem(clientId, developmentId, body = {}, { actor } =
   };
 }
 
-async function updatePrelimsItem(clientId, developmentId, itemId, body = {}, { actor } = {}) {
+async function updatePrelimsItem(clientId, developmentId, itemId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CVR_EDIT);
+  actor = auth?.displayName || actor;
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
   if (!isUuid(itemId)) {

@@ -268,10 +268,13 @@ async function getCvrPeriod(clientId, developmentId, periodId, dbClient = null) 
 
 async function createCvrPeriod(clientId, developmentId, body = {}, {
   actor,
+  auth,
   currentDate,
   loadReadiness = require('./developmentCommercialReadiness').loadDevelopmentCommercialReadiness,
   loadDevelopmentBudgetDocument = require('./cvrDevelopmentBudgetSnapshot').liveDocument,
 } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CVR_EDIT);
+  actor = auth?.displayName || actor;
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
 
@@ -569,6 +572,8 @@ function notDraftMutationResult(status) {
 }
 
 async function patchCvrPeriod(clientId, developmentId, periodId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CVR_EDIT);
+  actor = auth?.displayName || actor;
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
   if (!isValidUuid(periodId)) {
@@ -682,6 +687,12 @@ async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, {
   buildCloseCandidate = require('./cvrCloseEngine').buildCvrCloseCandidate,
   buildWholeCloseCandidate = require('./cvrCommercialClose').buildWholeCvrCloseCandidate,
 } = {}) {
+  const authorization = require('../auth/authorization');
+  const permissions = require('../auth/permissions').PERMISSIONS;
+  if (!authorization.hasPermission(auth, permissions.CVR_SUBMIT) && !authorization.hasPermission(auth, permissions.SITE_START_MANAGE)) {
+    authorization.assertServicePermission(auth, permissions.CVR_SUBMIT);
+  }
+  actor = auth?.displayName || actor;
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
   if (!isValidUuid(periodId)) return { ok: false, status: 400, message: "periodId must be a valid UUID." };
@@ -691,9 +702,9 @@ async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, {
     await dbClient.query('BEGIN');
     const row = await findPeriodRow(clientId, developmentId, periodId, dbClient, { forUpdate: true });
     if (!row) { await dbClient.query('ROLLBACK'); return { ok: false, status: 404, message: 'CVR period not found.' }; }
+    authorization.assertServicePermission(auth, row.period_type === CVR_PERIOD_TYPES.siteStart ? permissions.SITE_START_MANAGE : permissions.CVR_SUBMIT);
     if (row.status !== CVR_PERIOD_STATUSES.draft) { await dbClient.query('ROLLBACK'); return notDraftMutationResult(row.status); }
     if (row.period_type === CVR_PERIOD_TYPES.siteStart) {
-      require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.SITE_START_MANAGE);
       if (!row.forecast_as_at_month) { await dbClient.query('ROLLBACK'); return { ok:false,status:409,message:'Forecast as at is required before Site Start can be submitted.' }; }
       if (body.version != null && Number(body.version) !== Number(row.version)) { await dbClient.query('ROLLBACK'); return { ok:false,status:409,message:'CVR period version conflict.',period:await hydratePeriod(clientId,row,dbClient) }; }
       const appraisalResult = await require('./landAppraisalRepository').getLandAppraisalAuthority(clientId, developmentId, dbClient);
@@ -773,7 +784,9 @@ function developmentBudgetBaselineBlockers(document, closeCandidate) {
     }));
 }
 
-async function adoptDevelopmentBudget(clientId, developmentId, periodId, body = {}, { actor } = {}) {
+async function adoptDevelopmentBudget(clientId, developmentId, periodId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CVR_ADOPT);
+  actor = auth?.displayName || actor;
   if (!isValidUuid(periodId)) return { ok:false,status:400,message:'periodId must be a valid UUID.' };
   const dbClient=await pool.connect();
   try { await dbClient.query('BEGIN');
@@ -788,7 +801,9 @@ async function adoptDevelopmentBudget(clientId, developmentId, periodId, body = 
   } catch(error){await dbClient.query('ROLLBACK');throw error;} finally{dbClient.release();}
 }
 
-async function rejectCvrPeriod(clientId, developmentId, periodId, body = {}, { actor } = {}) {
+async function rejectCvrPeriod(clientId, developmentId, periodId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CVR_REJECT);
+  actor = auth?.displayName || actor;
   const comment = String(body.comment || "").trim();
   if (!comment) {
     return { ok: false, status: 400, message: "A rejection comment is required." };
@@ -1380,7 +1395,9 @@ async function insertInput(dbClient, clientId, periodId, value, actor) {
   return rows[0];
 }
 
-async function createCostCodeInput(clientId, developmentId, periodId, body = {}, { actor } = {}) {
+async function createCostCodeInput(clientId, developmentId, periodId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CVR_EDIT);
+  actor = auth?.displayName || actor;
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
   if (!isValidUuid(periodId)) {
@@ -1426,7 +1443,9 @@ async function createCostCodeInput(clientId, developmentId, periodId, body = {},
   }
 }
 
-async function patchCostCodeInput(clientId, developmentId, periodId, inputId, body = {}, { actor } = {}) {
+async function patchCostCodeInput(clientId, developmentId, periodId, inputId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CVR_EDIT);
+  actor = auth?.displayName || actor;
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
   if (!isValidUuid(periodId) || !isValidUuid(inputId)) {
@@ -1557,7 +1576,9 @@ async function patchCostCodeInput(clientId, developmentId, periodId, inputId, bo
   }
 }
 
-async function upsertCostCodeInputs(clientId, developmentId, periodId, body = {}, { actor } = {}) {
+async function upsertCostCodeInputs(clientId, developmentId, periodId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CVR_EDIT);
+  actor = auth?.displayName || actor;
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
   if (!isValidUuid(periodId)) {

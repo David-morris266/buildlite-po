@@ -240,7 +240,9 @@ function insertSetupItemSql() {
   `;
 }
 
-async function applyPrelimsSetup(clientId, developmentId, body = {}, { actor } = {}) {
+async function applyPrelimsSetup(clientId, developmentId, body = {}, { actor, auth } = {}) {
+  require('../auth/authorization').assertServicePermission(auth, require('../auth/permissions').PERMISSIONS.CVR_EDIT);
+  actor = auth?.displayName || actor;
   const scoped = await developmentOr404(clientId, developmentId);
   if (!scoped.ok) return scoped;
   const validated = validatePrelimsSetupApplyBody(body);

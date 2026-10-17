@@ -144,6 +144,19 @@ test('commercial mutation surface denies before domain execution when permission
   const app = createApp({authAdapter:createTestAuthAdapter({...principal,permissions:[]})});
   const id='00000000-0000-0000-0000-000000000010';
   const attempts = [
+    ['post','/api/developments/dev-test/cvr/periods',PERMISSIONS.CVR_EDIT],
+    ['patch',`/api/developments/dev-test/cvr/periods/${id}`,PERMISSIONS.CVR_EDIT],
+    ['post',`/api/developments/dev-test/cvr/periods/${id}/submit`,PERMISSIONS.CVR_SUBMIT],
+    ['post',`/api/developments/dev-test/cvr/periods/${id}/reject`,PERMISSIONS.CVR_REJECT],
+    ['post',`/api/developments/dev-test/cvr/periods/${id}/development-budget-adoption`,PERMISSIONS.CVR_ADOPT],
+    ['put',`/api/developments/dev-test/cvr/periods/${id}/inputs`,PERMISSIONS.CVR_EDIT],
+    ['post',`/api/developments/dev-test/cvr/periods/${id}/inputs`,PERMISSIONS.CVR_EDIT],
+    ['patch',`/api/developments/dev-test/cvr/periods/${id}/inputs/${id}`,PERMISSIONS.CVR_EDIT],
+    ['post',`/api/developments/dev-test/cvr/periods/${id}/budget-import`,PERMISSIONS.CVR_EDIT],
+    ['post',`/api/developments/dev-test/cvr/periods/${id}/prelims-adoption`,PERMISSIONS.CVR_ADOPT],
+    ['post','/api/developments/dev-test/prelims-setup/apply',PERMISSIONS.CVR_EDIT],
+    ['post','/api/developments/dev-test/prelims-items',PERMISSIONS.CVR_EDIT],
+    ['put',`/api/developments/dev-test/prelims-items/${id}`,PERMISSIONS.CVR_EDIT],
     ['post','/api/commercial-events',PERMISSIONS.CE_CREATE],
     ['put','/api/commercial-events/ce-test',PERMISSIONS.CE_EDIT],
     ['post','/api/commercial-events/ce-test/submit',PERMISSIONS.CE_SUBMIT],
@@ -185,5 +198,54 @@ test('critical-route manifest covers all approved commercial mutation permission
     PERMISSIONS.APPLICATION_RECORD,PERMISSIONS.CERTIFICATE_CREATE,PERMISSIONS.CERTIFICATE_EDIT,
     PERMISSIONS.CERTIFICATE_REJECT,PERMISSIONS.CERTIFICATE_DELETE_DRAFT,PERMISSIONS.INTENDED_PAYMENT_PROPOSE,
     PERMISSIONS.PAYMENT_NOTICE_PREPARE,PERMISSIONS.PAY_LESS_PREPARE,
+    PERMISSIONS.CVR_EDIT,PERMISSIONS.CVR_ADOPT,PERMISSIONS.CVR_SUBMIT,PERMISSIONS.CVR_REJECT,PERMISSIONS.CVR_LOCK,
   ]) assert.match(values,new RegExp(permission.replace('.','\\.')));
+});
+
+test('Migration 031 retains the settled CVR role separation', async () => {
+  const result = await pool.query(`SELECT r.key role_key,p.permission_key
+    FROM role_permissions p JOIN roles r ON r.id=p.role_id
+    WHERE p.permission_key=ANY($1::text[])`, [[PERMISSIONS.CVR_EDIT,PERMISSIONS.CVR_ADOPT,PERMISSIONS.CVR_SUBMIT,PERMISSIONS.CVR_REJECT,PERMISSIONS.CVR_LOCK]]);
+  const grants = new Set(result.rows.map(row => `${row.role_key}:${row.permission_key}`));
+  for (const role of ['qs','commercial_manager','commercial_director']) {
+    for (const permission of [PERMISSIONS.CVR_EDIT,PERMISSIONS.CVR_ADOPT,PERMISSIONS.CVR_SUBMIT]) assert.ok(grants.has(`${role}:${permission}`));
+  }
+  for (const role of ['commercial_manager','commercial_director']) {
+    for (const permission of [PERMISSIONS.CVR_REJECT,PERMISSIONS.CVR_LOCK]) assert.ok(grants.has(`${role}:${permission}`));
+  }
+  for (const role of ['site','buyer','admin','finance']) {
+    for (const permission of [PERMISSIONS.CVR_EDIT,PERMISSIONS.CVR_ADOPT,PERMISSIONS.CVR_SUBMIT,PERMISSIONS.CVR_REJECT,PERMISSIONS.CVR_LOCK]) assert.equal(grants.has(`${role}:${permission}`),false);
+  }
+  assert.equal(grants.has(`qs:${PERMISSIONS.CVR_REJECT}`),false);
+  assert.equal(grants.has(`qs:${PERMISSIONS.CVR_LOCK}`),false);
+});
+
+test('CVR and Development Prelims services deny direct mutation without matching authority', async () => {
+  const deniedAuth={...principal,permissions:[]};
+  const id='00000000-0000-0000-0000-000000000010';
+  const period=require('../services/cvrPeriodRepository');
+  const budgetImport=require('../services/cvrBudgetImportService');
+  const prelimsAdoption=require('../services/prelimsAdoptionApplyService');
+  const prelimsItems=require('../services/prelimsItemRepository');
+  const prelimsSetup=require('../services/prelimsSetupService');
+  const sellingCostsAdoption=require('../services/sellingCostsAdoptionApplyService');
+  const cvrMembership=require('../services/cvrMembershipService');
+  const calls=[
+    [()=>period.createCvrPeriod('client-1','dev-1',{}, {auth:deniedAuth}),PERMISSIONS.CVR_EDIT],
+    [()=>period.patchCvrPeriod('client-1','dev-1',id,{}, {auth:deniedAuth}),PERMISSIONS.CVR_EDIT],
+    [()=>period.submitCvrPeriod('client-1','dev-1',id,{}, {auth:deniedAuth}),PERMISSIONS.CVR_SUBMIT],
+    [()=>period.rejectCvrPeriod('client-1','dev-1',id,{comment:'No'}, {auth:deniedAuth}),PERMISSIONS.CVR_REJECT],
+    [()=>period.adoptDevelopmentBudget('client-1','dev-1',id,{}, {auth:deniedAuth}),PERMISSIONS.CVR_ADOPT],
+    [()=>period.createCostCodeInput('client-1','dev-1',id,{}, {auth:deniedAuth}),PERMISSIONS.CVR_EDIT],
+    [()=>period.patchCostCodeInput('client-1','dev-1',id,id,{}, {auth:deniedAuth}),PERMISSIONS.CVR_EDIT],
+    [()=>period.upsertCostCodeInputs('client-1','dev-1',id,{}, {auth:deniedAuth}),PERMISSIONS.CVR_EDIT],
+    [()=>budgetImport.importDraftCvrBudget('client-1','dev-1',id,{}, {auth:deniedAuth}),PERMISSIONS.CVR_EDIT],
+    [()=>prelimsAdoption.adoptPrelimsForecasts('client-1','dev-1',id,{}, {auth:deniedAuth}),PERMISSIONS.CVR_ADOPT],
+    [()=>prelimsItems.createPrelimsItem('client-1','dev-1',{}, {auth:deniedAuth}),PERMISSIONS.CVR_EDIT],
+    [()=>prelimsItems.updatePrelimsItem('client-1','dev-1',id,{}, {auth:deniedAuth}),PERMISSIONS.CVR_EDIT],
+    [()=>prelimsSetup.applyPrelimsSetup('client-1','dev-1',{}, {auth:deniedAuth}),PERMISSIONS.CVR_EDIT],
+    [()=>sellingCostsAdoption.adoptSellingCostsForecasts('client-1','dev-1',{}, {auth:deniedAuth}),PERMISSIONS.CVR_ADOPT],
+    [()=>cvrMembership.addDraftCvrCostCodeMember('client-1','dev-1',id,{}, {auth:deniedAuth}),PERMISSIONS.CVR_EDIT],
+  ];
+  for (const [call,permission] of calls) await assert.rejects(call,error=>error.status===403&&error.message.includes(permission));
 });

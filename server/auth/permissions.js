@@ -7,7 +7,7 @@ const PERMISSIONS = Object.freeze({
   APPLICATION_RECORD: 'application.record',
   CERTIFICATE_CREATE: 'certificate.create', CERTIFICATE_EDIT: 'certificate.edit', CERTIFICATE_SUBMIT: 'certificate.submit',
   CERTIFICATE_REJECT: 'certificate.reject', CERTIFICATE_LOCK: 'certificate.lock', CERTIFICATE_DELETE_DRAFT: 'certificate.delete_draft',
-  CVR_LOCK: 'cvr.lock', INTENDED_PAYMENT_PROPOSE: 'intended_payment.propose', INTENDED_PAYMENT_CONFIRM: 'intended_payment.confirm',
+  CVR_SUBMIT: 'cvr.submit', CVR_REJECT: 'cvr.reject', CVR_LOCK: 'cvr.lock', INTENDED_PAYMENT_PROPOSE: 'intended_payment.propose', INTENDED_PAYMENT_CONFIRM: 'intended_payment.confirm',
   PAYMENT_NOTICE_PREPARE: 'payment_notice.prepare', PAYMENT_NOTICE_ISSUE: 'payment_notice.issue',
   PAY_LESS_PREPARE: 'pay_less.prepare', PAY_LESS_ISSUE: 'pay_less.issue', DOCUMENT_GENERATE: 'document.generate',
   DOCUMENT_ISSUE: 'document.issue', DOCUMENT_VIEW: 'document.view', TERMS_PUBLISH: 'terms.publish',
