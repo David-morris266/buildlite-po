@@ -14,4 +14,13 @@ describe('Summary Revenue server mapping', () => {
   it('defaults historic settings to Sales Register', () => {
     expect(normalizeServerRevenueSettings({id:'settings-1'}, 'dev-1').revenueMode).toBe('sales_register');
   });
+
+  it('maps the legacy demo label to the governed description field', () => {
+    const mapped = normalizeServerRevenueSettings({
+      id:'settings-1',
+      revenueMode:'summary',
+      summaryRevenueLines:[{id:'line-1',label:'48 homes',forecastRevenue:14400000}],
+    }, 'dev-1');
+    expect(mapped.summaryRevenueLines[0]).toMatchObject({id:'line-1',description:'48 homes',forecastRevenue:14400000});
+  });
 });

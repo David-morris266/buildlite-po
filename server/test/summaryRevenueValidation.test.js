@@ -17,3 +17,9 @@ test("Sales Register remains the backward-compatible default and preserves dorma
   assert.equal(result.value.revenueMode, "sales_register");
   assert.equal(result.value.summaryRevenueLines.length, 1);
 });
+
+test("Summary Revenue returns an operator-readable missing description message", () => {
+  const result = validatePutSettingsBody({ revenueMode:"summary", summaryRevenueLines:[{id:"line-1",description:"",forecastRevenue:10}] });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.includes("Summary Revenue line 1 needs a description (for example, Private Sales)."));
+});

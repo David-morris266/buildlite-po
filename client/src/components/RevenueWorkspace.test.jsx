@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getRevenuePricingContext = vi.hoisted(() => vi.fn());
 const applySalesRegisterImport = vi.hoisted(() => vi.fn());
+const saveRevenueRecord = vi.hoisted(() => vi.fn());
 
 vi.mock('../api/developments', () => ({
   applySalesRegisterImport,
@@ -19,6 +20,10 @@ vi.mock('../revenue/revenueStrategy', async (importOriginal) => {
     getRevenuePricingContext,
   };
 });
+
+vi.mock('../revenue/revenueStore', () => ({
+  saveRevenueRecord,
+}));
 
 vi.mock('../admin/revenueCategoryStore', () => ({
   ensureRevenueCategories: vi.fn(),
@@ -63,6 +68,7 @@ describe('RevenueWorkspace async loading guard', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
+    saveRevenueRecord.mockResolvedValue({ ok: true });
   });
 
   afterEach(() => {
@@ -112,9 +118,8 @@ describe('RevenueWorkspace async loading guard', () => {
 
     expect(document.body.textContent).toContain('Revenue Dashboard');
     expect(document.body.textContent).toContain('Revenue Strategy Panel');
-    expect(document.body.textContent).toContain('Current mode: Sales Register');
-    expect(document.body.textContent).toContain('CVR Revenue currently uses Sales Register');
-    expect(container.querySelector('button[aria-pressed="true"]')?.textContent).toBe('Sales Register');
+    expect(document.body.textContent).toContain('Authoritative CVR Revenue source: Sales Register');
+    expect(container.querySelector('button[role="tab"][aria-selected="true"]')?.textContent).toBe('Sales Register');
   });
 
   it('opens the real Sales Register importer from the actual action and supports cancel/reopen without mutation', async () => {
@@ -155,6 +160,50 @@ describe('RevenueWorkspace async loading guard', () => {
     expect(document.body.textContent).not.toContain('Revenue Dashboard');
     expect(document.body.textContent).not.toContain('Import Sales Register');
     expect(container.querySelector('input[aria-label="Sales Register file"]')).toBeFalsy();
+  });
+
+  it('switches to the Sales Register view without changing CVR Revenue authority', async () => {
+    getRevenuePricingContext.mockResolvedValue({
+      ...sampleContext,
+      plots: Array.from({ length:48 }, (_, index) => ({ id:`plot-${index + 1}`, plotNumber:String(index + 1), houseType:'Type A', revenueStatus:'Available' })),
+      revenueMode: 'summary',
+      summaryRevenueLines: [{ id:'line-1', description:'Private Sales', forecastRevenue:100000 }],
+      settings: { revenueMode:'summary', summaryRevenueLines:[{ id:'line-1', description:'Private Sales', forecastRevenue:100000 }], version:1 },
+    });
+    renderRevenue();
+    await act(async () => { await Promise.resolve(); });
+
+    const salesTab = [...container.querySelectorAll('button[role="tab"]')].find((button) => button.textContent === 'Sales Register');
+    await act(async () => { salesTab.click(); });
+
+    expect(document.body.textContent).toContain('Plot Revenue Register');
+    expect(document.body.textContent).toContain('Authoritative CVR Revenue source: Summary Revenue');
+    expect(container.querySelectorAll('.revenue-register__data-row')).toHaveLength(48);
+    expect(saveRevenueRecord).not.toHaveBeenCalled();
+  });
+
+  it('changes authority only through the explicit confirmed action', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    getRevenuePricingContext.mockResolvedValue({
+      ...sampleContext,
+      revenueMode: 'summary',
+      summaryRevenueLines: [{ id:'line-1', description:'Private Sales', forecastRevenue:100000 }],
+      settings: { revenueMode:'summary', summaryRevenueLines:[{ id:'line-1', description:'Private Sales', forecastRevenue:100000 }], version:1 },
+    });
+    renderRevenue();
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { [...container.querySelectorAll('button[role="tab"]')].find((button) => button.textContent === 'Sales Register').click(); });
+    const authorityButton = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Use Sales Register for CVR Revenue');
+    expect(authorityButton).toBeTruthy();
+
+    await act(async () => { authorityButton.click(); });
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(saveRevenueRecord).not.toHaveBeenCalled();
+
+    confirm.mockReturnValue(true);
+    await act(async () => { authorityButton.click(); await Promise.resolve(); });
+    expect(saveRevenueRecord).toHaveBeenCalledWith('dev-1', expect.objectContaining({ revenueMode:'sales_register' }));
+    confirm.mockRestore();
   });
 
   it('shows a visible error instead of permanent loading when fetch rejects', async () => {

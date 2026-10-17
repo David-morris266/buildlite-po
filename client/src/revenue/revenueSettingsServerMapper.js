@@ -4,6 +4,14 @@
 
 const LOCAL_RECORD_SCHEMA_VERSION = 3;
 
+function normalizeSummaryRevenueLines(lines) {
+  if (!Array.isArray(lines)) return [];
+  return lines.map((line) => ({
+    ...line,
+    description: line?.description ?? line?.label ?? '',
+  }));
+}
+
 export function normalizeServerRevenueSettings(document, developmentId) {
   if (!document || typeof document !== 'object') return null;
   return {
@@ -12,7 +20,7 @@ export function normalizeServerRevenueSettings(document, developmentId) {
     exists: document.exists !== false && Boolean(document.id),
     recognitionPolicy: document.recognitionPolicy === 'exchange' ? 'exchange' : 'completion',
     revenueMode: document.revenueMode === 'summary' ? 'summary' : 'sales_register',
-    summaryRevenueLines: Array.isArray(document.summaryRevenueLines) ? document.summaryRevenueLines : [],
+    summaryRevenueLines: normalizeSummaryRevenueLines(document.summaryRevenueLines),
     revenueStrategy: document.revenueStrategy || {},
     houseTypePricing: document.houseTypePricing || {},
     revenueAdjustments: Array.isArray(document.revenueAdjustments)

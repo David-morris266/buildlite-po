@@ -252,6 +252,7 @@ export default function RevenueWorkspace({
   const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true);
   const [summaryLines, setSummaryLines] = useState([]);
+  const [selectedRevenueView, setSelectedRevenueView] = useState(null);
   const [savingSummary, setSavingSummary] = useState(false);
   const [summaryMessage, setSummaryMessage] = useState('');
   const [importOpen, setImportOpen] = useState(false);
@@ -269,6 +270,7 @@ export default function RevenueWorkspace({
         if (!cancelled) {
           setPricingContext(context);
           setSummaryLines(context.summaryRevenueLines || []);
+          setSelectedRevenueView((current) => current || context.revenueMode || 'sales_register');
           setLoadError('');
           setLoading(false);
         }
@@ -613,7 +615,9 @@ export default function RevenueWorkspace({
     );
   }
 
-  if (importOpen && pricingContext.revenueMode !== 'summary') {
+  const activeRevenueView = selectedRevenueView || pricingContext.revenueMode || 'sales_register';
+
+  if (importOpen && activeRevenueView === 'sales_register') {
     return (
       <div className="revenue-workspace revenue-workspace--sales-import">
         <SalesRegisterImportWizard
@@ -632,15 +636,18 @@ export default function RevenueWorkspace({
 
     <div className="revenue-workspace">
       <section className="revenue-workspace__section" aria-labelledby="revenue-mode-title">
-        <h2 id="revenue-mode-title" className="po-matrix-section__title">Revenue mode</h2>
-        <p className="revenue-workspace__current-mode"><strong>Current mode:</strong> {pricingContext.revenueMode === 'summary' ? 'Summary Revenue' : 'Sales Register'}. CVR Revenue currently uses {pricingContext.revenueMode === 'summary' ? 'Summary Revenue' : 'Sales Register'}.</p>
-        <div className="po-button-row revenue-workspace__mode-switch" role="group" aria-label="Revenue mode">
-          <button type="button" aria-pressed={pricingContext.revenueMode === 'summary'} className={pricingContext.revenueMode === 'summary' ? 'po-button po-button--primary' : 'po-button'} onClick={() => saveRevenueMode('summary', summaryLines.length ? summaryLines : [{ id: crypto.randomUUID(), description: 'Total Forecast Revenue', forecastRevenue: 0 }])}>Summary Revenue</button>
-          <button type="button" aria-pressed={pricingContext.revenueMode !== 'summary'} className={pricingContext.revenueMode !== 'summary' ? 'po-button po-button--primary' : 'po-button'} onClick={() => saveRevenueMode('sales_register')}>Sales Register</button>
+        <h2 id="revenue-mode-title" className="po-matrix-section__title">Revenue views and authority</h2>
+        <p className="revenue-workspace__current-mode"><strong>Authoritative CVR Revenue source:</strong> {pricingContext.revenueMode === 'summary' ? 'Summary Revenue' : 'Sales Register'}.</p>
+        <p className="revenue-workspace__lead">Choose a view to inspect. Changing view does not change CVR Revenue authority.</p>
+        <div className="po-button-row revenue-workspace__mode-switch" role="tablist" aria-label="Revenue view">
+          <button type="button" role="tab" aria-selected={activeRevenueView === 'summary'} className={activeRevenueView === 'summary' ? 'po-button po-button--primary' : 'po-button'} onClick={() => setSelectedRevenueView('summary')}>Summary Revenue</button>
+          <button type="button" role="tab" aria-selected={activeRevenueView === 'sales_register'} className={activeRevenueView === 'sales_register' ? 'po-button po-button--primary' : 'po-button'} onClick={() => setSelectedRevenueView('sales_register')}>Sales Register</button>
         </div>
+        {activeRevenueView !== pricingContext.revenueMode ? <div className="po-button-row"><button type="button" className="po-button po-button--primary" disabled={savingSummary} onClick={() => saveRevenueMode(activeRevenueView, activeRevenueView === 'summary' && !summaryLines.length ? [{ id: crypto.randomUUID(), description: 'Total Forecast Revenue', forecastRevenue: 0 }] : summaryLines)}>{savingSummary ? 'Saving…' : `Use ${activeRevenueView === 'summary' ? 'Summary Revenue' : 'Sales Register'} for CVR Revenue`}</button></div> : null}
+        {summaryMessage ? <p role="status">{summaryMessage}</p> : null}
       </section>
 
-      {pricingContext.revenueMode === 'summary' ? (
+      {activeRevenueView === 'summary' ? (
         <section className="revenue-workspace__section" aria-labelledby="summary-revenue-title">
           <h2 id="summary-revenue-title" className="po-matrix-section__title">Summary Revenue</h2>
           <p className="revenue-workspace__lead">Secured Revenue, Remaining Forecast and plot sales are not tracked in Summary Revenue.</p>
@@ -648,12 +655,11 @@ export default function RevenueWorkspace({
             {summaryLines.map((line, index) => <tr key={line.id}><td><input aria-label={`Revenue line ${index + 1} description`} value={line.description} onChange={(event) => setSummaryLines((rows) => rows.map((row) => row.id === line.id ? {...row, description:event.target.value} : row))} /></td><td><input aria-label={`Revenue line ${index + 1} forecast revenue`} type="number" min="0" step="0.01" value={line.forecastRevenue} onChange={(event) => setSummaryLines((rows) => rows.map((row) => row.id === line.id ? {...row, forecastRevenue:event.target.value} : row))} /></td><td><button type="button" className="po-button" onClick={() => setSummaryLines((rows) => rows.filter((row) => row.id !== line.id))}>Remove</button></td></tr>)}
           </tbody></table></div>
           <p><strong>Total Forecast Revenue:</strong> £{summaryLines.reduce((sum, line) => sum + (Number(line.forecastRevenue) || 0), 0).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2})}</p>
-          <div className="po-button-row"><button type="button" className="po-button" onClick={() => setSummaryLines((rows) => [...rows, {id:crypto.randomUUID(), description:'', forecastRevenue:0}])}>Add Revenue Line</button><button type="button" className="po-button po-button--primary" disabled={savingSummary} onClick={() => saveRevenueMode('summary')}>{savingSummary ? 'Saving…' : 'Save'}</button></div>
-          {summaryMessage ? <p role="status">{summaryMessage}</p> : null}
+          <div className="po-button-row"><button type="button" className="po-button" onClick={() => setSummaryLines((rows) => [...rows, {id:crypto.randomUUID(), description:'', forecastRevenue:0}])}>Add Revenue Line</button><button type="button" className="po-button po-button--primary" disabled={savingSummary} onClick={() => saveRevenueMode(pricingContext.revenueMode)}>{savingSummary ? 'Saving…' : 'Save Summary Lines'}</button></div>
         </section>
       ) : null}
 
-      {pricingContext.revenueMode !== 'summary' ? <>
+      {activeRevenueView === 'sales_register' ? <>
 
       <div className="revenue-workspace__zone revenue-workspace__zone--assumptions">
 

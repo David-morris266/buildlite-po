@@ -188,7 +188,7 @@ function validatePutSettingsBody(body = {}) {
     const description = String(line?.description || "").trim();
     const amount = Number(line?.forecastRevenue);
     if (!id || lineIds.has(id)) errors.push(`summaryRevenueLines[${index}].id must be unique and non-empty.`);
-    if (!description) errors.push(`summaryRevenueLines[${index}].description is required.`);
+    if (!description) errors.push(`Summary Revenue line ${index + 1} needs a description (for example, Private Sales).`);
     if (!Number.isFinite(amount) || amount < 0 || Math.round(amount * 100) !== amount * 100) errors.push(`summaryRevenueLines[${index}].forecastRevenue must be a non-negative exact-pence amount.`);
     lineIds.add(id);
     summaryRevenueLines.push({ id, description, forecastRevenue: amount });

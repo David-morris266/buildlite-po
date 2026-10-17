@@ -30,6 +30,14 @@ else {
     assert.equal(stale.status,409);
   });
 
+  test('explicit Revenue authority changes still require revenue.manage',async()=>{
+    const denied={...fixture.auth,permissions:[]};
+    await assert.rejects(
+      ()=>putRevenueSettings(fixture.client.id,fixture.developmentId,{version:1,revenueMode:'sales_register',summaryRevenueLines:[{id:'line-1',description:'Private Sales',forecastRevenue:123.45}]},{auth:denied}),
+      (error)=>error?.status===403
+    );
+  });
+
   test('switching Summary to Sales Register uses full close-candidate readiness',async()=>{
     const developmentId=`dev-summary-switch-${randomUUID()}`;
     await pool.query(`INSERT INTO developments(id,client_id,job_number,development_name,status,payload) VALUES($1,$2,$3,'Summary switch','live',$4::jsonb)`,[
