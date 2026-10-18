@@ -40,6 +40,7 @@ describe('developmentWorkspaceTabNavigation', () => {
       'plot-master',
       'packages',
       'commercial',
+      'variation-account',
       'ledger',
       'budget',
       'revenue',

@@ -41,6 +41,7 @@ const platformProvisioningRoutes=require('./routes/platformProvisioningRoutes');
 const companySettingsRoutes=require('./routes/companySettingsRoutes');
 const tenantMembershipRoutes=require('./routes/tenantMembershipRoutes');
 const membershipInvitationRoutes=require('./routes/membershipInvitationRoutes');
+const homeDashboardRoutes=require('./routes/homeDashboardRoutes');
 const db = require('./db');
 const { checkMigrationReadiness } = require('./services/migrationReadiness');
 const { randomUUID } = require('crypto');
@@ -95,6 +96,7 @@ function createApp(options = {}) {
   app.use('/api/company-settings',companySettingsRoutes);
   app.use('/api/company-branding',companyBrandingRoutes);
   app.use('/api/memberships',tenantMembershipRoutes);
+  app.use('/api/home',homeDashboardRoutes);
 
   app.use("/api", poRoutes);
   app.use("/api/jobs", jobRoutes);

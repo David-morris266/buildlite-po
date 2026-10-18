@@ -9,6 +9,7 @@ import CVRPortfolio from './components/CVRPortfolio';
 import AdministrationModule from './components/admin/AdministrationModule';
 import AdminPlatformProvisioningPage from './components/admin/AdminPlatformProvisioningPage';
 import BrandHeader from './components/Brandheader';
+import ApplicationSidebar from './components/ApplicationSidebar';
 import BuildLiteHome from './components/BuildLiteHome';
 import { CommercialAssistantProvider } from './commercialAssistant/CommercialAssistantContext';
 import CommercialAssistantDrawer from './commercialAssistant/CommercialAssistantDrawer';
@@ -78,6 +79,11 @@ function TenantApplicationContent() {
       : null
   );
   const [navigationOrigin, setNavigationOrigin] = useState(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+  const openSidebar = useCallback(() => setSidebarOpen(true), []);
+  const toggleSidebar = useCallback(() => setSidebarCollapsed(value => !value), []);
 
   useEffect(() => {
     if (!localStorage.getItem('userEmail')) localStorage.setItem('userEmail', 'accounts@example.co.uk');
@@ -207,7 +213,7 @@ function TenantApplicationContent() {
     navigateCanonical({ ...homeApplicationRoute(), view: nextTab });
   };
 
-  const handleHomeNavigate = ({ view, section = null, returnDevelopment = null }) => {
+  const handleHomeNavigate = ({ view, section = null, returnDevelopment = null, developmentId = null, workspaceTab = null, periodKey = null, poNumber = null }) => {
     const tabByView = {
       home: 'home', administration: 'administration', cvrs: 'cvrs', developments: 'developments',
       'new-purchase-order': 'form', 'purchase-orders': 'list', archive: 'archive',
@@ -223,6 +229,15 @@ function TenantApplicationContent() {
       });
       return;
     }
+    if (view === 'developments' && developmentId) {
+      if (periodKey) setCvrNav({ developmentId, periodKey });
+      navigateCanonical({ ...homeApplicationRoute(), view: 'developments', developmentId, workspaceTab: workspaceTab || 'overview', periodKey });
+      return;
+    }
+    if (view === 'purchase-orders' && poNumber) {
+      handleViewPurchaseOrders(poNumber);
+      return;
+    }
     handleTab(tabByView[view] || HOME_VIEW);
   };
 
@@ -232,8 +247,10 @@ function TenantApplicationContent() {
     navigateCanonical({ ...homeApplicationRoute(), view: 'list' });
   };
 
-  return <NavigationProvider><CommercialAssistantProvider><div id="app">
-    <BrandHeader activeTab={tab} onTab={handleTab} />
+  return <NavigationProvider><CommercialAssistantProvider><div id="app" className={`app-shell${sidebarCollapsed ? ' app-shell--collapsed' : ''}`}>
+    <ApplicationSidebar activeTab={tab} collapsed={sidebarCollapsed} open={sidebarOpen} onTab={handleTab} onToggle={toggleSidebar} onClose={closeSidebar} />
+    <div className="app-shell__stage">
+    <BrandHeader navigationOpen={sidebarOpen} onOpenNavigation={openSidebar} />
     <CommercialAssistantDrawer />
     <main className="po-app-main">
       {tab === 'home' ? <CommercialWorkspace><BuildLiteHome onNavigate={handleHomeNavigate} /></CommercialWorkspace> : null}
@@ -302,6 +319,7 @@ function TenantApplicationContent() {
       {tab === 'payment-approval' ? <CommercialWorkspace><PaymentApprovalRun onOpenAccounts={() => handleHomeNavigate({ view: 'payment-release' })} /></CommercialWorkspace> : null}
       {tab === 'payment-release' ? <CommercialWorkspace><PaymentReleaseWorklist /></CommercialWorkspace> : null}
     </main>
+    </div>
   </div></CommercialAssistantProvider></NavigationProvider>;
 }
 

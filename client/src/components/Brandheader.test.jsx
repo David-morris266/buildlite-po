@@ -4,24 +4,17 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-let permissions = [];
-let principal = { permissions, activeTenant: { clientId: 'hawthorn', name: 'Hawthorn Gardens UAT Company' }, memberships: [], switchTenant: vi.fn() };
-vi.mock('../auth/BuildLiteAuthProvider', () => ({
-  useBuildLitePrincipal: () => principal,
-  useBuildLitePermission: permission => permissions.includes(permission),
-}));
-vi.mock('../commercialAssistant/CommercialAssistantIndicator', () => ({ default: () => null }));
+let principal;
+vi.mock('../auth/BuildLiteAuthProvider', () => ({ useBuildLitePrincipal: () => principal }));
+vi.mock('../commercialAssistant/CommercialAssistantIndicator', () => ({ default: () => <button type="button">Commercial Assistant</button> }));
 import BrandHeader from './Brandheader';
 import { UnsavedChangesProvider } from '../navigation/UnsavedChangesProvider.jsx';
 import { useUnsavedChanges } from '../navigation/UnsavedChangesContext.js';
 
-function DirtyHeader({ onTab }) {
+function DirtyHeader() {
   const { registerUnsavedChanges } = useUnsavedChanges();
-  React.useEffect(
-    () => registerUnsavedChanges({ title: 'Unsaved Prelims setup', message: 'Leave?' }),
-    [registerUnsavedChanges]
-  );
-  return <BrandHeader activeTab="developments" onTab={onTab} />;
+  React.useEffect(() => registerUnsavedChanges({ title: 'Unsaved setup', message: 'Leave?' }), [registerUnsavedChanges]);
+  return <BrandHeader onOpenNavigation={vi.fn()} />;
 }
 
 let container;
@@ -29,53 +22,42 @@ let root;
 afterEach(() => {
   if (root) act(() => root.unmount());
   container?.remove();
-  permissions = [];
-  principal = { permissions, activeTenant: { clientId: 'hawthorn', name: 'Hawthorn Gardens UAT Company' }, memberships: [], switchTenant: vi.fn() };
+  principal = undefined;
 });
 
-describe('GP-1 top navigation', () => {
-  it('keeps Home and removes the misleading Payment Certificates entry', () => {
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-    act(() => root.render(<BrandHeader activeTab="home" onTab={vi.fn()} />));
-    expect(container.textContent).toContain('Home');
-    expect(container.textContent).not.toContain('Payment Certificates');
+function renderHeader(props = {}) {
+  principal = principal || { user: { displayName: 'Alex Morgan' }, activeTenant: { clientId: 'hawthorn', name: 'Hawthorn Gardens', roleName: 'Commercial Director' }, memberships: [], switchTenant: vi.fn() };
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => root.render(<BrandHeader {...props} />));
+}
+
+describe('compact application top bar', () => {
+  it('retains company, authenticated user and assistant controls without duplicating global navigation', () => {
+    const onOpenNavigation = vi.fn();
+    renderHeader({ onOpenNavigation });
+    expect(container.textContent).toContain('Hawthorn Gardens');
+    expect(container.textContent).toContain('Alex Morgan');
+    expect(container.textContent).toContain('Commercial Director');
+    expect(container.textContent).toContain('Commercial Assistant');
+    expect(container.textContent).not.toContain('Purchase Orders');
+    act(() => container.querySelector('[aria-label="Open navigation"]').click());
+    expect(onOpenNavigation).toHaveBeenCalledOnce();
   });
 
-  it('shows authority-owned navigation by permission rather than role', () => {
-    permissions = ['payment_approval_run.view', 'payment_release.execute', 'po.create', 'tenant.configure'];
-    principal = { ...principal, permissions };
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-    act(() => root.render(<BrandHeader activeTab="home" onTab={vi.fn()} />));
-    for (const label of ['Payment Approval', 'Accounts', 'New Purchase Order', 'Administration']) {
-      expect(container.textContent).toContain(label);
-    }
-    expect(container.textContent).not.toContain('Payment Release');
-  });
-
-  it('keeps active company context visible and exposes authorised memberships globally', () => {
+  it('switches only to an authorised company membership', () => {
     principal = {
-      permissions: [],
-      activeTenant: { clientId: 'hawthorn', name: 'Hawthorn Gardens UAT Company' },
+      user: { displayName: 'Alex Morgan' }, activeTenant: { clientId: 'hawthorn', name: 'Hawthorn Gardens', roleName: 'Commercial Director' },
       memberships: [
-        { clientId: 'hawthorn', clientName: 'Hawthorn Gardens UAT Company', roleName: 'Commercial Director' },
-        { clientId: 'willow', clientName: 'Willow Homes UAT Ltd', roleName: 'Commercial Director' },
+        { clientId: 'hawthorn', clientName: 'Hawthorn Gardens', roleName: 'Commercial Director' },
+        { clientId: 'willow', clientName: 'Willow Homes', roleName: 'QS' },
       ],
       switchTenant: vi.fn(),
     };
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-    act(() => root.render(<BrandHeader activeTab="administration" onTab={vi.fn()} />));
+    renderHeader();
     const selector = container.querySelector('[aria-label="Switch active company"]');
-    expect(selector).not.toBeNull();
-    expect(Array.from(selector.options).map(option => option.textContent)).toEqual([
-      'Hawthorn Gardens UAT Company · Commercial Director',
-      'Willow Homes UAT Ltd · Commercial Director',
-    ]);
+    expect(Array.from(selector.options).map(option => option.value)).toEqual(['hawthorn', 'willow']);
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(selector, 'willow');
       selector.dispatchEvent(new Event('change', { bubbles: true }));
@@ -83,18 +65,27 @@ describe('GP-1 top navigation', () => {
     expect(principal.switchTenant).toHaveBeenCalledWith('willow');
   });
 
-  it('guards global module navigation while Prelims setup is dirty', () => {
-    permissions = ['tenant.configure'];
-    principal = { ...principal, permissions };
-    const onTab = vi.fn();
+  it('preserves the unsaved-change guard when switching company', () => {
+    principal = {
+      user: { displayName: 'Alex Morgan' }, activeTenant: { clientId: 'hawthorn', name: 'Hawthorn Gardens', roleName: 'Commercial Director' },
+      memberships: [
+        { clientId: 'hawthorn', clientName: 'Hawthorn Gardens', roleName: 'Commercial Director' },
+        { clientId: 'willow', clientName: 'Willow Homes', roleName: 'QS' },
+      ],
+      switchTenant: vi.fn(),
+    };
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
-    act(() => root.render(<UnsavedChangesProvider><DirtyHeader onTab={onTab} /></UnsavedChangesProvider>));
-    act(() => Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Administration').click());
-    expect(onTab).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain('Unsaved Prelims setup');
-    act(() => Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Leave without saving').click());
-    expect(onTab).toHaveBeenCalledWith('administration');
+    act(() => root.render(<UnsavedChangesProvider><DirtyHeader /></UnsavedChangesProvider>));
+    const selector = container.querySelector('[aria-label="Switch active company"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(selector, 'willow');
+      selector.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(principal.switchTenant).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('Unsaved setup');
+    act(() => Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Leave without saving').click());
+    expect(principal.switchTenant).toHaveBeenCalledWith('willow');
   });
 });

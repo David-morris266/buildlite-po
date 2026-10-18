@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 132" role="img" aria-labelledby="title desc">
+  <title id="title">BuildLite skyline logo</title>
+  <desc id="desc">Three ascending emerald building forms beside the BuildLite wordmark and Lean Commercial Control tagline.</desc>
+  <defs>
+    <linearGradient id="skyline-green" x1="18" y1="112" x2="116" y2="18" gradientUnits="userSpaceOnUse"><stop stop-color="#00a86b"/><stop offset=".52" stop-color="#00e676"/><stop offset="1" stop-color="#63f0bd"/></linearGradient>
+    <linearGradient id="skyline-depth" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#2dd99d" stop-opacity=".7"/><stop offset="1" stop-color="#087a58" stop-opacity=".24"/></linearGradient>
+    <filter id="soft-glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="4"/></filter>
+  </defs>
+  <g fill="none" stroke="url(#skyline-green)" stroke-linecap="square" stroke-linejoin="miter"><path d="M18 112V69L43 55v57" stroke-width="5"/><path d="M43 112V43L71 26v86" stroke-width="6"/><path d="M71 112V16l24 16v80" stroke-width="6"/><path d="M95 112V55l22 14v43" stroke-width="5"/></g>
+  <path d="M22 108V72l17-10v46zm26 0V48l18-11v71zm28 0V27l14 9v72zm24 0V65l13 8v35z" fill="url(#skyline-depth)" opacity=".28"/>
+  <path d="M18 115h99" stroke="#00e676" stroke-width="3" opacity=".62"/><path d="M44 48 71 31 94 46" fill="none" stroke="#66ffc0" stroke-width="3" opacity=".28" filter="url(#soft-glow)"/>
+  <g font-family="Inter, Segoe UI, Arial, sans-serif"><text x="143" y="79" font-size="51" font-weight="750" letter-spacing="-2.2" fill="#f4f8f6" stroke="#10201c" stroke-width="1.6" paint-order="stroke">Build<tspan fill="#00d985" stroke="#063c2b">Lite</tspan></text><text x="146" y="105" font-size="15" font-weight="600" letter-spacing="1.35" fill="#9eb5ad" stroke="#10201c" stroke-width=".7" paint-order="stroke">LEAN COMMERCIAL CONTROL</text></g>
+</svg>

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">BuildLite skyline symbol</title><desc id="desc">Three ascending emerald buildings suggesting financial growth.</desc>
+  <defs><linearGradient id="symbol-green" x1="18" y1="109" x2="104" y2="20" gradientUnits="userSpaceOnUse"><stop stop-color="#00a86b"/><stop offset=".55" stop-color="#00e676"/><stop offset="1" stop-color="#6ef2c3"/></linearGradient><linearGradient id="symbol-depth" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#45e8ad" stop-opacity=".58"/><stop offset="1" stop-color="#087a58" stop-opacity=".12"/></linearGradient></defs>
+  <path d="M18 108V67L41 54v54M41 108V43l25-15v80M66 108V17l23 15v76M89 108V54l21 14v40" fill="none" stroke="url(#symbol-green)" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M23 104V70l13-7v41zm24 0V47l13-8v65zm25 0V29l11 7v68zm23 0V65l9 6v33z" fill="url(#symbol-depth)" opacity=".34"/><path d="M17 113h94" stroke="#00e676" stroke-width="4" opacity=".7"/>
+</svg>
