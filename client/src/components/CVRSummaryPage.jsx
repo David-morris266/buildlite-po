@@ -65,12 +65,12 @@ export function SummaryKpiRibbon({ items }) {
         {coreItems.map((item) => (
           <div
             key={item.key}
-            className={`cvr-summary__kpi cvr-summary__kpi--hero cvr-summary__kpi--${item.modifier}`}
+            className={`cvr-summary__kpi cvr-summary__kpi--hero cvr-summary__kpi--${item.modifier} cvr-summary__kpi--${item.key}`}
           >
             <span className="cvr-summary__kpi-label">{item.label}</span>
             <strong className="cvr-summary__kpi-value">{item.value}</strong>
             {item.movement ? (
-              <span className="cvr-summary__kpi-movement">{item.movement}</span>
+              <span className={`cvr-summary__kpi-movement${item.movementModifier ? ` cvr-summary__kpi-movement--${item.movementModifier}` : ''}`}>{item.movement}</span>
             ) : null}
             {item.hint ? (
               <span className="cvr-summary__kpi-hint">{item.hint}</span>
@@ -86,12 +86,12 @@ export function SummaryKpiRibbon({ items }) {
           {revenueItems.map((item) => (
             <div
               key={item.key}
-              className={`cvr-summary__kpi cvr-summary__kpi--future cvr-summary__kpi--${item.modifier}`}
+              className={`cvr-summary__kpi cvr-summary__kpi--future cvr-summary__kpi--${item.modifier} cvr-summary__kpi--${item.key}`}
             >
               <span className="cvr-summary__kpi-label">{item.label}</span>
               <strong className="cvr-summary__kpi-value">{item.value}</strong>
               {item.movement ? (
-                <span className="cvr-summary__kpi-movement">{item.movement}</span>
+                <span className={`cvr-summary__kpi-movement${item.movementModifier ? ` cvr-summary__kpi-movement--${item.movementModifier}` : ''}`}>{item.movement}</span>
               ) : null}
               {item.hint ? (
                 <span className="cvr-summary__kpi-hint">{item.hint}</span>

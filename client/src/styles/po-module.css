@@ -5755,7 +5755,7 @@
 }
 
 /* CVR Portfolio / Summary premium presentation. Scoped to avoid Worksheet changes. */
-.dev-cvr-portfolio .dev-cvr__cards.dev-cvr-portfolio__kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 9px; }
+.dev-cvr-portfolio .dev-cvr__cards.dev-cvr-portfolio__kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; width: 100%; }
 .dev-cvr-portfolio__kpis .dev-cvr__card {
   position: relative;
   min-height: 96px;
@@ -5806,6 +5806,9 @@
 .cvr-summary .cvr-summary__kpi-label,
 .cvr-summary .cvr-summary__kpi--hero .cvr-summary__kpi-label { color: #aab9b3; font-size: 0.7rem; letter-spacing: 0; text-transform: none; }
 .cvr-summary__kpi-value { color: var(--bl-text-strong, #f4faf7); font-variant-numeric: tabular-nums; }
+.cvr-summary .cvr-summary__kpi--forecastCost .cvr-summary__kpi-value { color: var(--bl-text-strong, #f4faf7); }
+.cvr-summary .cvr-summary__kpi-movement--adverse { color: var(--bl-negative, #fca5a5); }
+.cvr-summary .cvr-summary__kpi-movement--favourable { color: var(--bl-positive, #86efac); }
 .cvr-summary__exception-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 10px; padding: 9px 12px; border: 1px solid rgba(246, 196, 83, 0.25); border-radius: 10px; background: rgba(246, 196, 83, 0.055); }
 .cvr-summary__exception-banner > div { display: flex; align-items: center; gap: 9px; }
 .cvr-summary__exception-banner-icon { display: grid; width: 29px; height: 29px; flex: 0 0 29px; place-items: center; border-radius: 8px; background: rgba(246, 196, 83, 0.14); color: var(--bl-warning, #f6c453); font-weight: 900; }
@@ -5813,12 +5816,12 @@
 .cvr-summary__exception-banner strong { color: #f4ead0; font-size: 0.78rem; }
 .cvr-summary__exception-banner small { color: var(--muted); font-size: 0.68rem; }
 
-@media (max-width: 1280px) {
-  .dev-cvr-portfolio .dev-cvr__cards.dev-cvr-portfolio__kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1100px) {
+  .dev-cvr-portfolio .dev-cvr__cards.dev-cvr-portfolio__kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-@media (max-width: 760px) {
-  .dev-cvr-portfolio .dev-cvr__cards.dev-cvr-portfolio__kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 560px) {
+  .dev-cvr-portfolio .dev-cvr__cards.dev-cvr-portfolio__kpis { grid-template-columns: minmax(0, 1fr); }
   .cvr-summary__exception-banner { align-items: flex-start; flex-direction: column; }
 }
 

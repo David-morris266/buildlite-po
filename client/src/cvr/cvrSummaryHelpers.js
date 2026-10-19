@@ -313,6 +313,13 @@ function buildExecutiveKpis(summary, previousSummary, commercial, previousCommer
       label: 'Forecast Cost',
       value: formatCvrMoney(forecastCost),
       movement: formatPeriodMovement(forecastCost, previousSummary?.finalForecast),
+      movementModifier: previousSummary?.finalForecast == null
+        ? 'neutral'
+        : forecastCost > previousSummary.finalForecast
+          ? 'adverse'
+          : forecastCost < previousSummary.finalForecast
+            ? 'favourable'
+            : 'neutral',
       modifier: 'primary',
       emphasis: 'hero',
     },

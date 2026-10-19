@@ -11,7 +11,7 @@ import { CommercialCostSummaryTable, CvrMovementReport, RevenueMovementTable, Su
 
 const ITEMS = [
   { key: 'forecastRevenue', label: 'Forecast Revenue', value: '£1,000,000.00', modifier: 'primary', emphasis: 'hero' },
-  { key: 'forecastCost', label: 'Forecast Cost', value: '£700,000.00', modifier: 'primary', emphasis: 'hero' },
+  { key: 'forecastCost', label: 'Forecast Cost', value: '£700,000.00', movement: '+£25,000.00', movementModifier: 'adverse', modifier: 'overspend', emphasis: 'hero' },
   { key: 'forecastProfit', label: 'Gross Profit', value: '£300,000.00', modifier: 'saving', emphasis: 'hero' },
   { key: 'forecastMargin', label: 'Gross Margin', value: '30.0%', modifier: 'saving', emphasis: 'hero' },
   { key: 'costToComplete', label: 'Cost To Complete', value: '£250,000.00', modifier: 'ctc', emphasis: 'hero' },
@@ -67,6 +67,25 @@ describe('CVR Summary KPI ribbon', () => {
       ITEMS.slice(0, 6).map((item) => item.value)
     );
     expect(container.querySelector('.cvr-summary__kpi-zone')).not.toBeNull();
+  });
+
+  it('keeps Current EFC neutral while retaining semantic movement colour', () => {
+    render();
+    const forecastCost = container.querySelector('.cvr-summary__kpi--forecastCost');
+    expect(forecastCost).not.toBeNull();
+    expect(forecastCost.querySelector('.cvr-summary__kpi-value').textContent).toBe('£700,000.00');
+    expect(forecastCost.querySelector('.cvr-summary__kpi-movement--adverse').textContent).toBe('+£25,000.00');
+    const styles = readFileSync(join(cwd(), 'src/styles/po-module.css'), 'utf8');
+    expect(styles).toContain('.cvr-summary .cvr-summary__kpi--forecastCost .cvr-summary__kpi-value');
+    expect(styles).toContain('.cvr-summary .cvr-summary__kpi-movement--adverse');
+    expect(styles).toContain('.cvr-summary .cvr-summary__kpi-movement--favourable');
+  });
+
+  it('uses four equal Portfolio columns before responsive two- and one-column layouts', () => {
+    const styles = readFileSync(join(cwd(), 'src/styles/po-module.css'), 'utf8');
+    expect(styles).toMatch(/\.dev-cvr-portfolio \.dev-cvr__cards\.dev-cvr-portfolio__kpis\s*{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/);
+    expect(styles).toMatch(/@media \(max-width: 1100px\)[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
+    expect(styles).toMatch(/@media \(max-width: 560px\)[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\)/);
   });
 
   it('keeps premium KPI rules scoped away from the CVR Worksheet', () => {

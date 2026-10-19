@@ -619,6 +619,7 @@ describe('buildCvrSummaryModel', () => {
     const model = buildCvrSummaryModel(development, { pos: [], periodKey: 'P02' });
     const forecastKpi = model.kpis.find((item) => item.key === 'forecastCost');
     expect(forecastKpi?.movement).toBe('+£50,000.00 vs previous period');
+    expect(forecastKpi?.movementModifier).toBe('adverse');
     expect(model.kpis.find((item) => item.key === 'forecastRevenue')?.value).toBe('£1,500,000.00');
     expect(model.kpis.find((item) => item.key === 'forecastRevenue')?.movement).toBeNull();
     expect(model.kpis.find((item) => item.key === 'forecastProfit')?.movement).toBeNull();
