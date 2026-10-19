@@ -8,6 +8,7 @@ const summaryState = vi.hoisted(() => ({ current: null }));
 const saveCommentary = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 const submitPeriod = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 const approvePeriod = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
+const rejectPeriod = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 
 vi.mock('../api', () => ({ listPOs: vi.fn(async () => []) }));
 vi.mock('../commercial/commercialEvents', () => ({ subscribeCommercialChanged: () => () => {} }));
@@ -17,6 +18,7 @@ vi.mock('../cvr/cvrPeriodStore', async (importOriginal) => ({
   saveCvrPeriodCommentary: saveCommentary,
   submitCvrPeriod: submitPeriod,
   approveCvrPeriod: approvePeriod,
+  rejectCvrPeriod: rejectPeriod,
 }));
 vi.mock('../cvr/cvrPeriodAuthority', () => ({ isCvrServerAuthorityEnabled: () => false }));
 vi.mock('../ledger/ledgerAuthority', () => ({ isLedgerServerAuthorityEnabled: () => false }));
@@ -74,6 +76,7 @@ describe('CVR Summary Cost Code interaction', () => {
     saveCommentary.mockClear();
     submitPeriod.mockReset(); submitPeriod.mockResolvedValue({ ok: true });
     approvePeriod.mockReset(); approvePeriod.mockResolvedValue({ ok: true });
+    rejectPeriod.mockReset(); rejectPeriod.mockResolvedValue({ ok: true });
     summaryState.current = model();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -235,6 +238,9 @@ describe('CVR Summary Cost Code interaction', () => {
       grossProfit: '£1,442,000.00', grossMargin: '31.9%', netMovement: '+£77,200.00',
     } };
     await render({ activeSubview: 'summary' });
+    const rejectAction = [...container.querySelectorAll('button')].find(button => button.textContent === 'Reject');
+    expect(rejectAction.classList.contains('po-btn-danger')).toBe(true);
+    expect(rejectAction.classList.contains('po-btn-primary')).toBe(false);
     act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Approve & Lock').click());
     let dialog = container.querySelector('[role="dialog"][aria-labelledby="cvr-approve-lock-title"]');
     expect(dialog.textContent).toContain('Approve and lock P04 — September 2026?');
@@ -246,6 +252,96 @@ describe('CVR Summary Cost Code interaction', () => {
     dialog = container.querySelector('[role="dialog"][aria-labelledby="cvr-approve-lock-title"]');
     await act(async () => { [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Approve & Lock').click(); await Promise.resolve(); });
     expect(approvePeriod).toHaveBeenCalledTimes(1);
+  });
+
+  it('links the concise exceptions banner to the existing exceptions subview', async () => {
+    const onSelectSubview = vi.fn();
+    summaryState.current = model();
+    summaryState.current.commercialExceptions = [
+      { id: 'exception-1', label: 'Unresolved exposure', count: 1 },
+      { id: 'exception-2', label: 'Forecast variance', count: 1 },
+    ];
+
+    await render({ activeSubview: 'summary', onSelectSubview });
+
+    expect(container.querySelector('.cvr-summary__exception-banner')?.textContent).toContain('2 commercial exceptions require review');
+    act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Review exceptions').click());
+    expect(onSelectSubview).toHaveBeenCalledWith('exceptions');
+  });
+
+  it('hides the exceptions banner for zero, unavailable and historic evidence', async () => {
+    summaryState.current = model();
+    summaryState.current.commercialExceptions = [{ id: 'zero', count: 0 }];
+    await render({ activeSubview: 'summary' });
+    expect(container.querySelector('.cvr-summary__exception-banner')).toBeNull();
+
+    summaryState.current = model();
+    summaryState.current.commercialExceptions = [{ id: 'unavailable', count: 3, unavailable: true }];
+    await render({ activeSubview: 'summary', refreshToken: 2 });
+    expect(container.querySelector('.cvr-summary__exception-banner')).toBeNull();
+
+    summaryState.current = model();
+    summaryState.current.historicUnavailable = true;
+    summaryState.current.commercialExceptions = [{ id: 'historic', count: 2 }];
+    await render({ activeSubview: 'summary', refreshToken: 3 });
+    expect(container.querySelector('.cvr-summary__exception-banner')).toBeNull();
+  });
+
+  it('keeps Draft submit primary and Submitted reject danger actions distinct', async () => {
+    summaryState.current = model();
+    summaryState.current.workflow = { showSubmit: true };
+    await render({ activeSubview: 'summary' });
+    const submit = [...container.querySelectorAll('button')].find(button => button.textContent === 'Submit for Approval');
+    expect(submit.className).toBe('po-btn-primary');
+
+    summaryState.current = model();
+    summaryState.current.period = { status: 'submitted' };
+    summaryState.current.workflow = { showApprove: true, showReject: true };
+    await render({ activeSubview: 'summary', refreshToken: 2 });
+    const reject = [...container.querySelectorAll('button')].find(button => button.textContent === 'Reject');
+    expect(reject.className).toBe('po-btn-danger');
+    expect(container.textContent).not.toContain('Submit for Approval');
+  });
+
+  it('does not expose lifecycle mutations for Locked or historic-unavailable summaries', async () => {
+    summaryState.current = model();
+    summaryState.current.period = { status: 'locked' };
+    summaryState.current.readOnly = true;
+    summaryState.current.workflow = {};
+    await render({ activeSubview: 'summary' });
+    expect(container.textContent).not.toContain('Submit for Approval');
+    expect(container.textContent).not.toContain('Approve & Lock');
+    expect([...container.querySelectorAll('button')].some(button => button.textContent === 'Reject')).toBe(false);
+
+    summaryState.current = model();
+    summaryState.current.historic = true;
+    summaryState.current.historicUnavailable = true;
+    summaryState.current.readOnly = true;
+    summaryState.current.workflow = {};
+    await render({ activeSubview: 'summary', refreshToken: 2 });
+    expect(container.textContent).not.toContain('Submit for Approval');
+    expect(container.textContent).not.toContain('Approve & Lock');
+    expect([...container.querySelectorAll('button')].some(button => button.textContent === 'Reject')).toBe(false);
+  });
+
+  it('uses danger styling in Reject confirmation and preserves rejection behaviour', async () => {
+    summaryState.current = model();
+    summaryState.current.period = { status: 'submitted' };
+    summaryState.current.workflow = { showReject: true };
+    await render({ activeSubview: 'summary' });
+    act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Reject').click());
+    const dialog = container.querySelector('[role="dialog"]');
+    const confirm = [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Reject to Draft');
+    expect(confirm.className).toBe('po-btn-danger');
+    expect(confirm.disabled).toBe(true);
+    const textarea = dialog.querySelector('textarea');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(textarea, 'Forecast evidence needs correction.');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(confirm.disabled).toBe(false);
+    await act(async () => { confirm.click(); await Promise.resolve(); });
+    expect(rejectPeriod).toHaveBeenCalledWith('hawthorn', 'P04', 'Forecast evidence needs correction.');
   });
 
   it('governs Site Start approval with reference and reason', async () => {

@@ -275,7 +275,7 @@ function RejectDialog({ open, onCancel, onConfirm }) {
           </button>
           <button
             type="button"
-            className="po-btn-primary"
+            className="po-btn-danger"
             onClick={() => onConfirm(comment)}
             disabled={!String(comment || '').trim()}
           >
@@ -641,7 +641,7 @@ export default function CVRSummaryPage({
         actions={(
           <>
             {summary.workflow.showSubmit ? (
-              <button type="button" className="po-list-btn-secondary pilot-lifecycle-action" onClick={() => siteStart ? setSubmitOpen(true) : handleSubmit()}>
+              <button type="button" className="po-btn-primary" onClick={() => siteStart ? setSubmitOpen(true) : handleSubmit()}>
                 Submit for Approval
               </button>
             ) : null}
@@ -653,7 +653,7 @@ export default function CVRSummaryPage({
             {summary.workflow.showReject ? (
               <button
                 type="button"
-                className="po-list-btn-secondary pilot-lifecycle-action"
+                className="po-btn-danger"
                 onClick={() => setRejectOpen(true)}
               >
                 Reject
@@ -744,6 +744,16 @@ export default function CVRSummaryPage({
       ) : null}
 
       {!summary.historicUnavailable && activeSubview === 'summary' ? <MemoSummaryKpiRibbon items={summary.kpis} /> : null}
+
+      {!summary.historicUnavailable && activeSubview === 'summary' && exceptionCount > 0 ? (
+        <section className="cvr-summary__exception-banner" aria-label="Commercial exceptions requiring review">
+          <div>
+            <span className="cvr-summary__exception-banner-icon" aria-hidden="true">!</span>
+            <p><strong>{exceptionCount} commercial {exceptionCount === 1 ? 'exception' : 'exceptions'} require review</strong><small>Review the existing governed exception evidence before completing this CVR.</small></p>
+          </div>
+          <button type="button" className="po-list-btn-secondary" onClick={() => onSelectSubview?.('exceptions')}>Review exceptions</button>
+        </section>
+      ) : null}
 
       {!summary.historicUnavailable ? (
       <div className="cvr-summary__grid">

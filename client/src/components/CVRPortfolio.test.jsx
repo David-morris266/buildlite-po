@@ -3,6 +3,9 @@
  */
 import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { cwd } from 'node:process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ensureDevelopmentsReady = vi.hoisted(() => vi.fn());
@@ -172,6 +175,37 @@ describe('CVRPortfolio development loading guard', () => {
     });
 
     expect(document.body.textContent).toContain('Test Site 1');
+  });
+
+  it('uses danger styling for Reject and preserves authoritative labels', async () => {
+    ensureDevelopmentsReady.mockResolvedValue([]);
+    buildCvrPortfolioModel.mockReturnValue({
+      ...samplePortfolio,
+      summaryCards: [{ label: 'Portfolio Forecast', value: 'GBP 100,000', modifier: 'default' }],
+      awaitingApproval: [{
+        developmentId: 'dev-1', developmentName: 'Test Site 1', developmentNumber: 'TS1',
+        periodKey: 'P01', forecastLabel: 'GBP 100,000', varianceLabel: 'adverse 5,000',
+        varianceState: 'overspend', submittedLabel: '19 Oct 2026',
+      }],
+    });
+
+    renderPortfolio();
+    await act(async () => { await Promise.resolve(); });
+
+    const reject = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Reject');
+    expect(reject.classList.contains('po-btn-danger')).toBe(true);
+    expect(reject.classList.contains('po-btn-primary')).toBe(false);
+    expect(container.textContent).toContain('GBP 100,000');
+    expect(container.textContent).toContain('adverse 5,000');
+    expect(container.textContent).not.toContain('Authoritative CVR evidence');
+    expect(container.querySelector('.dev-cvr__variance--overspend')).not.toBeNull();
+  });
+
+  it('derives Portfolio and row variance tones through the established variance helper', () => {
+    const source = readFileSync(join(cwd(), 'src/cvr/cvrPeriodHelpers.js'), 'utf8');
+    expect(source).toContain("import { getVarianceState } from './cvrCalculations';");
+    expect(source).toContain("getVarianceState(model.summary.variance)");
+    expect(source).toContain("getVarianceState(portfolioVariance)");
   });
 
   it('does not update state after unmount when readiness resolves late', async () => {

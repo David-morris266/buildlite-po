@@ -5754,6 +5754,79 @@
   gap: 8px;
 }
 
+/* CVR Portfolio / Summary premium presentation. Scoped to avoid Worksheet changes. */
+.dev-cvr-portfolio .dev-cvr__cards.dev-cvr-portfolio__kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 9px; }
+.dev-cvr-portfolio__kpis .dev-cvr__card {
+  position: relative;
+  min-height: 96px;
+  padding: 12px 14px 11px;
+  border-color: rgba(148, 163, 184, 0.16);
+  border-radius: 11px;
+  background: linear-gradient(145deg, #131f1d, #0b1113);
+  overflow: hidden;
+}
+.dev-cvr-portfolio__kpis .dev-cvr__card::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--bl-brand, #00e676);
+  content: '';
+}
+.dev-cvr-portfolio__kpis .dev-cvr__card--pending::before { background: var(--bl-warning, #f6c453); }
+.dev-cvr-portfolio__kpis .dev-cvr__card--overspend::before { background: var(--bl-negative, #fca5a5); }
+.dev-cvr-portfolio__kpis .dev-cvr__card--saving::before { background: var(--bl-positive, #86efac); }
+.dev-cvr-portfolio__kpis .dev-cvr__card-label { color: #aab9b3; font-size: 0.7rem; letter-spacing: 0; text-transform: none; }
+.dev-cvr-portfolio__kpis .dev-cvr__card-value { align-self: center; color: var(--bl-text-strong, #f4faf7); font-size: clamp(1.15rem, 1.7vw, 1.6rem); font-variant-numeric: tabular-nums; }
+.dev-cvr-portfolio__section { border-color: rgba(148, 163, 184, 0.16); border-radius: 12px; background: rgba(10, 16, 18, 0.9); overflow: hidden; }
+.dev-cvr-portfolio__section--approval { border-color: rgba(246, 196, 83, 0.25); box-shadow: inset 3px 0 rgba(246, 196, 83, 0.78); }
+.dev-cvr-portfolio__numeric { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dev-cvr-portfolio__reject { background: rgba(252, 165, 165, 0.04); }
+.dev-cvr-portfolio .po-btn-danger:focus-visible,
+.cvr-summary .po-btn-danger:focus-visible { border-color: var(--danger); outline: 2px solid rgba(255, 92, 119, 0.55); outline-offset: 2px; background: rgba(255, 92, 119, 0.2); }
+
+.cvr-summary .cvr-summary__kpi-zone { gap: 10px; margin-bottom: 10px; border: 0; background: transparent; }
+.cvr-summary .cvr-summary__kpi-group--revenue { border: 0; background: transparent; }
+.cvr-summary .cvr-summary__kpi-grid { gap: 9px; }
+.cvr-summary .cvr-summary__kpi {
+  position: relative;
+  min-height: 84px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 10px;
+  background: linear-gradient(145deg, #131f1d, #0b1113);
+  overflow: hidden;
+}
+.cvr-summary__kpi::before { position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--bl-brand, #00e676); content: ''; }
+.cvr-summary__kpi--saving::before { background: var(--bl-positive, #86efac); }
+.cvr-summary__kpi--overspend::before { background: var(--bl-negative, #fca5a5); }
+.cvr-summary__kpi--pending::before { background: var(--bl-warning, #f6c453); }
+.cvr-summary .cvr-summary__kpi--hero,
+.cvr-summary .cvr-summary__kpi--future { padding: 10px 12px; }
+.cvr-summary .cvr-summary__kpi:last-child { border: 1px solid rgba(148, 163, 184, 0.16); }
+.cvr-summary .cvr-summary__kpi-label,
+.cvr-summary .cvr-summary__kpi--hero .cvr-summary__kpi-label { color: #aab9b3; font-size: 0.7rem; letter-spacing: 0; text-transform: none; }
+.cvr-summary__kpi-value { color: var(--bl-text-strong, #f4faf7); font-variant-numeric: tabular-nums; }
+.cvr-summary__exception-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 10px; padding: 9px 12px; border: 1px solid rgba(246, 196, 83, 0.25); border-radius: 10px; background: rgba(246, 196, 83, 0.055); }
+.cvr-summary__exception-banner > div { display: flex; align-items: center; gap: 9px; }
+.cvr-summary__exception-banner-icon { display: grid; width: 29px; height: 29px; flex: 0 0 29px; place-items: center; border-radius: 8px; background: rgba(246, 196, 83, 0.14); color: var(--bl-warning, #f6c453); font-weight: 900; }
+.cvr-summary__exception-banner p { display: grid; gap: 2px; margin: 0; }
+.cvr-summary__exception-banner strong { color: #f4ead0; font-size: 0.78rem; }
+.cvr-summary__exception-banner small { color: var(--muted); font-size: 0.68rem; }
+
+@media (max-width: 1280px) {
+  .dev-cvr-portfolio .dev-cvr__cards.dev-cvr-portfolio__kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .dev-cvr-portfolio .dev-cvr__cards.dev-cvr-portfolio__kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cvr-summary__exception-banner { align-items: flex-start; flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dev-cvr-portfolio__kpis .dev-cvr__card,
+  .cvr-summary__kpi { transition: none; }
+}
+
 .dev-cvr__card--draft .dev-cvr__card-value {
   color: var(--muted);
 }

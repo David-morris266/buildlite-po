@@ -7,6 +7,7 @@ import { listDevelopments } from '../developments/developmentStore';
 import { isCvrServerAuthorityEnabled } from './cvrPeriodAuthority';
 import { getCvrPeriodReadiness } from './cvrPeriodServerCache';
 import { buildCvrModel } from './cvrEngine';
+import { getVarianceState } from './cvrCalculations';
 import { formatCvrMoney } from './cvrHelpers';
 import {
   CVR_HISTORIC_UNAVAILABLE_SHORT,
@@ -189,6 +190,8 @@ export function buildCvrPortfolioDevelopmentRow(development, pos = []) {
       !model || forecastUnavailable ? '—' : formatCvrMoney(model.summary.finalForecast),
     varianceLabel:
       !model || forecastUnavailable ? '—' : formatCvrMoney(model.summary.variance),
+    varianceState:
+      !model || forecastUnavailable ? 'neutral' : getVarianceState(model.summary.variance),
     historic: isCvrHistoricSnapshotPeriod(currentPeriod),
     historicUnavailable,
     historicNote: historicUnavailable ? CVR_HISTORIC_UNAVAILABLE_SHORT : null,
@@ -238,6 +241,7 @@ export function buildCvrPortfolioModel(pos = []) {
           periodKey: period.periodKey,
           forecastLabel: model.unavailable ? '—' : formatCvrMoney(model.summary.finalForecast),
           varianceLabel: model.unavailable ? '—' : formatCvrMoney(model.summary.variance),
+          varianceState: model.unavailable ? 'neutral' : getVarianceState(model.summary.variance),
           submittedLabel: formatPoDate(period.submittedAt),
         });
       }
@@ -299,7 +303,7 @@ export function buildCvrPortfolioModel(pos = []) {
       {
         label: 'Portfolio Variance',
         value: hasVariance ? formatCvrMoney(portfolioVariance) : '—',
-        modifier: 'default',
+        modifier: hasVariance ? getVarianceState(portfolioVariance) : 'default',
       },
     ],
   };

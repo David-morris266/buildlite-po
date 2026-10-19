@@ -60,6 +60,23 @@ describe('CVR Summary KPI ribbon', () => {
     const core = container.querySelector('.cvr-summary__kpi-grid--core');
     expect(core.textContent).toContain('Revenue unavailable');
   });
+
+  it('preserves every authoritative KPI value in the compact presentation', () => {
+    render();
+    expect([...container.querySelectorAll('.cvr-summary__kpi-value')].map((node) => node.textContent)).toEqual(
+      ITEMS.slice(0, 6).map((item) => item.value)
+    );
+    expect(container.querySelector('.cvr-summary__kpi-zone')).not.toBeNull();
+  });
+
+  it('keeps premium KPI rules scoped away from the CVR Worksheet', () => {
+    const styles = readFileSync(join(cwd(), 'src/styles/po-module.css'), 'utf8');
+    expect(styles).toContain('.cvr-summary .cvr-summary__kpi-zone');
+    expect(styles).toContain('.cvr-summary .cvr-summary__kpi');
+    expect(styles).toContain('.dev-cvr-portfolio .dev-cvr__cards.dev-cvr-portfolio__kpis');
+    expect(styles).toContain('.cvr-summary .po-btn-danger:focus-visible');
+    expect(styles).not.toMatch(/\.dev-cvr-worksheet[^,{]*\.cvr-summary__kpi/);
+  });
 });
 
 describe('Commercial Cost Summary authority presentation', () => {

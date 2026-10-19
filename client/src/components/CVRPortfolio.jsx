@@ -27,15 +27,15 @@ function StatusBadge({ status }) {
 
 function PortfolioSummary({ cards }) {
   return (
-    <section className="dev-cvr__cards dev-cvr-portfolio__cards" aria-label="CVR portfolio summary">
+    <section className="dev-cvr__cards dev-cvr-portfolio__cards dev-cvr-portfolio__kpis" aria-label="CVR portfolio summary">
       {cards.map((card) => (
-        <div
+        <article
           key={card.label}
           className={`dev-cvr__card dev-cvr__card--${card.modifier || 'default'}`}
         >
           <span className="dev-cvr__card-label">{card.label}</span>
           <strong className="dev-cvr__card-value">{card.value}</strong>
-        </div>
+        </article>
       ))}
     </section>
   );
@@ -73,7 +73,7 @@ function RejectDialog({ open, onCancel, onConfirm }) {
           </button>
           <button
             type="button"
-            className="po-btn-primary"
+            className="po-btn-danger"
             onClick={() => onConfirm(comment)}
             disabled={!String(comment || '').trim()}
           >
@@ -248,7 +248,7 @@ export default function CVRPortfolio({
 
       <PortfolioSummary cards={portfolio.summaryCards} />
 
-      <section className="po-module-card dev-cvr-portfolio__section">
+      <section className="po-module-card dev-cvr-portfolio__section dev-cvr-portfolio__section--approval">
         <SectionHeading
           title="Awaiting Approval"
           support="Submitted CVR periods"
@@ -260,8 +260,8 @@ export default function CVRPortfolio({
               <tr>
                 <th>Development</th>
                 <th>Period</th>
-                <th style={{ textAlign: 'right' }}>Forecast</th>
-                <th style={{ textAlign: 'right' }}>Variance</th>
+                <th className="dev-cvr-portfolio__numeric">Forecast</th>
+                <th className="dev-cvr-portfolio__numeric">Variance</th>
                 <th>Submitted</th>
                 <th />
               </tr>
@@ -277,8 +277,8 @@ export default function CVRPortfolio({
                       </div>
                     </td>
                     <td>{item.periodKey}</td>
-                    <td style={{ textAlign: 'right' }}>{item.forecastLabel}</td>
-                    <td style={{ textAlign: 'right' }}>{item.varianceLabel}</td>
+                    <td className="dev-cvr-portfolio__numeric">{item.forecastLabel}</td>
+                    <td className={`dev-cvr-portfolio__numeric dev-cvr__variance dev-cvr__variance--${item.varianceState || 'neutral'}`}>{item.varianceLabel}</td>
                     <td>{item.submittedLabel}</td>
                     <td>
                       <div className="dev-cvr-portfolio__actions">
@@ -300,7 +300,7 @@ export default function CVRPortfolio({
                         </button>
                         <button
                           type="button"
-                          className="po-list-btn-secondary"
+                          className="po-btn-danger dev-cvr-portfolio__reject"
                           onClick={() => setRejectTarget(item)}
                         >
                           Reject
@@ -334,8 +334,8 @@ export default function CVRPortfolio({
                 <th>Development</th>
                 <th>Current Period</th>
                 <th>Status</th>
-                <th style={{ textAlign: 'right' }}>Forecast</th>
-                <th style={{ textAlign: 'right' }}>Variance</th>
+                <th className="dev-cvr-portfolio__numeric">Forecast</th>
+                <th className="dev-cvr-portfolio__numeric">Variance</th>
                 <th />
               </tr>
             </thead>
@@ -356,10 +356,10 @@ export default function CVRPortfolio({
                         <div className="dev-cvr-portfolio__sub">{row.historicNote}</div>
                       ) : null}
                     </td>
-                    <td style={{ textAlign: 'right' }}>
+                    <td className="dev-cvr-portfolio__numeric">
                       {row.loadState === 'error' ? 'Unable to load CVR data' : row.forecastLabel}
                     </td>
-                    <td style={{ textAlign: 'right' }}>
+                    <td className={`dev-cvr-portfolio__numeric dev-cvr__variance dev-cvr__variance--${row.varianceState || 'neutral'}`}>
                       {row.loadState === 'error' ? '—' : row.varianceLabel}
                     </td>
                     <td>
