@@ -235,7 +235,7 @@ export default function SupplierSelect({
       ) : null}
 
       {showModal && (
-        <div className="modal-backdrop" onMouseDown={closeModal}>
+        <div className="modal-backdrop">
           <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <h3>{editingSupplier ? 'Edit Supplier' : 'New Supplier'}</h3>
             {!editingSupplier && createdFromPo ? (
@@ -243,7 +243,7 @@ export default function SupplierSelect({
                 New suppliers are saved as Pending Approval. You can continue this Purchase Order as a draft.
               </p>
             ) : null}
-            <form className="grid2" onSubmit={saveSupplier}>
+            <form className="grid2 supplier-form" onSubmit={saveSupplier}>
               <label>
                 Name
                 <input

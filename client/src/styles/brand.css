@@ -28,6 +28,42 @@
   /* Typography */
   --font-ui: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+
+  /* BuildLite visual standard — Skyline tokens (values taken from the approved Home dashboard). */
+  --bl-bg: #0b0f11;
+  --bl-surface: rgba(10,16,18,0.88);
+  --bl-surface-solid: #11171a;
+  --bl-surface-raised: linear-gradient(145deg, rgba(19,31,29,0.84), rgba(11,17,19,0.94));
+  --bl-border: rgba(148,163,184,0.16);
+  --bl-border-strong: rgba(148,163,184,0.24);
+  --bl-border-subtle: rgba(148,163,184,0.09);
+  --bl-text: #d8e1e7;
+  --bl-text-strong: #f4faf7;
+  --bl-muted: #96a0a6;
+  --bl-brand: #00e676;
+  --bl-brand-soft: #3fdc9b;
+  --bl-brand-rule: #2bc98b;
+  --bl-positive: #86efac;
+  --bl-negative: #fca5a5;
+  --bl-warning: #f6c453;
+  --bl-info: #9fd0ff;
+  --bl-gold: #d8bb68;
+  --bl-radius-panel: 11px;
+  --bl-radius-control: 8px;
+
+  /* Legacy aliases: tokens referenced by existing CSS but previously undefined. */
+  --radius-md: 12px;
+  --surface: var(--bl-surface-solid);
+  --success: var(--bl-positive);
+  --text-muted: var(--muted);
+  --po-muted: var(--muted);
+  --po-text-muted: var(--muted);
+  --po-border: var(--bl-border-strong);
+  --po-border-subtle: var(--bl-border);
+  --po-primary: var(--bl-brand);
+  --po-panel: var(--panel);
+  --panel-bg: var(--panel-2);
+  --border-color: var(--bl-border-strong);
 }
 
 /* Global app frame */

@@ -4413,7 +4413,7 @@
 
 .po-cert-ce-table__stale-note {
   margin-top: 4px;
-  color: #b45309;
+  color: var(--bl-warning);
   font-size: 0.75rem;
   font-weight: 600;
 }
@@ -9108,17 +9108,17 @@
 
 .po-ce-link-badge--pending {
   background: rgba(245, 158, 11, 0.15);
-  color: #b45309;
+  color: var(--bl-warning);
 }
 
 .po-ce-link-badge--default {
   background: rgba(148, 163, 184, 0.18);
-  color: #475569;
+  color: var(--muted);
 }
 
 .po-ce-link-badge--accent {
   background: rgba(59, 130, 246, 0.15);
-  color: #1d4ed8;
+  color: var(--bl-info);
 }
 
 .po-ce-register__event-cell {
@@ -9951,12 +9951,12 @@
 
 .po-supplier-badge--pending {
   background: rgba(251, 191, 36, 0.18);
-  color: #b45309;
+  color: var(--bl-warning);
 }
 
 .po-supplier-badge--approved {
   background: rgba(34, 197, 94, 0.15);
-  color: #15803d;
+  color: var(--bl-positive);
 }
 
 /* BL-017B / BL-017C — Application navigation & workspace polish */
@@ -10519,7 +10519,7 @@
 .dev-prelims__context dt,
 .dev-prelims__calc dt {
   font-size: 0.8rem;
-  color: #5c6570;
+  color: var(--muted);
 }
 
 .dev-prelims__context dd,
@@ -10538,7 +10538,7 @@
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
   gap: 0.85rem;
   padding: 1rem;
-  border: 1px solid #d9dee5;
+  border: 1px solid var(--bl-border-strong);
   border-radius: 8px;
 }
 
@@ -10549,7 +10549,7 @@
 
 .dev-prelims__form--edit {
   border-color: #c9a227;
-  background: #fffdf4;
+  background: rgba(201, 162, 39, 0.08);
 }
 
 .dev-prelims__form label {
@@ -10596,7 +10596,7 @@
 }
 
 .dev-prelims__group {
-  border: 1px solid #d9dee5;
+  border: 1px solid var(--bl-border-strong);
   border-radius: 8px;
   padding: 1rem;
 }
@@ -10608,7 +10608,7 @@
 .dev-prelims__line {
   margin-top: 0.9rem;
   padding-top: 0.9rem;
-  border-top: 1px solid #edf0f3;
+  border-top: 1px solid var(--bl-border);
 }
 
 .dev-prelims__line-head {
@@ -11091,7 +11091,7 @@
 .dev-prelims-time__duration {
   display: block;
   font-size: 0.72rem;
-  color: #5c6570;
+  color: var(--muted);
 }
 
 .dev-prelims-time__controls {
@@ -11105,7 +11105,7 @@
   display: grid;
   gap: 0.15rem;
   font-size: 0.7rem;
-  color: #5c6570;
+  color: var(--muted);
 }
 
 .dev-prelims-time__offset .input {
@@ -11972,12 +11972,12 @@
 .po-cert-application__form label { display:grid; gap:.35rem; }
 .po-cert-application__source-meta,.po-cert-application__comparison,.po-cert-application__breakdown { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:.75rem; margin:1rem 0; }
 .po-cert-application__source-meta div { padding:.5rem 0; }
-.po-cert-application__source-meta dt { color:#667085; font-size:.8rem; }
+.po-cert-application__source-meta dt { color:var(--muted); font-size:.8rem; }
 .po-cert-application__source-meta dd { margin:.25rem 0 0; font-weight:600; }
-.po-cert-application__comparison div,.po-cert-application__breakdown div { padding:.75rem; background:#f8fafc; border-radius:.5rem; }
-.po-cert-application__comparison dt,.po-cert-application__breakdown dt { color:#667085; font-size:.8rem; }
+.po-cert-application__comparison div,.po-cert-application__breakdown div { padding:.75rem; background:var(--panel-2); border:1px solid var(--bl-border); border-radius:.5rem; }
+.po-cert-application__comparison dt,.po-cert-application__breakdown dt { color:var(--muted); font-size:.8rem; }
 .po-cert-application__comparison dd,.po-cert-application__breakdown dd { margin:.25rem 0 0; font-weight:700; }
-.po-cert-application__variance { color:#9a3412; font-weight:600; }
+.po-cert-application__variance { color:var(--bl-warning); font-weight:600; }
 @media (max-width:640px){.po-cert-application__heading{display:block}.po-cert-application__heading .po-status-badge{display:inline-block;margin-top:.75rem}}
 .admin-terms-family { margin-top: 1.25rem; }
 .admin-terms-version { margin-top: .75rem; padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); box-shadow: 0 10px 30px rgba(0,0,0,.28); }
@@ -11993,7 +11993,7 @@
 .admin-terms-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .8rem; }
 .admin-terms-actions button { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
 .admin-terms-actions button:hover { border-color: var(--accent); color: var(--accent); }
-.admin-terms-message { margin: 1rem 0; padding: .75rem 1rem; border-radius: 8px; background: #ecfdf5; color: #166534; }
+.admin-terms-message { margin: 1rem 0; padding: .75rem 1rem; border-radius: 8px; background: rgba(134, 239, 172, 0.08); border: 1px solid rgba(134, 239, 172, 0.28); color: var(--bl-positive); }
 .admin-terms-payment-rules { display: grid; gap: 1rem; margin: 0; padding: 1rem; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
 .admin-terms-payment-rules legend { padding: 0 .4rem; font-weight: 700; }
 .admin-terms-offsets { display: grid; gap: .65rem; }
@@ -12015,9 +12015,9 @@
 .po-cert-timetable__dates div { padding:.75rem; background:var(--panel-2); border:1px solid var(--line); border-radius:.5rem; }
 .po-cert-timetable__dates dt { color:var(--muted); font-size:.8rem; text-transform:capitalize; }
 .po-cert-timetable__dates dd { margin:.25rem 0 0; color:var(--text); font-weight:700; }
-.po-cert-timetable__unavailable { margin:1rem 0 0; color:#92400e; }
-.po-cert-timetable__feedback--error { color:#b91c1c; }
-.po-cert-timetable__feedback--success { color:#166534; }
+.po-cert-timetable__unavailable { margin:1rem 0 0; color:var(--bl-warning); }
+.po-cert-timetable__feedback--error { color:var(--bl-negative); }
+.po-cert-timetable__feedback--success { color:var(--bl-positive); }
 .po-cert-notices{display:grid;gap:1rem}.po-cert-notices__heading{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start}.po-cert-notices__form{display:flex;flex-wrap:wrap;gap:.75rem;align-items:end}.po-cert-notices__form label{display:grid;gap:.35rem;min-width:12rem;flex:1}.po-cert-notices__facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(10rem,1fr));gap:.75rem}.po-cert-notices__facts div,.po-cert-notices__payless{padding:.75rem;border:1px solid var(--border-color,#394250);border-radius:.5rem;background:var(--panel-bg,#17202b)}.po-cert-notices__facts dt{color:var(--text-muted,#aeb8c5)}.po-cert-notices__facts dd{margin:.25rem 0 0;font-weight:700}
 .buildlite-home {
   width: min(1180px, 100%);
@@ -12617,11 +12617,11 @@
   padding: 0.25rem;
   border: 1px solid var(--po-border, #d7dde5);
   border-radius: 0.65rem;
-  background: #f4f6f8;
+  background: var(--panel-2);
 }
 
 .selling-costs-method-selector [role='tab'][aria-selected='true'] {
-  background: #173f35;
+  background: rgba(0, 230, 118, 0.16);
   color: #fff;
 }
 
@@ -12657,4 +12657,162 @@
   margin-top: 0.2rem;
   font-weight: 400;
   white-space: normal;
+}
+
+/* Wave A — missing shared classes (UX-004). Zero-specificity :where() defaults never override existing dialog rules. */
+:where(.modal-backdrop) {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(1, 7, 5, 0.64);
+}
+
+:where(.modal-backdrop) > :where(.modal) {
+  width: min(640px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--bl-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.45);
+}
+
+:where(.modal-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.btn--primary {
+  background: linear-gradient(180deg, var(--accent), #29d659);
+  color: #071007;
+  border-color: transparent;
+  font-weight: 700;
+}
+
+.btn--secondary {
+  background: transparent;
+  color: var(--text);
+  border-color: #374151;
+  font-weight: 600;
+}
+
+:where(.btn, .po-list-btn-secondary, .po-button):disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: none;
+  box-shadow: none;
+}
+
+.po-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.po-button:hover:not(:disabled) {
+  border-color: rgba(124, 255, 107, 0.35);
+}
+
+.po-button--primary {
+  border-color: transparent;
+  background: linear-gradient(180deg, var(--accent), #29d659);
+  color: #071007;
+  font-weight: 700;
+}
+
+.po-button--primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.po-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.po-status-badge--success {
+  background: rgba(134, 239, 172, 0.1);
+  color: var(--bl-positive);
+  border-color: rgba(134, 239, 172, 0.28);
+}
+
+.po-status-badge--danger {
+  background: rgba(252, 165, 165, 0.1);
+  color: var(--bl-negative);
+  border-color: rgba(252, 165, 165, 0.3);
+}
+
+.po-status-badge--info {
+  background: rgba(159, 208, 255, 0.08);
+  color: var(--bl-info);
+  border-color: rgba(159, 208, 255, 0.25);
+}
+
+.po-status-badge--muted,
+.po-status-badge--neutral {
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--muted);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+/* New/Edit Supplier dialog form (SupplierSelect). Scoped class; `grid2` is left unstyled globally. */
+.supplier-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  margin-top: 12px;
+}
+
+.supplier-form > label {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.supplier-form > label :is(input, select, textarea) {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
+.supplier-form > label textarea {
+  padding: 8px 10px;
+  border: 1px solid #1f2732;
+  border-radius: 8px;
+  background: #0b1016;
+  resize: vertical;
+}
+
+.supplier-form > .modal-actions {
+  margin-top: 4px;
+}
+
+@media (max-width: 560px) {
+  .supplier-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
