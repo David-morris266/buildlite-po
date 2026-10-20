@@ -10,6 +10,8 @@ import {
   rejectCvrPeriod,
 } from '../cvr/cvrPeriodStore';
 import { isCvrServerAuthorityEnabled } from '../cvr/cvrPeriodAuthority';
+import { isRevenueServerAuthorityEnabled } from '../revenue/revenueAuthority';
+import { ensureRevenueSettingsReady } from '../revenue/revenueSettingsServerCache';
 import {
   ensureCvrInputsReadyForPeriod,
   ensureCvrPeriodsReadyForDevelopment,
@@ -35,6 +37,7 @@ function PortfolioSummary({ cards }) {
         >
           <span className="dev-cvr__card-label">{card.label}</span>
           <strong className="dev-cvr__card-value">{card.value}</strong>
+          {card.hint ? <small className="dev-cvr-portfolio__kpi-hint">{card.hint}</small> : null}
         </article>
       ))}
     </section>
@@ -143,6 +146,9 @@ export default function CVRPortfolio({
             const latest = periods[periods.length - 1];
             if (latest?.id) {
               await ensureCvrInputsReadyForPeriod(development.id, latest.id);
+            }
+            if (isRevenueServerAuthorityEnabled()) {
+              await ensureRevenueSettingsReady(development.id);
             }
           } catch {
             // One development failure must not collapse others to zero.

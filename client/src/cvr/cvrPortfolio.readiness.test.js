@@ -18,6 +18,7 @@ vi.mock('./cvrPeriodAuthority', () => ({
 
 vi.mock('../developments/developmentStore', () => ({
   listDevelopments: () => developments.items,
+  getDevelopment: (developmentId) => developments.items.find((item) => item.id === developmentId) || null,
 }));
 
 vi.mock('../api/cvrPeriods', () => import('../test/mockCvrPeriodApi'));
@@ -91,8 +92,12 @@ describe('CVR portfolio unresolved developments (BL-031B)', () => {
     expect(loaded.forecastLabel).not.toBe('£0.00');
     expect(unresolved.unresolved).toBe(true);
     expect(unresolved.forecastLabel).toBe('—');
-    expect(portfolio.summaryCards.find((card) => card.label === 'Portfolio Forecast').value).not.toBe(
+    expect(portfolio.summaryCards.find((card) => card.label === 'Portfolio EFC').value).not.toBe(
       '£0.00'
+    );
+    expect(portfolio.summaryCards.find((card) => card.label === 'Forecast GP Margin').value).toBe('—');
+    expect(portfolio.summaryCards.find((card) => card.label === 'Forecast GP Margin').hint).toMatch(
+      /eligibility could not be established for 1 development/i
     );
   });
 

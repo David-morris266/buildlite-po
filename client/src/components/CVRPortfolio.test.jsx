@@ -110,6 +110,27 @@ describe('CVRPortfolio development loading guard', () => {
     expect(document.body.textContent).toContain('Awaiting Approval');
   });
 
+  it('renders the compact eight-KPI Portfolio contract with evidence guidance', async () => {
+    ensureDevelopmentsReady.mockResolvedValue([]);
+    buildCvrPortfolioModel.mockReturnValue({
+      ...samplePortfolio,
+      summaryCards: [
+        ['Developments', '2'], ['Draft CVRs', '1'], ['Submitted CVRs', '1'],
+        ['Locked This Month', '3'], ['Portfolio EFC', '£1,000'],
+        ['Portfolio Variance', '£50'], ['Forecast GP Margin', '20.0%'],
+        ['Margin Movement (pp)', '+1.5 pp', 'Compared with preceding locked monthly CVRs.'],
+      ].map(([label, value, hint]) => ({ label, value, hint, modifier: 'default' })),
+    });
+
+    renderPortfolio();
+    await act(async () => { await Promise.resolve(); });
+
+    expect(container.querySelectorAll('.dev-cvr-portfolio__kpis .dev-cvr__card')).toHaveLength(8);
+    expect(container.textContent).toContain('Forecast GP Margin');
+    expect(container.textContent).toContain('Margin Movement (pp)');
+    expect(container.textContent).toContain('Compared with preceding locked monthly CVRs.');
+  });
+
   it('shows a clear error state when ensureDevelopmentsReady rejects', async () => {
     ensureDevelopmentsReady.mockRejectedValue(
       new Error('Unable to load Developments for the CVR. Please refresh and try again.')
@@ -181,7 +202,7 @@ describe('CVRPortfolio development loading guard', () => {
     ensureDevelopmentsReady.mockResolvedValue([]);
     buildCvrPortfolioModel.mockReturnValue({
       ...samplePortfolio,
-      summaryCards: [{ label: 'Portfolio Forecast', value: 'GBP 100,000', modifier: 'default' }],
+      summaryCards: [{ label: 'Portfolio EFC', value: 'GBP 100,000', modifier: 'default' }],
       awaitingApproval: [{
         developmentId: 'dev-1', developmentName: 'Test Site 1', developmentNumber: 'TS1',
         periodKey: 'P01', forecastLabel: 'GBP 100,000', varianceLabel: 'adverse 5,000',

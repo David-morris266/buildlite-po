@@ -5758,8 +5758,8 @@
 .dev-cvr-portfolio .dev-cvr__cards.dev-cvr-portfolio__kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; width: 100%; }
 .dev-cvr-portfolio__kpis .dev-cvr__card {
   position: relative;
-  min-height: 96px;
-  padding: 12px 14px 11px;
+  min-height: 88px;
+  padding: 10px 13px 9px;
   border-color: rgba(148, 163, 184, 0.16);
   border-radius: 11px;
   background: linear-gradient(145deg, #131f1d, #0b1113);
@@ -5777,6 +5777,7 @@
 .dev-cvr-portfolio__kpis .dev-cvr__card--saving::before { background: var(--bl-positive, #86efac); }
 .dev-cvr-portfolio__kpis .dev-cvr__card-label { color: #aab9b3; font-size: 0.7rem; letter-spacing: 0; text-transform: none; }
 .dev-cvr-portfolio__kpis .dev-cvr__card-value { align-self: center; color: var(--bl-text-strong, #f4faf7); font-size: clamp(1.15rem, 1.7vw, 1.6rem); font-variant-numeric: tabular-nums; }
+.dev-cvr-portfolio__kpi-hint { color: var(--muted); font-size: 0.62rem; line-height: 1.25; }
 .dev-cvr-portfolio__section { border-color: rgba(148, 163, 184, 0.16); border-radius: 12px; background: rgba(10, 16, 18, 0.9); overflow: hidden; }
 .dev-cvr-portfolio__section--approval { border-color: rgba(246, 196, 83, 0.25); box-shadow: inset 3px 0 rgba(246, 196, 83, 0.78); }
 .dev-cvr-portfolio__numeric { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }

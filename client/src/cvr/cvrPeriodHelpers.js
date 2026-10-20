@@ -8,6 +8,12 @@ import { isCvrServerAuthorityEnabled } from './cvrPeriodAuthority';
 import { getCvrPeriodReadiness } from './cvrPeriodServerCache';
 import { buildCvrModel } from './cvrEngine';
 import { getVarianceState } from './cvrCalculations';
+import {
+  buildCvrCommercialPosition,
+  calculateCvrGrossMarginPercent,
+  calculateCvrGrossProfit,
+  formatCvrGrossMarginPercent,
+} from './cvrCommercialPosition';
 import { formatCvrMoney } from './cvrHelpers';
 import {
   CVR_HISTORIC_UNAVAILABLE_SHORT,
@@ -21,8 +27,158 @@ import {
   isCvrPeriodLocked,
   listCvrPeriods,
 } from './cvrPeriodStore';
-import { isCvrHistoricSnapshotPeriod, isCvrLegacyLockedPeriod, sortPeriodKeys } from './cvrPeriodStatus';
+import { isCvrHistoricSnapshotPeriod, isCvrLegacyLockedPeriod, periodOrdinal, sortPeriodKeys } from './cvrPeriodStatus';
 import { formatReportingPeriod } from './cvrReportingMonth';
+
+const MONTHLY_CVR = 'monthly_cvr';
+const PORTFOLIO_MARGIN_POPULATION_HINT = 'Latest monthly CVRs; reporting months may differ.';
+const PORTFOLIO_MARGIN_MOVEMENT_HINT = 'Compared with each development\'s preceding locked monthly CVR; reporting months may differ.';
+
+function isMonthlyCvr(period) {
+  if (period?.periodType === 'site_start') return false;
+  if (String(period?.periodKey || '').toUpperCase() === 'SITE_START') return false;
+  return (period?.periodType || MONTHLY_CVR) === MONTHLY_CVR;
+}
+
+export function selectCvrPortfolioMarginPeriods(periods = []) {
+  const monthlyPeriods = periods.filter(isMonthlyCvr);
+  const latestMonthlyKey = sortPeriodKeys(monthlyPeriods.map((item) => item.periodKey)).pop();
+  const current = monthlyPeriods.find((item) => item.periodKey === latestMonthlyKey) || null;
+  if (!current) return { current: null, previous: null };
+  const previous = monthlyPeriods
+    .filter((item) => isCvrPeriodLocked(item))
+    .filter((item) => periodOrdinal(item) < periodOrdinal(current))
+    .sort((a, b) => periodOrdinal(a) - periodOrdinal(b))
+    .at(-1) || null;
+  return { current, previous };
+}
+
+function moneyToPence(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? Math.round(amount * 100) : null;
+}
+
+function marginFromPence(revenuePence, efcPence) {
+  if (!Number.isFinite(revenuePence) || revenuePence === 0 || !Number.isFinite(efcPence)) return null;
+  return calculateCvrGrossMarginPercent(
+    calculateCvrGrossProfit(revenuePence / 100, efcPence / 100),
+    revenuePence / 100
+  );
+}
+
+function formatMarginMovement(value) {
+  if (value == null || !Number.isFinite(Number(value))) return '—';
+  const rounded = Math.abs(Number(value)) < 0.05 ? 0 : Number(value);
+  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)} pp`;
+}
+
+function movementModifier(value) {
+  if (value == null || Math.abs(Number(value)) < 0.05) return 'default';
+  return Number(value) > 0 ? 'saving' : 'overspend';
+}
+
+export function buildCvrPortfolioMarginKpis(positions = []) {
+  const totalDevelopments = positions.length;
+  const eligible = positions.filter((item) => item?.eligibility === 'eligible');
+  const excluded = positions.filter((item) => item?.eligibility === 'no-monthly-cvr');
+  const unresolved = positions.filter((item) => item?.eligibility === 'unresolved');
+  const coverage = `${eligible.length} of ${totalDevelopments} developments included; ${excluded.length} without a monthly CVR excluded.`;
+
+  if (unresolved.length) {
+    return {
+      margin: null,
+      movement: null,
+      marginHint: `Unavailable because monthly-CVR eligibility could not be established for ${unresolved.length} development${unresolved.length === 1 ? '' : 's'}. ${coverage} ${PORTFOLIO_MARGIN_POPULATION_HINT}`,
+      movementHint: `Unavailable because the portfolio population is unresolved. ${coverage} ${PORTFOLIO_MARGIN_MOVEMENT_HINT}`,
+      coverage: { totalDevelopments, includedDevelopments: eligible.length, excludedNoMonthly: excluded.length, unresolvedDevelopments: unresolved.length },
+    };
+  }
+
+  if (!eligible.length) {
+    return {
+      margin: null,
+      movement: null,
+      marginHint: `No monthly CVR positions are available. ${coverage} ${PORTFOLIO_MARGIN_POPULATION_HINT}`,
+      movementHint: `No monthly CVR positions are available. ${coverage} ${PORTFOLIO_MARGIN_MOVEMENT_HINT}`,
+      coverage: { totalDevelopments, includedDevelopments: 0, excludedNoMonthly: excluded.length, unresolvedDevelopments: 0 },
+    };
+  }
+
+  const currentComplete = eligible.every((item) =>
+    item?.current?.revenueAvailable === true
+      && moneyToPence(item.current.forecastRevenue) != null
+      && moneyToPence(item.current.forecastCost) != null
+  );
+
+  if (!currentComplete) {
+    return {
+      margin: null,
+      movement: null,
+      marginHint: `Unavailable because one or more included monthly CVRs lack complete revenue or EFC evidence. ${coverage} ${PORTFOLIO_MARGIN_POPULATION_HINT}`,
+      movementHint: `Unavailable because the current portfolio evidence is incomplete. ${coverage} ${PORTFOLIO_MARGIN_MOVEMENT_HINT}`,
+      coverage: { totalDevelopments, includedDevelopments: eligible.length, excludedNoMonthly: excluded.length, unresolvedDevelopments: 0 },
+    };
+  }
+
+  const currentRevenuePence = eligible.reduce(
+    (total, item) => total + moneyToPence(item.current.forecastRevenue), 0
+  );
+  const currentEfcPence = eligible.reduce(
+    (total, item) => total + moneyToPence(item.current.forecastCost), 0
+  );
+  const margin = marginFromPence(currentRevenuePence, currentEfcPence);
+
+  if (margin == null) {
+    return {
+      margin: null,
+      movement: null,
+      marginHint: `Unavailable because aggregate Forecast Revenue is zero. ${coverage} ${PORTFOLIO_MARGIN_POPULATION_HINT}`,
+      movementHint: `Unavailable because the current portfolio margin is unavailable. ${coverage} ${PORTFOLIO_MARGIN_MOVEMENT_HINT}`,
+      coverage: { totalDevelopments, includedDevelopments: eligible.length, excludedNoMonthly: excluded.length, unresolvedDevelopments: 0 },
+    };
+  }
+
+  const previousComplete = eligible.every((item) =>
+    item?.previous?.revenueAvailable === true
+      && item.previous.frozenRevenue === true
+      && moneyToPence(item.previous.forecastRevenue) != null
+      && moneyToPence(item.previous.forecastCost) != null
+  );
+  if (!previousComplete) {
+    return {
+      margin,
+      movement: null,
+      marginHint: `${coverage} ${PORTFOLIO_MARGIN_POPULATION_HINT}`,
+      movementHint: `Unavailable because one or more included developments lack a preceding locked monthly CVR with frozen revenue. ${coverage} ${PORTFOLIO_MARGIN_MOVEMENT_HINT}`,
+      coverage: { totalDevelopments, includedDevelopments: eligible.length, excludedNoMonthly: excluded.length, unresolvedDevelopments: 0 },
+    };
+  }
+
+  const previousRevenuePence = eligible.reduce(
+    (total, item) => total + moneyToPence(item.previous.forecastRevenue), 0
+  );
+  const previousEfcPence = eligible.reduce(
+    (total, item) => total + moneyToPence(item.previous.forecastCost), 0
+  );
+  const previousMargin = marginFromPence(previousRevenuePence, previousEfcPence);
+  if (previousMargin == null) {
+    return {
+      margin,
+      movement: null,
+      marginHint: `${coverage} ${PORTFOLIO_MARGIN_POPULATION_HINT}`,
+      movementHint: `Unavailable because preceding aggregate Forecast Revenue is zero. ${coverage} ${PORTFOLIO_MARGIN_MOVEMENT_HINT}`,
+      coverage: { totalDevelopments, includedDevelopments: eligible.length, excludedNoMonthly: excluded.length, unresolvedDevelopments: 0 },
+    };
+  }
+
+  return {
+    margin,
+    movement: margin - previousMargin,
+    marginHint: `${coverage} ${PORTFOLIO_MARGIN_POPULATION_HINT}`,
+    movementHint: `${coverage} ${PORTFOLIO_MARGIN_MOVEMENT_HINT}`,
+    coverage: { totalDevelopments, includedDevelopments: eligible.length, excludedNoMonthly: excluded.length, unresolvedDevelopments: 0 },
+  };
+}
 
 const AUDIT_ACTION_LABELS = {
   created: 'Created',
@@ -202,10 +358,16 @@ export function buildCvrPortfolioDevelopmentRow(development, pos = []) {
   };
 }
 
-export function buildCvrPortfolioModel(pos = []) {
-  const developments = listDevelopments();
+export function buildCvrPortfolioModel(pos = [], dependencies = {}) {
+  const developments = dependencies.developments || listDevelopments();
+  const serverAuthorityEnabled = dependencies.serverAuthorityEnabled ?? isCvrServerAuthorityEnabled();
+  const periodReadiness = dependencies.getPeriodReadiness || getCvrPeriodReadiness;
+  const periodsForDevelopment = dependencies.listPeriods || listCvrPeriods;
+  const buildModel = dependencies.buildModel || buildCvrModel;
+  const buildCommercialPosition = dependencies.buildCommercialPosition || buildCvrCommercialPosition;
+  const buildDevelopmentRow = dependencies.buildDevelopmentRow || buildCvrPortfolioDevelopmentRow;
   const rows = developments.map((development) =>
-    buildCvrPortfolioDevelopmentRow(development, pos)
+    buildDevelopmentRow(development, pos)
   );
 
   let draftCount = 0;
@@ -221,19 +383,65 @@ export function buildCvrPortfolioModel(pos = []) {
   const year = now.getFullYear();
 
   const awaitingApproval = [];
+  const marginPositions = [];
 
   for (const development of developments) {
-    if (isCvrServerAuthorityEnabled() && !getCvrPeriodReadiness(development.id).ready) {
+    if (serverAuthorityEnabled && !periodReadiness(development.id).ready) {
+      marginPositions.push({ developmentId: development.id, eligibility: 'unresolved', reason: 'periods-unavailable' });
       continue;
     }
 
-    const periods = listCvrPeriods(development.id);
+    const periods = periodsForDevelopment(development.id);
+    const { current: currentPeriod, previous: previousPeriod } = selectCvrPortfolioMarginPeriods(periods);
+    if (!currentPeriod) {
+      marginPositions.push({ developmentId: development.id, eligibility: 'no-monthly-cvr' });
+    } else {
+      const currentModel = buildModel(development.id, {
+        pos,
+        periodKey: currentPeriod.periodKey,
+        period: currentPeriod,
+      });
+      const currentCommercial = currentModel.unavailable
+        ? null
+        : buildCommercialPosition({
+          developmentId: development.id,
+          historic: currentModel.historic,
+          historicUnavailable: currentModel.historicUnavailable,
+          costSummary: currentModel.summary,
+          snapshot: currentPeriod.snapshot || null,
+        });
+      const previousModel = previousPeriod
+        ? buildModel(development.id, {
+          pos,
+          periodKey: previousPeriod.periodKey,
+          period: previousPeriod,
+        })
+        : null;
+      const previousCommercial = previousModel && !previousModel.unavailable
+        ? buildCommercialPosition({
+          developmentId: development.id,
+          historic: previousModel.historic,
+          historicUnavailable: previousModel.historicUnavailable,
+          costSummary: previousModel.summary,
+          snapshot: previousPeriod.snapshot || null,
+        })
+        : null;
+
+      marginPositions.push({
+        developmentId: development.id,
+        eligibility: 'eligible',
+        current: currentCommercial,
+        previous: previousCommercial
+          ? { ...previousCommercial, frozenRevenue: previousModel.historic === true }
+          : null,
+      });
+    }
 
     for (const period of periods) {
       if (period.status === 'draft') draftCount += 1;
       if (period.status === 'submitted') {
         submittedCount += 1;
-        const model = buildCvrModel(development.id, { pos, periodKey: period.periodKey });
+        const model = buildModel(development.id, { pos, periodKey: period.periodKey });
         awaitingApproval.push({
           developmentId: development.id,
           developmentName: development.developmentName,
@@ -258,7 +466,7 @@ export function buildCvrPortfolioModel(pos = []) {
 
     const latestKey = sortPeriodKeys(periods.map((item) => item.periodKey)).pop();
     if (latestKey) {
-      const model = buildCvrModel(development.id, { pos, periodKey: latestKey });
+      const model = buildModel(development.id, { pos, periodKey: latestKey });
       if (model.unavailable) continue;
       if (model.summary.finalForecast != null) {
         hasForecast = true;
@@ -269,7 +477,10 @@ export function buildCvrPortfolioModel(pos = []) {
         portfolioVariance += model.summary.variance;
       }
     }
+
   }
+
+  const marginKpis = buildCvrPortfolioMarginKpis(marginPositions);
 
   return {
     rows,
@@ -296,7 +507,7 @@ export function buildCvrPortfolioModel(pos = []) {
         modifier: 'approved',
       },
       {
-        label: 'Portfolio Forecast',
+        label: 'Portfolio EFC',
         value: hasForecast ? formatCvrMoney(portfolioForecast) : '—',
         modifier: 'default',
       },
@@ -304,6 +515,18 @@ export function buildCvrPortfolioModel(pos = []) {
         label: 'Portfolio Variance',
         value: hasVariance ? formatCvrMoney(portfolioVariance) : '—',
         modifier: hasVariance ? getVarianceState(portfolioVariance) : 'default',
+      },
+      {
+        label: 'Forecast GP Margin',
+        value: formatCvrGrossMarginPercent(marginKpis.margin),
+        modifier: 'default',
+        hint: marginKpis.marginHint,
+      },
+      {
+        label: 'Margin Movement (pp)',
+        value: formatMarginMovement(marginKpis.movement),
+        modifier: movementModifier(marginKpis.movement),
+        hint: marginKpis.movementHint,
       },
     ],
   };
