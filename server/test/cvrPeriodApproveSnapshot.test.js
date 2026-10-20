@@ -56,6 +56,7 @@ const MIGRATION_022 = path.join(
   "migrations",
   "022_cvr_snapshot_expected_liability.sql"
 );
+const MIGRATION_069 = path.join(__dirname, "..", "migrations", "069_cvr_snapshot_plot_master_gia.sql");
 const CVR_ROUTES = path.join(__dirname, "..", "routes", "cvrRoutes.js");
 
 const EXPECTED_5231 = {
@@ -123,6 +124,7 @@ async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_012, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_021, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_022, "utf8"));
+  await pool.query(fs.readFileSync(MIGRATION_069, "utf8"));
   // Migration 012 is intentionally replayed by this legacy fixture. Restore the
   // production Migration 049 mode-aware constraint it supersedes.
   await pool.query(`
@@ -637,7 +639,11 @@ async function snapshotCounts(periodId) {
      )`,
     [periodId]
   );
-  return { headers: headers.rows[0].n, rows: rows.rows[0].n, plots: plots.rows[0].n };
+  const gia = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM cvr_period_snapshot_gia_evidence WHERE period_id=$1`,
+    [periodId]
+  );
+  return { headers: headers.rows[0].n, rows: rows.rows[0].n, plots: plots.rows[0].n, gia: gia.rows[0].n };
 }
 
 async function auditActions(periodId) {
@@ -662,6 +668,7 @@ async function assertRolledBack(clientId, developmentId, periodId) {
   assert.equal(counts.headers, 0);
   assert.equal(counts.rows, 0);
   assert.equal(counts.plots, 0);
+  assert.equal(counts.gia, 0);
   const audit = await auditActions(periodId);
   assert.equal(audit.some((item) => item.action === "locked"), false);
   assert.equal(audit.some((item) => item.action === "approved"), false);
@@ -925,6 +932,14 @@ if (!isDbConfigured()) {
       )
     );
     assert.ok(audit.some((item) => item.action === "locked" && item.comment === "Lock P01"));
+  });
+
+  test("migration 069 compares current xid8 to snapshot xmin with epoch-safe xid semantics", async () => {
+    const result = await pool.query(`SELECT
+      ('4294967301'::xid8)::xid = '5'::xid AS wrapped_epoch_matches,
+      ('4294967301'::xid8)::text::bigint = '5'::xid::text::bigint AS unsafe_full_width_matches`);
+    assert.equal(result.rows[0].wrapped_epoch_matches, true);
+    assert.equal(result.rows[0].unsafe_full_width_matches, false);
   });
 
   test("P0-06 approval persists Cost Code floors and reconciles the header from verified rows", async () => {
@@ -2116,6 +2131,159 @@ if (!isDbConfigured()) {
     assert.notEqual(Number(locked.body.snapshot.grossProfit), 3);
   });
 
+  test("Approve & Lock freezes complete governed Plot Master GIA independently of Revenue NIA", async () => {
+    const world = await setupBase({ plots: [
+      { id: "gia-1", plotNumber: "1", status: "Active", gia: 1076.4, nia: 850, revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 },
+      { id: "gia-2", plotNumber: "2", status: "inactive", gia: 900, nia: 800, revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 90000 },
+      { id: "gia-3", plotNumber: "3", gia: 893.2, nia: 950, revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 110000 },
+    ] });
+    await submitPeriod(world.development.id, world.period.id);
+    const locked = await request(app).post(`${periodUrl(world.development.id, world.period.id)}/approve`).send({ actor: "Director" });
+    assert.equal(locked.status, 200, locked.body?.message || JSON.stringify(locked.body));
+    assert.equal(locked.body.snapshot.giaEvidence.availabilityState, "complete");
+    assert.equal(locked.body.snapshot.giaEvidence.totalPlotCount, 3);
+    assert.equal(locked.body.snapshot.giaEvidence.activePlotCount, 2);
+    assert.equal(locked.body.snapshot.giaEvidence.totalActiveGia, 1969.6);
+    assert.deepEqual(locked.body.snapshot.giaEvidence.plots.map((row) => row.originalGia), [1076.4, 900, 893.2]);
+
+    await assert.rejects(
+      () => pool.query("UPDATE cvr_period_snapshot_gia_evidence SET total_active_gia=1 WHERE period_id=$1", [world.period.id]),
+      /immutable/i
+    );
+    await assert.rejects(
+      () => pool.query(`UPDATE cvr_period_snapshot_gia_plots SET original_gia=1
+        WHERE snapshot_id=(SELECT id FROM cvr_period_snapshots WHERE period_id=$1)`, [world.period.id]),
+      /immutable/i
+    );
+    await assert.rejects(
+      () => pool.query("DELETE FROM cvr_period_snapshot_gia_evidence WHERE period_id=$1", [world.period.id]),
+      /immutable/i
+    );
+    await assert.rejects(
+      () => pool.query(`DELETE FROM cvr_period_snapshot_gia_plots
+        WHERE snapshot_id=(SELECT id FROM cvr_period_snapshots WHERE period_id=$1)`, [world.period.id]),
+      /immutable/i
+    );
+    const frozenIdentity = await pool.query(
+      `SELECT e.id evidence_id,e.snapshot_id FROM cvr_period_snapshot_gia_evidence e WHERE e.period_id=$1`,
+      [world.period.id]
+    );
+    await assert.rejects(
+      () => pool.query(`INSERT INTO cvr_period_snapshot_gia_plots
+        (client_id,evidence_id,snapshot_id,plot_id,source_index,plot_number,active,original_gia_raw,original_gia,gia_valid)
+        VALUES($1,$2,$3,'late-row',999,'late',TRUE,'1',1,TRUE)`,
+      [world.client.id, frozenIdentity.rows[0].evidence_id, frozenIdentity.rows[0].snapshot_id]),
+      /already finalised/i
+    );
+    const otherTenant = await createSecondTenant();
+    await assert.rejects(
+      () => pool.query(`INSERT INTO cvr_period_snapshot_gia_evidence
+        (client_id,development_id,period_id,snapshot_id,evidence_schema_version,availability_state,
+         total_plot_count,active_plot_count,active_plot_gia_count,captured_valid_active_gia,total_active_gia)
+        VALUES($1,$2,$3,$4,1,'complete',1,1,1,1000,1000)`,
+      [otherTenant.id, world.development.id, world.period.id, frozenIdentity.rows[0].snapshot_id]),
+      /current lock transaction/i
+    );
+    const leaked = await pool.query(
+      "SELECT * FROM cvr_period_snapshot_gia_evidence WHERE client_id=$1 AND period_id=$2",
+      [otherTenant.id, world.period.id]
+    );
+    assert.equal(leaked.rowCount, 0);
+  });
+
+  test("incomplete GIA is frozen explicitly and does not add a CVR lock blocker", async () => {
+    const world = await setupBase({ plots: [
+      { id: "gia-ok", plotNumber: "1", gia: 1000, revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 },
+      { id: "gia-missing", plotNumber: "2", gia: "", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 },
+    ] });
+    await submitPeriod(world.development.id, world.period.id);
+    const locked = await request(app).post(`${periodUrl(world.development.id, world.period.id)}/approve`).send({ actor: "Director" });
+    assert.equal(locked.status, 200, locked.body?.message || JSON.stringify(locked.body));
+    assert.equal(locked.body.snapshot.giaEvidence.availabilityState, "incomplete");
+    assert.equal(locked.body.snapshot.giaEvidence.capturedValidActiveGia, 1000);
+    assert.equal(locked.body.snapshot.giaEvidence.totalActiveGia, null);
+  });
+
+  test("a GIA evidence persistence failure rolls back the entire lock transaction", async () => {
+    const world = await setupBase({ plots: [{ id: "gia-rollback", plotNumber: "1", gia: 1000, revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 }] });
+    await submitPeriod(world.development.id, world.period.id);
+    await assert.rejects(
+      () => approveCvrPeriod(world.client.id, world.development.id, world.period.id, {}, { actor: "Director", failAfter: "giaEvidence" }),
+      /forced-gia-evidence-insert-failure/
+    );
+    await assertRolledBack(world.client.id, world.development.id, world.period.id);
+  });
+
+  test("Summary Revenue locks duplicate and oversized GIA source identities without weakening their evidence", async () => {
+    const oversized = `plot-${"x".repeat(160)}`;
+    const world = await setupBase({ plots: [] });
+    await pool.query(`UPDATE developments SET payload=jsonb_set(payload,'{plotMaster,plots}',$1::jsonb,true)
+      WHERE client_id=$2 AND id=$3`, [JSON.stringify([
+      { id: "duplicate", plotNumber: "1", gia: 850.1 },
+      { id: "duplicate", plotNumber: "2", gia: 920.2 },
+      { id: oversized, plotNumber: "3", gia: 700 },
+    ]), world.client.id, world.development.id]);
+    await pool.query(`UPDATE development_revenue_settings SET revenue_mode='summary',
+      summary_revenue_lines='[{"id":"private","description":"Private Sales","forecastRevenue":1000000}]'::jsonb
+      WHERE client_id=$1 AND development_id=$2`, [world.client.id, world.development.id]);
+    await submitPeriod(world.development.id, world.period.id);
+    const locked = await request(app).post(`${periodUrl(world.development.id, world.period.id)}/approve`).send({ actor: "Director" });
+    assert.equal(locked.status, 200, locked.body?.message || JSON.stringify(locked.body));
+    assert.equal(locked.body.snapshot.giaEvidence.availabilityState, "complete");
+    assert.equal(locked.body.snapshot.giaEvidence.totalActiveGia, 2470.3);
+    assert.deepEqual(locked.body.snapshot.giaEvidence.plots.map((row) => row.sourceIdentityDuplicate), [true, true, false]);
+    assert.equal(locked.body.snapshot.giaEvidence.plots[2].sourceIdentityOversized, true);
+    assert.equal(locked.body.snapshot.giaEvidence.plots[2].sourcePlotId, oversized);
+  });
+
+  test("combined GIA overflow is frozen unavailable without blocking Summary Revenue lock", async () => {
+    const world = await setupBase({ plots: [] });
+    await pool.query(`UPDATE developments SET payload=jsonb_set(payload,'{plotMaster,plots}',$1::jsonb,true)
+      WHERE client_id=$2 AND id=$3`, [JSON.stringify([
+      { id: "large-1", plotNumber: "1", gia: "600000000000.0000" },
+      { id: "large-2", plotNumber: "2", gia: "600000000000.0000" },
+    ]), world.client.id, world.development.id]);
+    await pool.query(`UPDATE development_revenue_settings SET revenue_mode='summary',
+      summary_revenue_lines='[{"id":"private","description":"Private Sales","forecastRevenue":1000000}]'::jsonb
+      WHERE client_id=$1 AND development_id=$2`, [world.client.id, world.development.id]);
+    await submitPeriod(world.development.id, world.period.id);
+    const locked = await request(app).post(`${periodUrl(world.development.id, world.period.id)}/approve`).send({ actor: "Director" });
+    assert.equal(locked.status, 200, locked.body?.message || JSON.stringify(locked.body));
+    assert.equal(locked.body.snapshot.giaEvidence.availabilityState, "total_out_of_range");
+    assert.equal(locked.body.snapshot.giaEvidence.capturedValidActiveGia, null);
+    assert.equal(locked.body.snapshot.giaEvidence.totalActiveGia, null);
+    assert.deepEqual(locked.body.snapshot.giaEvidence.plots.map((row) => row.originalGia), [600000000000, 600000000000]);
+  });
+
+  test("Sales Register retains duplicate-plot-id as a governed lock blocker", async () => {
+    const world = await setupBase({ plots: [] });
+    await pool.query(`UPDATE developments SET payload=jsonb_set(payload,'{plotMaster,plots}',$1::jsonb,true)
+      WHERE client_id=$2 AND id=$3`, [JSON.stringify([
+      { id: "duplicate", plotNumber: "1", gia: 850, revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 },
+      { id: "duplicate", plotNumber: "2", gia: 920, revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 },
+    ]), world.client.id, world.development.id]);
+    await submitPeriod(world.development.id, world.period.id);
+    const locked = await request(app).post(`${periodUrl(world.development.id, world.period.id)}/approve`).send({ actor: "Director" });
+    assert.equal(locked.status, 409);
+    assert.ok(locked.body.blockers.some((item) => item.reason === "duplicate-plot-id"));
+    await assertRolledBack(world.client.id, world.development.id, world.period.id);
+  });
+
+  test("retrospective GIA evidence cannot be attached to a legacy locked snapshot", async () => {
+    const world = await setupBase();
+    await pool.query(`UPDATE cvr_periods SET status='locked',submitted_at=NOW(),submitted_by='legacy',
+      approved_at=NOW(),approved_by='legacy' WHERE id=$1`, [world.period.id]);
+    const snapshot = await pool.query(`INSERT INTO cvr_period_snapshots
+      (client_id,development_id,period_id,period_key,schema_version,created_by)
+      VALUES($1,$2,$3,$4,1,'legacy') RETURNING id`,
+    [world.client.id, world.development.id, world.period.id, world.period.periodKey]);
+    await assert.rejects(() => pool.query(`INSERT INTO cvr_period_snapshot_gia_evidence
+      (client_id,development_id,period_id,snapshot_id,evidence_schema_version,availability_state,
+       total_plot_count,active_plot_count,active_plot_gia_count,captured_valid_active_gia,total_active_gia)
+      VALUES($1,$2,$3,$4,1,'no_active_plots',0,0,0,0,NULL)`,
+    [world.client.id, world.development.id, world.period.id, snapshot.rows[0].id]), /current lock transaction/i);
+  });
+
   test("Summary Revenue locks immutable authority and Create Next returns to current live authority", async () => {
     const world = await setupBase({ plots: [] });
     const summaryLines = [
@@ -2144,6 +2312,8 @@ if (!isDbConfigured()) {
     assert.equal(locked.body.snapshot.revenueAssumptions.settingsId, settings.rows[0].id);
     assert.equal(locked.body.snapshot.revenueAssumptions.settingsVersion, settings.rows[0].version);
     assert.equal(locked.body.snapshot.revenueAssumptions.settingsUpdatedBy, "Summary lifecycle test");
+    assert.equal(locked.body.snapshot.giaEvidence.availabilityState, "no_active_plots");
+    assert.equal(locked.body.snapshot.giaEvidence.totalActiveGia, null);
 
     const liveLines = [{ id: "private", description: "Private Sales", forecastRevenue: 1200000 }];
     await pool.query(

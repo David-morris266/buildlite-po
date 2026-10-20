@@ -565,6 +565,11 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
       forecastRevenue: 0, securedRevenue: 0, remainingForecastRevenue: 0,
       plotsSold: 0, plotsRemaining: 0, grossProfit: -approvedCandidate.snapshot.finalForecast,
       grossMarginPercent: null, revenueAssumptions: { revenueMode: 'sales_register' }, plots: [],
+      giaEvidence: {
+        evidenceSchemaVersion: 1, availabilityState: 'no_active_plots', totalPlotCount: 0,
+        activePlotCount: 0, activePlotGiaCount: 0, capturedValidActiveGia: 0,
+        totalActiveGia: null, plots: [],
+      },
     },
   });
   const siteStartOnlyAuth = { ...auth, permissions: [PERMISSIONS.SITE_START_MANAGE] };

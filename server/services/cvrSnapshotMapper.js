@@ -123,7 +123,7 @@ function snapshotPlotToDocument(row) {
   };
 }
 
-function snapshotHeaderToDocument(header, rows = [], plots = []) {
+function snapshotHeaderToDocument(header, rows = [], plots = [], giaEvidence = null) {
   if (!header) return null;
   const variationDocument = header.variation_exposure_snapshot || null;
   const variationByCostCode = new Map();
@@ -209,6 +209,18 @@ function snapshotHeaderToDocument(header, rows = [], plots = []) {
     vaExposureUplift: mappedRows.reduce((sum, row) => Math.round((sum + Number(row.vaExposureUplift || 0)) * 100) / 100, 0),
     rows: mappedRows,
     plots: (plots || []).map(snapshotPlotToDocument).filter(Boolean),
+    giaEvidence: giaEvidence || {
+      state: "legacy_unavailable",
+      captured: false,
+      availabilityState: "legacy_unavailable",
+      evidenceSchemaVersion: null,
+      totalPlotCount: null,
+      activePlotCount: null,
+      activePlotGiaCount: null,
+      capturedValidActiveGia: null,
+      totalActiveGia: null,
+      plots: [],
+    },
   };
 }
 

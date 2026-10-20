@@ -336,5 +336,25 @@ export function normalizeServerCvrSnapshot(document) {
     totals: normalizeCvrSnapshotTotals(document),
     rows: rowsSource.map(normalizeCvrSnapshotRow).filter(Boolean),
     plots: plotsSource.map(normalizeCvrSnapshotPlot).filter(Boolean),
+    giaEvidence: document.giaEvidence && typeof document.giaEvidence === 'object'
+      ? {
+          ...document.giaEvidence,
+          captured: Boolean(document.giaEvidence.captured),
+          evidenceSchemaVersion: firstDefined(document.giaEvidence.evidenceSchemaVersion, null),
+          availabilityState: firstDefined(document.giaEvidence.availabilityState, 'legacy_unavailable'),
+          totalPlotCount: firstDefined(document.giaEvidence.totalPlotCount, null),
+          activePlotCount: firstDefined(document.giaEvidence.activePlotCount, null),
+          activePlotGiaCount: firstDefined(document.giaEvidence.activePlotGiaCount, null),
+          capturedValidActiveGia: firstDefined(document.giaEvidence.capturedValidActiveGia, null),
+          totalActiveGia: firstDefined(document.giaEvidence.totalActiveGia, null),
+          plots: Array.isArray(document.giaEvidence.plots)
+            ? document.giaEvidence.plots.map((plot) => ({ ...plot })) : [],
+        }
+      : {
+          state: 'legacy_unavailable', captured: false,
+          availabilityState: 'legacy_unavailable', evidenceSchemaVersion: null,
+          totalPlotCount: null, activePlotCount: null, activePlotGiaCount: null,
+          capturedValidActiveGia: null, totalActiveGia: null, plots: [],
+        },
   };
 }

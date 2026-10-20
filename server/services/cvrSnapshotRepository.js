@@ -189,7 +189,97 @@ async function getSnapshotForPeriod(clientId, periodId, dbClient = null) {
   } catch (err) {
     if (!/cvr_period_snapshot_plots/i.test(String(err.message || ""))) throw err;
   }
-  return snapshotHeaderToDocument(header.rows[0], rows.rows, plots.rows);
+  const giaEvidence = await getSnapshotGiaEvidence(exec, clientId, header.rows[0].id);
+  return snapshotHeaderToDocument(header.rows[0], rows.rows, plots.rows, giaEvidence);
+}
+
+async function getSnapshotGiaEvidence(exec, clientId, snapshotId) {
+  let evidence;
+  try {
+    evidence = await exec(
+      `SELECT * FROM cvr_period_snapshot_gia_evidence
+       WHERE client_id=$1 AND snapshot_id=$2 AND is_finalized=TRUE LIMIT 1`,
+      [clientId, snapshotId]
+    );
+  } catch (err) {
+    if (/cvr_period_snapshot_gia_evidence/i.test(String(err.message || ""))) return null;
+    throw err;
+  }
+  const header = evidence.rows[0];
+  if (!header) return null;
+  const rows = await exec(
+    `SELECT * FROM cvr_period_snapshot_gia_plots
+     WHERE client_id=$1 AND snapshot_id=$2 ORDER BY source_index ASC`,
+    [clientId, snapshotId]
+  );
+  return {
+    id: header.id,
+    state: header.availability_state === "complete" ? "available" : "unavailable",
+    captured: true,
+    evidenceSchemaVersion: Number(header.evidence_schema_version),
+    availabilityState: header.availability_state,
+    totalPlotCount: Number(header.total_plot_count),
+    activePlotCount: Number(header.active_plot_count),
+    activePlotGiaCount: Number(header.active_plot_gia_count),
+    capturedValidActiveGia: header.captured_valid_active_gia == null
+      ? null : Number(header.captured_valid_active_gia),
+    totalActiveGia: header.total_active_gia == null ? null : Number(header.total_active_gia),
+    plots: rows.rows.map((row) => ({
+      plotId: row.plot_id,
+      sourceIndex: Number(row.source_index),
+      sourcePlotId: row.source_plot_id,
+      sourceIdentityDuplicate: row.source_identity_duplicate,
+      sourceIdentityOversized: row.source_identity_oversized,
+      plotNumber: row.plot_number,
+      active: row.active,
+      originalGiaRaw: row.original_gia_raw,
+      originalGia: row.original_gia == null ? null : Number(row.original_gia),
+      giaValid: row.gia_valid,
+      invalidReason: row.invalid_reason,
+    })),
+  };
+}
+
+async function insertSnapshotGiaEvidence(dbClient, { clientId, developmentId, periodRow, snapshotId, evidence, actor }) {
+  if (!evidence || Number(evidence.evidenceSchemaVersion) !== 1 || !Array.isArray(evidence.plots)) {
+    throw new Error("Whole-CVR snapshot is missing versioned Plot Master GIA evidence.");
+  }
+  const inserted = await runQuery(dbClient, `
+    INSERT INTO cvr_period_snapshot_gia_evidence (
+      client_id, development_id, period_id, snapshot_id, evidence_schema_version,
+      availability_state, total_plot_count, active_plot_count, active_plot_gia_count,
+      captured_valid_active_gia, total_active_gia, created_by
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    RETURNING *`, [
+    clientId, developmentId, periodRow.id, snapshotId, evidence.evidenceSchemaVersion,
+    evidence.availabilityState, evidence.totalPlotCount, evidence.activePlotCount,
+    evidence.activePlotGiaCount, evidence.capturedValidActiveGia, evidence.totalActiveGia, actor,
+  ]);
+  for (const row of evidence.plots) {
+    await runQuery(dbClient, `
+      INSERT INTO cvr_period_snapshot_gia_plots (
+        client_id, evidence_id, snapshot_id, plot_id, source_index, source_plot_id,
+        source_identity_duplicate, source_identity_oversized, plot_number,
+        active, original_gia_raw, original_gia, gia_valid, invalid_reason
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, [
+      clientId, inserted.rows[0].id, snapshotId, row.plotId, row.sourceIndex, row.sourcePlotId,
+      row.sourceIdentityDuplicate, row.sourceIdentityOversized, row.plotNumber,
+      row.active, row.originalGiaRaw, row.originalGia, row.giaValid, row.invalidReason,
+    ]);
+  }
+  await runQuery(dbClient,
+    `UPDATE cvr_period_snapshot_gia_evidence SET is_finalized=TRUE WHERE id=$1 AND is_finalized=FALSE`,
+    [inserted.rows[0].id]
+  );
+  const verified = await getSnapshotGiaEvidence(dbClient.query.bind(dbClient), clientId, snapshotId);
+  if (!verified || verified.plots.length !== evidence.plots.length) {
+    throw new Error("CVR GIA snapshot evidence row count reconciliation failed.");
+  }
+  if (verified.activePlotCount !== evidence.activePlotCount ||
+      verified.activePlotGiaCount !== evidence.activePlotGiaCount) {
+    throw new Error("CVR GIA snapshot evidence total reconciliation failed.");
+  }
+  return verified;
 }
 
 async function insertSnapshotHeader(dbClient, { clientId, developmentId, periodRow, snapshot, actor, variationExposureSubmissionId = null, budgetSubmissionId = null, hierarchySubmissionId = null }) {
@@ -596,6 +686,9 @@ async function persistCvrPeriodSnapshot(
   if (!Array.isArray(snapshot.plots)) {
     throw new Error("Whole-CVR snapshot is missing plot Revenue rows.");
   }
+  if (!snapshot.giaEvidence) {
+    throw new Error("Whole-CVR snapshot is missing frozen Plot Master GIA evidence.");
+  }
 
   const rows = Array.isArray(snapshot.rows) ? snapshot.rows : [];
   const seenKeys = new Set();
@@ -713,8 +806,16 @@ async function persistCvrPeriodSnapshot(
     );
   }
 
+  if (failAfter === "giaEvidence") {
+    throw new Error("forced-gia-evidence-insert-failure");
+  }
+  const giaEvidence = await insertSnapshotGiaEvidence(dbClient, {
+    clientId, developmentId, periodRow, snapshotId: header.id,
+    evidence: snapshot.giaEvidence, actor,
+  });
+
   verifyPersistedSnapshot(header, insertedRows, insertedPlots, snapshot);
-  return snapshotHeaderToDocument(header, insertedRows, insertedPlots);
+  return snapshotHeaderToDocument(header, insertedRows, insertedPlots, giaEvidence);
 }
 
 module.exports = {

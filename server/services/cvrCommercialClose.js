@@ -120,6 +120,7 @@ async function buildWholeCvrCloseCandidate(options = {}) {
       revenueSettingsId: revenue.settingsId,
       revenueSettingsVersion: revenue.settingsVersion,
       plots: revenue.plots,
+      giaEvidence: revenue.giaEvidence,
     },
   };
 }

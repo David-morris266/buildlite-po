@@ -18,10 +18,19 @@ export function buildActiveDevelopmentGiaSummary({ development, historic = false
   }
   let plots;
   if (historic) {
-    plots = snapshot?.sourceReadiness?.plotMaster?.value;
-    if (!Array.isArray(plots)) {
+    const evidence = snapshot?.giaEvidence;
+    if (!evidence?.captured) {
       return unavailable('Historic CVR does not contain frozen Plot Master GIA evidence.');
     }
+    if (evidence.availabilityState !== 'complete' || !(Number(evidence.totalActiveGia) > 0)) {
+      return unavailable('Historic CVR has incomplete frozen Plot Master GIA evidence.', Number(evidence.activePlotCount) || 0);
+    }
+    return {
+      activePlotCount: Number(evidence.activePlotCount),
+      activePlotGiaFt2: Number(evidence.totalActiveGia),
+      giaComplete: true,
+      giaUnavailableReason: null,
+    };
   } else {
     plots = development?.plotMaster?.plots;
     if (!Array.isArray(plots)) {

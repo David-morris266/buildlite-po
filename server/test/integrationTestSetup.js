@@ -161,6 +161,15 @@ async function prepareIntegrationTestDatabase(pool) {
       'utf8'
     ));
   }
+  const hasCvrGiaEvidence = await pool.query(
+    "SELECT 1 FROM information_schema.tables WHERE table_name='cvr_period_snapshot_gia_evidence'"
+  );
+  if (!hasCvrGiaEvidence.rowCount) {
+    await pool.query(fs.readFileSync(
+      path.join(__dirname, '..', 'migrations', '069_cvr_snapshot_plot_master_gia.sql'),
+      'utf8'
+    ));
+  }
   const activeClientId = await ensureActiveTestClient(pool);
   await ensureDefaultTestPrincipal(pool, activeClientId);
 }

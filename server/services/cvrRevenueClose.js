@@ -14,6 +14,7 @@ const {
   isSecuredRevenueStatus,
   DEFAULT_REVENUE_SOURCE,
 } = require("./cvrRevenueCloseFormulas");
+const { buildCvrGiaSnapshotEvidence } = require("./cvrGiaSnapshotEvidence");
 
 function sourceFailure(reason, extra = {}) {
   return { loaded: false, ready: false, reason, ...extra };
@@ -291,10 +292,14 @@ async function buildCvrRevenueCloseCandidate({
     blockers.push({ source: "revenueSettings", reason: "revenue-settings-query-failed" });
   }
 
+  const giaEvidence = buildCvrGiaSnapshotEvidence(development);
   if (blockers.some((item) => item.reason.endsWith("query-failed"))) {
-    return notReady({ clientId, developmentId, blockers, sources });
+    return { ...notReady({ clientId, developmentId, blockers, sources }), giaEvidence };
   }
-  return buildRevenueAuthorityFromDocuments({ clientId, developmentId, development, settingsDocument });
+  return {
+    ...buildRevenueAuthorityFromDocuments({ clientId, developmentId, development, settingsDocument }),
+    giaEvidence,
+  };
 }
 
 module.exports = {
