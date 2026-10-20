@@ -799,11 +799,10 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
   assert.equal(approvedP01.period.snapshot.rows.reduce((sum, row) => sum + row.finalForecast, 0), approvedP01.period.snapshot.finalForecast);
   const lockedP01 = (await pool.query('SELECT period_type,status,reporting_month FROM cvr_periods WHERE id=$1',[p01.period.id])).rows[0];
   assert.deepEqual({periodType:lockedP01.period_type,status:lockedP01.status,reportingMonth:`${lockedP01.reporting_month.getFullYear()}-${String(lockedP01.reporting_month.getMonth()+1).padStart(2,'0')}`},{periodType:'monthly_cvr',status:'locked',reportingMonth:'2027-04'});
-  const readiness = async()=>({ok:true,readiness:{canCreateFirstCvr:true,items:[],establishedLegacy:false}});
-  const sameMonth = await createCvrPeriod(client.id,developmentId,{reportingMonth:'2027-04'},{actor:'SS1 Director',currentDate:new Date('2027-08-02T12:00:00Z'),loadReadiness:readiness});
+  const sameMonth = await createCvrPeriod(client.id,developmentId,{reportingMonth:'2027-04'},{actor:'SS1 Director',currentDate:new Date('2027-08-02T12:00:00Z')});
   assert.equal(sameMonth.code,'CVR_REPORTING_PERIOD_NOT_AFTER_PREVIOUS',sameMonth.message);
-  assert.equal((await createCvrPeriod(client.id,developmentId,{reportingMonth:'2027-03'},{actor:'SS1 Director',currentDate:new Date('2027-08-02T12:00:00Z'),loadReadiness:readiness})).code,'CVR_REPORTING_PERIOD_NOT_AFTER_PREVIOUS');
-  const p02 = await createCvrPeriod(client.id,developmentId,{reportingMonth:'2027-07'},{actor:'SS1 Director',currentDate:new Date('2027-08-02T12:00:00Z'),loadReadiness:readiness});
+  assert.equal((await createCvrPeriod(client.id,developmentId,{reportingMonth:'2027-03'},{actor:'SS1 Director',currentDate:new Date('2027-08-02T12:00:00Z')})).code,'CVR_REPORTING_PERIOD_NOT_AFTER_PREVIOUS');
+  const p02 = await createCvrPeriod(client.id,developmentId,{reportingMonth:'2027-07'},{actor:'SS1 Director',currentDate:new Date('2027-08-02T12:00:00Z')});
   assert.equal(p02.ok,true);
   assert.equal(p02.period.periodKey,'P02');
   assert.equal(p02.period.budgetSourceMode,'site_start_budget');
@@ -819,10 +818,19 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
     [p02.period.id]
   )).rows[0].actor, approvalAuth.displayName);
   await pool.query("UPDATE cvr_periods SET status='locked',submitted_at=NOW(),submitted_by='SS1 Director',approved_at=NOW(),approved_by='SS1 Director' WHERE id=$1",[p02.period.id]);
-  const p03 = await createCvrPeriod(client.id,developmentId,{reportingMonth:'2028-02'},{actor:'SS1 Director',currentDate:new Date('2028-03-02T12:00:00Z'),loadReadiness:readiness});
+  await pool.query('UPDATE cvr_periods SET site_start_source_snapshot_id=$1 WHERE id=$2', [approvedP01.period.snapshot.id, p02.period.id]);
+  const rejectedP03 = await createCvrPeriod(client.id,developmentId,{reportingMonth:'2028-02'},{actor:'SS1 Director',currentDate:new Date('2028-03-02T12:00:00Z')});
+  assert.equal(rejectedP03.ok,false);
+  assert.equal(rejectedP03.status,409);
+  assert.equal(rejectedP03.blockers.some(blocker => blocker.key === 'site_start_budget_authority'),true);
+  assert.equal(Number((await pool.query("SELECT COUNT(*) n FROM cvr_periods WHERE client_id=$1 AND development_id=$2 AND period_key='P03'",[client.id,developmentId])).rows[0].n),0);
+  await pool.query('UPDATE cvr_periods SET site_start_source_snapshot_id=$1 WHERE id=$2', [approved.period.snapshot.id, p02.period.id]);
+  const p03 = await createCvrPeriod(client.id,developmentId,{reportingMonth:'2028-02'},{actor:'SS1 Director',currentDate:new Date('2028-03-02T12:00:00Z')});
   assert.equal(p03.ok,true,p03.message);
   assert.equal(p03.period.periodKey,'P03');
   assert.equal(p03.period.reportingMonth,'2028-02-01');
+  assert.equal(p03.period.budgetSourceMode,'site_start_budget');
+  assert.equal(p03.period.siteStartSourceSnapshotId,approved.period.snapshot.id);
   assert.equal((await approveCvrPeriod(client.id, developmentId, created.period.id, {
     version: approved.period.version, approvalReference: 'DUPLICATE', comment: 'Duplicate',
   }, { actor: 'SS1 Director', auth: approvalAuth, buildWholeCloseCandidate: wholeCandidate })).status, 409);

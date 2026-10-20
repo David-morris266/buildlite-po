@@ -314,7 +314,7 @@ async function createCvrPeriod(clientId, developmentId, body = {}, {
       await dbClient.query("ROLLBACK");
       return readinessResult;
     }
-    if (!readinessResult.readiness.canCreateFirstCvr) {
+    if (!readinessResult.readiness.canCreatePeriod) {
       await dbClient.query("ROLLBACK");
       return {
         ok: false,

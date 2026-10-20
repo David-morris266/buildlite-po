@@ -21,8 +21,22 @@ function evaluateDevelopmentCommercialReadiness(facts = {}) {
   const budget = facts.budget;
   const appraisal = facts.landAppraisal;
   const establishedLegacy = Boolean(periods?.rows?.some(period => period.budgetSource === 'legacy_cvr'));
-  const hasMonthlyHistory = Boolean(periods?.rows?.some(period => period.periodType !== 'site_start'));
-  const usesSiteStartLifecycle = facts.landAppraisal !== undefined && !hasMonthlyHistory && !establishedLegacy;
+  const monthlyPeriods = periods?.rows?.filter(period => period.periodType !== 'site_start') || [];
+  const hasMonthlyHistory = monthlyPeriods.length > 0;
+  const siteStartPeriod = periods?.rows?.find(period => period.periodType === 'site_start');
+  const siteStartMonthlyPeriods = monthlyPeriods.filter(period => period.budgetSource === 'site_start_budget');
+  const hasSiteStartMonthlyChain = siteStartMonthlyPeriods.length > 0;
+  const siteStartSourceIds = new Set(siteStartMonthlyPeriods.map(period => period.siteStartSourceSnapshotId).filter(Boolean));
+  const siteStartLinkageComplete = hasSiteStartMonthlyChain &&
+    monthlyPeriods.every(period => period.budgetSource === 'site_start_budget') &&
+    siteStartMonthlyPeriods.every(period => Boolean(period.siteStartSourceSnapshotId)) &&
+    siteStartSourceIds.size === 1 &&
+    facts.siteStartBudgetAuthority?.available === true &&
+    facts.siteStartBudgetAuthority?.valid === true &&
+    facts.siteStartBudgetAuthority?.snapshotId === [...siteStartSourceIds][0];
+  const hasVerifiedDevelopmentBudget = Boolean(budget?.available && budget.exists && budget.integrityValid);
+  const usesSiteStartLifecycle = facts.landAppraisal !== undefined && !hasMonthlyHistory && !establishedLegacy && !hasVerifiedDevelopmentBudget;
+  const requiresSiteStartCutover = Boolean(siteStartPeriod?.status === 'locked' && !hasMonthlyHistory && !establishedLegacy);
   const openPeriod = periods?.rows?.find(period => ['draft', 'submitted'].includes(period.status));
 
   if (!costCodes?.available) items.push(sourceUnavailable('cost_code_master', 'Cost Code Master', { view: 'administration', section: 'cost-codes' }));
@@ -37,19 +51,38 @@ function evaluateDevelopmentCommercialReadiness(facts = {}) {
     if (!appraisal?.available) items.push(sourceUnavailable('land_appraisal', 'Land Purchase Appraisal', { tab: 'budget' }));
     else if (!appraisal.exists || !appraisal.integrityValid) items.push(item('land_appraisal', STATES.BLOCKER, 'Land Purchase Appraisal', appraisal.exists ? 'Land Purchase Appraisal integrity could not be verified.' : 'Capture the approved Land Purchase Appraisal before creating Site Start.', { tab: 'budget' }, { draftCreationRequirement: true }));
     else items.push(item('land_appraisal', STATES.READY, 'Land Purchase Appraisal', 'Immutable Land Purchase Appraisal captured.', { tab: 'budget' }, { draftCreationRequirement: true }));
-    const siteStart = periods?.rows?.find(period => period.periodType === 'site_start');
-    if (appraisal?.exists && appraisal.integrityValid && !siteStart) items.push(item('site_start_period', STATES.ATTENTION, 'Site Start forecast', 'Create the working Site Start forecast from the captured appraisal.', { tab: 'budget' }, { draftCreationRequirement: true }));
+    if (appraisal?.exists && appraisal.integrityValid && !siteStartPeriod) items.push(item('site_start_period', STATES.ATTENTION, 'Site Start forecast', 'Create the working Site Start forecast from the captured appraisal.', { tab: 'budget' }, { draftCreationRequirement: true }));
+    if (requiresSiteStartCutover) items.push(item('site_start_period', STATES.READY, 'Site Start forecast', 'Locked Site Start is ready for the governed P01 cutover.', { tab: 'cvr' }, { requiresSiteStartCutover: true }));
+  }
+
+  if (hasSiteStartMonthlyChain && !siteStartLinkageComplete) {
+    const authorityUnavailable = facts.siteStartBudgetAuthority?.available === false;
+    items.push(item(
+      'site_start_budget_authority',
+      STATES.BLOCKER,
+      'Site Start Budget authority',
+      authorityUnavailable
+        ? 'The frozen Site Start Budget linkage could not be verified. No subsequent CVR can be created.'
+        : 'The monthly CVR chain has missing or inconsistent Site Start Budget linkage. No subsequent CVR can be created.',
+      { tab: 'cvr' },
+      { draftCreationRequirement: true, sourceAvailable: !authorityUnavailable }
+    ));
+  } else if (siteStartLinkageComplete) {
+    items.push(item('site_start_budget_authority', STATES.READY, 'Site Start Budget authority', 'The monthly CVR chain retains its verified frozen Site Start Budget source.', { tab: 'cvr' }));
   }
 
   if (!budget?.available) items.push(sourceUnavailable('development_budget', 'Development Budget', { tab: 'budget' }));
   else if (!budget.exists || !budget.integrityValid) {
-    const state = (establishedLegacy && !budget.exists) || usesSiteStartLifecycle ? STATES.ATTENTION : STATES.BLOCKER;
+    const siteStartBudgetChain = hasSiteStartMonthlyChain;
+    const state = (establishedLegacy && !budget.exists) || usesSiteStartLifecycle || siteStartBudgetChain ? STATES.ATTENTION : STATES.BLOCKER;
     const reason = !budget.integrityValid && budget.exists
       ? 'Development Budget integrity could not be verified.'
       : establishedLegacy
         ? 'This established development still uses its compatible legacy CVR budget workflow.'
         : usesSiteStartLifecycle
           ? 'No separate Development Budget is required to prepare Site Start.'
+          : siteStartBudgetChain
+            ? 'This monthly CVR chain continues to use its fixed Site Start Budget; no separate Development Budget is required.'
           : 'Establish the approved Development Budget before creating the first CVR.';
     items.push(item('development_budget', state, 'Development Budget', reason, { tab: 'budget' }, { exists: Boolean(budget.exists), integrityValid: Boolean(budget.integrityValid) }));
   } else items.push(item('development_budget', STATES.READY, 'Development Budget', 'Authoritative Development Budget is established and verified.', { tab: 'budget' }));
@@ -62,7 +95,7 @@ function evaluateDevelopmentCommercialReadiness(facts = {}) {
   const revenue = facts.revenue;
   if (!revenue?.available) items.push(sourceUnavailable('revenue', 'Revenue', { tab: 'revenue' }));
   else if (!revenue.ready) items.push(item('revenue', STATES.ATTENTION, 'Revenue', revenue.reason || 'Revenue needs to be completed before this CVR can be finalised.', { tab: revenue.plotMasterMissing ? 'plot-master' : 'revenue' }, { blocksCompletion: true }));
-  else if (!revenue.plotCount || revenue.sparse) items.push(item('revenue', STATES.ATTENTION, 'Revenue', 'Revenue is available but the current Plot Master or pricing position is commercially sparse.', { tab: 'revenue' }, { count: revenue.plotCount || 0 }));
+  else if (revenue.revenueMode !== 'summary' && (!revenue.plotCount || revenue.sparse)) items.push(item('revenue', STATES.ATTENTION, 'Revenue', 'Revenue is available but the current Plot Master or pricing position is commercially sparse.', { tab: 'revenue' }, { count: revenue.plotCount || 0 }));
   else items.push(item('revenue', STATES.READY, 'Revenue', 'Revenue sources are configured.', { tab: 'revenue' }, { count: revenue.plotCount }));
 
   const plotTenure=facts.plotTenure;
@@ -102,14 +135,15 @@ function evaluateDevelopmentCommercialReadiness(facts = {}) {
 
   const classifiedItems = items.map(entry => ({
     ...entry,
-    draftCreationRequirement: entry.draftCreationRequirement || DRAFT_CREATION_REQUIREMENT_KEYS.has(entry.key) || (!usesSiteStartLifecycle && entry.key === 'development_budget'),
+    draftCreationRequirement: entry.draftCreationRequirement || DRAFT_CREATION_REQUIREMENT_KEYS.has(entry.key) || (!usesSiteStartLifecycle && !hasSiteStartMonthlyChain && entry.key === 'development_budget'),
     blocksDraftCreation: Boolean(
-      ((entry.draftCreationRequirement || DRAFT_CREATION_REQUIREMENT_KEYS.has(entry.key) || (!usesSiteStartLifecycle && entry.key === 'development_budget')) && entry.state === STATES.BLOCKER) ||
+      ((entry.draftCreationRequirement || DRAFT_CREATION_REQUIREMENT_KEYS.has(entry.key) || (!usesSiteStartLifecycle && !hasSiteStartMonthlyChain && entry.key === 'development_budget')) && entry.state === STATES.BLOCKER) ||
       (entry.key === 'cvr_periods' && entry.state === STATES.BLOCKER) ||
       entry.preventsPeriodCreation
     ),
   }));
-  const canCreateFirstCvr = !usesSiteStartLifecycle && !classifiedItems.some(entry => entry.blocksDraftCreation);
+  const canCreatePeriod = (!usesSiteStartLifecycle || requiresSiteStartCutover) && !classifiedItems.some(entry => entry.blocksDraftCreation);
+  const canCreateFirstCvr = !hasMonthlyHistory && canCreatePeriod;
   const canCreateSiteStart = usesSiteStartLifecycle && Boolean(appraisal?.exists && appraisal.integrityValid) && !periods?.rows?.some(period => period.periodType === 'site_start');
   const commercialItems = classifiedItems.filter(entry => !entry.workflowState);
   const overallState = commercialItems.some(entry => entry.state === STATES.BLOCKER)
@@ -117,7 +151,7 @@ function evaluateDevelopmentCommercialReadiness(facts = {}) {
     : commercialItems.some(entry => entry.state === STATES.ATTENTION)
       ? STATES.ATTENTION
       : STATES.READY;
-  return { policy: 'site_start_onboarding_v1', overallState, canCreateFirstCvr, canCreateSiteStart, usesSiteStartLifecycle, hasCvrHistory: Boolean(periods?.rows?.length), establishedLegacy, items: classifiedItems };
+  return { policy: 'site_start_onboarding_v1', overallState, canCreatePeriod, canCreateNextCvr: hasMonthlyHistory && canCreatePeriod, canCreateFirstCvr, canCreateSiteStart, requiresSiteStartCutover, usesSiteStartLifecycle, hasCvrHistory: Boolean(periods?.rows?.length), hasMonthlyHistory, establishedLegacy, items: classifiedItems };
 }
 
 async function loadDevelopmentCommercialReadiness(clientId, developmentId, query = db.query) {
@@ -127,7 +161,20 @@ async function loadDevelopmentCommercialReadiness(clientId, developmentId, query
   if (!development) return { ok: false, status: 404, message: 'Development not found.' };
 
   const costCodes = await run(async () => ({ activeCount: Number((await query('SELECT COUNT(*)::int count FROM cost_codes WHERE client_id=$1 AND is_active=true', [clientId])).rows[0].count) }));
-  const periods = await run(async () => ({ rows: (await query('SELECT period_key,status,budget_source,period_type FROM cvr_periods WHERE client_id=$1 AND development_id=$2 ORDER BY created_at', [clientId, developmentId])).rows.map(row => ({ periodKey: row.period_key, status: row.status, budgetSource: row.budget_source, periodType: row.period_type || 'monthly_cvr' })) }));
+  const periods = await run(async () => ({ rows: (await query('SELECT period_key,status,budget_source,period_type,site_start_source_snapshot_id FROM cvr_periods WHERE client_id=$1 AND development_id=$2 ORDER BY created_at', [clientId, developmentId])).rows.map(row => ({ periodKey: row.period_key, status: row.status, budgetSource: row.budget_source, periodType: row.period_type || 'monthly_cvr', siteStartSourceSnapshotId: row.site_start_source_snapshot_id || null })) }));
+  let siteStartBudgetAuthority = { available: true, valid: false, snapshotId: null };
+  if (periods.available) {
+    const siteStartMonthly = periods.rows.filter(period => period.periodType !== 'site_start' && period.budgetSource === 'site_start_budget');
+    const sourceIds = [...new Set(siteStartMonthly.map(period => period.siteStartSourceSnapshotId).filter(Boolean))];
+    if (siteStartMonthly.length && sourceIds.length === 1 && siteStartMonthly.every(period => period.siteStartSourceSnapshotId)) {
+      try {
+        await require('./cvrSiteStartBudgetSource').authority({ query }, clientId, developmentId, sourceIds[0]);
+        siteStartBudgetAuthority = { available: true, valid: true, snapshotId: sourceIds[0] };
+      } catch (error) {
+        siteStartBudgetAuthority = { available: false, valid: false, snapshotId: sourceIds[0], error: error.message };
+      }
+    }
+  }
   const landAppraisal = await run(async () => { const result = await require('./landAppraisalRepository').getLandAppraisalAuthority(clientId, developmentId); return { exists: Boolean(result.appraisal), integrityValid: Boolean(result.appraisal?.integrity?.valid) }; });
   const budget = await run(async () => {
     const rows = (await query('SELECT event_type,source_snapshot,source_snapshot_sha256,source_snapshot_hash_scheme FROM development_budget_events WHERE client_id=$1 AND development_id=$2 ORDER BY sequence_number', [clientId, developmentId])).rows;
@@ -150,7 +197,7 @@ async function loadDevelopmentCommercialReadiness(clientId, developmentId, query
       'plot-master-unavailable': 'The Plot Master could not be loaded.',
     };
     const reasons = (candidate.blockers || []).map(blocker => blocker.message || reasonMessages[blocker.reason] || 'Revenue information requires review.').filter(Boolean);
-    return { ready: Boolean(candidate.ready), reason: reasons.join(' ') || null, plotCount: candidate.plots?.length || 0, plotMasterMissing: candidate.blockers?.some(blocker => blocker.source === 'plotMaster'), sparse: false };
+    return { ready: Boolean(candidate.ready), reason: reasons.join(' ') || null, revenueMode: candidate.assumptions?.revenueMode || null, plotCount: candidate.plots?.length || 0, plotMasterMissing: candidate.blockers?.some(blocker => blocker.source === 'plotMaster'), sparse: false };
   });
   const plotTenure=await run(async()=>{const plots=development.payload?.plotMaster?.plots;if(!Array.isArray(plots)||!plots.length)return {missing:true,total:0,reviewed:0,needsAttention:0};const valid=new Set(['OPEN_MARKET','AFFORDABLE_RENT','SHARED_OWNERSHIP','FIRST_HOMES','ADDITIONALITY','DISCOUNT_MARKET_SALE','OTHER']);const reviewed=plots.filter(plot=>valid.has(String(plot.tenureCode||'').trim().toUpperCase())).length;return {missing:false,total:plots.length,reviewed,needsAttention:plots.length-reviewed};});
   const variationExposure = await run(async () => {
@@ -158,7 +205,7 @@ async function loadDevelopmentCommercialReadiness(clientId, developmentId, query
     return { blockers: live.blockers || [], itemCount: live.document?.items?.length || 0 };
   });
 
-  return { ok: true, status: 200, readiness: evaluateDevelopmentCommercialReadiness({ costCodes, periods, budget, landAppraisal, purchaseOrders, packages, certificates, commercialEvents, ledger, prelims, sellingCosts, revenue, plotTenure, variationExposure }) };
+  return { ok: true, status: 200, readiness: evaluateDevelopmentCommercialReadiness({ costCodes, periods, siteStartBudgetAuthority, budget, landAppraisal, purchaseOrders, packages, certificates, commercialEvents, ledger, prelims, sellingCosts, revenue, plotTenure, variationExposure }) };
 }
 
 module.exports = { STATES, evaluateDevelopmentCommercialReadiness, loadDevelopmentCommercialReadiness };

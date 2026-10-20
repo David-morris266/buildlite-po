@@ -19,7 +19,7 @@ function render(readiness, onResolve = vi.fn(), onStartFirstCvr = vi.fn()) {
 
 describe('Development commercial readiness', () => {
   it('promotes blockers and attention while hiding routine ready items', () => {
-    const view = render({ overallState: 'blocker', canCreateFirstCvr: true, hasCvrHistory: true, items: [
+    const view = render({ overallState: 'blocker', canCreatePeriod: true, canCreateFirstCvr: false, hasCvrHistory: true, items: [
       { key: 'revenue', state: 'blocker', title: 'Revenue', reason: 'Revenue settings are missing.', resolutionTarget: { tab: 'revenue' } },
       { key: 'ledger', state: 'needs_attention', title: 'Purchase ledger', reason: 'Confirm £0 actuals.', resolutionTarget: { tab: 'ledger' } },
       { key: 'packages', state: 'ready', title: 'Packages', reason: 'No packages recorded.' },
@@ -32,7 +32,7 @@ describe('Development commercial readiness', () => {
   });
 
   it('shows the clean Ready state without a giant checklist', () => {
-    const view = render({ overallState: 'ready', canCreateFirstCvr: true, hasCvrHistory: true, items: [{ key: 'budget', state: 'ready', title: 'Development Budget', reason: 'Ready' }] });
+    const view = render({ overallState: 'ready', canCreatePeriod: true, canCreateFirstCvr: false, hasCvrHistory: true, items: [{ key: 'budget', state: 'ready', title: 'Development Budget', reason: 'Ready' }] });
     expect(view.text()).toContain('No commercial readiness issues require attention.');
     expect(container.querySelectorAll('li')).toHaveLength(0);
     expect(container.querySelector('.dev-workspace__readiness')).not.toBeNull();
@@ -68,7 +68,7 @@ describe('Development commercial readiness', () => {
   });
 
   it('presents an established open CVR as workflow state without first-CVR or blocker wording', () => {
-    const view = render({ overallState: 'needs_attention', canCreateFirstCvr: false, hasCvrHistory: true, items: [
+    const view = render({ overallState: 'needs_attention', canCreatePeriod: false, canCreateFirstCvr: false, hasCvrHistory: true, items: [
       { key: 'cvr_periods', state: 'needs_attention', workflowState: true, title: 'CVR in progress', reason: 'P02 is draft. Continue the current CVR before creating another.', openPeriod: { periodKey: 'P02' }, resolutionTarget: { tab: 'cvr', periodKey: 'P02' } },
       { key: 'prelims', state: 'needs_attention', title: 'Prelims', reason: 'Prelims are not configured.', resolutionTarget: { tab: 'prelims' } },
       { key: 'selling_costs', state: 'needs_attention', title: 'Selling Costs', reason: 'Selling Costs are not configured.', resolutionTarget: { tab: 'selling-costs' } },
@@ -81,6 +81,21 @@ describe('Development commercial readiness', () => {
     expect(buttons[0].textContent).toBe('Continue current CVR');
     act(() => buttons[0].click());
     expect(view.onResolve).toHaveBeenCalledWith({ tab: 'cvr', periodKey: 'P02' });
+  });
+
+  it('presents governed Site Start continuation without first-CVR Development Budget wording', () => {
+    const view = render({ overallState: 'needs_attention', canCreatePeriod: true, canCreateNextCvr: true, canCreateFirstCvr: false, hasCvrHistory: true, hasMonthlyHistory: true, items: [
+      { key: 'development_budget', state: 'needs_attention', title: 'Development Budget', reason: 'This monthly CVR chain continues to use its fixed Site Start Budget; no separate Development Budget is required.', resolutionTarget: { tab: 'budget' } },
+    ] });
+    expect(view.text()).toContain('Ready to create the next working CVR.');
+    expect(view.text()).toContain('no separate Development Budget is required');
+    expect(view.text()).not.toContain('before creating the first CVR');
+  });
+
+  it('explains the mandatory Site Start to P01 cutover', () => {
+    const view = render({ overallState: 'needs_attention', canCreatePeriod: true, canCreateFirstCvr: true, requiresSiteStartCutover: true, hasCvrHistory: true, hasMonthlyHistory: false, items: [] });
+    expect(view.text()).toContain('Create P01 through the governed Site Start cutover.');
+    expect(view.text()).not.toContain('Ready to create the next working CVR.');
   });
 
   it('fails first-period creation closed while preserving existing period access', () => {

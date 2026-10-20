@@ -88,8 +88,88 @@ test('established legacy CVR compatibility survives absent Development Budget', 
     budget: { available: true, exists: false, integrityValid: false },
   }));
   assert.equal(result.establishedLegacy, true);
-  assert.equal(result.canCreateFirstCvr, true);
+  assert.equal(result.canCreateFirstCvr, false);
+  assert.equal(result.canCreateNextCvr, true);
+  assert.equal(result.canCreatePeriod, true);
   assert.equal(result.items.find(entry => entry.key === 'development_budget').state, 'needs_attention');
+});
+
+test('verified Site Start Budget monthly chain can create the next CVR without a separate Development Budget', () => {
+  const result = evaluateDevelopmentCommercialReadiness(facts({
+    landAppraisal: { available: true, exists: true, integrityValid: true },
+    periods: { available: true, rows: [
+      { periodKey: 'Site Start', periodType: 'site_start', status: 'locked', budgetSource: 'land_appraisal' },
+      { periodKey: 'P01', periodType: 'monthly_cvr', status: 'locked', budgetSource: 'site_start_budget', siteStartSourceSnapshotId: 'site-start-snapshot-1' },
+      { periodKey: 'P02', periodType: 'monthly_cvr', status: 'locked', budgetSource: 'site_start_budget', siteStartSourceSnapshotId: 'site-start-snapshot-1' },
+    ] },
+    siteStartBudgetAuthority: { available: true, valid: true, snapshotId: 'site-start-snapshot-1' },
+    budget: { available: true, exists: false, integrityValid: false },
+  }));
+  assert.equal(result.hasMonthlyHistory, true);
+  assert.equal(result.canCreateFirstCvr, false);
+  assert.equal(result.canCreateNextCvr, true);
+  assert.equal(result.canCreatePeriod, true);
+  assert.equal(result.items.find(entry => entry.key === 'development_budget').state, 'needs_attention');
+  assert.match(result.items.find(entry => entry.key === 'development_budget').reason, /fixed Site Start Budget/);
+  assert.equal(result.items.find(entry => entry.key === 'site_start_budget_authority').state, 'ready');
+});
+
+test('missing, inconsistent or unverifiable Site Start linkage fails subsequent creation closed', () => {
+  const basePeriods = [
+    { periodKey: 'P01', periodType: 'monthly_cvr', status: 'locked', budgetSource: 'site_start_budget', siteStartSourceSnapshotId: 'source-1' },
+    { periodKey: 'P02', periodType: 'monthly_cvr', status: 'locked', budgetSource: 'site_start_budget', siteStartSourceSnapshotId: 'source-1' },
+  ];
+  for (const [rows, authority] of [
+    [[basePeriods[0], { ...basePeriods[1], siteStartSourceSnapshotId: null }], { available: true, valid: false, snapshotId: null }],
+    [[basePeriods[0], { ...basePeriods[1], siteStartSourceSnapshotId: 'source-2' }], { available: true, valid: false, snapshotId: null }],
+    [basePeriods, { available: false, valid: false, snapshotId: 'source-1' }],
+    [[basePeriods[0], { periodKey: 'P02', periodType: 'monthly_cvr', status: 'locked', budgetSource: 'development_budget', siteStartSourceSnapshotId: null }], { available: true, valid: true, snapshotId: 'source-1' }],
+  ]) {
+    const result = evaluateDevelopmentCommercialReadiness(facts({
+      periods: { available: true, rows }, siteStartBudgetAuthority: authority,
+      budget: { available: true, exists: false, integrityValid: false },
+    }));
+    assert.equal(result.canCreatePeriod, false);
+    assert.equal(result.canCreateNextCvr, false);
+    assert.equal(result.items.find(entry => entry.key === 'site_start_budget_authority').blocksDraftCreation, true);
+  }
+});
+
+test('locked Site Start awaits governed P01 cutover rather than generic first-CVR onboarding', () => {
+  const result = evaluateDevelopmentCommercialReadiness(facts({
+    landAppraisal: { available: true, exists: true, integrityValid: true },
+    periods: { available: true, rows: [{ periodKey: 'Site Start', periodType: 'site_start', status: 'locked', budgetSource: 'land_appraisal' }] },
+    budget: { available: true, exists: false, integrityValid: false },
+  }));
+  assert.equal(result.requiresSiteStartCutover, true);
+  assert.equal(result.hasMonthlyHistory, false);
+  assert.equal(result.canCreatePeriod, true);
+  assert.equal(result.canCreateFirstCvr, true);
+});
+
+test('Draft or Submitted Site Start is not classified as locked or cutover-ready', () => {
+  for (const status of ['draft', 'submitted']) {
+    const result = evaluateDevelopmentCommercialReadiness(facts({
+      landAppraisal: { available: true, exists: true, integrityValid: true },
+      periods: { available: true, rows: [{ periodKey: 'Site Start', periodType: 'site_start', status, budgetSource: 'land_appraisal' }] },
+      budget: { available: true, exists: false, integrityValid: false },
+    }));
+    assert.equal(result.requiresSiteStartCutover, false);
+    assert.equal(result.canCreatePeriod, false);
+    assert.equal(result.items.some(entry => /Locked Site Start/.test(entry.reason)), false);
+    assert.equal(result.items.find(entry => entry.key === 'cvr_periods').blocksDraftCreation, true);
+  }
+});
+
+test('Summary Revenue does not infer sparse evidence from deliberately empty candidate plot rows', () => {
+  const summary = evaluateDevelopmentCommercialReadiness(facts({
+    revenue: { available: true, ready: true, revenueMode: 'summary', plotCount: 0, sparse: false },
+  }));
+  assert.equal(summary.items.find(entry => entry.key === 'revenue').state, 'ready');
+  const salesRegister = evaluateDevelopmentCommercialReadiness(facts({
+    revenue: { available: true, ready: true, revenueMode: 'sales_register', plotCount: 0, sparse: false },
+  }));
+  assert.equal(salesRegister.items.find(entry => entry.key === 'revenue').state, 'needs_attention');
 });
 
 test('an existing open period is the creation blocker and resolution target', () => {
@@ -98,6 +178,7 @@ test('an existing open period is the creation blocker and resolution target', ()
     prelims: { available: true, count: 0 }, sellingCosts: { available: true, count: 0 },
   }));
   assert.equal(result.canCreateFirstCvr, false);
+  assert.equal(result.canCreatePeriod, false);
   assert.equal(result.overallState, 'needs_attention');
   assert.equal(result.hasCvrHistory, true);
   assert.equal(result.items.find(entry => entry.key === 'cvr_periods').workflowState, true);

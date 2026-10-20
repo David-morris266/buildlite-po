@@ -79,8 +79,10 @@ export function CommercialReadinessCard({ readiness, loading = false, error = ''
       <p className={`po-status-badge po-status-badge--${readiness.overallState === 'blocker' ? 'danger' : readiness.overallState === 'needs_attention' ? 'warning' : 'success'}`}>{readinessLabel(readiness.overallState)}</p>
       <p>{workflow.length
         ? `${workflow[0].openPeriod?.periodKey || 'A CVR'} is in progress.`
-        : readiness.canCreateFirstCvr
-          ? readiness.hasCvrHistory ? 'Ready to create the next working CVR.' : 'Ready to create the first working CVR.'
+        : readiness.requiresSiteStartCutover
+          ? 'Locked Site Start is ready. Create P01 through the governed Site Start cutover.'
+          : readiness.canCreatePeriod
+            ? readiness.hasCvrHistory ? 'Ready to create the next working CVR.' : 'Ready to create the first working CVR.'
           : readiness.hasCvrHistory ? 'Another CVR period cannot be created at present.' : 'Resolve the creation blockers before starting the first CVR.'}</p>
       {workflow.length ? <ul className="dev-workspace__setup-list dev-workspace__readiness-workflow">{workflow.map(renderItem)}</ul> : null}
       {issues.length ? <>

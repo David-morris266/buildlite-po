@@ -24,7 +24,7 @@ test('new CVR adopts live authority, freezes exact submission, and becomes stale
 test('genuinely new Development without Budget Authority cannot create P01',async()=>{
  const developmentId=`dev-${randomUUID()}`; await pool.query("INSERT INTO developments(id,client_id,job_number,development_name,status,payload) VALUES($1,$2,'NO-BUDGET','No Budget','live','{}')",[developmentId,f.client.id]);
  const result=await cvr.createCvrPeriod(f.client.id,developmentId,{periodKey:'P01',periodLabel:'P01',reportingMonth:'2026-09-01'},{actor:'QS',currentDate:FIXED_CURRENT_DATE});
- assert.equal(result.status,409); assert.equal(result.blockers.some(x=>x.key==='development_budget'),true);
+ assert.equal(result.status,409); assert.equal(result.blockers.some(x=>x.key==='land_appraisal'),true);
 });
 test('verified Development Budget that becomes unavailable fails closed without a legacy CVR shell',async()=>{
  const developmentId=`dev-${randomUUID()}`; await pool.query("INSERT INTO developments(id,client_id,job_number,development_name,status,payload) VALUES($1,$2,'BUDGET-RACE','Budget race','live','{}')",[developmentId,f.client.id]);
