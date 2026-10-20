@@ -9,8 +9,9 @@ const saveCommentary = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 const submitPeriod = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 const approvePeriod = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 const rejectPeriod = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
+const downloadPdf = vi.hoisted(() => vi.fn(async () => undefined));
 
-vi.mock('../api', () => ({ listPOs: vi.fn(async () => []) }));
+vi.mock('../api', () => ({ listPOs: vi.fn(async () => []), downloadCvrSummaryPdf: downloadPdf }));
 vi.mock('../commercial/commercialEvents', () => ({ subscribeCommercialChanged: () => () => {} }));
 vi.mock('../cvr/cvrSummaryHelpers', () => ({ buildCvrSummaryModel: () => summaryState.current }));
 vi.mock('../cvr/cvrPeriodStore', async (importOriginal) => ({
@@ -77,6 +78,7 @@ describe('CVR Summary Cost Code interaction', () => {
     submitPeriod.mockReset(); submitPeriod.mockResolvedValue({ ok: true });
     approvePeriod.mockReset(); approvePeriod.mockResolvedValue({ ok: true });
     rejectPeriod.mockReset(); rejectPeriod.mockResolvedValue({ ok: true });
+    downloadPdf.mockReset(); downloadPdf.mockResolvedValue(undefined);
     summaryState.current = model();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -94,6 +96,22 @@ describe('CVR Summary Cost Code interaction', () => {
       await Promise.resolve();
     });
   }
+
+  it('downloads the authoritative report once and exposes generation errors', async () => {
+    summaryState.current = model();
+    summaryState.current.period = { id: 'period-p04', periodKey: 'P04', periodType: 'monthly_cvr', status: 'draft' };
+    await render({ activeSubview: 'summary' });
+    const button = [...container.querySelectorAll('button')].find(node => node.textContent === 'Download PDF');
+    await act(async () => { button.click(); button.click(); await Promise.resolve(); });
+    expect(downloadPdf).toHaveBeenCalledTimes(1);
+    expect(downloadPdf).toHaveBeenCalledWith('hawthorn', 'period-p04', 'P04');
+    downloadPdf.mockRejectedValueOnce(new Error('409 — Authoritative evidence unavailable'));
+    await act(async () => { button.click(); await Promise.resolve(); });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('409 — Authoritative evidence unavailable');
+    downloadPdf.mockRejectedValueOnce(new Error('422 — Report exceeds one-page capacity'));
+    await act(async () => { button.click(); await Promise.resolve(); });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('422 — Report exceeds one-page capacity');
+  });
 
   it('saves a second component explanation with the complete authoritative collection', async () => {
     const systemExplanation = {
@@ -351,6 +369,7 @@ describe('CVR Summary Cost Code interaction', () => {
     summaryState.current.status = { label: 'Submitted', modifier: 'submitted' };
     summaryState.current.workflow = { showApprove: true, showReject: true };
     await render({ activeSubview: 'summary' });
+    expect([...container.querySelectorAll('button')].some(button => button.textContent === 'Download PDF')).toBe(false);
     act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Approve & Lock').click());
     const dialog = container.querySelector('[role="dialog"]');
     expect(dialog.textContent).toContain('Approve & Lock Site Start Budget');

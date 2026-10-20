@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, memo } from 'react';
 import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import CvrReportingMonthDialog from './CvrReportingMonthDialog';
 import CvrPeriodSubviewNav from './CvrPeriodSubviewNav';
-import { listPOs } from '../api';
+import { downloadCvrSummaryPdf, listPOs } from '../api';
 import { subscribeCommercialChanged } from '../commercial/commercialEvents';
 import { buildCvrSummaryModel } from '../cvr/cvrSummaryHelpers';
 import { formatSignedMovement } from '../cvr/cvrPeriodMovement';
@@ -316,6 +316,9 @@ export default function CVRSummaryPage({
   const [approveOpen, setApproveOpen] = useState(false);
   const [approveBusy, setApproveBusy] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState('');
+  const pdfBusyRef = useRef(false);
   const [siteStartApprovalReference, setSiteStartApprovalReference] = useState('');
   const [siteStartApprovalReason, setSiteStartApprovalReason] = useState('');
   const [submissionBlockers, setSubmissionBlockers] = useState([]);
@@ -404,6 +407,24 @@ export default function CVRSummaryPage({
     return buildCvrSummaryModel(development, { pos, periodKey, period });
   }, [development, pos, periodKey, refreshToken, localRefresh, certificatesReady]);
   const siteStart = summary?.period?.periodType === 'site_start';
+  const handleDownloadPdf = async () => {
+    if (pdfBusyRef.current || siteStart || !summary?.period?.id) return;
+    pdfBusyRef.current = true;
+    setPdfBusy(true);
+    setPdfError('');
+    try {
+      await downloadCvrSummaryPdf(
+        development.id,
+        summary.period.id,
+        summary.period.periodKey || periodKey
+      );
+    } catch (error) {
+      setPdfError(error.message || 'Unable to download CVR Summary PDF.');
+    } finally {
+      pdfBusyRef.current = false;
+      setPdfBusy(false);
+    }
+  };
   const siteStartRequirements = summary?.period?.variationExposure?.acknowledgementRequirements || [];
   const siteStartAcknowledged = new Set((summary?.period?.variationExposure?.acknowledgements || [])
     .map((entry) => `${entry.variationAccountItemId}:${entry.exceptionCode}`));
@@ -640,6 +661,11 @@ export default function CVRSummaryPage({
         onBack={onBackToRegister}
         actions={(
           <>
+            {!siteStart ? (
+              <button type="button" className="po-list-btn-secondary" onClick={handleDownloadPdf} disabled={pdfBusy}>
+                {pdfBusy ? 'Generating PDF…' : 'Download PDF'}
+              </button>
+            ) : null}
             {summary.workflow.showSubmit ? (
               <button type="button" className="po-btn-primary" onClick={() => siteStart ? setSubmitOpen(true) : handleSubmit()}>
                 Submit for Approval
@@ -702,6 +728,8 @@ export default function CVRSummaryPage({
           </dl>
         </div>
       </ApplicationPageHeader>
+
+      {pdfError ? <div className="po-list-feedback po-list-feedback--error" role="alert">{pdfError}</div> : null}
 
       <CvrPeriodSubviewNav activeSubview={activeSubview} onSelect={onSelectSubview} />
 

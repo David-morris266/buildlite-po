@@ -226,6 +226,14 @@ export async function downloadPoPdf(number) {
   });
 }
 
+export async function downloadCvrSummaryPdf(developmentId, periodId, periodKey = 'CVR') {
+  if (!developmentId || !periodId) throw new Error('Development and CVR period are required.');
+  return authenticatedBlob(buildUrl(`/api/developments/${encodeURIComponent(developmentId)}/cvr/periods/${encodeURIComponent(periodId)}/report.pdf`), {
+    downloadName: `${periodKey}-CVR-Summary.pdf`,
+    expectedContentType: 'application/pdf',
+  });
+}
+
 /* ---------- Brand ---------- */
 export async function getActiveBrand() {
   const res = await fetch(buildUrl("/api/brand/active"));

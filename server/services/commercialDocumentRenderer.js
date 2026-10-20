@@ -14,10 +14,18 @@ function renderCommercialDocumentHtml(documentType,payload){
 
 async function renderCommercialDocumentPdf(documentType,payload){
   const html=renderCommercialDocumentHtml(documentType,payload);
+  return renderHtmlPdf(html);
+}
+
+async function renderHtmlPdf(html,{capacityCheck=null}={}){
   const browser=await puppeteer.launch({headless:true,args:['--no-sandbox','--disable-setuid-sandbox']});
   try{const page=await browser.newPage();await page.setContent(html,{waitUntil:'domcontentloaded',timeout:15000});
+    if(capacityCheck){
+      const capacity=await page.evaluate(capacityCheck);
+      if(!capacity?.fits){const error=new Error(capacity?.message||'Report content exceeds one-page capacity.');error.code='REPORT_CAPACITY_EXCEEDED';error.status=422;throw error;}
+    }
     return Buffer.from(await page.pdf({format:'A4',printBackground:true,preferCSSPageSize:true,margin:{top:'10mm',right:'10mm',bottom:'10mm',left:'10mm'}}));
   }finally{await browser.close();}
 }
 
-module.exports={renderCommercialDocumentHtml,renderCommercialDocumentPdf};
+module.exports={renderCommercialDocumentHtml,renderCommercialDocumentPdf,renderHtmlPdf};

@@ -34,6 +34,8 @@ const {
 const { adoptPrelimsForecasts } = require("../services/prelimsAdoptionApplyService");
 const { addDraftCvrCostCodeMember } = require("../services/cvrMembershipService");
 const { importDraftCvrBudget } = require("../services/cvrBudgetImportService");
+const { buildCvrReportPayload } = require('../services/cvrReportService');
+const { renderCvrReportPdf } = require('../services/cvrReportRenderer');
 
 const router = express.Router({ mergeParams: true });
 
@@ -181,6 +183,19 @@ router.get("/cvr/periods/:periodId", async (req, res) => {
     res.status(500).json({ message: "Failed to load CVR period." });
   }
 });
+
+function createCvrReportHandler({buildPayload=buildCvrReportPayload,renderPdf=renderCvrReportPdf}={}){return async(req,res)=>{
+  try{
+    if(!isDbConfigured())return res.status(500).json({message:'Database not configured'});
+    const result=await buildPayload({clientId:req.buildliteAuth.clientId,developmentId:req.params.developmentId,periodId:req.params.periodId,auth:req.buildliteAuth});
+    if(!result.ok)return res.status(result.status||400).json({message:result.message,blockers:result.blockers});
+    const rendered=await renderPdf(result.payload);
+    const safe=`${result.payload.development.number||'development'}-${result.payload.period.key}-CVR-Summary`.replace(/[^a-z0-9._-]+/gi,'-');
+    res.set({'Content-Type':'application/pdf','Content-Disposition':`attachment; filename="${safe}.pdf"`,'Cache-Control':'no-store'});
+    return res.end(rendered.pdf);
+  }catch(error){return res.status(error.status||500).json({message:error.message||'Failed to generate CVR Summary PDF.',code:error.code});}
+};}
+router.get('/cvr/periods/:periodId/report.pdf',requirePermission(PERMISSIONS.COMMERCIAL_READ),createCvrReportHandler());
 
 router.patch("/cvr/periods/:periodId", requirePermission(PERMISSIONS.CVR_EDIT), async (req, res) => {
   try {
@@ -463,3 +478,4 @@ router.post("/cvr/periods/:periodId/prelims-adoption", requirePermission(PERMISS
 });
 
 module.exports = router;
+module.exports.createCvrReportHandler = createCvrReportHandler;
