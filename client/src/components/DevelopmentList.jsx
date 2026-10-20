@@ -33,28 +33,29 @@ export default function DevelopmentList({
           lead="The commercial home for each development — plot schedules, purchase orders, packages and reporting."
           showBack={false}
         />
-        <button
-          type="button"
-          className="po-btn-primary dev-list-page__action"
-          onClick={() => onNewDevelopment?.()}
-        >
-          New Development
-        </button>
+        {onNewDevelopment ? (
+          <button
+            type="button"
+            className="po-btn-primary dev-list-page__action"
+            onClick={onNewDevelopment}
+          >
+            New Development
+          </button>
+        ) : null}
       </div>
 
       {rows.length === 0 ? (
         <div className="po-module-card po-empty-state">
           <p className="po-empty-state__message">
-            No developments yet. Create your first development to begin building
-            the commercial record for a site.
+            {onNewDevelopment
+              ? 'No developments yet. Create your first development to begin building the commercial record for a site.'
+              : 'No developments are available for your account.'}
           </p>
-          <button
-            type="button"
-            className="po-btn-primary"
-            onClick={() => onNewDevelopment?.()}
-          >
-            New Development
-          </button>
+          {onNewDevelopment ? (
+            <button type="button" className="po-btn-primary" onClick={onNewDevelopment}>
+              New Development
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="po-table-wrap">

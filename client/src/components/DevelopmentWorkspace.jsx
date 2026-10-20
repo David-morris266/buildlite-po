@@ -230,12 +230,12 @@ export default function DevelopmentWorkspace({
         if (cancelled) return;
         const items = Array.isArray(data) ? data : data?.items || [];
         setPos(items);
+        setPosLoadState('loaded');
       })
       .catch(() => {
-        if (!cancelled) setPos([]);
-      })
-      .finally(() => {
-        if (!cancelled) setPosLoadState('loaded');
+        if (cancelled) return;
+        setPos([]);
+        setPosLoadState('error');
       });
 
     return () => {
@@ -404,6 +404,11 @@ export default function DevelopmentWorkspace({
       buildDevelopmentWorkspaceModel(development, {
         pos,
         serverPackages: packagesLoadState === 'loaded' ? serverPackages || [] : null,
+        posReady: posLoadState === 'loaded',
+        packagesReady: packagesLoadState === 'loaded',
+        certificatesReady:
+          !isPaymentCertificateServerAuthorityEnabled() ||
+          certificatesLoadState === 'loaded',
       }),
     [
       development,
@@ -414,6 +419,8 @@ export default function DevelopmentWorkspace({
       ledgerRefresh,
       cvrRefresh,
       commercialRefresh,
+      posLoadState,
+      certificatesLoadState,
     ]
   );
 

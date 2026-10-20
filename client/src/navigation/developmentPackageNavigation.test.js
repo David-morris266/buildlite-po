@@ -103,7 +103,7 @@ describe('Development package table navigation', () => {
     expect(button.props['aria-label']).toMatch(/Open package for PlumbCo/i);
   });
 
-  it('shows approved and current package columns with compact headers', () => {
+  it('shows the established package movement and current-value columns with compact headers', () => {
     const display = buildPackageCommercialDisplayFields(packageRow);
     const element = PackageTable({
       packages: [packageRow],
@@ -111,7 +111,8 @@ describe('Development package table navigation', () => {
     });
     const text = findTextContent(element).join(' ');
 
-    expect(text).toContain('Approved');
+    expect(text).toContain('Uninstructed');
+    expect(text).toContain('Issued VOs');
     expect(text).toContain('Current');
     expect(text).not.toContain('PO Commitment');
     expect(display.originalPoCommitment).toBe(1000);

@@ -64,8 +64,10 @@ export function formatDevelopmentListRow(development) {
     ...development,
     statusMeta: status,
     lastUpdatedLabel: formatPoDate(development.updatedAt),
-    plotsLabel: getPlotCount(development) > 0 ? getPlotCount(development) : '—',
-    packagesLabel: development.packageCount > 0 ? development.packageCount : '—',
+    plotsLabel: String(getPlotCount(development)),
+    // packageCount is a create-time payload default, not a maintained aggregate.
+    // Do not present its stored zero (or any later stale value) as current evidence.
+    packagesLabel: 'Unavailable',
   };
 }
 
@@ -88,11 +90,16 @@ export function buildDevelopmentWorkspaceModel(development, options = {}) {
     { serverPackages: options.serverPackages ?? null }
   );
 
+  const posReady = options.posReady !== false;
+  const packagesReady = options.packagesReady !== false;
+  const certificatesReady = options.certificatesReady !== false;
   const packageCount = snapshot.packageCount;
   const certificateCount = snapshot.certificateCount;
-  const purchaseOrderCount = snapshot.purchaseOrderCount || development.purchaseOrderCount;
+  const purchaseOrderCount = posReady ? snapshot.purchaseOrderCount : null;
   const committedValue = snapshot.committedValue;
   const certifiedToDate = snapshot.certifiedToDate;
+  const operationalCount = (value, ready) =>
+    ready ? String(Number(value) || 0) : 'Unavailable';
 
   const overallProgress =
     committedValue > 0
@@ -114,28 +121,23 @@ export function buildDevelopmentWorkspaceModel(development, options = {}) {
     summaryCards: [
       {
         label: 'Plots',
-        value: formatPlotsSummary(plotCount),
+        value: String(plotCount),
         modifier: 'default',
       },
       {
         label: 'Purchase Orders',
-        value: purchaseOrderCount > 0 ? String(purchaseOrderCount) : '—',
+        value: operationalCount(purchaseOrderCount, posReady),
         modifier: 'default',
       },
       {
         label: 'Packages',
-        value: packageCount > 0 ? String(packageCount) : '—',
+        value: operationalCount(packageCount, packagesReady),
         modifier: 'default',
       },
       {
         label: 'Certificates',
-        value: certificateCount > 0 ? String(certificateCount) : '—',
-        modifier: 'muted',
-      },
-      {
-        label: 'Forecast',
-        value: '—',
-        modifier: 'muted',
+        value: operationalCount(certificateCount, certificatesReady),
+        modifier: certificatesReady ? 'default' : 'muted',
       },
     ],
     commercialCards: [

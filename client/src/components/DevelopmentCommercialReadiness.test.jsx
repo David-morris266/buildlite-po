@@ -35,6 +35,7 @@ describe('Development commercial readiness', () => {
     const view = render({ overallState: 'ready', canCreateFirstCvr: true, hasCvrHistory: true, items: [{ key: 'budget', state: 'ready', title: 'Development Budget', reason: 'Ready' }] });
     expect(view.text()).toContain('No commercial readiness issues require attention.');
     expect(container.querySelectorAll('li')).toHaveLength(0);
+    expect(container.querySelector('.dev-workspace__readiness')).not.toBeNull();
   });
 
   it('guides a no-history Development using authoritative required metadata', () => {

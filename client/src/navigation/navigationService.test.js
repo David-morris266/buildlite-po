@@ -173,4 +173,18 @@ describe('navigationBuilders', () => {
     ]);
     expect(nav.title).toBe('Oakwood Meadows');
   });
+
+  it.each([
+    ['budget', 'Budget'],
+    ['variation-account', 'Variation Account'],
+  ])('uses the human-readable %s development breadcrumb', (activeTab, expectedLabel) => {
+    const nav = buildDevelopmentWorkspaceNavigation({
+      developmentName: 'Oakwood Meadows', activeTab,
+      onBackToList: () => {}, onSelectTab: () => {},
+      onBackToCvrRegister: () => {}, onBackToCvrSummary: () => {},
+    });
+    expect(nav.breadcrumbs.map((item) => item.label)).toEqual([
+      'Developments', 'Oakwood Meadows', expectedLabel,
+    ]);
+  });
 });

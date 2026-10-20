@@ -52,7 +52,7 @@ export function CommercialReadinessCard({ readiness, loading = false, error = ''
       </span>
       {item.state !== 'ready' && item.resolutionTarget ? <button type="button" className="dev-workspace__readiness-action" onClick={() => onResolve?.(item.resolutionTarget)}>Review</button> : null}
     </li>;
-    return <section className="po-module-card dev-workspace__section dev-workspace__first-cvr" aria-label="Get ready for first CVR">
+    return <section className="po-module-card dev-workspace__section dev-workspace__readiness dev-workspace__first-cvr" aria-label="Get ready for first CVR">
       <h2 className="po-matrix-section__title">Get ready for first CVR</h2>
       {loading ? <p role="status">Checking commercial readiness…</p> : null}
       {error ? <div className="po-list-feedback po-list-feedback--error" role="alert">{error}</div> : null}
@@ -71,7 +71,7 @@ export function CommercialReadinessCard({ readiness, loading = false, error = ''
       </> : null}
     </section>;
   }
-  return <section className="po-module-card dev-workspace__section" aria-label="Commercial readiness">
+  return <section className="po-module-card dev-workspace__section dev-workspace__readiness" aria-label="Commercial readiness">
     <h2 className="po-matrix-section__title">Commercial readiness</h2>
     {loading ? <p role="status">Checking commercial readiness…</p> : null}
     {error ? <div className="po-list-feedback po-list-feedback--error" role="alert">{error}</div> : null}
@@ -288,7 +288,7 @@ export default function DevelopmentOverview({
       <div className="dev-workspace__grid">
         <CommercialReadinessCard readiness={commercialReadiness} loading={commercialReadinessLoading} error={commercialReadinessError} onResolve={onResolveReadiness} onStartFirstCvr={onStartFirstCvr} />
 
-        <section className="po-module-card dev-workspace__section">
+        <section className="po-module-card dev-workspace__section dev-workspace__packages-section">
           <h2 className="po-matrix-section__title">Packages</h2>
           <PackageTable
             packages={model.packages}

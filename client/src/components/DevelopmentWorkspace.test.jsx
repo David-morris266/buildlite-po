@@ -360,6 +360,22 @@ describe('DevelopmentWorkspace stability guards', () => {
     expect(document.querySelector('[data-testid="revenue-panel"]')).not.toBeNull();
   });
 
+  it('keeps a rejected Purchase Order request unavailable instead of reporting zero', async () => {
+    listPOs.mockRejectedValue(new Error('Purchase Orders unavailable'));
+
+    renderWorkspace();
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(buildDevelopmentWorkspaceModel).toHaveBeenLastCalledWith(
+      sampleDevelopment,
+      expect.objectContaining({ pos: [], posReady: false })
+    );
+  });
+
   it.each([
     ['Resolve Budget', 'Budget'],
     ['Resolve Purchase Ledger', 'Ledger'],
