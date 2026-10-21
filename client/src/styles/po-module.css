@@ -2163,6 +2163,15 @@
   color: var(--accent);
 }
 
+.dev-workspace__setup-item--ready {
+  border-color: rgba(134, 239, 172, 0.26);
+  background: rgba(134, 239, 172, 0.055);
+}
+
+.dev-workspace__setup-item--ready .dev-workspace__setup-label {
+  color: var(--bl-positive, #86efac);
+}
+
 .dev-workspace__setup-label {
   font-weight: 600;
 }
@@ -2188,6 +2197,10 @@
 
 .dev-workspace__readiness-workflow {
   margin-bottom: 12px;
+}
+
+.dev-workspace__readiness-information {
+  margin-block: 10px 12px;
 }
 
 .dev-workspace__readiness-action {

@@ -37,6 +37,7 @@ function evaluateDevelopmentCommercialReadiness(facts = {}) {
   const hasVerifiedDevelopmentBudget = Boolean(budget?.available && budget.exists && budget.integrityValid);
   const usesSiteStartLifecycle = facts.landAppraisal !== undefined && !hasMonthlyHistory && !establishedLegacy && !hasVerifiedDevelopmentBudget;
   const requiresSiteStartCutover = Boolean(siteStartPeriod?.status === 'locked' && !hasMonthlyHistory && !establishedLegacy);
+  const siteStartInProgress = Boolean(siteStartPeriod && ['draft', 'submitted'].includes(siteStartPeriod.status));
   const openPeriod = periods?.rows?.find(period => ['draft', 'submitted'].includes(period.status));
 
   if (!costCodes?.available) items.push(sourceUnavailable('cost_code_master', 'Cost Code Master', { view: 'administration', section: 'cost-codes' }));
@@ -74,17 +75,52 @@ function evaluateDevelopmentCommercialReadiness(facts = {}) {
   if (!budget?.available) items.push(sourceUnavailable('development_budget', 'Development Budget', { tab: 'budget' }));
   else if (!budget.exists || !budget.integrityValid) {
     const siteStartBudgetChain = hasSiteStartMonthlyChain;
-    const state = (establishedLegacy && !budget.exists) || usesSiteStartLifecycle || siteStartBudgetChain ? STATES.ATTENTION : STATES.BLOCKER;
-    const reason = !budget.integrityValid && budget.exists
+    const siteStartIsGoverning = usesSiteStartLifecycle || requiresSiteStartCutover || siteStartLinkageComplete;
+    const governedSiteStartBudget = !budget.exists && siteStartIsGoverning && !siteStartInProgress;
+    const nonAuthoritativeInvalidBudget = budget.exists && !budget.integrityValid && siteStartIsGoverning;
+    const state = siteStartInProgress || nonAuthoritativeInvalidBudget
+      ? STATES.ATTENTION
+      : governedSiteStartBudget
+      ? STATES.READY
+      : establishedLegacy && !budget.exists
+        ? STATES.ATTENTION
+        : siteStartBudgetChain
+          ? STATES.ATTENTION
+          : STATES.BLOCKER;
+    const reason = siteStartInProgress
+      ? `Site Start is ${siteStartPeriod.status}; the Fixed Site Start Budget is not established until Site Start is Locked.`
+      : nonAuthoritativeInvalidBudget
+        ? 'A separate Development Budget exists but its integrity could not be verified. It is not the governing source for this Site Start lifecycle.'
+        : governedSiteStartBudget
+      ? requiresSiteStartCutover || siteStartLinkageComplete
+        ? 'Fixed Site Start Budget'
+        : 'The governed Site Start process will establish the Fixed Site Start Budget.'
+      : !budget.integrityValid && budget.exists
       ? 'Development Budget integrity could not be verified.'
       : establishedLegacy
         ? 'This established development still uses its compatible legacy CVR budget workflow.'
-        : usesSiteStartLifecycle
-          ? 'No separate Development Budget is required to prepare Site Start.'
-          : siteStartBudgetChain
+        : siteStartBudgetChain
             ? 'This monthly CVR chain continues to use its fixed Site Start Budget; no separate Development Budget is required.'
           : 'Establish the approved Development Budget before creating the first CVR.';
-    items.push(item('development_budget', state, 'Development Budget', reason, { tab: 'budget' }, { exists: Boolean(budget.exists), integrityValid: Boolean(budget.integrityValid) }));
+    items.push(item(
+      'development_budget',
+      state,
+      governedSiteStartBudget ? 'Budget authority:' : siteStartInProgress ? 'Site Start Budget' : 'Development Budget',
+      reason,
+      governedSiteStartBudget || siteStartInProgress ? null : { tab: 'budget' },
+      {
+        exists: Boolean(budget.exists),
+        integrityValid: Boolean(budget.integrityValid),
+        displayWhenReady: governedSiteStartBudget,
+        budgetAuthority: governedSiteStartBudget ? 'site_start_budget' : null,
+      }
+    ));
+    if (nonAuthoritativeInvalidBudget) {
+      items.push(item('budget_authority', STATES.READY, 'Budget authority:', 'Fixed Site Start Budget', null, {
+        displayWhenReady: true,
+        budgetAuthority: 'site_start_budget',
+      }));
+    }
   } else items.push(item('development_budget', STATES.READY, 'Development Budget', 'Authoritative Development Budget is established and verified.', { tab: 'budget' }));
   if (budget?.available && budget.exists) {
     items.push(budget.siteStartBudgetConfirmed

@@ -12,7 +12,9 @@ function facts(overrides = {}) {
     purchaseOrders: { available: true, count: 0 }, packages: { available: true, count: 0 },
     certificates: { available: true, count: 0 }, commercialEvents: { available: true, count: 0 },
     ledger: { available: true, count: 1 }, prelims: { available: true, count: 1 },
-    sellingCosts: { available: true, count: 1 }, ...overrides,
+    sellingCosts: { available: true, count: 1 },
+    plotTenure: { available: true, missing: false, total: 2, reviewed: 2, needsAttention: 0 },
+    ...overrides,
   };
 }
 
@@ -31,7 +33,8 @@ test('fresh development requires immutable Land Appraisal rather than Developmen
   const noAppraisal = evaluateDevelopmentCommercialReadiness(facts({ landAppraisal: { available: true, exists: false, integrityValid: false }, budget: { available: true, exists: false, integrityValid: false } }));
   assert.equal(noAppraisal.canCreateFirstCvr, false);
   assert.equal(noAppraisal.items.find(entry => entry.key === 'land_appraisal').blocksDraftCreation, true);
-  assert.equal(noAppraisal.items.find(entry => entry.key === 'development_budget').state, 'needs_attention');
+  assert.equal(noAppraisal.items.find(entry => entry.key === 'development_budget').state, 'ready');
+  assert.match(noAppraisal.items.find(entry => entry.key === 'development_budget').reason, /governed Site Start process/);
   const missing = evaluateDevelopmentCommercialReadiness(facts({ landAppraisal: { available: true, exists: true, integrityValid: true }, budget: { available: true, exists: false, integrityValid: false } }));
   assert.equal(missing.canCreateFirstCvr, false);
   assert.equal(missing.canCreateSiteStart, true);
@@ -109,9 +112,74 @@ test('verified Site Start Budget monthly chain can create the next CVR without a
   assert.equal(result.canCreateFirstCvr, false);
   assert.equal(result.canCreateNextCvr, true);
   assert.equal(result.canCreatePeriod, true);
-  assert.equal(result.items.find(entry => entry.key === 'development_budget').state, 'needs_attention');
-  assert.match(result.items.find(entry => entry.key === 'development_budget').reason, /fixed Site Start Budget/);
+  assert.equal(result.overallState, 'ready');
+  const budgetAuthority = result.items.find(entry => entry.key === 'development_budget');
+  assert.equal(budgetAuthority.state, 'ready');
+  assert.equal(budgetAuthority.title, 'Budget authority:');
+  assert.equal(budgetAuthority.reason, 'Fixed Site Start Budget');
+  assert.equal(budgetAuthority.displayWhenReady, true);
+  assert.equal(budgetAuthority.resolutionTarget, null);
   assert.equal(result.items.find(entry => entry.key === 'site_start_budget_authority').state, 'ready');
+});
+
+test('verified Site Start authority remains factual while genuine advisories retain attention', () => {
+  const result = evaluateDevelopmentCommercialReadiness(facts({
+    periods: { available: true, rows: [
+      { periodKey: 'P01', periodType: 'monthly_cvr', status: 'locked', budgetSource: 'site_start_budget', siteStartSourceSnapshotId: 'site-start-snapshot-1' },
+    ] },
+    siteStartBudgetAuthority: { available: true, valid: true, snapshotId: 'site-start-snapshot-1' },
+    budget: { available: true, exists: false, integrityValid: false },
+    prelims: { available: true, count: 0 },
+  }));
+  assert.equal(result.canCreateNextCvr, true);
+  assert.equal(result.items.find(entry => entry.key === 'development_budget').state, 'ready');
+  assert.equal(result.items.find(entry => entry.key === 'prelims').state, 'needs_attention');
+  assert.equal(result.overallState, 'needs_attention');
+});
+
+test('invalid non-authoritative Development Budget remains visible as attention beside Site Start authority', () => {
+  const result = evaluateDevelopmentCommercialReadiness(facts({
+    periods: { available: true, rows: [
+      { periodKey: 'P01', periodType: 'monthly_cvr', status: 'locked', budgetSource: 'site_start_budget', siteStartSourceSnapshotId: 'site-start-snapshot-1' },
+    ] },
+    siteStartBudgetAuthority: { available: true, valid: true, snapshotId: 'site-start-snapshot-1' },
+    budget: { available: true, exists: true, integrityValid: false },
+  }));
+  const invalidBudget = result.items.find(entry => entry.key === 'development_budget');
+  const authority = result.items.find(entry => entry.key === 'budget_authority');
+  assert.equal(invalidBudget.state, 'needs_attention');
+  assert.match(invalidBudget.reason, /not the governing source/);
+  assert.deepEqual(invalidBudget.resolutionTarget, { tab: 'budget' });
+  assert.equal(authority.state, 'ready');
+  assert.equal(authority.reason, 'Fixed Site Start Budget');
+  assert.equal(result.overallState, 'needs_attention');
+  assert.equal(result.canCreateNextCvr, true);
+});
+
+test('invalid governing Development Budget remains a blocker', () => {
+  const result = evaluateDevelopmentCommercialReadiness(facts({
+    periods: { available: true, rows: [
+      { periodKey: 'P01', periodType: 'monthly_cvr', status: 'locked', budgetSource: 'development_budget' },
+    ] },
+    budget: { available: true, exists: true, integrityValid: false },
+  }));
+  const invalidBudget = result.items.find(entry => entry.key === 'development_budget');
+  assert.equal(invalidBudget.state, 'blocker');
+  assert.equal(invalidBudget.blocksDraftCreation, true);
+  assert.equal(result.canCreateNextCvr, false);
+});
+
+test('Development Budget-backed chain retains its existing verified authority presentation', () => {
+  const result = evaluateDevelopmentCommercialReadiness(facts({
+    periods: { available: true, rows: [
+      { periodKey: 'P01', periodType: 'monthly_cvr', status: 'locked', budgetSource: 'development_budget' },
+    ] },
+  }));
+  const budgetAuthority = result.items.find(entry => entry.key === 'development_budget');
+  assert.equal(result.canCreateNextCvr, true);
+  assert.equal(budgetAuthority.state, 'ready');
+  assert.equal(budgetAuthority.title, 'Development Budget');
+  assert.equal(budgetAuthority.displayWhenReady, undefined);
 });
 
 test('missing, inconsistent or unverifiable Site Start linkage fails subsequent creation closed', () => {
@@ -145,6 +213,25 @@ test('locked Site Start awaits governed P01 cutover rather than generic first-CV
   assert.equal(result.hasMonthlyHistory, false);
   assert.equal(result.canCreatePeriod, true);
   assert.equal(result.canCreateFirstCvr, true);
+  const budgetAuthority = result.items.find(entry => entry.key === 'development_budget');
+  assert.equal(budgetAuthority.state, 'ready');
+  assert.equal(budgetAuthority.title, 'Budget authority:');
+  assert.equal(budgetAuthority.reason, 'Fixed Site Start Budget');
+  assert.equal(budgetAuthority.resolutionTarget, null);
+});
+
+test('invalid separate Development Budget is not a blocker beside valid Site Start cutover', () => {
+  const result = evaluateDevelopmentCommercialReadiness(facts({
+    landAppraisal: { available: true, exists: true, integrityValid: true },
+    periods: { available: true, rows: [{ periodKey: 'Site Start', periodType: 'site_start', status: 'locked', budgetSource: 'land_appraisal' }] },
+    budget: { available: true, exists: true, integrityValid: false },
+  }));
+  const invalidBudget = result.items.find(entry => entry.key === 'development_budget');
+  assert.equal(result.requiresSiteStartCutover, true);
+  assert.equal(result.canCreateFirstCvr, true);
+  assert.equal(invalidBudget.state, 'needs_attention');
+  assert.equal(result.items.some(entry => entry.state === 'blocker'), false);
+  assert.equal(result.overallState, 'needs_attention');
 });
 
 test('Draft or Submitted Site Start is not classified as locked or cutover-ready', () => {
@@ -158,6 +245,12 @@ test('Draft or Submitted Site Start is not classified as locked or cutover-ready
     assert.equal(result.canCreatePeriod, false);
     assert.equal(result.items.some(entry => /Locked Site Start/.test(entry.reason)), false);
     assert.equal(result.items.find(entry => entry.key === 'cvr_periods').blocksDraftCreation, true);
+    const budgetAuthority = result.items.find(entry => entry.key === 'development_budget');
+    assert.equal(budgetAuthority.state, 'needs_attention');
+    assert.equal(budgetAuthority.title, 'Site Start Budget');
+    assert.match(budgetAuthority.reason, new RegExp(`Site Start is ${status}`));
+    assert.match(budgetAuthority.reason, /not established until Site Start is Locked/);
+    assert.equal(result.overallState, 'needs_attention');
   }
 });
 

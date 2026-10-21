@@ -83,13 +83,58 @@ describe('Development commercial readiness', () => {
     expect(view.onResolve).toHaveBeenCalledWith({ tab: 'cvr', periodKey: 'P02' });
   });
 
-  it('presents governed Site Start continuation without first-CVR Development Budget wording', () => {
-    const view = render({ overallState: 'needs_attention', canCreatePeriod: true, canCreateNextCvr: true, canCreateFirstCvr: false, hasCvrHistory: true, hasMonthlyHistory: true, items: [
-      { key: 'development_budget', state: 'needs_attention', title: 'Development Budget', reason: 'This monthly CVR chain continues to use its fixed Site Start Budget; no separate Development Budget is required.', resolutionTarget: { tab: 'budget' } },
+  it('presents governed Site Start continuation as ready factual budget authority', () => {
+    const view = render({ overallState: 'ready', canCreatePeriod: true, canCreateNextCvr: true, canCreateFirstCvr: false, hasCvrHistory: true, hasMonthlyHistory: true, items: [
+      { key: 'development_budget', state: 'ready', title: 'Budget authority:', reason: 'Fixed Site Start Budget', resolutionTarget: null, displayWhenReady: true },
     ] });
+    expect(view.text()).toContain('Ready');
     expect(view.text()).toContain('Ready to create the next working CVR.');
-    expect(view.text()).toContain('no separate Development Budget is required');
+    expect(view.text()).toContain('Budget authority');
+    expect(view.text()).toContain('Fixed Site Start Budget');
     expect(view.text()).not.toContain('before creating the first CVR');
+    expect([...container.querySelectorAll('button')].some(button => button.textContent === 'Review')).toBe(false);
+    expect(container.querySelector('.po-status-badge--success')).not.toBeNull();
+  });
+
+  it('keeps genuine advisories visible and yellow beside satisfied Site Start authority', () => {
+    const view = render({ overallState: 'needs_attention', canCreatePeriod: true, canCreateNextCvr: true, canCreateFirstCvr: false, hasCvrHistory: true, hasMonthlyHistory: true, items: [
+      { key: 'development_budget', state: 'ready', title: 'Budget authority:', reason: 'Fixed Site Start Budget', resolutionTarget: null, displayWhenReady: true },
+      { key: 'prelims', state: 'needs_attention', title: 'Prelims', reason: 'Prelims are not configured.', resolutionTarget: { tab: 'prelims' } },
+    ] });
+    expect(view.text()).toContain('Budget authority');
+    expect(view.text()).toContain('Prelims');
+    expect(container.querySelector('.po-status-badge--warning')).not.toBeNull();
+    const review = [...container.querySelectorAll('button')].find(button => button.textContent === 'Review');
+    act(() => review.click());
+    expect(view.onResolve).toHaveBeenCalledWith({ tab: 'prelims' });
+  });
+
+  it('shows an invalid non-authoritative Development Budget as attention beside factual Site Start authority', () => {
+    const view = render({ overallState: 'needs_attention', canCreatePeriod: true, canCreateNextCvr: true, canCreateFirstCvr: false, hasCvrHistory: true, hasMonthlyHistory: true, items: [
+      { key: 'budget_authority', state: 'ready', title: 'Budget authority:', reason: 'Fixed Site Start Budget', resolutionTarget: null, displayWhenReady: true },
+      { key: 'development_budget', state: 'needs_attention', title: 'Development Budget', reason: 'A separate Development Budget exists but its integrity could not be verified. It is not the governing source for this Site Start lifecycle.', resolutionTarget: { tab: 'budget' } },
+    ] });
+    expect(view.text()).toContain('Needs attention');
+    expect(view.text()).toContain('Budget authority:Fixed Site Start Budget');
+    expect(view.text()).toContain('Development Budget');
+    expect(view.text()).not.toContain('Blocker');
+    expect(container.querySelector('.po-status-badge--warning')).not.toBeNull();
+    const review = [...container.querySelectorAll('button')].find(button => button.textContent === 'Review');
+    act(() => review.click());
+    expect(view.onResolve).toHaveBeenCalledWith({ tab: 'budget' });
+  });
+
+  it.each(['draft', 'submitted'])('presents %s Site Start as in progress rather than locked or Ready', status => {
+    const view = render({ overallState: 'needs_attention', canCreatePeriod: false, canCreateNextCvr: false, canCreateFirstCvr: false, hasCvrHistory: true, hasMonthlyHistory: false, items: [
+      { key: 'cvr_periods', state: 'needs_attention', workflowState: true, title: 'CVR in progress', reason: `Site Start is ${status}. Continue the current CVR before creating another.`, openPeriod: { periodKey: 'Site Start' }, preventsPeriodCreation: true, resolutionTarget: { tab: 'cvr', periodKey: 'Site Start' } },
+      { key: 'development_budget', state: 'needs_attention', title: 'Site Start Budget', reason: `Site Start is ${status}; the Fixed Site Start Budget is not established until Site Start is Locked.`, resolutionTarget: null },
+    ] });
+    expect(view.text()).toContain('Needs attention');
+    expect(view.text()).toContain('Site Start is in progress.');
+    expect(view.text()).toContain(`Site Start is ${status}`);
+    expect(view.text()).toContain('not established until Site Start is Locked');
+    expect(view.text()).not.toContain('Locked Site Start is ready');
+    expect(container.querySelector('.po-status-badge--success')).toBeNull();
   });
 
   it('explains the mandatory Site Start to P01 cutover', () => {

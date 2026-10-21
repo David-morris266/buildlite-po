@@ -36,6 +36,7 @@ export function CommercialReadinessCard({ readiness, loading = false, error = ''
   const workflow = (readiness?.items || []).filter(item => item.workflowState);
   const blockers = (readiness?.items || []).filter(item => !item.workflowState && item.state === 'blocker');
   const attention = (readiness?.items || []).filter(item => !item.workflowState && item.state === 'needs_attention');
+  const information = (readiness?.items || []).filter(item => !item.workflowState && item.state === 'ready' && item.displayWhenReady);
   const issues = [...blockers, ...attention];
   const renderItem = item => <li key={item.key} className={`dev-workspace__setup-item dev-workspace__setup-item--${item.state}`}>
     <span className="dev-workspace__readiness-copy"><strong className="dev-workspace__setup-label">{item.title}</strong><span className="dev-workspace__setup-detail">{item.reason}</span></span>
@@ -84,6 +85,7 @@ export function CommercialReadinessCard({ readiness, loading = false, error = ''
           : readiness.canCreatePeriod
             ? readiness.hasCvrHistory ? 'Ready to create the next working CVR.' : 'Ready to create the first working CVR.'
           : readiness.hasCvrHistory ? 'Another CVR period cannot be created at present.' : 'Resolve the creation blockers before starting the first CVR.'}</p>
+      {information.length ? <ul className="dev-workspace__setup-list dev-workspace__readiness-information" aria-label="Commercial readiness information">{information.map(renderItem)}</ul> : null}
       {workflow.length ? <ul className="dev-workspace__setup-list dev-workspace__readiness-workflow">{workflow.map(renderItem)}</ul> : null}
       {issues.length ? <>
         {blockers.length ? <h3 className="dev-workspace__readiness-heading">{blockers.length} {blockers.length === 1 ? 'blocker' : 'blockers'}</h3> : null}
