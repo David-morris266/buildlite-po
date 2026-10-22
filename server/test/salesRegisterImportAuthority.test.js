@@ -36,6 +36,11 @@ test('reviewed Sales Register apply is tenant scoped, versioned and preserves un
   const duplicate = await request(app).post(`/api/developments/${developmentId}/revenue/sales-register-import`).send({ version: 2, updates: [{ plotId: 'p2', plotNumber: '2', revenueStatus: 'Available' }, { plotId: 'p2', plotNumber: '2', revenueStatus: 'Reserved' }] });
   assert.equal(duplicate.status, 400);
   assert.equal((await request(app).post(`/api/developments/${developmentId}/revenue/sales-register-import`).send({ version: 1, updates: [{ plotId: 'p1', plotNumber: '1', revenueStatus: 'Available' }] })).status, 409);
+  const submitted = await pool.query("INSERT INTO cvr_periods(client_id,development_id,period_key,period_label,period_type,status,commentary,version,budget_source,submitted_at,submitted_by) VALUES($1,$2,'P01','P01','monthly_cvr','submitted','{}',1,'legacy_cvr',NOW(),'test') RETURNING id", [clientId, developmentId]);
+  const blocked = await request(app).post(`/api/developments/${developmentId}/revenue/sales-register-import`).send({ version: 2, updates: [{ plotId: 'p2', plotNumber: '2', revenueStatus: 'Reserved' }] });
+  assert.equal(blocked.status, 409); assert.equal(blocked.body.code, 'PLOT_MASTER_UPDATE_BLOCKED_SUBMITTED_CVR');
+  assert.equal((await pool.query('SELECT version FROM developments WHERE id=$1', [developmentId])).rows[0].version, 2);
+  await pool.query('DELETE FROM cvr_periods WHERE id=$1', [submitted.rows[0].id]);
   const crossTenant = createApp({ testPrincipal: { ...principal, clientId: otherClientId } });
   assert.equal((await request(crossTenant).post(`/api/developments/${developmentId}/revenue/sales-register-import`).send({ version: 2, updates: [{ plotId: 'p1', plotNumber: '1', revenueStatus: 'Available' }] })).status, 404);
 });

@@ -1185,6 +1185,7 @@ export default function DevelopmentWorkspace({
             onPlotsChanged={handlePlotsChanged}
             initialView={initialPlotMasterView || 'list'}
             onViewChange={(plotMasterView)=>onNavigationStateChange?.({workspaceTab:'plot-master',plotMasterView:plotMasterView==='tenure-review'?'tenure-review':null})}
+            onReviewRevenue={() => handleSelectWorkspaceTab('revenue')}
           />
         ) : null}
 

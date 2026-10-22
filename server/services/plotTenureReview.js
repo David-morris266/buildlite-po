@@ -2,6 +2,7 @@ const { createHash, randomUUID } = require('node:crypto');
 const { pool } = require('../db');
 const { PLOT_TENURE_CODES, normalizePlotTenureCode } = require('./plotTenureAuthority');
 const { rowToDocument, extractPayloadFromDocument } = require('./developmentMapper');
+const { enforcePlotMasterMutationAuthority, lockPlotMasterAuthority } = require('./plotMasterUpdateAuthority');
 
 const REVIEWED_CODES = new Set([...PLOT_TENURE_CODES].filter(code => code !== 'UNREVIEWED'));
 const ALIASES = new Map([
@@ -43,6 +44,7 @@ async function applyReview(clientId, developmentId, body, auth) {
   const db=await pool.connect();
   try{
     await db.query('BEGIN');
+    await lockPlotMasterAuthority(db, clientId, developmentId);
     const result=await db.query('SELECT * FROM developments WHERE client_id=$1 AND id=$2 FOR UPDATE',[clientId,developmentId]);
     if(!result.rowCount){await db.query('ROLLBACK');return {ok:false,status:404,message:'Development not found.'};}
     const current=rowToDocument(result.rows[0]);
@@ -62,6 +64,8 @@ async function applyReview(clientId, developmentId, body, auth) {
     }
     if(!audited.length){await db.query('ROLLBACK');return {ok:false,status:400,message:'The reviewed decisions contain no changes.'};}
     current.plotMaster={...current.plotMaster,plots,updatedAt:now};
+    const authority=await enforcePlotMasterMutationAuthority(db,clientId,developmentId,rowToDocument(result.rows[0]),{plotMaster:current.plotMaster});
+    if(!authority.ok){await db.query('ROLLBACK');return authority;}
     const payload=extractPayloadFromDocument(current);
     const updated=await db.query('UPDATE developments SET payload=$1::jsonb,version=version+1,updated_at=NOW(),updated_by=$2 WHERE client_id=$3 AND id=$4 AND version=$5 RETURNING *',[JSON.stringify(payload),auth.displayName,clientId,developmentId,expectedVersion]);
     if(!updated.rowCount){await db.query('ROLLBACK');return {ok:false,status:409,message:'Development version conflict.'};}
