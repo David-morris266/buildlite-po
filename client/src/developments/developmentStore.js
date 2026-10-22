@@ -102,7 +102,7 @@ function wrapApiError(error) {
   if (error instanceof DevelopmentStoreError) return error;
   if (error instanceof DevelopmentApiError) {
     return new DevelopmentStoreError(error.message, {
-      code: error.status === 409 ? 'VERSION_CONFLICT' : 'API_ERROR',
+      code: error.body?.code || (error.status === 409 ? 'VERSION_CONFLICT' : 'API_ERROR'),
       status: error.status,
       development: error.body?.development || null,
     });

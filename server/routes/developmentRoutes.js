@@ -114,7 +114,7 @@ router.get('/:id/plot-tenure-review', requirePermission(PERMISSIONS.COMMERCIAL_R
 });
 
 router.post('/:id/plot-tenure-review/apply', requirePermission(PERMISSIONS.PLOT_MASTER_MANAGE), async (req,res)=>{
-  try { const result=await plotTenureReview.applyReview(req.buildliteAuth.clientId,req.params.id,req.body||{},req.buildliteAuth); res.status(result.status).json(result.ok?result:{message:result.message,review:result.review}); }
+  try { const result=await plotTenureReview.applyReview(req.buildliteAuth.clientId,req.params.id,req.body||{},req.buildliteAuth); res.status(result.status).json(result.ok?result:{message:result.message,code:result.code,review:result.review}); }
   catch(error){ console.error('[Plot tenure review] apply error:',error); res.status(500).json({message:'Failed to apply Plot Master tenure review.'}); }
 });
 
@@ -213,6 +213,7 @@ router.put("/:id", async (req, res) => {
 
     const routeId = String(req.params.id || "").trim();
     const body = req.body || {};
+    delete body.plotMasterUpdateMode;
     if(body.plotMaster!==undefined){
       try{assertPermission(req.buildliteAuth,PERMISSIONS.PLOT_MASTER_MANAGE);}catch(error){return res.status(error.status||403).json({message:error.message});}
       if(String(req.buildliteAuth.clientId)!==String(active.id))return res.status(403).json({message:'Plot Master tenant boundary mismatch.'});
@@ -249,7 +250,7 @@ router.put("/:id", async (req, res) => {
     );
 
     if (!result.ok) {
-      const payload = { message: result.message };
+      const payload = { message: result.message, code: result.code };
       if (result.development) payload.development = result.development;
       return res.status(result.status).json(payload);
     }

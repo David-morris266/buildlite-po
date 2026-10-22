@@ -2,7 +2,11 @@
  * BL-027A.1 — Development Postgres access layer.
  */
 
-const { query } = require("../db");
+const { pool, query } = require("../db");
+const {
+  enforcePlotMasterMutationAuthority,
+  lockPlotMasterAuthority,
+} = require('./plotMasterUpdateAuthority');
 
 async function runQuery(dbClient, text, params) {
   if (dbClient) return dbClient.query(text, params);
@@ -153,31 +157,37 @@ async function updateDevelopment(
   expectedVersion,
   { actor = null } = {}
 ) {
-  const existingRow = await findDevelopmentRowById(clientId, id);
-  if (!existingRow) {
-    return { ok: false, status: 404, message: "Development not found." };
-  }
-
-  const existingDocument = rowToDocument(existingRow);
   const parsedVersion = Number(expectedVersion);
   if (!Number.isInteger(parsedVersion) || parsedVersion < 1) {
     return { ok: false, status: 400, message: "version is required and must be a positive integer." };
   }
-
-  if (existingDocument.version !== parsedVersion) {
-    return {
-      ok: false,
-      status: 409,
-      message: "Development version conflict.",
-      development: existingDocument,
-    };
-  }
-
-  const mergedDocument = mergeDevelopmentPatch(existingDocument, patch);
-  const updateRow = documentToUpdateRow(mergedDocument, { actor });
-
+  const dbClient = await pool.connect();
   try {
-    const { rows, rowCount } = await query(
+    await dbClient.query('BEGIN');
+    await lockPlotMasterAuthority(dbClient, clientId, id);
+    const existingResult = await dbClient.query(
+      `SELECT * FROM developments WHERE id = $1 AND client_id = $2 FOR UPDATE`,
+      [id, clientId]
+    );
+    if (!existingResult.rowCount) {
+      await dbClient.query('ROLLBACK');
+      return { ok: false, status: 404, message: 'Development not found.' };
+    }
+    const existingDocument = rowToDocument(existingResult.rows[0]);
+    if (existingDocument.version !== parsedVersion) {
+      await dbClient.query('ROLLBACK');
+      return { ok: false, status: 409, message: 'Development version conflict.', development: existingDocument };
+    }
+    const authority = await enforcePlotMasterMutationAuthority(
+      dbClient, clientId, id, existingDocument, patch
+    );
+    if (!authority.ok) {
+      await dbClient.query('ROLLBACK');
+      return authority;
+    }
+    const mergedDocument = mergeDevelopmentPatch(existingDocument, patch);
+    const updateRow = documentToUpdateRow(mergedDocument, { actor });
+    const { rows, rowCount } = await dbClient.query(
       `
         UPDATE developments
         SET
@@ -206,17 +216,13 @@ async function updateDevelopment(
     );
 
     if (!rowCount) {
-      const current = await findDevelopmentById(clientId, id);
-      return {
-        ok: false,
-        status: 409,
-        message: "Development version conflict.",
-        development: current,
-      };
+      await dbClient.query('ROLLBACK');
+      return { ok: false, status: 409, message: 'Development version conflict.' };
     }
-
+    await dbClient.query('COMMIT');
     return { ok: true, development: rowToDocument(rows[0]) };
   } catch (err) {
+    await dbClient.query('ROLLBACK');
     if (isUniqueViolation(err)) {
       return {
         ok: false,
@@ -225,6 +231,8 @@ async function updateDevelopment(
       };
     }
     throw err;
+  } finally {
+    dbClient.release();
   }
 }
 

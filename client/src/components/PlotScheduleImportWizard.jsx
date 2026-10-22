@@ -3,11 +3,13 @@ import POPageHeader from './POPageHeader';
 import {
   PLOT_IMPORT_FIELDS,
   autoDetectPlotColumnMapping,
+  buildExistingPlotUpdatePreview,
   buildPlotImportPreview,
   detectHeaderRowIndex,
   extractHeaders,
   getPlotDetectedColumnsSummary,
   getWorksheetSummaries,
+  getSpreadsheetReadError,
   isAcceptedExcelFile,
   parseExcelFile,
   plotMappingToFieldByColumn,
@@ -55,6 +57,9 @@ function WizardProgress({ steps, currentIndex }) {
 
 export default function PlotScheduleImportWizard({
   developmentName,
+  importMode = 'new',
+  existingPlots = [],
+  developmentVersion = null,
   onCancel,
   onImport,
 }) {
@@ -71,6 +76,8 @@ export default function PlotScheduleImportWizard({
   const [error, setError] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [allowTenureChange, setAllowTenureChange] = useState(false);
+  const [reviewDevelopmentVersion, setReviewDevelopmentVersion] = useState(null);
 
   const visibleSteps = useMemo(() => {
     if (worksheets.length <= 1) {
@@ -119,8 +126,8 @@ export default function PlotScheduleImportWizard({
           setSelectedSheet(summaries[0]?.name || '');
           setStepIndex(1);
         }
-      } catch {
-        setError('We could not read that file. Try a different spreadsheet.');
+      } catch (readError) {
+        setError(getSpreadsheetReadError(readError));
       } finally {
         setProcessing(false);
       }
@@ -150,6 +157,16 @@ export default function PlotScheduleImportWizard({
     if (currentStep?.id !== 'review') return null;
     return validateAndBuildPlotImport(sheetRows, headerRowIndex, fieldByColumn);
   }, [currentStep?.id, sheetRows, headerRowIndex, fieldByColumn]);
+  const updatePreview = useMemo(() => {
+    if (importMode !== 'update' || !importResult) return null;
+    return buildExistingPlotUpdatePreview({
+      existingPlots,
+      importedPlots: importResult.plots,
+      mappedFields: fieldByColumn,
+      rowErrors: importResult.rowErrors,
+      allowTenureChange,
+    });
+  }, [allowTenureChange, existingPlots, fieldByColumn, importMode, importResult]);
 
   function goBack() {
     setError('');
@@ -177,6 +194,13 @@ export default function PlotScheduleImportWizard({
       setError('Plot Number and House Type are required.');
       return;
     }
+    if (importMode === 'update') {
+      if (!Number.isInteger(Number(developmentVersion)) || Number(developmentVersion) < 1) {
+        setError('The Development version is unavailable. Reload the Plot Master before reviewing an update.');
+        return;
+      }
+      setReviewDevelopmentVersion(Number(developmentVersion));
+    }
     goNext();
   }
 
@@ -186,11 +210,25 @@ export default function PlotScheduleImportWizard({
       headerRowIndex,
       fieldByColumn
     );
-    if (!result.ready) {
+    const preview = importMode === 'update'
+      ? buildExistingPlotUpdatePreview({
+          existingPlots,
+          importedPlots: result.plots,
+          mappedFields: fieldByColumn,
+          rowErrors: result.rowErrors,
+          allowTenureChange,
+        })
+      : null;
+    if (!result.ready || (preview && !preview.ready)) {
       setError('Fix the validation errors before importing.');
       return;
     }
-    onImport?.(result);
+    onImport?.({
+      ...result,
+      importMode,
+      updatePreview: preview,
+      reviewedDevelopmentVersion: reviewDevelopmentVersion,
+    });
   }
 
   function updateColumnField(columnIndex, field) {
@@ -207,20 +245,27 @@ export default function PlotScheduleImportWizard({
     setError('');
   }
 
+  const isUpdate = importMode === 'update';
   const lead = developmentName
-    ? `Import the plot schedule for ${developmentName}.`
-    : 'Import your plot schedule spreadsheet.';
+    ? `${isUpdate ? 'Update the existing Plot Master' : 'Import a new Plot Master'} for ${developmentName}.`
+    : `${isUpdate ? 'Update your existing' : 'Import your'} plot schedule spreadsheet.`;
   const tenureReviewSummary = useMemo(() => {
     const result = validateAndBuildPlotImport(sheetRows, headerRowIndex, fieldByColumn);
     if (!result.plots?.length) return null;
     return { plots: result.plots.length, values: new Set(result.plots.map(plot => String(plot.tenure || '').trim().toLowerCase())).size };
   }, [sheetRows, headerRowIndex, fieldByColumn]);
+  const hasReviewedVersion = !isUpdate || (
+    Number.isInteger(Number(reviewDevelopmentVersion)) && Number(reviewDevelopmentVersion) > 0
+  );
+  const readyToApply = Boolean(
+    importResult?.ready && (!updatePreview || updatePreview.ready) && hasReviewedVersion
+  );
 
   return (
     <div className="po-import-wizard dev-plot-import">
       <POPageHeader
         eyebrow="Plot Master"
-        title="Import Plot Schedule"
+        title={isUpdate ? 'Update Existing Plot Schedule' : 'Import New Plot Schedule'}
         lead={lead}
       />
 
@@ -237,7 +282,7 @@ export default function PlotScheduleImportWizard({
           <h2 className="po-matrix-section__title">Choose your spreadsheet</h2>
           <p className="po-import-step__lead">
             We support Excel files (.xlsx and .xls). Your data stays in your
-            browser until you confirm the import.
+            browser until you confirm the {isUpdate ? 'reviewed update' : 'import'}.
           </p>
 
           <div
@@ -409,7 +454,7 @@ export default function PlotScheduleImportWizard({
         </section>
       ) : null}
 
-      {currentStep?.id === 'mapping' ? (
+          {currentStep?.id === 'mapping' ? (
         <section className="po-module-card po-import-step">
           <h2 className="po-matrix-section__title">Map your columns</h2>
           <p className="po-import-step__lead">
@@ -453,7 +498,7 @@ export default function PlotScheduleImportWizard({
               Cancel
             </button>
           </div>
-        </section>
+          </section>
       ) : null}
 
       {currentStep?.id === 'review' && importResult ? (
@@ -488,8 +533,67 @@ export default function PlotScheduleImportWizard({
               </div>
             </dl>
 
-            {importResult.ready ? (
-              <><p className="po-import-step__ok">Ready to import</p>{tenureReviewSummary?<p role="status">{tenureReviewSummary.plots} plots · {tenureReviewSummary.values} tenure values found · Tenure review required after import.</p>:null}</>
+            {isUpdate && updatePreview ? (
+              <>
+                <p className="po-import-step__lead">
+                  Existing plots are matched by Plot Number. Stable IDs, prices, Revenue lifecycle and manual overrides are preserved. Reviewed GIA changes may also move compatibility-derived NIA used by live Revenue.
+                </p>
+                <dl className="po-import-review-grid dev-plot-import__summary" aria-label="Plot update reconciliation">
+                  <div><dt>Existing</dt><dd>{updatePreview.existingCount}</dd></div>
+                  <div><dt>Imported</dt><dd>{updatePreview.importedCount}</dd></div>
+                  <div><dt>Matched</dt><dd>{updatePreview.matchedCount}</dd></div>
+                  <div><dt>Changed</dt><dd>{updatePreview.changedCount}</dd></div>
+                  <div><dt>Unchanged</dt><dd>{updatePreview.unchangedCount}</dd></div>
+                  <div><dt>Unmatched</dt><dd>{updatePreview.unmatchedImportedPlots.length}</dd></div>
+                  <div><dt>Missing</dt><dd>{updatePreview.missingExistingPlots.length}</dd></div>
+                  <div><dt>Duplicates</dt><dd>{updatePreview.duplicateImportedPlotNumbers.length + updatePreview.duplicateExistingPlotNumbers.length}</dd></div>
+                </dl>
+                {fieldByColumn.includes('tenure') ? (
+                  <label className="po-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={allowTenureChange}
+                      onChange={(event) => setAllowTenureChange(event.target.checked)}
+                    />
+                    Update imported tenure source values and return changed plots to controlled tenure review
+                  </label>
+                ) : null}
+                {updatePreview.errors.length ? (
+                  <ul className="po-import-warnings" role="alert">
+                    {updatePreview.errors.map((message) => <li key={message}>{message}</li>)}
+                  </ul>
+                ) : null}
+                {updatePreview.areaImplications.length ? (
+                  <div className="dev-plot-import__area-impact" aria-label="Area and Revenue implications">
+                    <strong>Area and live Revenue implications</strong>
+                    <ul className="po-import-warnings">
+                      {updatePreview.areaImplications.map((item) => (
+                        <li key={`${item.plotNumber}-${item.state}`}>Plot {item.plotNumber}: {item.message}</li>
+                      ))}
+                    </ul>
+                    <p>Applying this update does not save revised Revenue settings and does not overwrite secured or manual prices. Review House Type Pricing and Revenue separately after the update.</p>
+                  </div>
+                ) : null}
+                {updatePreview.changes.length ? (
+                  <div className="po-table-wrap">
+                    <table className="po-data-table dev-plot-import__changes">
+                      <thead><tr><th>Plot</th><th>Field</th><th>Before</th><th>After</th></tr></thead>
+                      <tbody>
+                        {updatePreview.changes.flatMap((change) => change.fields.map((field) => (
+                          <tr key={`${change.plotId}-${field.field}`}>
+                            <td>{change.plotNumber}</td><td>{PLOT_IMPORT_FIELDS[field.field]?.label || (field.field === 'niaFt2' ? 'Revenue NIA (ft²)' : field.field === 'niaM2' ? 'Revenue NIA (m²)' : field.field)}</td>
+                            <td>{field.before ?? '—'}</td><td>{field.after ?? '—'}</td>
+                          </tr>
+                        )))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+
+            {readyToApply ? (
+              <><p className="po-import-step__ok">{isUpdate ? 'Ready to apply reviewed updates' : 'Ready to import'}</p>{tenureReviewSummary && (!isUpdate || allowTenureChange)?<p role="status">{tenureReviewSummary.plots} plots · {tenureReviewSummary.values} tenure values found · Tenure review required after import.</p>:null}</>
             ) : (
               <p className="dev-plot-import__blocked" role="status">
                 Import blocked — fix the errors below before continuing.
@@ -539,10 +643,10 @@ export default function PlotScheduleImportWizard({
             <button
               type="button"
               className="po-btn-primary"
-              disabled={!importResult.ready}
+              disabled={!readyToApply}
               onClick={handleImport}
             >
-              Import Plot Schedule
+              {isUpdate ? 'Apply Reviewed Plot Updates' : 'Import New Plot Schedule'}
             </button>
             <button type="button" className="po-import-step__cancel" onClick={onCancel}>
               Cancel

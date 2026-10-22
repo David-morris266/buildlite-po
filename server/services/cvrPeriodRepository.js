@@ -700,6 +700,9 @@ async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, {
   const dbClient = await pool.connect();
   try {
     await dbClient.query('BEGIN');
+    await require('./plotMasterUpdateAuthority').lockPlotMasterAuthority(
+      dbClient, clientId, developmentId
+    );
     const row = await findPeriodRow(clientId, developmentId, periodId, dbClient, { forUpdate: true });
     if (!row) { await dbClient.query('ROLLBACK'); return { ok: false, status: 404, message: 'CVR period not found.' }; }
     authorization.assertServicePermission(auth, row.period_type === CVR_PERIOD_TYPES.siteStart ? permissions.SITE_START_MANAGE : permissions.CVR_SUBMIT);

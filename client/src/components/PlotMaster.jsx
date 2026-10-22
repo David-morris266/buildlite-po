@@ -3,10 +3,11 @@ import PlotDrawer from './PlotDrawer';
 import PlotScheduleImportWizard from './PlotScheduleImportWizard';
 import PlotTenureReviewWorkspace from './PlotTenureReviewWorkspace';
 import { normalizePlotTenureCode } from '../developments/plotTenureAuthority';
-import { refreshDevelopment } from '../developments/developmentStore';
+import { getDevelopment, refreshDevelopment } from '../developments/developmentStore';
 import { formatMoney } from './poDrawerHelpers';
 import {
   addPlot,
+  bulkUpdatePlots,
   deletePlot,
   formatPlotBedrooms,
   formatPlotGia,
@@ -81,12 +82,14 @@ export default function PlotMaster({
   onFocusPlotHandled,
   initialView = 'list',
   onViewChange,
+  onReviewRevenue,
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingPlot, setEditingPlot] = useState(null);
   const [saveErrors, setSaveErrors] = useState([]);
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [importOpen, setImportOpen] = useState(false);
+  const [importMode, setImportMode] = useState(null);
+  const [updateCompleted, setUpdateCompleted] = useState(null);
   const [view, setView] = useState(initialView);
   useEffect(()=>setView(initialView),[initialView]);
 
@@ -94,6 +97,7 @@ export default function PlotMaster({
     void refreshToken;
     return getPlots(developmentId);
   }, [developmentId, refreshToken]);
+  const developmentVersion = getDevelopment(developmentId)?.version ?? null;
 
   useEffect(() => {
     if (!initialPlotId || !plots.length) return;
@@ -152,15 +156,30 @@ export default function PlotMaster({
   }
 
   function handleImport(result) {
-    replacePlotMaster(developmentId, result.plots).then((saveResult) => {
+    const action = result.importMode === 'update'
+      ? bulkUpdatePlots(developmentId, result.updatePreview?.updates || [], {
+          expectedVersion: result.reviewedDevelopmentVersion,
+          requireExpectedVersion: true,
+        })
+      : replacePlotMaster(developmentId, result.plots);
+    action.then((saveResult) => {
       if (!saveResult.ok) {
         window.alert(saveResult.errors?.[0] || 'Could not import plot schedule.');
+        if (saveResult.code === 'VERSION_CONFLICT') setImportMode(null);
         return;
       }
-      setImportOpen(false);
+      setImportMode(null);
       onPlotsChanged?.();
-      setView('tenure-review');
-      onViewChange?.('tenure-review');
+      if (result.importMode === 'update') {
+        setUpdateCompleted({ changedCount: result.updatePreview.changedCount });
+        if (result.updatePreview.selectedFields.includes('tenure')) {
+          setView('tenure-review');
+          onViewChange?.('tenure-review');
+        }
+      } else {
+        setView('tenure-review');
+        onViewChange?.('tenure-review');
+      }
     });
   }
 
@@ -168,11 +187,14 @@ export default function PlotMaster({
 
   if(view==='tenure-review')return <PlotTenureReviewWorkspace developmentId={developmentId} onBack={()=>{setView('list');onViewChange?.('list');}} onApplied={async()=>{await refreshDevelopment(developmentId);onPlotsChanged?.();}} />;
 
-  if (importOpen) {
+  if (importMode) {
     return (
       <PlotScheduleImportWizard
         developmentName={developmentName}
-        onCancel={() => setImportOpen(false)}
+        importMode={importMode}
+        existingPlots={plots}
+        developmentVersion={developmentVersion}
+        onCancel={() => setImportMode(null)}
         onImport={handleImport}
       />
     );
@@ -192,9 +214,9 @@ export default function PlotMaster({
             <button
               type="button"
               className="po-list-btn-secondary"
-              onClick={() => setImportOpen(true)}
+              onClick={() => setImportMode('update')}
             >
-              Import Plot Schedule
+              Update Existing Plot Schedule
             </button>
             <button type="button" className="po-btn-primary" onClick={openAddDrawer}>
               Add Plot
@@ -202,6 +224,13 @@ export default function PlotMaster({
           </div>
         ) : null}
       </header>
+
+      {updateCompleted ? (
+        <div className="po-list-feedback po-list-feedback--success" role="status">
+          <span>{updateCompleted.changedCount} plot{updateCompleted.changedCount === 1 ? '' : 's'} updated. Live Revenue may now differ; secured and manual prices were not overwritten.</span>
+          {onReviewRevenue ? <button type="button" className="po-list-btn-secondary" onClick={onReviewRevenue}>Review Revenue and House Type Pricing</button> : null}
+        </div>
+      ) : null}
 
       {plots.length ? <section className="po-module-card" aria-label="Plot Master tenure readiness"><strong>Tenure classifications</strong><p>{reviewedTenures} of {plots.length} reviewed{plots.length-reviewedTenures?` · ${plots.length-reviewedTenures} need attention`:''}</p><button type="button" className="btn btn--secondary" onClick={()=>{setView('tenure-review');onViewChange?.('tenure-review');}}>Review tenures</button></section> : null}
 
@@ -218,9 +247,9 @@ export default function PlotMaster({
             <button
               type="button"
               className="po-btn-primary"
-              onClick={() => setImportOpen(true)}
+              onClick={() => setImportMode('new')}
             >
-              Import Plot Schedule
+              Import New Plot Schedule
             </button>
             <button
               type="button"

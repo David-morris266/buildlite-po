@@ -140,7 +140,7 @@ export function validatePlot(plot, plots, excludeId = null) {
   return errors;
 }
 
-async function persistPlots(developmentId, plots) {
+async function persistPlots(developmentId, plots, { expectedVersion = null, updateMode = null } = {}) {
   const now = new Date().toISOString();
   const existing = getDevelopment(developmentId);
   if (!existing) {
@@ -154,7 +154,8 @@ async function persistPlots(developmentId, plots) {
         updatedAt: now,
       },
       plotCount: plots.length,
-      version: existing.version,
+      version: expectedVersion ?? existing.version,
+      ...(updateMode ? { plotMasterUpdateMode: updateMode } : {}),
     });
     return { ok: true, development: saved };
   } catch (error) {
@@ -168,6 +169,7 @@ async function persistPlots(developmentId, plots) {
     return {
       ok: false,
       errors: [error.message || 'Could not save plot changes.'],
+      code: error.code || null,
     };
   }
 }
@@ -214,6 +216,15 @@ export async function deletePlot(developmentId, plotId) {
 }
 
 export async function replacePlotMaster(developmentId, plots) {
+  const existingDevelopment = normalizePlotMaster(getDevelopment(developmentId));
+  if (!existingDevelopment) return { ok: false, errors: ['Development not found.'] };
+  if ((existingDevelopment.plotMaster?.plots || []).length > 0) {
+    return {
+      ok: false,
+      code: 'PLOT_MASTER_NOT_EMPTY',
+      errors: ['Import New Plot Schedule is only available for an empty Plot Master. Use Update Existing Plot Schedule.'],
+    };
+  }
   const normalized = plots.map((plot) =>
     normalizePlotInput({
       ...plot,
@@ -254,21 +265,48 @@ export async function replacePlotMaster(developmentId, plots) {
     : saved;
 }
 
-export async function bulkUpdatePlots(developmentId, plotUpdates = []) {
+export async function bulkUpdatePlots(developmentId, plotUpdates = [], options = {}) {
   const development = normalizePlotMaster(getDevelopment(developmentId));
   if (!development) return { ok: false, errors: ['Development not found.'] };
 
   const plots = [...(development.plotMaster?.plots || [])];
+  if (options.requireExpectedVersion && (
+    !Number.isInteger(Number(options.expectedVersion)) || Number(options.expectedVersion) < 1
+  )) {
+    return {
+      ok: false,
+      code: 'MISSING_PREVIEW_VERSION',
+      errors: ['The Development version was unavailable when this update was reviewed. Reload the Plot Master and create a fresh preview.'],
+    };
+  }
   const byId = new Map(plots.map((plot) => [plot.id, plot]));
+  const updateIds = plotUpdates.map((patch) => String(patch?.id || ''));
+  if (new Set(updateIds).size !== updateIds.length) {
+    return { ok: false, errors: ['Bulk plot updates must contain unique stable plot identities.'] };
+  }
+  if (updateIds.some((id) => !id || !byId.has(id))) {
+    return { ok: false, errors: ['Bulk plot update no longer matches the current Plot Master. Refresh and review it again.'] };
+  }
+  if (!plotUpdates.length) {
+    return { ok: true, development, plots };
+  }
 
   for (const patch of plotUpdates) {
     const existing = byId.get(patch.id);
-    if (!existing) continue;
     const next = normalizePlotInput({ ...existing, ...patch }, existing);
+    // Legacy plots without stored NIA deliberately retain the governed GIA fallback.
+    // Normalisation must not turn that fallback into apparently explicit NIA evidence.
+    if (existing.niaFt2 == null && patch.niaFt2 == null) delete next.niaFt2;
+    if (existing.niaM2 == null && patch.niaM2 == null) delete next.niaM2;
+    const errors = validatePlot(next, [...byId.values()], existing.id);
+    if (errors.length) return { ok: false, errors };
     byId.set(patch.id, next);
   }
 
-  const saved = await persistPlots(developmentId, [...byId.values()]);
+  const saved = await persistPlots(developmentId, [...byId.values()], {
+    expectedVersion: options.expectedVersion ?? development.version,
+    updateMode: 'bulk_structural',
+  });
   return saved.ok
     ? { ok: true, development: saved.development, plots: [...byId.values()] }
     : saved;
