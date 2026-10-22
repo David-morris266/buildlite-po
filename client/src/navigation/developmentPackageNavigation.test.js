@@ -8,13 +8,14 @@ describe('buildPackageWorkspaceNavigation', () => {
   it('builds development package breadcrumbs when opened from Developments', () => {
     const onBack = vi.fn();
     const onBackToDevelopmentList = vi.fn();
+    const onBackToDevelopmentWorkspace = vi.fn();
     const navigation = buildPackageWorkspaceNavigation({
       packageTitle: 'PlumbCo – Oakwood Meadows',
       onBack,
       navigationContext: { openedFrom: PACKAGE_OPENED_FROM.DevelopmentPackages },
       developmentName: 'Oakwood Meadows',
       onBackToDevelopmentList,
-      onBackToDevelopmentPackages: onBack,
+      onBackToDevelopmentWorkspace,
     });
 
     expect(navigation.breadcrumbs.map((item) => item.label)).toEqual([
@@ -24,6 +25,12 @@ describe('buildPackageWorkspaceNavigation', () => {
       'PlumbCo – Oakwood Meadows',
     ]);
     expect(navigation.onBack).toBe(onBack);
+    navigation.breadcrumbs[0].onClick();
+    navigation.breadcrumbs[1].onClick();
+    navigation.breadcrumbs[2].onClick();
+    expect(onBackToDevelopmentList).toHaveBeenCalledTimes(1);
+    expect(onBackToDevelopmentWorkspace).toHaveBeenCalledTimes(1);
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 
   it('keeps certificate breadcrumbs when opened from Payment Certificates', () => {

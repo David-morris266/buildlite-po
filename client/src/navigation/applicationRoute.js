@@ -8,6 +8,7 @@ const APPLICATION_VIEWS = new Set([
   'archive',
   'payment-approval',
   'payment-release',
+  'certificates',
 ]);
 
 const DEVELOPMENT_TABS = new Set([
@@ -30,6 +31,8 @@ const PACKAGE_TABS = new Set([
 
 const CVR_SUBVIEWS = new Set(['summary', 'worksheet', 'movements', 'exceptions', 'commentary']);
 const COMPANY_TABS = new Set(['identity', 'financial', 'commercial-defaults', 'numbering', 'branding']);
+const CERTIFICATE_STATUSES = new Set(['draft', 'submitted', 'locked']);
+const CERTIFICATE_SORTS = new Set(['newest', 'oldest', 'certificate_desc']);
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,199}$/;
 
@@ -47,6 +50,12 @@ function safePackageKey(value) {
   return text && text.length <= 500 && !hasControlCharacter ? text : null;
 }
 
+function safeSearch(value) { return String(value || '').slice(0, 200); }
+function safePositiveInteger(value) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 1 ? Math.min(parsed, 1000000) : 1;
+}
+
 export function homeApplicationRoute() {
   return {
     view: 'home',
@@ -60,6 +69,13 @@ export function homeApplicationRoute() {
     administrationSection: null,
     companyTab: null,
     plotMasterView: null,
+    certificateId: null,
+    certificateSearch: '',
+    certificateDevelopmentId: null,
+    certificateSupplierId: null,
+    certificateStatus: '',
+    certificateSort: 'newest',
+    certificatePage: 1,
   };
 }
 
@@ -78,6 +94,18 @@ export function parseApplicationRoute(locationLike = globalThis.location) {
       : route.administrationSection === 'company' ? 'identity' : null;
   }
 
+  if (view === 'certificates') {
+    route.certificateSearch = safeSearch(params.get('certificateSearch'));
+    route.certificateDevelopmentId = safeValue(params.get('certificateDevelopment'));
+    route.certificateSupplierId = safeValue(params.get('certificateSupplier'));
+    route.certificateStatus = CERTIFICATE_STATUSES.has(params.get('certificateStatus')) ? params.get('certificateStatus') : '';
+    route.certificateSort = CERTIFICATE_SORTS.has(params.get('certificateSort')) ? params.get('certificateSort') : 'newest';
+    route.certificatePage = safePositiveInteger(params.get('certificatePage'));
+    route.developmentId = safeValue(params.get('development'));
+    route.packageKey = safePackageKey(params.get('package'));
+    route.certificateId = safeValue(params.get('certificate'));
+    return route;
+  }
   if (view !== 'developments') return route;
 
   route.developmentId = safeValue(params.get('development'));
@@ -110,6 +138,19 @@ export function serializeApplicationRoute(route, locationLike = globalThis.locat
   const view = APPLICATION_VIEWS.has(route?.view) ? route.view : 'home';
 
   if (view !== 'home') params.set('view', view);
+  if (view === 'certificates') {
+    if (safeSearch(route?.certificateSearch)) params.set('certificateSearch', safeSearch(route.certificateSearch));
+    if (safeValue(route?.certificateDevelopmentId)) params.set('certificateDevelopment', route.certificateDevelopmentId);
+    if (safeValue(route?.certificateSupplierId)) params.set('certificateSupplier', route.certificateSupplierId);
+    if (CERTIFICATE_STATUSES.has(route?.certificateStatus)) params.set('certificateStatus', route.certificateStatus);
+    if (CERTIFICATE_SORTS.has(route?.certificateSort) && route.certificateSort !== 'newest') params.set('certificateSort', route.certificateSort);
+    if (safePositiveInteger(route?.certificatePage) > 1) params.set('certificatePage', String(safePositiveInteger(route.certificatePage)));
+  }
+  if (view === 'certificates' && safeValue(route?.certificateId) && safePackageKey(route?.packageKey) && safeValue(route?.developmentId)) {
+    params.set('development', route.developmentId);
+    params.set('package', route.packageKey);
+    params.set('certificate', route.certificateId);
+  }
   if (
     view === 'administration' &&
     route?.administrationSection !== 'landing' &&
@@ -151,6 +192,7 @@ export function serializeApplicationRoute(route, locationLike = globalThis.locat
 export function writeApplicationRoute(route, { replace = false } = {}) {
   const url = serializeApplicationRoute(route);
   const current = `${globalThis.location.pathname}${globalThis.location.search}${globalThis.location.hash}`;
-  if (url === current) return;
+  if (url === current) return false;
   globalThis.history[replace ? 'replaceState' : 'pushState']({ buildliteRoute: true }, '', url);
+  return true;
 }

@@ -217,6 +217,16 @@ export function poPdfUrl(number) {
   return buildUrl(`/api/po/${encodeURIComponent(number)}/pdf`);
 }
 
+export async function listCertificateRegister(params = {}) {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== '' && value != null) search.set(key, String(value));
+  });
+  const suffix = search.toString();
+  const res = await fetch(buildUrl(`/api/certificates${suffix ? `?${suffix}` : ''}`));
+  return handleJson(res);
+}
+
 export async function downloadPoPdf(number) {
   const poNumber = String(number || '').trim();
   if (!poNumber) throw new Error('Purchase Order number is required.');

@@ -11,6 +11,7 @@ const NAVIGATION_ITEMS = [
   { id: 'developments', label: 'Developments', icon: '\u25f1' },
   { id: 'form', label: 'New Purchase Order', icon: '+', permission: 'po.create' },
   { id: 'list', label: 'Purchase Orders', icon: '\u2261' },
+  { id: 'certificates', label: 'Certificates', icon: '\u25ce', permission: 'commercial.read' },
   { id: 'archive', label: 'Archive', icon: '\u25a1' },
 ];
 

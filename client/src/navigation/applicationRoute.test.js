@@ -72,6 +72,12 @@ describe('canonical application routes', () => {
     })).toMatchObject({ packageKey: 'dev-1::supplier-1::X-10/1', packageTab: 'overview' });
   });
 
+  it('round-trips an exact company Certificate Register destination', () => {
+    const route = { ...homeApplicationRoute(), view: 'certificates', certificateSearch: 'Groundworks 100%', certificateDevelopmentId: 'dev-1', certificateSupplierId: 'supplier-1', certificateStatus: 'submitted', certificateSort: 'oldest', certificatePage: 3, developmentId: 'dev-1', packageKey: 'dev-1::supplier-1::100', certificateId: '11111111-1111-1111-1111-111111111111' };
+    const url = serializeApplicationRoute(route, { pathname: '/', hash: '' });
+    expect(parseApplicationRoute({ search: url.slice(1) })).toMatchObject(route);
+  });
+
   it('round-trips stable CVR subviews and defaults older period URLs to Summary', () => {
     const location = { pathname: '/', search: '?view=developments&development=dev-1&workspace=cvr&period=P04&cvrView=movements', hash: '' };
     expect(parseApplicationRoute(location)).toMatchObject({ periodKey: 'P04', cvrSubview: 'movements' });

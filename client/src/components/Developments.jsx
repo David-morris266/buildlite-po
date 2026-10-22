@@ -23,6 +23,7 @@ export default function Developments({
   initialCvrHierarchyFilterKey = null,
   initialPackageKey = null,
   initialPackageTab = null,
+  initialCertificateId = null,
   initialPlotMasterView = null,
   navigationOrigin = null,
   onInitialDevelopmentHandled = null,
@@ -71,6 +72,7 @@ export default function Developments({
     const routeKey = JSON.stringify([
       initialDevelopmentId, initialWorkspaceTab, initialCvrPeriodKey, initialCvrSubview, initialCvrHierarchyFilterKey,
       initialPackageKey, initialPackageTab, initialPlotMasterView,
+      initialCertificateId,
     ]);
     if (hydratedRouteRef.current === routeKey) return;
     hydratedRouteRef.current = routeKey;
@@ -99,6 +101,7 @@ export default function Developments({
   }, [
     initialDevelopmentId, initialWorkspaceTab, initialCvrPeriodKey, initialCvrSubview, initialCvrHierarchyFilterKey,
     initialPackageKey, initialPackageTab, initialPlotMasterView, onInitialDevelopmentHandled,
+    initialCertificateId,
   ]);
 
   const activeDevelopment = useMemo(() => {
@@ -166,7 +169,7 @@ export default function Developments({
     setPlotMasterView(null);
     setWorkspaceResolveError('');
     setRefreshToken((value) => value + 1);
-    onRouteChange?.({ developmentId: null, workspaceTab: null });
+    onRouteChange?.({ developmentId: null, workspaceTab: null, navigationTarget: 'development-list' });
   }
 
   async function handleDevelopmentChanged() {
@@ -277,6 +280,7 @@ export default function Developments({
         initialCvrHierarchyFilterKey={cvrHierarchyFilterKey}
         initialPackageKey={packageKey}
         initialPackageTab={packageTab}
+        initialCertificateId={initialCertificateId}
         initialPlotMasterView={plotMasterView}
         onBackToList={returnToList}
         onPlotsChanged={() => setRefreshToken((value) => value + 1)}

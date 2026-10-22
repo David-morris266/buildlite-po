@@ -12,8 +12,9 @@ vi.mock('./SubcontractPackageOverview', () => ({
   SubcontractPackageSummary: () => <div>Package summary</div>,
 }));
 vi.mock('./PaymentCertificateWorkspace', () => ({
-  default: ({ onDetailModeChange }) => <div>
+  default: ({ onDetailModeChange, certificateTarget }) => <div>
     <div>Certificate workspace</div>
+    <div data-testid="certificate-target">{certificateTarget?.certificateId || ''}</div>
     <button type="button" onClick={() => onDetailModeChange(true)}>Open certificate</button>
     <button type="button" onClick={() => onDetailModeChange(false)}>Back to Certificates</button>
   </div>,
@@ -61,5 +62,31 @@ describe('GP-2A focused certificate mode', () => {
     act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Back to Certificates').click());
     expect(container.textContent).toContain('Package dashboard');
     expect(container.querySelector('[aria-label="Package sections"]')).toBeTruthy();
+  });
+
+  it('targets the exact certificate and does not renotify when callback identity changes', () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const first = vi.fn();
+    const second = vi.fn();
+    const props = {
+      order: { orderKey: 'order-1', supplierLabel: 'Supplier', projectLabel: 'Package' },
+      initialTab: 'certificates',
+      certificateTarget: { certificateId: 'certificate-22', navigationKey: 'certificate-22' },
+    };
+
+    act(() => root.render(<SubcontractPackageWorkspace {...props} onTabChange={first} />));
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(first).toHaveBeenCalledWith('certificates');
+    expect(container.querySelector('[data-testid="certificate-target"]').textContent).toBe('certificate-22');
+
+    act(() => root.render(<SubcontractPackageWorkspace {...props} onTabChange={second} />));
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).not.toHaveBeenCalled();
+
+    act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Overview').click());
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledWith('overview');
   });
 });

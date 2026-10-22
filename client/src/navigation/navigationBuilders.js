@@ -232,7 +232,7 @@ export function buildPackageWorkspaceNavigation({
   navigationContext = null,
   developmentName = null,
   onBackToDevelopmentList = null,
-  onBackToDevelopmentPackages = null,
+  onBackToDevelopmentWorkspace = null,
 }) {
   if (
     navigationContext?.openedFrom === 'DevelopmentPackages' ||
@@ -240,7 +240,7 @@ export function buildPackageWorkspaceNavigation({
   ) {
     const breadcrumbs = [
       createBreadcrumb('Developments', onBackToDevelopmentList),
-      createBreadcrumb(developmentName || 'Development', onBackToDevelopmentPackages),
+      createBreadcrumb(developmentName || 'Development', onBackToDevelopmentWorkspace),
       createBreadcrumb('Packages', onBack),
       createBreadcrumb(packageTitle),
     ];

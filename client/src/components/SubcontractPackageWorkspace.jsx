@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import POPageHeader from './POPageHeader';
 import { buildPackageWorkspaceNavigation } from '../navigation/navigationBuilders';
 import OrderMatrixPlaceholderPreview from './OrderMatrixPlaceholderPreview';
@@ -34,6 +34,7 @@ export default function SubcontractPackageWorkspace({
   variationAccountTarget = null,
   developmentName = null,
   onBackToDevelopmentList = null,
+  onBackToDevelopmentWorkspace = null,
   onNavigateToLinkedCommercialEvent = null,
   packageLaunchError = '',
   commercialEventsLoading = false,
@@ -45,6 +46,8 @@ export default function SubcontractPackageWorkspace({
   assistantDevelopmentPackages = null,
   onAssistantNavigate = null,
   onTabChange = null,
+  onBackToCertificateRegister = null,
+  onCertificateSelectionChange = null,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab);
 
@@ -54,6 +57,11 @@ export default function SubcontractPackageWorkspace({
   const [packageProjectionRefresh, setPackageProjectionRefresh] = useState(0);
   const [certificateDetailActive, setCertificateDetailActive] = useState(false);
   const [termsRefresh, setTermsRefresh] = useState(0);
+  const onTabChangeRef = useRef(onTabChange);
+
+  useEffect(() => {
+    onTabChangeRef.current = onTabChange;
+  }, [onTabChange]);
 
   const {
     certificatesLoading,
@@ -87,8 +95,8 @@ export default function SubcontractPackageWorkspace({
 
   useEffect(() => {
     if (activeTab !== 'certificates') setCertificateDetailActive(false);
-    onTabChange?.(activeTab);
-  }, [activeTab, onTabChange]);
+    onTabChangeRef.current?.(activeTab);
+  }, [activeTab]);
 
   useEffect(() => {
     if (commercialEventTarget?.eventId) {
@@ -137,7 +145,7 @@ export default function SubcontractPackageWorkspace({
     navigationContext,
     developmentName,
     onBackToDevelopmentList,
-    onBackToDevelopmentPackages: onBackToList,
+    onBackToDevelopmentWorkspace,
   });
 
   return (
@@ -235,6 +243,8 @@ export default function SubcontractPackageWorkspace({
             developmentName={developmentName}
             refreshToken={certRefresh}
             certificateTarget={certificateTarget}
+            onBackToCertificateRegister={onBackToCertificateRegister}
+            onCertificateSelectionChange={onCertificateSelectionChange}
             onCertificatesChanged={() => setCertRefresh((value) => value + 1)}
             certificatesLoading={certificatesLoading}
             certificatesReady={certificatesReady}

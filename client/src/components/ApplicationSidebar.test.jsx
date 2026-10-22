@@ -44,9 +44,9 @@ describe('application sidebar', () => {
   });
 
   it('shows authority-owned destinations from existing permissions', () => {
-    principal = { permissions: ['payment_approval_run.view', 'payment_release.execute', 'po.create', 'tenant.configure'], platformPermissions: [] };
+    principal = { permissions: ['payment_approval_run.view', 'payment_release.execute', 'po.create', 'tenant.configure', 'commercial.read'], platformPermissions: [] };
     renderSidebar();
-    for (const label of ['Payment Approval', 'Accounts', 'Administration', 'New Purchase Order']) {
+    for (const label of ['Payment Approval', 'Accounts', 'Administration', 'New Purchase Order', 'Certificates']) {
       expect(container.querySelector(`[aria-label="${label}"]`)).not.toBeNull();
     }
   });

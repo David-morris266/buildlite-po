@@ -2163,6 +2163,23 @@
   color: var(--accent);
 }
 
+/* Company-wide Certificate Register */
+.certificate-register__filters {
+  display: grid;
+  grid-template-columns: minmax(240px, 2fr) repeat(4, minmax(150px, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+.certificate-register__filters label { display: grid; gap: 6px; color: var(--muted); font-size: .78rem; }
+.certificate-register__filters input,
+.certificate-register__filters select { min-width: 0; width: 100%; }
+.certificate-register__table { min-width: 1120px; }
+.certificate-register__table td small { display: block; margin-top: 3px; color: var(--muted); }
+.certificate-register__money { text-align: right !important; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.certificate-register .po-error-banner { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-top: 16px; }
+@media (max-width: 1180px) { .certificate-register__filters { grid-template-columns: repeat(3, minmax(0, 1fr)); } .certificate-register__search { grid-column: span 2; } }
+@media (max-width: 720px) { .certificate-register__filters { grid-template-columns: 1fr; } .certificate-register__search { grid-column: auto; } }
+
 .dev-workspace__setup-item--ready {
   border-color: rgba(134, 239, 172, 0.26);
   background: rgba(134, 239, 172, 0.055);

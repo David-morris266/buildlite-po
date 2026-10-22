@@ -90,6 +90,8 @@ export default function PaymentCertificateWorkspace({
   developmentName = null,
   refreshToken = 0,
   certificateTarget = null,
+  onBackToCertificateRegister = null,
+  onCertificateSelectionChange = null,
   onCertificatesChanged,
   certificatesLoading = false,
   certificatesReady = true,
@@ -123,10 +125,13 @@ export default function PaymentCertificateWorkspace({
   );
 
   useEffect(() => {
-    if (certificateTarget?.certificateId) {
-      setSelectedCertificateId(certificateTarget.certificateId);
-    }
+    setSelectedCertificateId(certificateTarget?.certificateId || null);
   }, [certificateTarget?.certificateId, certificateTarget?.navigationKey]);
+
+  function selectCertificate(certificateId) {
+    setSelectedCertificateId(certificateId || null);
+    onCertificateSelectionChange?.(certificateId || null);
+  }
 
   useEffect(() => {
     onDetailModeChange?.(Boolean(selectedCertificateId));
@@ -148,7 +153,7 @@ export default function PaymentCertificateWorkspace({
         setMutationError(result.errors?.[0] || 'Could not create certificate.');
         return;
       }
-      setSelectedCertificateId(result.certificate.id);
+      selectCertificate(result.certificate.id);
       onCertificatesChanged?.();
     } finally {
       setCreateBusy(false);
@@ -168,13 +173,24 @@ export default function PaymentCertificateWorkspace({
         return;
       }
       if (selectedCertificateId === deleteTarget.id) {
-        setSelectedCertificateId(null);
+        selectCertificate(null);
       }
       setDeleteTarget(null);
       onCertificatesChanged?.();
     } finally {
       setDeleteBusy(false);
     }
+  }
+
+  if (selectedCertificateId && !certificatesPending && !certificates.some(item => item.id === selectedCertificateId)) {
+    return <div className="po-module-card po-empty-state po-cert-workspace__empty" role="alert">
+      <p className="po-empty-state__message">Certificate unavailable</p>
+      <p className="po-empty-state__hint">The requested certificate could not be found in this Package.</p>
+      <div className="po-empty-state__actions">
+        <button type="button" className="po-list-btn-secondary" onClick={() => selectCertificate(null)}>Back to Package certificates</button>
+        {onBackToCertificateRegister ? <button type="button" className="po-list-btn-secondary" onClick={onBackToCertificateRegister}>Back to Certificate Register</button> : null}
+      </div>
+    </div>;
   }
 
   if (selectedCertificateId && !certificatesPending) {
@@ -185,7 +201,8 @@ export default function PaymentCertificateWorkspace({
           order={order}
           pkg={pkg}
           developmentName={developmentName}
-          onBack={() => setSelectedCertificateId(null)}
+          onBackToCertificateRegister={onBackToCertificateRegister}
+          onBack={() => selectCertificate(null)}
           onProgressChanged={onCertificatesChanged}
           onDeleteRequest={setDeleteTarget}
         />
@@ -309,7 +326,7 @@ export default function PaymentCertificateWorkspace({
                     <button
                       type="button"
                       className="po-cert-workspace__link"
-                      onClick={() => setSelectedCertificateId(certificate.id)}
+                      onClick={() => selectCertificate(certificate.id)}
                     >
                       {certificate.listAction.label}
                     </button>

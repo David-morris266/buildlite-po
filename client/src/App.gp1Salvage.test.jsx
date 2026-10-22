@@ -15,11 +15,19 @@ vi.mock('./components/BuildLiteHome', () => ({
   default: ({ onNavigate }) => <button onClick={() => onNavigate({ view: 'developments' })}>Developments & Packages</button>,
 }));
 vi.mock('./components/Developments', () => ({
-  default: (props) => <div data-testid="developments" data-has-package-target={String('initialPackageTarget' in props)} data-development-id={props.initialDevelopmentId || ''} data-workspace-tab={props.initialWorkspaceTab || ''} data-period-key={props.initialCvrPeriodKey || ''}>
+  default: (props) => <div data-testid="developments" data-has-package-target={String('initialPackageTarget' in props)} data-development-id={props.initialDevelopmentId || ''} data-workspace-tab={props.initialWorkspaceTab || ''} data-period-key={props.initialCvrPeriodKey || ''} data-package-key={props.initialPackageKey || ''} data-certificate-id={props.initialCertificateId || ''}>
     Developments list
     <button onClick={() => props.onRouteChange?.({ developmentId: 'dev-1', workspaceTab: 'selling-costs' })}>Open Hawthorn Selling Costs</button>
+    {props.initialCertificateId ? <button onClick={() => props.onRouteChange?.({ developmentId: props.initialDevelopmentId, workspaceTab: 'packages', packageKey: props.initialPackageKey, packageTab: 'certificates', certificateId: props.initialCertificateId })}>Synchronise certificate tab</button> : null}
     <button onClick={() => props.onNavigate?.({ view: 'administration', section: 'cost-codes', returnDevelopment: { id: 'dev-1', name: 'Pilot Site' } })}>Resolve Cost Codes</button>
     {props.initialDevelopmentId ? <button onClick={props.onInitialDevelopmentHandled}>Development handled</button> : null}
+  </div>,
+}));
+vi.mock('./components/CertificateRegister', () => ({
+  default: ({ initialState, onStateChange, onOpenCertificate }) => <div data-testid="certificate-register" data-search={initialState.search} data-status={initialState.status} data-page={initialState.page}>
+    Certificate Register
+    <button onClick={() => onStateChange({ ...initialState, search: 'Groundworks', status: 'submitted', page: 2 })}>Set certificate filters</button>
+    <button onClick={() => onOpenCertificate({ id: 'cert-22', developmentId: 'dev-oak', orderKey: 'dev-oak::supplier-1::100' }, initialState)}>Open target certificate</button>
   </div>,
 }));
 vi.mock('./setup/SetupAssistant', () => ({
@@ -138,6 +146,34 @@ describe('GP-1 salvaged application entry', () => {
     expect(window.location.search).toBe(
       '?view=developments&development=dev-hawthorn&workspace=packages&package=dev-hawthorn%3A%3Asupplier-1%3A%3A3640'
     );
+  });
+
+  it('opens an exact certificate, restores URL-backed register state on Back, and deep-link refreshes', async () => {
+    principal = { tenantReadiness: { configured: true }, permissions: ['commercial.read'], activeTenant: { clientId: 'tenant-a' } };
+    window.history.replaceState({}, '', '/?view=certificates');
+    act(() => root.render(<App />));
+    act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Set certificate filters').click());
+    expect(window.location.search).toContain('certificateSearch=Groundworks');
+    expect(window.location.search).toContain('certificateStatus=submitted');
+    expect(window.location.search).toContain('certificatePage=2');
+    act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Open target certificate').click());
+    let workspace = container.querySelector('[data-testid="developments"]');
+    expect(workspace.dataset.developmentId).toBe('dev-oak');
+    expect(workspace.dataset.packageKey).toBe('dev-oak::supplier-1::100');
+    expect(workspace.dataset.certificateId).toBe('cert-22');
+    expect(window.location.search).toContain('certificate=cert-22');
+    const historyLength = window.history.length;
+    act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Synchronise certificate tab').click());
+    expect(window.history.length).toBe(historyLength);
+    expect(container.querySelector('[data-testid="developments"]').dataset.certificateId).toBe('cert-22');
+    await act(async () => { window.history.back(); await new Promise(resolve => setTimeout(resolve, 10)); });
+    expect(container.querySelector('[data-testid="certificate-register"]').dataset.search).toBe('Groundworks');
+    expect(container.querySelector('[data-testid="certificate-register"]').dataset.page).toBe('2');
+
+    window.history.replaceState({}, '', '/?view=certificates&certificateSearch=Groundworks&development=dev-oak&package=dev-oak%3A%3Asupplier-1%3A%3A100&certificate=cert-22');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    workspace = container.querySelector('[data-testid="developments"]');
+    expect(workspace.dataset.certificateId).toBe('cert-22');
   });
 
   it('restores Administration subsections and follows subsection history', () => {

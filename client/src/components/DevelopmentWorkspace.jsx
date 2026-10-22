@@ -99,6 +99,7 @@ export default function DevelopmentWorkspace({
   initialCvrHierarchyFilterKey = null,
   initialPackageKey = null,
   initialPackageTab = null,
+  initialCertificateId = null,
   initialPlotMasterView = null,
   onOpenPackage,
   onNavigationStateChange,
@@ -442,10 +443,11 @@ export default function DevelopmentWorkspace({
       openedFrom: PACKAGE_OPENED_FROM.DevelopmentPackages,
       initialTab: initialPackageTab || 'overview',
       developmentId: development.id,
+      certificateTarget: initialCertificateId ? { certificateId: initialCertificateId, navigationKey: initialCertificateId } : null,
     }));
     setActiveTab('packages');
   }, [
-    development.id, initialPackageKey, initialPackageTab,
+    development.id, initialPackageKey, initialPackageTab, initialCertificateId,
     model?.packages, packageLaunch, packagesLoadState, onNavigationStateReplace,
   ]);
 
@@ -806,6 +808,28 @@ export default function DevelopmentWorkspace({
     onNavigationStateChange?.({ workspaceTab: 'packages' });
   }
 
+  function handleBackToDevelopmentWorkspace() {
+    setPackageLaunch(null);
+    setPackageLaunchError('');
+    setActiveTab('overview');
+    onNavigationStateChange?.({ workspaceTab: 'overview' });
+  }
+
+  function handleCertificateSelectionChange(certificateId) {
+    setPackageLaunch((current) => current ? {
+      ...current,
+      certificateTarget: certificateId
+        ? { certificateId, navigationKey: certificateId }
+        : null,
+    } : current);
+    onNavigationStateChange?.({
+      workspaceTab: 'packages',
+      packageKey: packageLaunch?.orderKey,
+      packageTab: 'certificates',
+      certificateId: certificateId || null,
+    });
+  }
+
   function handlePackageWorkspaceBack() {
     if (commercialNavigationStack.length > 0) {
       const previous = commercialNavigationStack[commercialNavigationStack.length - 1];
@@ -990,6 +1014,7 @@ export default function DevelopmentWorkspace({
           variationAccountTarget={packageLaunch.variationAccountTarget}
           developmentName={model.developmentName}
           onBackToDevelopmentList={onBackToList}
+          onBackToDevelopmentWorkspace={handleBackToDevelopmentWorkspace}
           onBackToList={handlePackageWorkspaceBack}
           onNavigateToLinkedCommercialEvent={handleNavigateToLinkedCommercialEvent}
           packageLaunchError={packageLaunchError}
@@ -1001,10 +1026,15 @@ export default function DevelopmentWorkspace({
           matricesReady={matricesReady}
           assistantDevelopmentPackages={model?.packages || []}
           onAssistantNavigate={handleAssistantNavigation}
+          onBackToCertificateRegister={navigationOrigin?.onReturn || null}
+          onCertificateSelectionChange={handleCertificateSelectionChange}
           onTabChange={(packageTab) => onNavigationStateChange?.({
             workspaceTab: 'packages',
             packageKey: packageLaunch.orderKey,
             packageTab,
+            certificateId: packageTab === 'certificates'
+              ? packageLaunch.certificateTarget?.certificateId || null
+              : null,
           })}
         />
       </WorkspaceShell>

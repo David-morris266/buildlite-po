@@ -1,5 +1,6 @@
 const { PERMISSIONS: P } = require('./permissions');
 const CRITICAL_ROUTE_PERMISSIONS = Object.freeze({
+  'GET /api/certificates': P.COMMERCIAL_READ,
   'POST /api/po': P.PO_CREATE,
   'PUT /api/po/:poNumber': P.PO_EDIT,
   'POST /api/po/:poNumber/request-approval': P.PO_SUBMIT,

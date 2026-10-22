@@ -6,6 +6,7 @@ import PaymentApprovalRun from './components/PaymentApprovalRun';
 import PaymentReleaseWorklist from './components/PaymentReleaseWorklist';
 import Developments from './components/Developments';
 import CVRPortfolio from './components/CVRPortfolio';
+import CertificateRegister from './components/CertificateRegister';
 import AdministrationModule from './components/admin/AdministrationModule';
 import AdminPlatformProvisioningPage from './components/admin/AdminPlatformProvisioningPage';
 import BrandHeader from './components/Brandheader';
@@ -70,6 +71,13 @@ function TenantApplicationContent() {
     packageKey: initialRoute.packageKey,
     packageTab: initialRoute.packageTab,
     plotMasterView: initialRoute.plotMasterView,
+    certificateId: initialRoute.certificateId,
+    certificateSearch: initialRoute.certificateSearch,
+    certificateDevelopmentId: initialRoute.certificateDevelopmentId,
+    certificateSupplierId: initialRoute.certificateSupplierId,
+    certificateStatus: initialRoute.certificateStatus,
+    certificateSort: initialRoute.certificateSort,
+    certificatePage: initialRoute.certificatePage,
   });
   const [cvrRefresh, setCvrRefresh] = useState(0);
   const [adminDashboardReset, setAdminDashboardReset] = useState(0);
@@ -110,6 +118,13 @@ function TenantApplicationContent() {
       packageKey: next.packageKey,
       packageTab: next.packageTab,
       plotMasterView: next.plotMasterView,
+      certificateId: next.certificateId,
+      certificateSearch: next.certificateSearch,
+      certificateDevelopmentId: next.certificateDevelopmentId,
+      certificateSupplierId: next.certificateSupplierId,
+      certificateStatus: next.certificateStatus,
+      certificateSort: next.certificateSort,
+      certificatePage: next.certificatePage,
     });
   }, []);
 
@@ -131,9 +146,53 @@ function TenantApplicationContent() {
   }, [applyCanonicalRoute, unsavedChanges]);
 
   const navigateCanonical = useCallback((route, options) => {
-    writeApplicationRoute(route, options);
+    if (!writeApplicationRoute(route, options)) return;
     applyCanonicalRoute(route);
   }, [applyCanonicalRoute]);
+
+  const certificateRegisterRoute = useCallback((overrides = {}) => ({
+    ...homeApplicationRoute(),
+    view: 'certificates',
+    certificateSearch: cvrNav.certificateSearch,
+    certificateDevelopmentId: cvrNav.certificateDevelopmentId,
+    certificateSupplierId: cvrNav.certificateSupplierId,
+    certificateStatus: cvrNav.certificateStatus,
+    certificateSort: cvrNav.certificateSort,
+    certificatePage: cvrNav.certificatePage,
+    ...overrides,
+  }), [
+    cvrNav.certificateDevelopmentId, cvrNav.certificatePage,
+    cvrNav.certificateSearch, cvrNav.certificateSort,
+    cvrNav.certificateStatus, cvrNav.certificateSupplierId,
+  ]);
+
+  const handleCertificateWorkspaceRoute = useCallback((next, { replace = false } = {}) => {
+    if (next?.navigationTarget === 'development-list') {
+      navigateCanonical({ ...homeApplicationRoute(), view: 'developments' }, { replace });
+      return;
+    }
+    if (!next?.developmentId) {
+      navigateCanonical(certificateRegisterRoute(), { replace });
+      return;
+    }
+    if (!next.packageKey) {
+      navigateCanonical({ ...homeApplicationRoute(), view: 'developments', ...next }, { replace });
+      return;
+    }
+    if (next.packageTab === 'certificates') {
+      if (!next.certificateId) {
+        navigateCanonical({ ...homeApplicationRoute(), view: 'developments', ...next }, { replace });
+        return;
+      }
+      navigateCanonical(certificateRegisterRoute({
+        developmentId: next.developmentId,
+        packageKey: next.packageKey,
+        certificateId: next.certificateId,
+      }), { replace: true });
+      return;
+    }
+    navigateCanonical({ ...homeApplicationRoute(), view: 'developments', ...next }, { replace });
+  }, [certificateRegisterRoute, navigateCanonical]);
 
   const writeDevelopmentRoute = useCallback((next, options) => {
     const route = {
@@ -285,6 +344,26 @@ function TenantApplicationContent() {
             periodKey, workspaceTab: 'cvr',
           });
         }} /></CommercialWorkspace> : null}
+      {tab === 'certificates' ? (cvrNav.packageKey ? <Developments
+        initialDevelopmentId={cvrNav.developmentId}
+        initialWorkspaceTab="packages"
+        initialPackageKey={cvrNav.packageKey}
+        initialPackageTab="certificates"
+        initialCertificateId={cvrNav.certificateId}
+        navigationOrigin={{ label: 'Certificate Register', onReturn: () => navigateCanonical(certificateRegisterRoute()) }}
+        onRouteChange={handleCertificateWorkspaceRoute}
+        onRouteReplace={(next) => handleCertificateWorkspaceRoute(next, { replace: true })}
+        onNavigate={handleHomeNavigate}
+      /> : <CommercialWorkspace><CertificateRegister
+        key={principal?.activeTenant?.clientId || 'active-company'}
+        initialState={{ search: cvrNav.certificateSearch || '', developmentId: cvrNav.certificateDevelopmentId || '', supplierId: cvrNav.certificateSupplierId || '', status: cvrNav.certificateStatus || '', sort: cvrNav.certificateSort || 'newest', page: cvrNav.certificatePage || 1 }}
+        onStateChange={(state) => navigateCanonical({ ...homeApplicationRoute(), view: 'certificates', certificateSearch: state.search, certificateDevelopmentId: state.developmentId, certificateSupplierId: state.supplierId, certificateStatus: state.status, certificateSort: state.sort, certificatePage: state.page }, { replace: true })}
+        onOpenCertificate={(item, state) => navigateCanonical({
+          ...homeApplicationRoute(), view: 'certificates', certificateSearch: state.search,
+          certificateDevelopmentId: state.developmentId, certificateSupplierId: state.supplierId,
+          certificateStatus: state.status, certificateSort: state.sort, certificatePage: state.page,
+          developmentId: item.developmentId, packageKey: item.orderKey, certificateId: item.id,
+        })} /></CommercialWorkspace>) : null}
       {tab === 'developments' ? <Developments
         initialDevelopmentId={cvrNav.developmentId}
           initialWorkspaceTab={cvrNav.workspaceTab || (cvrNav.developmentId ? 'cvr' : null)}

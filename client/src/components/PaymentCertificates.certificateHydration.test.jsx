@@ -178,6 +178,34 @@ describe('Payment Certificates / package workspace certificate hydration (BL-030
     expect(text).not.toMatch(/No Payment Certificates have been created/);
   });
 
+  it('shows a safe unavailable state for an invalid targeted certificate', async () => {
+    buildLockedServerCertificateFixture({
+      packageId: PACKAGE_UUID,
+      orderKey: ORDER_KEY,
+      grossValue: 24000,
+      netValue: 22800,
+    });
+    const onCertificateSelectionChange = vi.fn();
+
+    await act(async () => {
+      root.render(<SubcontractPackageWorkspace
+        order={order}
+        initialTab="certificates"
+        certificateTarget={{ certificateId: 'missing-certificate', navigationKey: 'missing-certificate' }}
+        onCertificateSelectionChange={onCertificateSelectionChange}
+      />);
+    });
+    await flushPromises();
+
+    expect(document.body.textContent).toMatch(/Certificate unavailable/i);
+    const back = [...container.querySelectorAll('button')]
+      .find(button => button.textContent === 'Back to Package certificates');
+    expect(back).toBeTruthy();
+    act(() => back.click());
+    expect(onCertificateSelectionChange).toHaveBeenCalledWith(null);
+    expect(document.body.textContent).toMatch(/Payment Certificates/i);
+  });
+
   it('Developments package workspace hydrates and rerenders after loading', async () => {
     setPaymentCertificateListDelay(80);
     buildLockedServerCertificateFixture({

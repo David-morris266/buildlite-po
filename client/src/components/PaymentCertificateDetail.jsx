@@ -173,6 +173,7 @@ export default function PaymentCertificateDetail({
   pkg,
   developmentName = null,
   onBack,
+  onBackToCertificateRegister = null,
   onProgressChanged,
   onDeleteRequest,
 }) {
@@ -317,6 +318,7 @@ export default function PaymentCertificateDetail({
         breadcrumbs={buildCertificateDetailNavigation({
           certificateNumber: certificate.certificateNumber,
           packageTitle: getPackageDisplayName(order),
+          onBackToRegister: onBackToCertificateRegister,
           onBackToPackage: onBack,
         }).breadcrumbs}
         title={`Certificate No. ${certificate.certificateNumber}`}
