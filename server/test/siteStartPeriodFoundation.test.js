@@ -16,7 +16,7 @@ const { pool, isDbConfigured } = require('../db');
 const { prepareIntegrationTestDatabase } = require('./integrationTestSetup');
 const { randomUUID } = require('node:crypto');
 const { PERMISSIONS } = require('../auth/permissions');
-const { captureLandAppraisal, getLandAppraisalAuthority, lineSetMatchesEvidence } = require('../services/landAppraisalRepository');
+const { captureLandAppraisal, getLandAppraisalAuthority, lineSetMatchesEvidence, normaliseSourceEvidence } = require('../services/landAppraisalRepository');
 const {
   createSiteStartPeriod,
   createFirstCvrFromSiteStart,
@@ -33,6 +33,10 @@ const { adoptPrelimsForecasts } = require('../services/prelimsAdoptionApplyServi
 const { postEvent } = require('../services/developmentBudgetRepository');
 const { hashCanonicalJson, CANONICAL_JSON_SHA256_V1 } = require('../services/canonicalJsonIntegrity');
 const { addDraftCvrCostCodeMember } = require('../services/cvrMembershipService');
+
+function reviewedSource({ totalPence, acceptedRowCount = 1, sha = 'a'.repeat(64), firstFinancialRowNumber = 2 }) {
+  return { fileName: 'appraisal.xlsx', sha256: sha, worksheet: 'Budget', headerRowNumber: 1, columnMapping: [{ sourceColumn: 1, header: 'Cost Code', destination: 'costCode' }, { sourceColumn: 2, header: 'Budget', destination: 'amount' }], reconciliation: { sourceNonBlankRowCount: acceptedRowCount + 1, acceptedRowCount, rejectedRowCount: 0, excludedRowCount: 1, totalPence, firstFinancialRowNumber, lastFinancialRowNumber: firstFinancialRowNumber + acceptedRowCount - 1 } };
+}
 const { patchCostCodeInput } = require('../services/cvrPeriodRepository');
 
 const migration = fs.readFileSync(
@@ -110,6 +114,38 @@ test('Land Appraisal line reconciliation detects appended or altered financial e
   assert.equal(lineSetMatchesEvidence(evidence, [{ ...stored[0], amount: 1249 }]), false);
 });
 
+test('Land Appraisal source review evidence must reconcile before immutable capture', () => {
+  const source = { fileName: 'appraisal.xlsx', sha256: 'a'.repeat(64), worksheet: 'Budget', headerRowNumber: 3, columnMapping: [{ sourceColumn: 2, header: 'Cost Code', destination: 'costCode' }, { sourceColumn: 5, header: 'Budget', destination: 'amount' }], reconciliation: { sourceNonBlankRowCount: 4, acceptedRowCount: 1, rejectedRowCount: 0, excludedRowCount: 3, totalPence: 6000001, firstFinancialRowNumber: 4, lastFinancialRowNumber: 4 } };
+  assert.deepEqual(normaliseSourceEvidence(source, 1, 6000001), source);
+  assert.equal(normaliseSourceEvidence(null, 1, 6000001), null);
+  assert.equal(normaliseSourceEvidence({ ...source, reconciliation: null }, 1, 6000001), null);
+  assert.equal(normaliseSourceEvidence({ ...source, reconciliation: { ...source.reconciliation, totalPence: 10 } }, 1, 6000001), null);
+  assert.equal(normaliseSourceEvidence({ ...source, reconciliation: { ...source.reconciliation, acceptedRowCount: 2 } }, 1, 6000001), null);
+  assert.equal(normaliseSourceEvidence({ ...source, reconciliation: { ...source.reconciliation, rejectedRowCount: 1 } }, 1, 6000001), null);
+  assert.equal(normaliseSourceEvidence({ ...source, reconciliation: { ...source.reconciliation, sourceNonBlankRowCount: 5 } }, 1, 6000001), null);
+  assert.equal(normaliseSourceEvidence({ ...source, reconciliation: { ...source.reconciliation, firstFinancialRowNumber: 5, lastFinancialRowNumber: 4 } }, 1, 6000001), null);
+  assert.equal(normaliseSourceEvidence({ ...source, columnMapping: [{ sourceColumn: 2, header: 'Cost Code', destination: 'costCode' }] }, 1, 6000001), null);
+});
+
+test('legacy v1 Land Appraisal evidence hydrates and verifies without rewriting', async () => {
+  const evidence = { schemaVersion: 'land_purchase_appraisal_v1', lines: [{ lineNumber: 1, costCodeId: 'cc-1', costCode: '0010', description: 'Land', amountPence: 125000 }], totalPence: 125000 };
+  const row = {
+    id: 'legacy-appraisal', development_id: 'legacy-dev', effective_date: '2026-01-01', reference: 'LEGACY-1', approval_reason: 'Historical authority',
+    source_file_name: 'legacy.xlsx', source_file_sha256: 'c'.repeat(64), evidence_snapshot: evidence,
+    evidence_sha256: hashCanonicalJson(evidence), evidence_hash_scheme: CANONICAL_JSON_SHA256_V1, is_sealed: true,
+    created_at: new Date('2026-01-01T00:00:00Z'), created_by_user_id: 'user-1', created_by_membership_id: 'membership-1',
+    created_by_display_name: 'QS', created_role_key: 'qs', created_permission_key: 'land_appraisal.capture',
+  };
+  const db = { query: async sql => sql.includes('development_land_appraisal_lines')
+    ? { rows: [{ line_number: 1, cost_code_id: 'cc-1', cost_code: '0010', description: 'Land', amount: '1250.00' }] }
+    : { rows: [row] } };
+  const result = await getLandAppraisalAuthority('client-1', 'legacy-dev', db);
+  assert.equal(result.ok, true);
+  assert.equal(result.appraisal.integrity.valid, true);
+  assert.deepEqual(result.appraisal.sourceFingerprint, { fileName: 'legacy.xlsx', sha256: 'c'.repeat(64) });
+  assert.deepEqual(row.evidence_snapshot, evidence);
+});
+
 test('Land Appraisal hydration fails closed when stored lines diverge from hashed evidence', async () => {
   const evidence = { lines: [{ lineNumber: 1, costCodeId: 'cc-1', costCode: '1000', description: 'Land', amountPence: 125000 }], totalPence: 125000 };
   const row = {
@@ -184,10 +220,18 @@ test('appraisal-backed Site Start supports governed fact-only drawer overlays wi
       PERMISSIONS.SITE_START_MANAGE,
     ],
   };
+  const malformedCapture = await captureLandAppraisal(client.id, developmentId, {
+    effectiveDate: '2027-01-15', reference: 'Malformed review', approvalReason: 'Must fail before capture',
+    sourceFingerprint: { ...reviewedSource({ totalPence: 125000000 }), reconciliation: { ...reviewedSource({ totalPence: 125000000 }).reconciliation, rejectedRowCount: 1 } },
+    lines: [{ costCodeId: costCode.id, amount: '1250000.00' }],
+  }, auth);
+  assert.equal(malformedCapture.status, 400);
+  assert.equal((await pool.query('SELECT COUNT(*)::int AS count FROM development_land_appraisals WHERE client_id=$1 AND development_id=$2', [client.id, developmentId])).rows[0].count, 0);
   const captured = await captureLandAppraisal(client.id, developmentId, {
     effectiveDate: '2027-01-15',
     reference: 'Ashfield acquisition appraisal',
     approvalReason: 'Approved acquisition baseline',
+    sourceFingerprint: reviewedSource({ totalPence: 1867900000, acceptedRowCount: 2 }),
     lines: [
       { costCodeId: costCode.id, amount: '118000.00' },
       { costCodeId: balanceCostCode.id, amount: '18561000.00' },
@@ -349,12 +393,14 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
     effectiveDate: '2027-01-15',
     reference: 'Board appraisal 1',
     approvalReason: 'Approved acquisition baseline',
+    sourceFingerprint: { fileName: 'board-appraisal.xlsx', sha256: 'b'.repeat(64), worksheet: 'Budget', headerRowNumber: 3, columnMapping: [{ sourceColumn: 1, header: 'Cost Code', destination: 'costCode' }, { sourceColumn: 2, header: 'Budget', destination: 'amount' }], reconciliation: { sourceNonBlankRowCount: 2, acceptedRowCount: 1, rejectedRowCount: 0, excludedRowCount: 1, totalPence: 125000000, firstFinancialRowNumber: 4, lastFinancialRowNumber: 4 } },
     lines: [{ costCodeId: costCode.id, amount: '1250000.00' }],
   }, auth);
   assert.equal(captured.status, 201);
   assert.equal(captured.appraisal.totalCost, 1250000);
   assert.equal(captured.appraisal.lines[0].costCodeId, costCode.id);
   assert.equal(captured.appraisal.integrity.valid, true);
+  assert.deepEqual(captured.appraisal.sourceFingerprint.reconciliation, { sourceNonBlankRowCount: 2, acceptedRowCount: 1, rejectedRowCount: 0, excludedRowCount: 1, totalPence: 125000000, firstFinancialRowNumber: 4, lastFinancialRowNumber: 4 });
   assert.deepEqual(captured.appraisal.positions[0], {
     costCodeId: costCode.id,
     costCode: '5231',
@@ -398,6 +444,7 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
   assert.equal(closeCandidate.snapshot.rows[0].variance, -50000);
   assert.equal((await captureLandAppraisal(client.id, developmentId, {
     effectiveDate: '2027-01-15', reference: 'Duplicate', approvalReason: 'Duplicate',
+    sourceFingerprint: reviewedSource({ totalPence: 100 }),
     lines: [{ costCodeId: costCode.id, amount: '1.00' }],
   }, auth)).status, 409);
   await assert.rejects(

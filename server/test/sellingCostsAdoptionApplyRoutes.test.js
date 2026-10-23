@@ -341,11 +341,32 @@ async function captureTestLandAppraisal(clientId, developmentId, costCodeId, amo
     [clientId, PERMISSIONS.LAND_APPRAISAL_CAPTURE]
   )).rows[0];
   assert.ok(principal, "Land Appraisal test principal is required");
+  const capturedAmount = Number(amount).toFixed(2);
+  const totalPence = Math.round(Number(capturedAmount) * 100);
   const result = await captureLandAppraisal(clientId, developmentId, {
     effectiveDate: "2026-08-01",
     reference: `SS3-${developmentId}`,
     approvalReason: "SS3 guarded Selling Costs adoption",
-    lines: [{ costCodeId, amount: Number(amount).toFixed(2) }],
+    sourceFingerprint: {
+      fileName: "ss3-selling-costs-appraisal.xlsx",
+      sha256: "d".repeat(64),
+      worksheet: "Land Appraisal",
+      headerRowNumber: 1,
+      columnMapping: [
+        { sourceColumn: 1, header: "Cost Code", destination: "costCode" },
+        { sourceColumn: 2, header: "Budget", destination: "amount" },
+      ],
+      reconciliation: {
+        sourceNonBlankRowCount: 2,
+        acceptedRowCount: 1,
+        rejectedRowCount: 0,
+        excludedRowCount: 1,
+        totalPence,
+        firstFinancialRowNumber: 2,
+        lastFinancialRowNumber: 2,
+      },
+    },
+    lines: [{ costCodeId, amount: capturedAmount }],
   }, {
     clientId,
     userId: principal.user_id,

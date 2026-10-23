@@ -23,8 +23,8 @@ const historyAuthority = { ...established, events: [
 
 describe('DevelopmentBudgetWorkspace', () => {
   let host, root;
-  beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); mocks.permission = true; mocks.get.mockResolvedValue(empty); mocks.getAppraisal.mockResolvedValue(null); mocks.captureAppraisal.mockResolvedValue({ ok: true }); mocks.createSiteStart.mockResolvedValue({ periodKey: 'SITE_START' }); mocks.listPeriods.mockResolvedValue([{ periodKey: 'P01' }]); mocks.codes.mockResolvedValue({ costCodes: codes }); mocks.post.mockResolvedValue({ ok: true }); mocks.confirm.mockResolvedValue({ ok: true }); mocks.parse.mockResolvedValue({ fileName: 'budget.csv', rows: [['Cost Code', 'Budget'], ['A', '100.01']], headerRowIndex: 0, headers: ['Cost Code', 'Budget'], fieldByColumn: ['costCode', 'amount'] }); });
-  afterEach(() => { act(() => root.unmount()); host.remove(); vi.clearAllMocks(); });
+  beforeEach(() => { vi.stubGlobal('crypto', { subtle: { digest: vi.fn(async () => new Uint8Array(32).fill(1).buffer) } }); host = document.createElement('div'); document.body.append(host); root = createRoot(host); mocks.permission = true; mocks.get.mockResolvedValue(empty); mocks.getAppraisal.mockResolvedValue(null); mocks.captureAppraisal.mockResolvedValue({ ok: true }); mocks.createSiteStart.mockResolvedValue({ periodKey: 'SITE_START' }); mocks.listPeriods.mockResolvedValue([{ periodKey: 'P01' }]); mocks.codes.mockResolvedValue({ costCodes: codes }); mocks.post.mockResolvedValue({ ok: true }); mocks.confirm.mockResolvedValue({ ok: true }); mocks.parse.mockResolvedValue({ fileName: 'budget.csv', rows: [['Cost Code', 'Budget'], ['A', '100.01']], sourceRowNumbers: [1, 2], sourceColumnNumbers: [1, 2], numericRows: [], headerRowIndex: 0, headers: ['Cost Code', 'Budget'], fieldByColumn: ['costCode', 'amount'], ambiguousFields: [], hasHeader: true, worksheets: [] }); });
+  afterEach(() => { act(() => root.unmount()); host.remove(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
   async function render() { await act(async () => { root.render(<DevelopmentBudgetWorkspace developmentId="dev-1" />); await Promise.resolve(); }); }
   const button = label => [...host.querySelectorAll('button')].find(item => item.textContent.includes(label));
   function setValue(input, value) { const setter = Object.getOwnPropertyDescriptor(input instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype, 'value').set; setter.call(input, value); input.dispatchEvent(new Event('change', { bubbles: true })); input.dispatchEvent(new Event('input', { bubbles: true })); }
@@ -68,12 +68,15 @@ describe('DevelopmentBudgetWorkspace', () => {
     await act(async () => { root.render(<DevelopmentBudgetWorkspace developmentId="dev-1" onSiteStartCreated={opened} />); await Promise.resolve(); });
     act(() => button('Capture Land Purchase Appraisal').click());
     const fileInput = host.querySelector('input[type="file"]');
-    await act(async () => { Object.defineProperty(fileInput, 'files', { value: [{ name: 'appraisal.csv' }] }); fileInput.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { Object.defineProperty(fileInput, 'files', { value: [{ name: 'appraisal.csv', arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }] }); fileInput.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve(); await Promise.resolve(); });
     const capture = [...host.querySelectorAll('section')].find(section => section.querySelector('h2')?.textContent === 'Capture Land Purchase Appraisal');
-    const inputs = [...capture.querySelectorAll('input:not([type="file"])')];
+    expect(button('Capture immutable appraisal').disabled).toBe(true);
+    const confirmation = capture.querySelector('input[type="checkbox"]');
+    await act(async () => { confirmation.click(); });
+    const inputs = [...capture.querySelectorAll('input:not([type="file"]):not([type="checkbox"])')];
     await act(async () => { setValue(inputs[0], '2026-09-09'); setValue(inputs[1], 'LAND-1'); setValue(inputs[2], 'Board approved'); });
     await act(async () => { button('Capture immutable appraisal').click(); await Promise.resolve(); await Promise.resolve(); });
-    expect(mocks.captureAppraisal).toHaveBeenCalledWith('dev-1', expect.objectContaining({ reference: 'LAND-1', lines: [{ costCodeId: 'cc-a', amount: '100.01' }] }));
+    expect(mocks.captureAppraisal).toHaveBeenCalledWith('dev-1', expect.objectContaining({ reference: 'LAND-1', sourceFingerprint: expect.objectContaining({ reconciliation: expect.objectContaining({ totalPence: 10001, acceptedRowCount: 1 }) }), lines: [{ costCodeId: 'cc-a', amount: '100.01' }] }));
     expect(host.textContent).toContain('immutable acquisition baseline');
     await act(async () => { button('Create Site Start Draft').click(); await Promise.resolve(); });
     expect(mocks.createSiteStart).toHaveBeenCalledWith('dev-1', expect.objectContaining({ forecastAsAtMonth: expect.stringMatching(/^\d{4}-\d{2}$/) }));
@@ -81,8 +84,50 @@ describe('DevelopmentBudgetWorkspace', () => {
     expect(mocks.post).not.toHaveBeenCalled();
   });
 
+  it('resets immutable-capture confirmation after mapping changes and clears a stale preview after read failure', async () => {
+    await render(); act(() => button('Capture Land Purchase Appraisal').click());
+    const fileInput = host.querySelector('input[type="file"]');
+    await act(async () => { Object.defineProperty(fileInput, 'files', { configurable: true, value: [{ name: 'appraisal.csv' }] }); fileInput.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve(); await Promise.resolve(); });
+    let checkbox = host.querySelector('input[type="checkbox"]');
+    act(() => checkbox.click());
+    expect(checkbox.checked).toBe(true);
+    const mapping = [...host.querySelectorAll('select')].find(select => [...select.options].some(option => option.value === 'amount'));
+    act(() => setValue(mapping, 'ignore'));
+    checkbox = host.querySelector('input[type="checkbox"]');
+    expect(checkbox.checked).toBe(false);
+    expect(button('Capture immutable appraisal').disabled).toBe(true);
+
+    mocks.parse.mockRejectedValueOnce(new Error('Unreadable workbook'));
+    await act(async () => { Object.defineProperty(fileInput, 'files', { configurable: true, value: [{ name: 'broken.xlsx' }] }); fileInput.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve(); await Promise.resolve(); });
+    expect(host.textContent).toContain('Unreadable workbook');
+    expect(host.textContent).not.toContain('Financial reconciliation');
+  });
+
+  it('resets confirmation after heading or Cost Code Master evidence changes', async () => {
+    await render(); act(() => button('Capture Land Purchase Appraisal').click());
+    const fileInput = host.querySelector('input[type="file"]');
+    await act(async () => { Object.defineProperty(fileInput, 'files', { value: [{ name: 'appraisal.csv', arrayBuffer: async () => new Uint8Array([1]).buffer }] }); fileInput.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve(); await Promise.resolve(); });
+    let checkbox = host.querySelector('input[type="checkbox"]'); act(() => checkbox.click()); expect(checkbox.checked).toBe(true);
+    const heading = host.querySelector('select[aria-label="Heading row"]'); act(() => setValue(heading, '-1'));
+    expect(host.querySelector('input[type="checkbox"]').checked).toBe(false);
+
+    act(() => setValue(host.querySelector('select[aria-label="Heading row"]'), '0'));
+    checkbox = host.querySelector('input[type="checkbox"]'); act(() => checkbox.click()); expect(checkbox.checked).toBe(true);
+    mocks.codes.mockResolvedValue({ costCodes: [...codes, { id: 'cc-c', code: 'C', description: 'Code C', active: true }] });
+    await act(async () => { root.render(<DevelopmentBudgetWorkspace developmentId="dev-2" />); await Promise.resolve(); await Promise.resolve(); });
+    expect(host.querySelector('input[type="checkbox"]')?.checked).toBe(false);
+  });
+
+  it('fails closed when a source fingerprint cannot be established', async () => {
+    await render(); act(() => button('Capture Land Purchase Appraisal').click());
+    const fileInput = host.querySelector('input[type="file"]');
+    await act(async () => { Object.defineProperty(fileInput, 'files', { value: [{ name: 'appraisal.csv' }] }); fileInput.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve(); await Promise.resolve(); });
+    expect(host.textContent).toContain('verified SHA-256 source fingerprint is required');
+    expect(button('Capture immutable appraisal').disabled).toBe(true);
+  });
+
   it('accepts a zero-budget schedule row without posting a meaningless journal line', async () => {
-    mocks.parse.mockResolvedValue({ fileName: 'budget.csv', rows: [['Cost Code', 'Budget'], ['A', '100.01'], ['B', '0.00']], headerRowIndex: 0, headers: ['Cost Code', 'Budget'], fieldByColumn: ['costCode', 'amount'] });
+    mocks.parse.mockResolvedValue({ fileName: 'budget.csv', rows: [['Cost Code', 'Budget'], ['A', '100.01'], ['B', '0.00']], headerRowIndex: 0, headers: ['Cost Code', 'Budget'], fieldByColumn: ['costCode', 'amount'], hasHeader: true, worksheets: [] });
     mocks.get.mockResolvedValueOnce(empty).mockResolvedValue(established); await render();
     act(() => button('Set up Development Budget').click());
     const fileInput = host.querySelector('input[type="file"]');
