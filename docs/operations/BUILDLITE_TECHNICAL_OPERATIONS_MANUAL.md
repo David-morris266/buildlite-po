@@ -791,6 +791,20 @@ BuildLite is **not externally pilot-ready** (`CURRENT_STATE.md`, GP-PILOT-05) [O
 
 ## 12. Current deployment / release matrix
 
+### 24 October 2026 reconciled checkpoint
+
+This checkpoint supersedes the 18 October matrix below for current release planning; the older matrix is retained as incident and rollback history. Facts are based on Product Owner deployment evidence recorded in the 24 October continuity set. Provider settings must still be reverified immediately before an operation.
+
+| Environment | Frontend | API | Database / migration | Confirmed state |
+|---|---|---|---|---|
+| **Repository (`buildlite-V1-1`)** | — | — | Newest migration `069` | `de3331a92d2f0895fcb71444512cf4f02b913469` pushed; deployment is a separate fact |
+| **Main / Owner-UAT** | `app.buildlite.co.uk`; Netlify `buildlite-pilot`; last confirmed `a1a947c` | Render `buildlite-pilot-api`; last confirmed `a1a947c` | `buildlite_pilot`; PostgreSQL 18; frontier `069` | Matched frontend/API and `/health` ready. `de3331a` is **not confirmed deployed** |
+| **JB Homes demo** | `demo.buildlite.co.uk`; Netlify `buildlite-demo-jb`; confirmed `de3331a` | Render `buildlite-demo-jb-api`; confirmed `de3331a` | `buildlite_demo_jb_homes`; PostgreSQL 18; frontier `069` | Matched release; `/health` ready; Certificate Register functioning |
+
+**Release-control evidence:** Main Netlify auto-publishing is locked and Main Render auto-deploy was confirmed off at this checkpoint. JB Netlify builds were manually stopped following an unintended Git-triggered frontend publication. Reverify every setting in its provider dashboard before deployment. A Git SHA, successful build or frontend publication is not proof that the API or schema matches.
+
+**Resolved incident:** the JB frontend advanced while its API remained at `71c103f`, so `GET /api/certificates` returned 404. Deploying the matching API at `de3331a` restored parity. The corrective lesson is to approve, record and verify frontend SHA/deploy ID, API SHA and migration frontier together.
+
 Last updated 18 Oct 2026. Every live value not marked [O] or [V] must be verified from the dashboards. **[VERIFY]** marks an unknown. Values reported by the Product Owner are labelled [O]. **Frontend SHAs are not recorded unless verified; none is estimated here.**
 
 | Environment | Frontend host / SHA | API host / SHA | Database (name, version) | Migration frontier | Clerk instance | Authority flags | Status |
@@ -927,6 +941,16 @@ New developments with no history use the Site Start lifecycle (`developmentComme
 
 ## 15. Outstanding verification items
 
+### 24 October additions
+
+| ID | Question / required evidence |
+|---|---|
+| V-D8 | Main: confirm whether and when `de3331a` is deployed. Until provider evidence exists, retain `a1a947c` as the last confirmed frontend/API release. |
+| V-D9 | JB: reverify Render auto-deploy and Netlify build controls before the next release; record the actual settings and operator. |
+| V-P5 | JB PO204: establish whether a record exists, including Draft/Archived visibility, authenticated creator/time and number-allocation history. Hosted evidence requires separately authorised read-only access. |
+| V-P6 | John Burke membership: explain why Administration displayed Inactive when authority audit records only invitation acceptance/activation and no deactivation/reactivation event. |
+| V-S6 | Inventory obsolete Render/Netlify services, domains, billing, dependencies and rollback value before any deletion. |
+
 Each item must be answered from the provider dashboards or by the Product Owner. Record the answer, date and source in §16, then update the relevant section.
 
 **Environments**
@@ -1014,6 +1038,10 @@ Update the manual **in the same slice** as any change to:
 
 ### 16.4 Release and incident records
 
+**24 October 2026 — JB release-pair incident (resolved):** an unintended Git-triggered frontend publication placed JB's frontend ahead of API `71c103f`; `GET /api/certificates` returned 404. Matching frontend/API at `de3331a` restored service, `/health` was ready at frontier `069`, and the Certificate Register functioned. JB Netlify builds were manually stopped. Main remained last confirmed at matched `a1a947c`; `de3331a` deployment to Main was not established.
+
+**24 October 2026 — membership audit evidence:** a guarded read-only JB audit found John Burke's invitation acceptance and membership activation at 2026-10-21 09:09:35 UTC, but no deactivation/reactivation event or surrounding administrative change. The observed Inactive UI state therefore remains unexplained; no deployment or inactivity cause is established.
+
 _(Append release records using the §12 template and incident records using §10.4 step 6.)_
 
 ---
@@ -1031,4 +1059,4 @@ _(Append release records using the §12 template and incident records using §10
 | PDFs and branding | `server/puppeteer.config.cjs`, `server/services/commercialDocumentRenderer.js`, `commercialDocumentStorage.js`, `tenantBranding.js`; migrations `030`, `066` |
 | Dangerous and historical tools | `server/scripts/seed.js`, `reset-dev-data.js`, `server/services/devReset.js`, `server/routes/developerRoutes.js`, `server/scripts/prepare-/enrich-/accept-jb-homes-*.js` |
 | Tests | `server/test/` (incl. `rbacIdentityFoundation.test.js`, `siteStartPeriodFoundation.test.js`, `testDatabaseGuard.test.js`, `hostedReadiness.test.js`), `server/utils/testDatabaseGuard.js`, `client/vite.config.js` |
-| Governance and status | `AGENTS.md`, `CURRENT_STATE.md` (GP-PILOT-03/04/05), `PROJECT_SPINE.md`, `docs/PRODUCT_CONSTITUTION.md`, `docs/DATABASE.md`, `docs/HOSTED_PILOT_RUNBOOK.md`, `docs/BuildLite_Continuity_Handover_07_Oct_2026.md` |
+| Governance and status | `AGENTS.md`, `CURRENT_STATE.md` (24 Oct checkpoint and retained GP-PILOT history), `PROJECT_SPINE.md`, `docs/PRODUCT_CONSTITUTION.md`, `docs/DATABASE.md`, `docs/HOSTED_PILOT_RUNBOOK.md`, `docs/Continuity and handovers/BuildLite_Continuity_Handover_07_Oct_2026.md`, `docs/Continuity and handovers/BuildLite_Continuity_Handover_24_Oct_2026.md` |

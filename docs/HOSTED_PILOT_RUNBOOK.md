@@ -1,5 +1,13 @@
 # BuildLite hosted pilot runbook
 
+## 24 October 2026 release checkpoint
+
+- Git branch `buildlite-V1-1` is last confirmed pushed at `de3331a92d2f0895fcb71444512cf4f02b913469`.
+- Main (`app.buildlite.co.uk`, Netlify `buildlite-pilot`, Render `buildlite-pilot-api`, database `buildlite_pilot`) is last confirmed with matched frontend/API `a1a947c` and migration frontier `069`. Do not infer `de3331a` is live from Git state.
+- JB Homes (`demo.buildlite.co.uk`, Netlify `buildlite-demo-jb`, Render `buildlite-demo-jb-api`, database `buildlite_demo_jb_homes`) is confirmed with matched frontend/API `de3331a` and migration frontier `069`.
+- A JB frontend/API mismatch caused `GET /api/certificates` 404 and was resolved by deploying a matched release. Always record frontend deploy ID/SHA, API SHA and migration frontier as one release pair.
+- JB Netlify builds were manually stopped after the unintended Git-triggered publication. Main Netlify auto-publishing is locked and Main Render auto-deploy was confirmed off at the checkpoint. Reverify provider controls before release; do not rely on this record as live dashboard state.
+
 This runbook covers a new, clean pilot environment. It contains no credentials or customer data.
 
 ## Frontend — Netlify

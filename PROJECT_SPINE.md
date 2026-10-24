@@ -1,5 +1,16 @@
 # BuildLite Project Spine
 
+## 24 October 2026 programme checkpoint
+
+The current product programme is governed by `docs/Continuity and handovers/BuildLite_Continuity_Handover_24_Oct_2026.md` and the Master Improvement Register v0.7. This checkpoint is additive; the detailed persistence history below remains valid.
+
+- Git `buildlite-V1-1` is last confirmed pushed at `de3331a`. Main is last confirmed deployed at `a1a947c`; JB Homes is confirmed at `de3331a`. Do not confuse push state with deployed state.
+- Wave C1 Commercial Readiness, Wave C2 Certificate Register and the safe Plot Master update are implemented. The JB frontend/API mismatch is resolved.
+- **Wave C3 Action Safety is PAUSED and its discovery prompt has not been sent.** C4 and C5 remain queued.
+- Active pilot priorities are the outstanding JB PO204 investigation, unresolved John Burke membership discrepancy, Levison Rose appraisal recovery, Valhalla Welford Road Revenue reconciliation and common Excel importer experience.
+- New product discovery includes an optional per-user Dark/Light preference. Dark charcoal/emerald remains the established identity.
+- The commercial authority in the Product Constitution is unchanged: fixed Site Start Budget, no rolling Current Budget or P00, fact-based System Forecast, auditable QS judgement in Final Forecast, immutable locked evidence, and client-owned Cost Codes.
+
 ## Product Vision
 
 BuildLite is a lean commercial-control platform for SME housebuilders and residential developers.
