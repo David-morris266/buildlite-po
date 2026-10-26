@@ -44,6 +44,46 @@ describe('ledger local→server mapper (BL-031C)', () => {
     expect(mapped.value.costCodeKey).toBe('5231');
   });
 
+  it('preserves an absent supplier when a supplier-less journal has source identity', () => {
+    const mapped = mapLocalLedgerTransaction({
+      supplier: '   ',
+      costCode: '4000',
+      transactionDate: '2026-09-03',
+      netAmount: -250.5,
+      vat: -50.1,
+      documentType: 'Journal',
+      description: 'Accrual reversal',
+      reference: ' JNL-42 ',
+    });
+
+    expect(mapped).toMatchObject({
+      ok: true,
+      value: {
+        supplier: '',
+        reference: 'JNL-42',
+        costCodeKey: '4000',
+        transactionDate: '2026-09-03',
+        netAmount: -250.5,
+        vatAmount: -50.1,
+        documentType: 'Journal',
+        description: 'Accrual reversal',
+      },
+    });
+  });
+
+  it('rejects an absent supplier without a source reference', () => {
+    const mapped = mapLocalLedgerTransaction({
+      supplier: '',
+      reference: '   ',
+      costCode: '4000',
+      transactionDate: '2026-09-03',
+      netAmount: 25,
+    });
+
+    expect(mapped.ok).toBe(false);
+    expect(mapped.errors).toContain('transactions[0].reference is required when supplier is absent.');
+  });
+
   it('groups by existing local import batch and otherwise uses a labelled migration batch', () => {
     const grouped = groupLocalLedgerBatches({
       developmentId: 'dev-1',

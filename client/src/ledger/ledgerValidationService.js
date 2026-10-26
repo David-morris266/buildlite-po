@@ -5,12 +5,13 @@
 import { parseMoneyCell } from '../payments/excelImport';
 import { normaliseCostCodeKey, findMatchingCostCodeKey } from '../cvr/cvrCalculations';
 import { isBlankRow } from './csvImport';
+import { canonicalFingerprintSource } from './ledgerFingerprint';
 import { buildMappedRow, getMissingRequiredFields } from './ledgerImportFields';
 import {
   buildImportCostCentreDescription,
   collectKnownCostCentreKeys,
 } from './ledgerCostCentreImport';
-import { getExistingInvoiceKeys } from './ledgerTransactionStore';
+import { getExistingLedgerIdentityKeys } from './ledgerTransactionStore';
 
 export const WARNING_TYPES = {
   DEVELOPMENT_MISMATCH: 'Development identifier mismatch',
@@ -26,6 +27,7 @@ export const ERROR_TYPES = {
   DUPLICATE_TRANSACTION: 'Duplicate Transaction',
   MISSING_COST_CODE: 'Missing Cost Code',
   UNKNOWN_COST_CODE: 'Unknown Cost Code',
+  MISSING_JOURNAL_REFERENCE: 'Missing Reference for supplier-less transaction',
 };
 
 function normaliseText(value) {
@@ -85,23 +87,9 @@ function normaliseCostCode(value) {
   return String(value || '').trim();
 }
 
-function buildTransactionKey({ supplier, invoiceNumber, transactionDate, netAmount, description }) {
-  const invoice = normaliseText(invoiceNumber);
-  if (invoice) {
-    return `${normaliseText(supplier)}::inv::${invoice}`;
-  }
-
-  return [
-    normaliseText(supplier),
-    transactionDate || '',
-    String(netAmount ?? ''),
-    normaliseText(description),
-  ].join('::');
-}
-
 export function validateLedgerImport(rows, headerRowIndex, fieldByColumn, context = {}) {
   const dataRows = rows.slice(headerRowIndex + 1);
-  const existingInvoices = getExistingInvoiceKeys(context.developmentId);
+  const existingTransactionKeys = getExistingLedgerIdentityKeys(context.developmentId);
   const batchTransactionKeys = new Set();
   const knownCostCentreKeys = collectKnownCostCentreKeys(
     context.developmentId,
@@ -134,6 +122,7 @@ export function validateLedgerImport(rows, headerRowIndex, fieldByColumn, contex
     const costCode = normaliseCostCode(mapped.costCode);
     const costCodeKey = normaliseCostCodeKey(costCode);
     const invoiceNumber = String(mapped.invoiceNumber || '').trim();
+    const reference = String(mapped.reference || '').trim();
     const description = buildImportCostCentreDescription(mapped);
     const rawAmount = mapped.transactionAmount;
     const netAmount = parseMoneyCell(rawAmount);
@@ -148,7 +137,7 @@ export function validateLedgerImport(rows, headerRowIndex, fieldByColumn, contex
       }
     }
 
-    if (!supplier) hardIssues.push(ERROR_TYPES.MISSING_SUPPLIER);
+    if (!supplier && !reference) hardIssues.push(ERROR_TYPES.MISSING_JOURNAL_REFERENCE);
 
     if (!costCode || !costCodeKey) {
       hardIssues.push(ERROR_TYPES.MISSING_COST_CODE);
@@ -176,21 +165,19 @@ export function validateLedgerImport(rows, headerRowIndex, fieldByColumn, contex
     }
 
     if (hardIssues.length === 0 && netAmount != null) {
-      const transactionKey = buildTransactionKey({
+      const transactionKey = canonicalFingerprintSource({
         supplier,
         invoiceNumber,
         transactionDate,
         netAmount,
-        description: mapped.description,
+        costCodeKey: costCode,
+        description,
+        reference,
+        documentType: mapped.documentType,
       });
-
-      const legacyInvoiceKey = invoiceNumber
-        ? `${normaliseText(supplier)}::${normaliseText(invoiceNumber)}`
-        : null;
-
       if (
         batchTransactionKeys.has(transactionKey) ||
-        (legacyInvoiceKey && existingInvoices.has(legacyInvoiceKey))
+        existingTransactionKeys.has(transactionKey)
       ) {
         hardIssues.push(ERROR_TYPES.DUPLICATE_TRANSACTION);
       } else {

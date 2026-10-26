@@ -16,8 +16,11 @@ function parseIsoDate(value) {
 function validateLedgerTransactionInput(body = {}, index = 0) {
   const errors = [];
   const prefix = `transactions[${index}]`;
+  const rawSupplier = body.supplier == null ? "" : String(body.supplier);
   const supplier = trimText(body.supplier, 200);
-  if (!supplier) errors.push(`${prefix}.supplier is required.`);
+  if (rawSupplier && !rawSupplier.trim()) {
+    errors.push(`${prefix}.supplier must be blank or contain a supplier name.`);
+  }
 
   const costCodeKey = normaliseCostCodeKey(body.costCodeKey || body.costCode);
   if (!costCodeKey) errors.push(`${prefix}.costCodeKey is required.`);
@@ -51,6 +54,10 @@ function validateLedgerTransactionInput(body = {}, index = 0) {
 
   const invoiceNumber = trimText(body.invoiceNumber, 80);
   const description = trimText(body.description, 500);
+  const reference = trimText(body.reference, 80);
+  if (!supplier && !reference) {
+    errors.push(`${prefix}.reference is required when supplier is blank.`);
+  }
 
   const value = {
     supplier,
@@ -64,7 +71,7 @@ function validateLedgerTransactionInput(body = {}, index = 0) {
     grossAmount,
     source: trimText(body.source, 80),
     documentType: trimText(body.documentType, 80),
-    reference: trimText(body.reference, 80),
+    reference,
   };
 
   if (errors.length === 0) {

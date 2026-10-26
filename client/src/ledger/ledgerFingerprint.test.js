@@ -33,4 +33,28 @@ describe('ledger fingerprint (BL-031C)', () => {
     expect(first).toBe(second);
     expect(first).toHaveLength(64);
   });
+
+  it('keeps supplier-present invoice identity independent of Sage reference', () => {
+    expect(canonicalFingerprintSource({
+      supplier: 'A Ltd',
+      invoiceNumber: 'INV-1',
+      transactionDate: '2026-02-01',
+      netAmount: 10,
+      costCodeKey: '5218',
+      reference: 'SAGE-NEW',
+      documentType: 'PI',
+    })).toBe('inv|a ltd|inv-1|2026-02-01|10.00|5218');
+  });
+
+  it('matches the supplier-less journal identity contract', () => {
+    expect(canonicalFingerprintSource({
+      supplier: '',
+      transactionDate: '2026-02-02',
+      netAmount: -25.5,
+      costCodeKey: '5218',
+      description: 'Accrual reversal',
+      reference: 'JNL-0042',
+      documentType: 'Journal',
+    })).toBe('nosupplier|jnl-0042|2026-02-02|-25.50|5218');
+  });
 });

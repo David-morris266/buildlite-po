@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
-vi.mock('./ledgerTransactionStore',()=>({getExistingInvoiceKeys:()=>new Set()}));
+vi.mock('./ledgerTransactionStore',()=>({getExistingLedgerIdentityKeys:()=>new Set()}));
 vi.mock('./ledgerCostCentreImport',()=>({
   collectKnownCostCentreKeys:(_id,codes)=>new Set(codes),
   buildImportCostCentreDescription:(row)=>row.description || row.costCode || '',

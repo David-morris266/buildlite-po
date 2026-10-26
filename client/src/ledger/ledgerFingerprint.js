@@ -29,12 +29,22 @@ export function canonicalFingerprintSource({
   netAmount,
   costCodeKey,
   description,
+  reference,
 }) {
   const supplierToken = normaliseText(supplier);
   const invoiceToken = normaliseText(invoiceNumber);
   const date = dateToken(transactionDate);
   const net = moneyToken(netAmount);
   const costCode = normaliseCostCodeKey(costCodeKey);
+  if (!supplierToken) {
+    return [
+      'nosupplier',
+      normaliseText(reference),
+      date,
+      net,
+      costCode,
+    ].join('|');
+  }
   if (invoiceToken) {
     return ['inv', supplierToken, invoiceToken, date, net, costCode].join('|');
   }

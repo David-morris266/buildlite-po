@@ -16,6 +16,7 @@ const store = {
   importCallCount: 0,
   reverseCallCount: 0,
   resolveCallCount: 0,
+  lastImportPayload: null,
 };
 
 export class PurchaseLedgerApiError extends Error {
@@ -52,6 +53,7 @@ export function resetLedgerApiStore() {
   store.importCallCount = 0;
   store.reverseCallCount = 0;
   store.resolveCallCount = 0;
+  store.lastImportPayload = null;
 }
 
 export function seedMockLedgerTransactions(developmentId, transactions) {
@@ -96,6 +98,10 @@ export function getLedgerMutationCallCounts() {
     resolve: store.resolveCallCount,
     total: store.importCallCount + store.reverseCallCount + store.resolveCallCount,
   };
+}
+
+export function getLastLedgerImportPayload() {
+  return clone(store.lastImportPayload);
 }
 
 export function setLedgerMutationReject(error = null) {
@@ -220,6 +226,7 @@ export async function resolveLedgerTransactionForDevelopment(developmentId, tran
 
 export async function importLedgerBatchForDevelopment(developmentId, payload = {}) {
   store.importCallCount += 1;
+  store.lastImportPayload = { developmentId, ...clone(payload) };
   if (store.mutationShouldReject) throw store.mutationRejectError;
   const items = Array.isArray(payload.transactions) ? payload.transactions : [];
   if (!items.length) {

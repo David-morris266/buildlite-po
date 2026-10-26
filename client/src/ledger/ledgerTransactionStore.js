@@ -4,6 +4,7 @@
 
 import { normaliseCostCodeKey } from '../cvr/cvrCalculations';
 import { isLedgerServerAuthorityEnabled } from './ledgerAuthority';
+import { canonicalFingerprintSource } from './ledgerFingerprint';
 import {
   getCachedLedgerBatches,
   getCachedLedgerTotals,
@@ -212,14 +213,19 @@ export function appendImportHistory(developmentId, entry) {
   return historyRecord;
 }
 
-export function getExistingInvoiceKeys(developmentId) {
+export function getExistingLedgerIdentityKeys(developmentId) {
   const keys = new Set();
   for (const txn of listTransactions(developmentId)) {
-    const invoice = String(txn.invoiceNumber || '').trim().toLowerCase();
-    const supplier = String(txn.supplier || '').trim().toLowerCase();
-    if (invoice) {
-      keys.add(`${supplier}::${invoice}`);
-    }
+    keys.add(canonicalFingerprintSource({
+      supplier: txn.supplier,
+      invoiceNumber: txn.invoiceNumber,
+      transactionDate: txn.transactionDate,
+      netAmount: txn.netAmount,
+      costCodeKey: txn.sourceCostCodeKey || txn.costCodeKey || txn.costCode,
+      description: txn.description,
+      reference: txn.reference,
+      documentType: txn.documentType,
+    }));
   }
   return keys;
 }

@@ -38,6 +38,33 @@ test("missing invoice falls back to description in the canonical source", () => 
   assert.match(source, /no invoice line/);
 });
 
+test("supplier-present invoice identity remains historically compatible", () => {
+  const source = canonicalFingerprintSource({
+    supplier: "A Ltd",
+    invoiceNumber: "INV-1",
+    transactionDate: "2026-02-01",
+    netAmount: 10,
+    costCodeKey: "5218",
+    description: "Ignored for invoiced supplier transactions",
+    reference: "SAGE-NEW",
+    documentType: "PI",
+  });
+  assert.equal(source, "inv|a ltd|inv-1|2026-02-01|10.00|5218");
+});
+
+test("supplier-less journal identity includes Sage reference and financial evidence", () => {
+  const source = canonicalFingerprintSource({
+    supplier: "",
+    transactionDate: "2026-02-02",
+    netAmount: -25.5,
+    costCodeKey: "5218",
+    description: "Accrual reversal",
+    reference: "JNL-0042",
+    documentType: "Journal",
+  });
+  assert.equal(source, "nosupplier|jnl-0042|2026-02-02|-25.50|5218");
+});
+
 test("reversal fingerprints do not collide with the origin", () => {
   const origin = buildLedgerFingerprint({
     supplier: "A Ltd",

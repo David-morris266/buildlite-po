@@ -52,7 +52,10 @@ export function mapLocalLedgerTransaction(txn, index = 0) {
     return { ok: false, errors: [`transactions[${index}] is not an object.`] };
   }
   const supplier = String(txn.supplier || '').trim();
-  if (!supplier) errors.push(`transactions[${index}].supplier is required.`);
+  const reference = String(txn.reference || '').trim();
+  if (!supplier && !reference) {
+    errors.push(`transactions[${index}].reference is required when supplier is absent.`);
+  }
   const costCodeKey = normaliseCostCodeKey(txn.costCode || txn.costCodeKey);
   if (!costCodeKey) errors.push(`transactions[${index}].costCode is required.`);
   const transactionDate = isoDateOnly(txn.transactionDate);
@@ -90,7 +93,7 @@ export function mapLocalLedgerTransaction(txn, index = 0) {
     grossAmount,
     source: String(txn.source || '').trim(),
     documentType: String(txn.documentType || '').trim(),
-    reference: String(txn.reference || '').trim(),
+    reference,
   };
 
   return { ok: errors.length === 0, errors, value };

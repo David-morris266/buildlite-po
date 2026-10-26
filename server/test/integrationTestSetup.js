@@ -170,6 +170,18 @@ async function prepareIntegrationTestDatabase(pool) {
       'utf8'
     ));
   }
+  const ledgerSupplierConstraint = await pool.query(
+    `SELECT pg_get_constraintdef(oid) definition
+     FROM pg_constraint
+     WHERE conname='chk_ledger_transactions_supplier'
+       AND conrelid='ledger_transactions'::regclass`
+  );
+  if (!ledgerSupplierConstraint.rows[0]?.definition?.includes("supplier = ''::text")) {
+    await pool.query(fs.readFileSync(
+      path.join(__dirname, '..', 'migrations', '070_ledger_optional_supplier.sql'),
+      'utf8'
+    ));
+  }
   const activeClientId = await ensureActiveTestClient(pool);
   await ensureDefaultTestPrincipal(pool, activeClientId);
 }
