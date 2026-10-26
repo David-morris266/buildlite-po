@@ -12,6 +12,15 @@ const {
 const DEFAULT_REVENUE_SOURCE = "House Type";
 const GARAGE_TYPES = ["None", "Single", "Double"];
 const SECURED_REVENUE_STATUSES = ["Exchanged", "Completed"];
+const REVENUE_TENURE_BY_CODE = Object.freeze({
+  OPEN_MARKET: "Open Market",
+  AFFORDABLE_RENT: "Affordable Rent",
+  SHARED_OWNERSHIP: "Shared Ownership",
+  FIRST_HOMES: "First Homes",
+  ADDITIONALITY: "Additionality",
+  DISCOUNT_MARKET_SALE: "Discount Market Sale",
+  OTHER: "Other",
+});
 
 function roundPlotMoney(value) {
   const amount = Number(value);
@@ -40,10 +49,22 @@ function getPlotNiaFt2(plot = {}) {
   return 0;
 }
 
+function getPlotRevenueTenureAuthority(plot = {}) {
+  const sourceTenureCode = plot.tenureCode ?? null;
+  const normalizedTenureCode = String(sourceTenureCode || "").trim().toUpperCase();
+  const tenure = REVENUE_TENURE_BY_CODE[normalizedTenureCode] || null;
+  return {
+    resolved: Boolean(tenure),
+    tenure,
+    tenureCode: sourceTenureCode,
+    normalizedTenureCode,
+    sourceTenure: String(plot.tenure || "").trim(),
+    authoritySource: tenure ? "reviewed_tenure_code" : "unresolved",
+  };
+}
+
 function getPlotPricingTenure(plot = {}) {
-  const tenure = String(plot.tenure || "").trim();
-  if (tenure) return tenure;
-  return String(plot.revenueCategory || "").trim();
+  return getPlotRevenueTenureAuthority(plot).tenure || "";
 }
 
 function getAffordablePercentKey(tenureOrCategory = "") {
@@ -238,6 +259,7 @@ function resolvePlotOpenMarketBase(plot = {}, strategy = {}, houseTypePricing = 
 }
 
 function resolvePlotForecastPrice(plot = {}, strategy = {}, houseTypePricing = {}, plots = []) {
+  if (!getPlotRevenueTenureAuthority(plot).resolved) return null;
   const source = plot.revenueSource || DEFAULT_REVENUE_SOURCE;
   if (source === "Manual Value") {
     return roundPlotMoney(plot.manualForecastValue || 0);
@@ -248,6 +270,7 @@ function resolvePlotForecastPrice(plot = {}, strategy = {}, houseTypePricing = {
 }
 
 function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing = {}, plots = []) {
+  const tenureAuthority = getPlotRevenueTenureAuthority(plot);
   const effectiveGarage = resolveEffectivePlotGarage(plot, houseTypePricing);
   const derivedForecast = resolvePlotForecastPrice(plot, strategy, houseTypePricing, plots);
   const cancelled = isCancelledRevenueStatus(plot.revenueStatus);
@@ -280,7 +303,9 @@ function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing = {}, 
     effectiveRevenueNiaSource: effectiveRevenueNia.source,
     revenueNiaRequired: effectiveRevenueNia.areaRequired,
     revenueNiaResolved: effectiveRevenueNia.resolved,
-    tenure: getPlotPricingTenure(plot),
+    revenueTenure: tenureAuthority.tenure || "Unreviewed",
+    tenureResolved: tenureAuthority.resolved,
+    tenureAuthoritySource: tenureAuthority.authoritySource,
     revenueStatus: normalizePlotRevenueStatus(plot.revenueStatus),
     revenueSource: plot.revenueSource || DEFAULT_REVENUE_SOURCE,
     reservedSellingPriceAuthority,
@@ -337,6 +362,7 @@ module.exports = {
   getPlotNiaFt2,
   resolveEffectiveRevenueNia,
   getPlotPricingTenure,
+  getPlotRevenueTenureAuthority,
   getAffordablePercentKey,
   resolveEffectivePlotGarage,
   applyAffordableDiscount,

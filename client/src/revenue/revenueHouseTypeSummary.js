@@ -15,7 +15,9 @@ import {
 } from './revenueCalculations';
 
 function plotRevenue(plot) {
-  return roundMoney(plot.effectivePrice ?? getPlotEffectivePrice(plot));
+  return roundMoney(
+    plot.effectivePrice !== undefined ? plot.effectivePrice : getPlotEffectivePrice(plot)
+  );
 }
 
 function resolveHouseType(plot = {}) {

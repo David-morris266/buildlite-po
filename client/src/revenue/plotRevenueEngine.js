@@ -140,6 +140,17 @@ export function buildRevenueExceptions(plots = []) {
     const niaFt2 = plot.effectiveRevenueNiaFt2 ?? getPlotNiaFt2(plot);
     const status = String(plot.revenueStatus || 'Available');
 
+    if (plot.tenureResolved === false) {
+      exceptions.push({
+        id: `unreviewed-tenure:${plot.id}`,
+        type: 'unreviewedTenure',
+        label: 'Unreviewed Plot Tenure',
+        message: `Plot ${plot.plotNumber} requires governed tenure review before Revenue can be finalised.`,
+        plotId: plot.id,
+        plotNumber: plot.plotNumber,
+      });
+    }
+
     if (!price) {
       exceptions.push({
         id: `missing-price:${plot.id}`,

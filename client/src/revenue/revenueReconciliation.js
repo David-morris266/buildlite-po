@@ -17,7 +17,9 @@ import {
 import { getPlotTenureLabel, normalizeTenureLabel } from './tenureDisplay';
 
 function splitPriceForPlot(plot) {
-  return roundMoney(plot.effectivePrice ?? getPlotEffectivePrice(plot));
+  return roundMoney(
+    plot.effectivePrice !== undefined ? plot.effectivePrice : getPlotEffectivePrice(plot)
+  );
 }
 
 function tenureRevenueGroup(percentKey, registerTenure) {

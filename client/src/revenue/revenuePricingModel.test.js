@@ -17,6 +17,7 @@ describe('revenuePricingModel', () => {
       niaFt2: 950,
       revenueSource: 'House Type',
       tenure: 'Open Market',
+      tenureCode: 'OPEN_MARKET',
     },
     {
       id: 'plot-2',
@@ -25,6 +26,7 @@ describe('revenuePricingModel', () => {
       niaFt2: 1000,
       revenueSource: 'House Type',
       tenure: 'Open Market',
+      tenureCode: 'OPEN_MARKET',
       garage: 'Single',
       garageOverride: true,
     },

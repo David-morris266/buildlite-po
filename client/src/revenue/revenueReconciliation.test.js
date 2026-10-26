@@ -13,6 +13,7 @@ function makePlot(overrides = {}) {
     id: overrides.id ?? 'plot-1',
     plotNumber: overrides.plotNumber ?? '1',
     tenure: overrides.tenure ?? 'Open Market',
+    tenureCode: overrides.tenureCode ?? 'OPEN_MARKET',
     revenueCategory: overrides.revenueCategory ?? 'Open Market',
     forecastSellingPrice: overrides.forecastSellingPrice ?? 300000,
     effectivePrice: overrides.effectivePrice ?? 300000,
@@ -23,11 +24,12 @@ function makePlot(overrides = {}) {
 describe('buildAffordableRevenueReconciliation', () => {
   it('matches dashboard summary when displayPricedPlots drives both paths', () => {
     const displayPricedPlots = [
-      makePlot({ id: 'ar-1', plotNumber: '1', tenure: 'Affordable Rent', effectivePrice: 166402 }),
+      makePlot({ id: 'ar-1', plotNumber: '1', tenure: 'Affordable Rent', tenureCode: 'AFFORDABLE_RENT', effectivePrice: 166402 }),
       makePlot({
         id: 'so-1',
         plotNumber: '5',
         tenure: 'Shared Ownership',
+        tenureCode: 'SHARED_OWNERSHIP',
         effectivePrice: 336100,
       }),
     ];
@@ -44,11 +46,12 @@ describe('buildAffordableRevenueReconciliation', () => {
 
   it('classifies Social Shared tenure as shared ownership affordable revenue', () => {
     const displayPricedPlots = [
-      makePlot({ id: 'ar-1', plotNumber: '1', tenure: 'Affordable Rent', effectivePrice: 665608 }),
+      makePlot({ id: 'ar-1', plotNumber: '1', tenure: 'Affordable Rent', tenureCode: 'AFFORDABLE_RENT', effectivePrice: 665608 }),
       makePlot({
         id: 'so-1',
         plotNumber: '5',
         tenure: 'Social Shared',
+        tenureCode: 'SHARED_OWNERSHIP',
         revenueCategory: 'Open Market',
         effectivePrice: 336100,
       }),
@@ -74,6 +77,7 @@ describe('buildAffordableRevenueReconciliation', () => {
       id: 'so-bad',
       plotNumber: '5',
       tenure: 'Shared Ownership',
+      tenureCode: 'SHARED_OWNERSHIP',
       revenueCategory: 'Open Market',
       effectivePrice: 250000,
     });
@@ -89,6 +93,7 @@ describe('buildAffordableRevenueReconciliation', () => {
       id: 'so-zero',
       plotNumber: '5',
       tenure: 'Shared Ownership',
+      tenureCode: 'SHARED_OWNERSHIP',
       forecastSellingPrice: 250000,
       effectivePrice: 0,
     });
@@ -106,19 +111,20 @@ describe('buildAffordableRevenueReconciliation', () => {
     expect(reconciliation.totals.sharedOwnershipRevenue).toBe(0);
   });
 
-  it('shows Shared Ownership revenue in open market when misclassified via fallback', () => {
+  it('does not place unresolved legacy tenure in the Open Market bucket', () => {
     const plot = makePlot({
       id: 'so-fallback',
       plotNumber: '5',
       tenure: '',
+      tenureCode: undefined,
       revenueCategory: 'Open Market',
       forecastSellingPrice: 240000,
       effectivePrice: 240000,
     });
     const reconciliation = buildAffordableRevenueReconciliation([plot], null);
 
-    expect(reconciliation.rows[0].bucket).toBe('openMarket');
-    expect(reconciliation.totals.openMarketRevenue).toBe(240000);
+    expect(reconciliation.rows[0].bucket).toBe('unresolved');
+    expect(reconciliation.totals.openMarketRevenue).toBe(0);
     expect(reconciliation.totals.sharedOwnershipRevenue).toBe(0);
     expect(reconciliation.reconciledSplit.affordableHousingRevenue).toBe(0);
   });

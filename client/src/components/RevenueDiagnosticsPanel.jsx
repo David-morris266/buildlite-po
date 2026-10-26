@@ -197,6 +197,7 @@ export default function RevenueDiagnosticsPanel({
             <DiagnosticRow label="Additionality" value={tenure.additionality} />
             <DiagnosticRow label="Discount Market Sale" value={tenure.discountMarketSale} />
             <DiagnosticRow label="Other" value={tenure.other} />
+            <DiagnosticRow label="Unreviewed" value={tenure.unresolved} />
           </div>
 
           <div className="revenue-diagnostics__group">
@@ -211,7 +212,9 @@ export default function RevenueDiagnosticsPanel({
             />
             <DiagnosticRow
               label="Average OM £/ft²"
-              value={`£${formatMoney(diagnostics.averageOmPerFt2)}`}
+              value={diagnostics.averageOmPerFt2 == null
+                ? 'N/A'
+                : `£${formatMoney(diagnostics.averageOmPerFt2)}`}
             />
             <DiagnosticRow
               label="Average AH %"

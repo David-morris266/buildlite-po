@@ -266,6 +266,7 @@ describe('BL-032A revenue authority', () => {
       houseType: 'Ash',
       niaFt2: 950,
       revenueCategory: 'Open Market',
+      tenureCode: 'OPEN_MARKET',
       revenueSource: 'House Type',
     });
 

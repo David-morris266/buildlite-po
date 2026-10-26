@@ -2075,6 +2075,7 @@ if (!isDbConfigured()) {
           id: "plot-31",
           plotNumber: "31",
           houseType: "Arundel",
+          tenureCode: "OPEN_MARKET",
           revenueStatus: "Exchanged",
           sellingPrice: 0,
           revenueSource: "Manual Value",
@@ -2107,6 +2108,7 @@ if (!isDbConfigured()) {
           id: "plot-1",
           plotNumber: "1",
           houseType: "Arundel",
+          tenureCode: "OPEN_MARKET",
           revenueStatus: "Available",
           revenueSource: "Manual Value",
           manualForecastValue: 1000000,
@@ -2133,9 +2135,9 @@ if (!isDbConfigured()) {
 
   test("Approve & Lock freezes complete governed Plot Master GIA independently of Revenue NIA", async () => {
     const world = await setupBase({ plots: [
-      { id: "gia-1", plotNumber: "1", status: "Active", gia: 1076.4, nia: 850, revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 },
-      { id: "gia-2", plotNumber: "2", status: "inactive", gia: 900, nia: 800, revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 90000 },
-      { id: "gia-3", plotNumber: "3", gia: 893.2, nia: 950, revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 110000 },
+      { id: "gia-1", plotNumber: "1", status: "Active", gia: 1076.4, nia: 850, tenureCode: "OPEN_MARKET", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 },
+      { id: "gia-2", plotNumber: "2", status: "inactive", gia: 900, nia: 800, tenureCode: "OPEN_MARKET", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 90000 },
+      { id: "gia-3", plotNumber: "3", gia: 893.2, nia: 950, tenureCode: "OPEN_MARKET", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 110000 },
     ] });
     await submitPeriod(world.development.id, world.period.id);
     const locked = await request(app).post(`${periodUrl(world.development.id, world.period.id)}/approve`).send({ actor: "Director" });
@@ -2259,8 +2261,8 @@ if (!isDbConfigured()) {
     const world = await setupBase({ plots: [] });
     await pool.query(`UPDATE developments SET payload=jsonb_set(payload,'{plotMaster,plots}',$1::jsonb,true)
       WHERE client_id=$2 AND id=$3`, [JSON.stringify([
-      { id: "duplicate", plotNumber: "1", gia: 850, revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 },
-      { id: "duplicate", plotNumber: "2", gia: 920, revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 },
+      { id: "duplicate", plotNumber: "1", gia: 850, tenureCode: "OPEN_MARKET", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 },
+      { id: "duplicate", plotNumber: "2", gia: 920, tenureCode: "OPEN_MARKET", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 },
     ]), world.client.id, world.development.id]);
     await submitPeriod(world.development.id, world.period.id);
     const locked = await request(app).post(`${periodUrl(world.development.id, world.period.id)}/approve`).send({ actor: "Director" });

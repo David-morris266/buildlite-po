@@ -31,7 +31,9 @@ export function calculateGrossDevelopmentValue(developmentRevenue = {}) {
 
 export function calculatePlotDrivenGdv(plots = []) {
   return roundMoney(
-    plots.reduce((sum, plot) => sum + roundMoney(plot.effectivePrice ?? getPlotEffectivePrice(plot)), 0)
+    plots.reduce((sum, plot) => sum + roundMoney(
+      plot.effectivePrice !== undefined ? plot.effectivePrice : getPlotEffectivePrice(plot)
+    ), 0)
   );
 }
 
@@ -45,7 +47,9 @@ export function calculateRevenueSplitFromPlots(plots = []) {
   };
 
   for (const plot of plots) {
-    const price = roundMoney(plot.effectivePrice ?? getPlotEffectivePrice(plot));
+    const price = roundMoney(
+      plot.effectivePrice !== undefined ? plot.effectivePrice : getPlotEffectivePrice(plot)
+    );
     if (!price) continue;
     const bucket = classifyPlotRevenueBucket(plot);
     if (bucket === 'openMarket') split.openMarketRevenue += price;
@@ -67,7 +71,9 @@ export function calculateSalesMetrics(plots = []) {
     ? plots
     : plotsToCommercialModels(plots);
   const pricedPlots = models.filter(
-    (plot) => roundMoney(plot.effectivePrice ?? getPlotEffectivePrice(plot)) > 0
+    (plot) => roundMoney(
+      plot.effectivePrice !== undefined ? plot.effectivePrice : getPlotEffectivePrice(plot)
+    ) > 0
   );
 
   if (!pricedPlots.length) {
@@ -83,7 +89,9 @@ export function calculateSalesMetrics(plots = []) {
 
   const totalPrice = roundMoney(
     pricedPlots.reduce(
-      (sum, plot) => sum + roundMoney(plot.effectivePrice ?? getPlotEffectivePrice(plot)),
+      (sum, plot) => sum + roundMoney(
+        plot.effectivePrice !== undefined ? plot.effectivePrice : getPlotEffectivePrice(plot)
+      ),
       0
     )
   );
@@ -207,7 +215,9 @@ export function buildStrategyKpiCards(strategyMetrics = {}) {
   return [
     { key: 'autoPriced', label: 'Auto-priced plots', value: strategyMetrics.autoPricedPlotCount ?? 0, format: 'count' },
     { key: 'manualOverrides', label: 'Manual overrides', value: strategyMetrics.manualOverrideCount ?? 0, format: 'count' },
-    { key: 'averageOmPerFt2', label: 'Average OM £/ft²', value: strategyMetrics.averageOmPerFt2 ?? 0, format: 'rate' },
+    strategyMetrics.averageOmPerFt2 == null
+      ? { key: 'averageOmPerFt2', label: 'Average OM £/ft²', value: null, format: 'placeholder', placeholder: 'N/A' }
+      : { key: 'averageOmPerFt2', label: 'Average OM £/ft²', value: strategyMetrics.averageOmPerFt2, format: 'rate' },
     { key: 'averageAhPercent', label: 'Average AH % of OM', value: strategyMetrics.averageAhPercentOfOm ?? 0, format: 'percent' },
     { key: 'totalGaragePremium', label: 'Total Garage Premium', value: strategyMetrics.totalGaragePremium ?? 0, format: 'money' },
     { key: 'totalPlotPremium', label: 'Total Plot Premium', value: strategyMetrics.totalPlotPremium ?? 0, format: 'money' },

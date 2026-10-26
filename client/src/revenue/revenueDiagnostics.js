@@ -23,7 +23,7 @@ export function buildRevenueDiagnostics({
     pricingAudit,
     garagePremiumTotal: strategyMetrics.totalGaragePremium ?? 0,
     plotPremiumTotal: strategyMetrics.totalPlotPremium ?? 0,
-    averageOmPerFt2: strategyMetrics.averageOmPerFt2 ?? 0,
+    averageOmPerFt2: strategyMetrics.averageOmPerFt2 ?? null,
     averageAhPercent: strategyMetrics.averageAhPercentOfOm ?? 0,
     protectedManualOverrides: strategyMetrics.manualOverrideCount ?? sources.manualValue,
     plotsRecalculated:

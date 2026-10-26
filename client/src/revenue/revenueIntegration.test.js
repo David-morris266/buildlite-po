@@ -16,10 +16,10 @@ describe('tenureDisplay', () => {
     expect(normalizeTenureLabel('Social Shared')).toBe('Shared Ownership');
   });
 
-  it('derives tenure labels from plot master tenure', () => {
-    expect(getPlotTenureLabel({ tenure: 'Shared Ownership' })).toBe('Shared Ownership');
-    expect(getPlotTenureLabel({ tenure: 'Social Shared' })).toBe('Shared Ownership');
-    expect(getPlotTenureLabel({ revenueCategory: 'First Homes' })).toBe('First Homes');
+  it('derives tenure labels from governed tenureCode, not imported source text', () => {
+    expect(getPlotTenureLabel({ tenure: 'Open Market', tenureCode: 'SHARED_OWNERSHIP' })).toBe('Shared Ownership');
+    expect(getPlotTenureLabel({ tenure: 'Social Rent', tenureCode: 'AFFORDABLE_RENT' })).toBe('Affordable Rent');
+    expect(getPlotTenureLabel({ tenure: 'Open Market', tenureCode: 'UNREVIEWED' })).toBe('Unreviewed');
   });
 
   it('maps tenure badge tones', () => {
@@ -81,6 +81,7 @@ describe('buildPlotOverrideRows garage integration', () => {
           garage: 'Single',
           garageOverride: true,
           tenure: 'Open Market',
+          tenureCode: 'OPEN_MARKET',
         },
       ],
       strategy,
@@ -102,6 +103,7 @@ describe('buildPlotOverrideRows garage integration', () => {
           niaFt2: 1000,
           revenueSource: 'House Type',
           tenure: 'Open Market',
+          tenureCode: 'OPEN_MARKET',
         },
       ],
       strategy,

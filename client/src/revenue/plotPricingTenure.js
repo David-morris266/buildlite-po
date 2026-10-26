@@ -2,12 +2,32 @@
  * BL-019C.3 — Plot tenure drives revenue pricing (Plot Master is source of truth).
  */
 
-import { classifyRevenueBucket } from '../developments/plotCommercial';
+export const REVENUE_TENURE_BY_CODE = Object.freeze({
+  OPEN_MARKET: 'Open Market',
+  AFFORDABLE_RENT: 'Affordable Rent',
+  SHARED_OWNERSHIP: 'Shared Ownership',
+  FIRST_HOMES: 'First Homes',
+  ADDITIONALITY: 'Additionality',
+  DISCOUNT_MARKET_SALE: 'Discount Market Sale',
+  OTHER: 'Other',
+});
+
+export function getPlotRevenueTenureAuthority(plot = {}) {
+  const sourceTenureCode = plot.tenureCode ?? null;
+  const normalizedTenureCode = String(sourceTenureCode || '').trim().toUpperCase();
+  const tenure = REVENUE_TENURE_BY_CODE[normalizedTenureCode] || null;
+  return {
+    resolved: Boolean(tenure),
+    tenure,
+    tenureCode: sourceTenureCode,
+    normalizedTenureCode,
+    sourceTenure: String(plot.tenure || '').trim(),
+    authoritySource: tenure ? 'reviewed_tenure_code' : 'unresolved',
+  };
+}
 
 export function getPlotPricingTenure(plot = {}) {
-  const tenure = String(plot.tenure || '').trim();
-  if (tenure) return tenure;
-  return String(plot.revenueCategory || '').trim();
+  return getPlotRevenueTenureAuthority(plot).tenure || '';
 }
 
 export function getAffordablePercentKey(tenureOrCategory = '') {
@@ -33,20 +53,20 @@ export function getPlotAffordablePercentKey(plot = {}) {
 export function classifyPlotRevenueBucket(plot = {}) {
   const tenure = getPlotPricingTenure(plot);
   const key = getAffordablePercentKey(tenure);
+  if (key === 'other') return 'other';
   if (key) return 'affordable';
 
   const normalized = String(tenure || '').trim().toLowerCase();
-  if (!normalized || normalized === 'open market' || normalized === 'private' || normalized === 'market') {
+  if (normalized === 'open market') {
     return 'openMarket';
   }
-
-  return classifyRevenueBucket(plot.revenueCategory);
+  return 'unresolved';
 }
 
 export const TENURE_DIAGNOSTIC_LABELS = [
   { key: 'openMarket', label: 'Private', match: (tenure) => {
     const value = tenure.toLowerCase();
-    return !value || value === 'open market' || value === 'private' || value === 'market';
+    return value === 'open market';
   }},
   { key: 'affordableRent', label: 'Affordable Rent', match: (tenure) => getAffordablePercentKey(tenure) === 'affordableRent' },
   { key: 'sharedOwnership', label: 'Shared Ownership', match: (tenure) => getAffordablePercentKey(tenure) === 'sharedOwnership' },
@@ -54,6 +74,7 @@ export const TENURE_DIAGNOSTIC_LABELS = [
   { key: 'additionality', label: 'Additionality', match: (tenure) => getAffordablePercentKey(tenure) === 'additionality' },
   { key: 'discountMarketSale', label: 'Discount Market Sale', match: (tenure) => getAffordablePercentKey(tenure) === 'discountMarketSale' },
   { key: 'other', label: 'Other', match: (tenure) => getAffordablePercentKey(tenure) === 'other' },
+  { key: 'unresolved', label: 'Unreviewed', match: (tenure) => !tenure },
 ];
 
 export function countPlotsByTenure(plots = []) {

@@ -92,6 +92,7 @@ describe('BL-019C.5.5 revenue pipeline trace', () => {
         houseType: 'AR Type',
         niaFt2: 820,
         tenure: 'Affordable Rent',
+        tenureCode: 'AFFORDABLE_RENT',
         revenueCategory: 'Open Market',
         revenueSource: 'House Type',
       });
@@ -104,6 +105,7 @@ describe('BL-019C.5.5 revenue pipeline trace', () => {
         houseType: 'SO Type',
         niaFt2: 950,
         tenure: 'Shared Ownership',
+        tenureCode: 'SHARED_OWNERSHIP',
         revenueCategory: 'Open Market',
         revenueSource: 'House Type',
       });
@@ -161,6 +163,7 @@ describe('BL-019C.5.5 revenue pipeline trace', () => {
       houseType: 'SO Type',
       niaFt2: 950,
       tenure: 'Shared Ownership',
+      tenureCode: 'SHARED_OWNERSHIP',
       revenueCategory: 'Open Market',
       revenueSource: 'House Type',
     });
@@ -197,6 +200,7 @@ describe('BL-019C.5.5 revenue pipeline trace', () => {
       houseType: 'Type A',
       niaFt2: 900,
       tenure: 'dms',
+      tenureCode: 'DISCOUNT_MARKET_SALE',
       revenueCategory: 'Open Market',
       revenueSource: 'House Type',
     });

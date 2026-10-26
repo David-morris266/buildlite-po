@@ -12,6 +12,7 @@ import {
   getAffordablePercentKey,
   getPlotAffordablePercentKey,
   getPlotPricingTenure,
+  getPlotRevenueTenureAuthority,
 } from './plotPricingTenure';
 import { getPlotTenureLabel } from './tenureDisplay';
 import {
@@ -283,6 +284,7 @@ export function resolvePlotOpenMarketBase(plot = {}, strategy = {}, houseTypePri
 }
 
 export function resolvePlotForecastPrice(plot = {}, strategy = {}, houseTypePricing = {}, plots = []) {
+  if (!getPlotRevenueTenureAuthority(plot).resolved) return null;
   const source = plot.revenueSource || DEFAULT_REVENUE_SOURCE;
 
   if (source === 'Manual Value') {
@@ -295,6 +297,7 @@ export function resolvePlotForecastPrice(plot = {}, strategy = {}, houseTypePric
 }
 
 export function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing = {}, plots = []) {
+  const tenureAuthority = getPlotRevenueTenureAuthority(plot);
   const effectiveGarage = resolveEffectivePlotGarage(plot, houseTypePricing);
   const derivedForecast = resolvePlotForecastPrice(plot, strategy, houseTypePricing, plots);
   const cancelled = isCancelledRevenueStatus(plot.revenueStatus);
@@ -341,6 +344,9 @@ export function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing
     effectiveRevenueNiaM2: effectiveRevenueNia.niaM2,
     effectiveRevenueNiaSource: effectiveRevenueNia.source,
     revenueNiaResolved: effectiveRevenueNia.resolved,
+    revenueTenure: tenureAuthority.tenure || 'Unreviewed',
+    tenureResolved: tenureAuthority.resolved,
+    tenureAuthoritySource: tenureAuthority.authoritySource,
     pricingSource: reservedSellingPriceAuthority
       ? 'Reserved Selling Price'
       : plot.revenueSource || DEFAULT_REVENUE_SOURCE,
@@ -384,7 +390,9 @@ export function buildStrategySummaryMetrics(plots = [], strategy = {}, houseType
   const priced = enriched.filter((plot) => roundPlotMoney(plot.effectivePrice) > 0);
   const autoPriced = enriched.filter((plot) => !plot.isManualOverride && plot.effectivePrice > 0);
   const manualOverrides = enriched.filter((plot) => plot.isManualOverride);
-  const openMarketPlots = enriched.filter((plot) => !getPlotAffordablePercentKey(plot));
+  const openMarketPlots = enriched.filter(
+    (plot) => getPlotRevenueTenureAuthority(plot).normalizedTenureCode === 'OPEN_MARKET'
+  );
 
   const totalGaragePremium = enriched.reduce((sum, plot) => {
     const source = plot.revenueSource || DEFAULT_REVENUE_SOURCE;
@@ -410,9 +418,12 @@ export function buildStrategySummaryMetrics(plots = [], strategy = {}, houseType
           openMarketPlotsWithRate.reduce((sum, plot) => sum + plot.perFt2, 0)
             / openMarketPlotsWithRate.length
         )
-      : roundPlotMoney(strategy.openMarket?.ratePerFt2 || 0);
+      : null;
 
-  const affordablePlots = enriched.filter((plot) => getPlotAffordablePercentKey(plot));
+  const affordablePlots = enriched.filter((plot) => {
+    const key = getPlotAffordablePercentKey(plot);
+    return Boolean(key && key !== 'other');
+  });
   const averageAhPercentOfOm =
     affordablePlots.length > 0
       ? roundPlotMoney(

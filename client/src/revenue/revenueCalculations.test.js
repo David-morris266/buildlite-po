@@ -40,6 +40,7 @@ const samplePlots = [
     sellingPrice: 0,
     forecastSellingPrice: 300000,
     revenueCategory: 'Open Market',
+    tenureCode: 'OPEN_MARKET',
     revenueStatus: 'Available',
   },
   {
@@ -50,6 +51,7 @@ const samplePlots = [
     sellingPrice: 0,
     forecastSellingPrice: 400000,
     revenueCategory: 'Affordable Housing',
+    tenureCode: 'AFFORDABLE_RENT',
     revenueStatus: 'Reserved',
   },
   {
@@ -60,6 +62,7 @@ const samplePlots = [
     sellingPrice: 250000,
     forecastSellingPrice: 0,
     revenueCategory: 'Commercial',
+    tenureCode: 'OTHER',
     revenueStatus: 'Completed',
   },
 ];
@@ -82,6 +85,7 @@ function oakfieldShape() {
     plotNumber: String(index + 1),
     houseType: houseTypes[index % houseTypes.length],
     tenure: index < 45 ? 'Open Market' : index < 55 ? 'Affordable Rent' : 'Shared Ownership',
+    tenureCode: index < 45 ? 'OPEN_MARKET' : index < 55 ? 'AFFORDABLE_RENT' : 'SHARED_OWNERSHIP',
     revenueCategory: 'Open Market',
     revenueStatus: 'Available',
     revenueSource: 'House Type',
@@ -198,6 +202,40 @@ describe('plotRevenueEngine', () => {
     expect(rows[1].effectivePrice).toBe(400000);
   });
 
+  it('renders Average OM £/ft² as N/A when no reviewed Open Market plot is priced', () => {
+    const cards = buildRevenueDashboardKpis({
+      strategyMetrics: { averageOmPerFt2: null },
+    });
+    const card = cards.find((item) => item.key === 'averageOmPerFt2');
+    expect(card).toMatchObject({ format: 'placeholder', placeholder: 'N/A', value: null });
+    expect(formatRevenueKpiValue(card)).toBe('N/A');
+  });
+
+  it('excludes unresolved priced-source evidence from mixed client Revenue totals', () => {
+    const strategy = emptyRevenueStrategy();
+    const priced = enrichPlotsWithPricing([
+      {
+        id: 'reviewed', plotNumber: '1', niaFt2: 1000,
+        tenure: 'Private', tenureCode: 'OPEN_MARKET',
+        revenueSource: 'Manual Value', manualForecastValue: 300000,
+      },
+      {
+        id: 'unreviewed', plotNumber: '2', niaFt2: 1000,
+        tenure: 'Private', forecastSellingPrice: 400000,
+        revenueSource: 'Manual Value', manualForecastValue: 400000,
+      },
+    ], strategy, {});
+    const summary = buildRevenueSummary({ pricedPlots: priced });
+
+    expect(priced[1]).toMatchObject({ tenureResolved: false, effectivePrice: null });
+    expect(summary.grossDevelopmentValue).toBe(300000);
+    expect(summary.developmentRevenue).toMatchObject({
+      openMarketRevenue: 300000,
+      affordableHousingRevenue: 0,
+      otherRevenue: 0,
+    });
+  });
+
   it('presents Reserved Selling Price as effective authority and retains the fallback source', () => {
     const rows = buildPlotRevenueRegisterRows([{
       id: 'plot-7', plotNumber: '7', houseType: 'Ash', revenueStatus: 'Reserved',
@@ -220,6 +258,7 @@ describe('plotRevenueEngine', () => {
         plotNumber: '1',
         houseType: 'Type A',
         tenure: 'Open Market',
+        tenureCode: 'OPEN_MARKET',
         revenueCategory: 'Open Market',
         revenueStatus: 'Available',
         niaFt2: 1000,
@@ -230,6 +269,7 @@ describe('plotRevenueEngine', () => {
         plotNumber: '2',
         houseType: 'Type B',
         tenure: 'Affordable Rent',
+        tenureCode: 'AFFORDABLE_RENT',
         revenueCategory: 'Open Market',
         revenueStatus: 'Available',
         niaFt2: 1000,
@@ -363,6 +403,7 @@ describe('source-aware effective Revenue NIA', () => {
     const plot = {
       id: 'development-strategy-no-area', plotNumber: '1', houseType: 'Ashford',
       tenure: 'Open Market', revenueStatus: 'Available', revenueSource: 'Development Strategy',
+      tenureCode: 'OPEN_MARKET',
       niaFt2: 0, gia: 0,
     };
     const priced = enrichPlotsWithPricing(
@@ -383,9 +424,9 @@ describe('source-aware effective Revenue NIA', () => {
 
   it('does not make area a prerequisite for manual or secured monetary authority', () => {
     const plots = [
-      { id: 'manual', plotNumber: '1', houseType: 'Unknown', revenueSource: 'Manual Value', manualForecastValue: 200000, revenueStatus: 'Available', niaFt2: 0, gia: 0 },
-      { id: 'reserved', plotNumber: '2', houseType: 'Unknown', revenueSource: 'House Type', sellingPrice: 210000, revenueStatus: 'Reserved', niaFt2: 0, gia: 0 },
-      { id: 'secured', plotNumber: '3', houseType: 'Unknown', revenueSource: 'House Type', sellingPrice: 220000, revenueStatus: 'Exchanged', niaFt2: 0, gia: 0 },
+      { id: 'manual', plotNumber: '1', houseType: 'Unknown', tenureCode: 'OPEN_MARKET', revenueSource: 'Manual Value', manualForecastValue: 200000, revenueStatus: 'Available', niaFt2: 0, gia: 0 },
+      { id: 'reserved', plotNumber: '2', houseType: 'Unknown', tenureCode: 'OPEN_MARKET', revenueSource: 'House Type', sellingPrice: 210000, revenueStatus: 'Reserved', niaFt2: 0, gia: 0 },
+      { id: 'secured', plotNumber: '3', houseType: 'Unknown', tenureCode: 'OPEN_MARKET', revenueSource: 'House Type', sellingPrice: 220000, revenueStatus: 'Exchanged', niaFt2: 0, gia: 0 },
     ];
     const priced = enrichPlotsWithPricing(plots, emptyRevenueStrategy(), {});
 

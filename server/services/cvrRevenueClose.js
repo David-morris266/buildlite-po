@@ -13,6 +13,7 @@ const {
   roundPlotMoney,
   isSecuredRevenueStatus,
   DEFAULT_REVENUE_SOURCE,
+  getPlotRevenueTenureAuthority,
 } = require("./cvrRevenueCloseFormulas");
 const { buildCvrGiaSnapshotEvidence } = require("./cvrGiaSnapshotEvidence");
 
@@ -63,7 +64,7 @@ function snapshotPlotFromEnriched(plot, index) {
     plotId: plotIdentity(plot, index),
     plotNumber: String(plot.plotNumber || "").trim(),
     houseType: String(plot.houseType || "").trim(),
-    tenure: String(plot.tenure || "").trim(),
+    tenure: String(plot.revenueTenure || "").trim(),
     revenueCategory: String(plot.revenueCategory || "").trim(),
     revenueStatus: String(plot.revenueStatus || "Available"),
     revenueSource: plot.revenueSource || DEFAULT_REVENUE_SOURCE,
@@ -198,6 +199,18 @@ function buildRevenueAuthorityFromDocuments({ clientId, developmentId, developme
       reason: "invalid-secured-selling-price",
       plotNumbers,
       message: `Exchanged/Completed plots require sellingPrice > 0: ${plotNumbers.join(", ")}.`,
+    });
+    return notReady({ clientId, developmentId, blockers, sources });
+  }
+
+  const unresolvedTenure = plots.filter((plot) => !getPlotRevenueTenureAuthority(plot).resolved);
+  if (unresolvedTenure.length) {
+    const plotNumbers = unresolvedTenure.map((plot) => String(plot.plotNumber || plot.id || "?"));
+    blockers.push({
+      source: "plotMaster",
+      reason: "unreviewed-plot-tenure",
+      plotNumbers,
+      message: `Plot Master tenure review is required for: ${plotNumbers.join(", ")}.`,
     });
     return notReady({ clientId, developmentId, blockers, sources });
   }

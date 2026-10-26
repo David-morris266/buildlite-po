@@ -28,4 +28,15 @@ describe('Revenue exception relevance and grouping', () => {
     }]);
     expect(exceptions).toEqual([]);
   });
+
+  it('surfaces unresolved governed tenure instead of silently treating it as Open Market', () => {
+    const exceptions = buildRevenueExceptions([{
+      id: 'unreviewed-1', plotNumber: '1', revenueStatus: 'Available',
+      tenure: 'Unreviewed', tenureCode: 'UNREVIEWED', tenureResolved: false,
+      pricingRequiresArea: false,
+    }]);
+    expect(exceptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'unreviewedTenure', plotNumber: '1' }),
+    ]));
+  });
 });

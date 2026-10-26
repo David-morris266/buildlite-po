@@ -20,6 +20,7 @@ import {
   calculateHouseTypeForecast,
   calculateOpenMarketBase,
   enrichPlotsWithPricing,
+  buildStrategySummaryMetrics,
   getHouseTypeNiaEvidence,
   getGaragePremium,
   recalculateHouseTypePricing,
@@ -45,6 +46,7 @@ const samplePlots = [
     houseType: 'Ash',
     niaFt2: 950,
     revenueCategory: 'Open Market',
+    tenureCode: 'OPEN_MARKET',
     revenueSource: 'House Type',
     garage: 'None',
     plotPremium: 0,
@@ -55,6 +57,7 @@ const samplePlots = [
     houseType: 'Oak',
     niaFt2: 1180,
     revenueCategory: 'Open Market',
+    tenureCode: 'OPEN_MARKET',
     revenueSource: 'House Type',
     garage: 'Single',
     plotPremium: 10000,
@@ -66,6 +69,7 @@ const samplePlots = [
     houseType: 'Ash',
     niaFt2: 950,
     revenueCategory: 'Affordable Housing',
+    tenureCode: 'AFFORDABLE_RENT',
     revenueSource: 'Manual Value',
     manualForecastValue: 200000,
     manualOverrideExplicit: true,
@@ -112,7 +116,7 @@ describe('revenueStrategyCalculations', () => {
     expect(openMarketPlot).toBe(435500);
 
     const affordablePlot = resolvePlotForecastPrice(
-      { ...samplePlots[0], revenueCategory: 'Affordable Housing' },
+      { ...samplePlots[0], tenureCode: 'AFFORDABLE_RENT', revenueCategory: 'Affordable Housing' },
       strategy,
       houseTypePricing,
       samplePlots
@@ -198,7 +202,7 @@ describe('revenueStrategyCalculations', () => {
 
   it('applies affordable discount from plot tenure', () => {
     const tenurePlot = resolvePlotForecastPrice(
-      { ...samplePlots[0], tenure: 'Affordable Rent', revenueCategory: 'Open Market' },
+      { ...samplePlots[0], tenure: 'Open Market', tenureCode: 'AFFORDABLE_RENT', revenueCategory: 'Open Market' },
       strategy,
       houseTypePricing,
       samplePlots
@@ -242,6 +246,7 @@ describe('revenueStrategy store', () => {
       houseType: 'Ash',
       niaFt2: 950,
       revenueCategory: 'Open Market',
+      tenureCode: 'OPEN_MARKET',
       revenueSource: 'House Type',
     });
 
@@ -249,6 +254,44 @@ describe('revenueStrategy store', () => {
     expect(context.pricedPlots).toHaveLength(1);
     expect(context.pricedPlots[0].effectivePrice).toBe(332500);
     expect(context.strategyMetrics.autoPricedPlotCount).toBe(1);
+  });
+
+  it('preserves tenure evidence through pricing and excludes unresolved plots from Open Market KPIs', () => {
+    const plots = [
+      { ...samplePlots[0], tenure: 'Private source evidence' },
+      { ...samplePlots[1], id: 'unresolved', tenure: 'Open Market', tenureCode: undefined },
+    ];
+    const enriched = enrichPlotsWithPricing(plots, strategy, houseTypePricing);
+
+    expect(enriched[0]).toMatchObject({
+      tenure: 'Private source evidence', tenureCode: 'OPEN_MARKET',
+      revenueTenure: 'Open Market', tenureResolved: true,
+    });
+    expect(enriched[1]).toMatchObject({
+      tenure: 'Open Market', tenureCode: undefined,
+      revenueTenure: 'Unreviewed', tenureResolved: false,
+    });
+    expect(enriched[1].effectivePrice).toBeNull();
+
+    const metrics = buildStrategySummaryMetrics(plots, strategy, houseTypePricing);
+    expect(metrics.averageOmPerFt2).toBe(350);
+    expect(metrics.autoPricedPlotCount).toBe(1);
+  });
+
+  it('reports no Open Market average when every plot is unresolved', () => {
+    const metrics = buildStrategySummaryMetrics([
+      { ...samplePlots[0], tenureCode: undefined, tenure: 'Private' },
+    ], strategy, houseTypePricing);
+    expect(metrics.averageOmPerFt2).toBeNull();
+    expect(metrics.autoPricedPlotCount).toBe(0);
+  });
+
+  it('keeps OTHER outside affordable strategy percentages', () => {
+    const metrics = buildStrategySummaryMetrics([
+      { ...samplePlots[0], id: 'other', tenure: 'Other', tenureCode: 'OTHER' },
+      { ...samplePlots[2], id: 'affordable', tenure: 'Affordable Rent', tenureCode: 'AFFORDABLE_RENT' },
+    ], strategy, houseTypePricing);
+    expect(metrics.averageAhPercentOfOm).toBe(strategy.affordableHousing.affordableRent);
   });
 
   it('saves one House Type NIA and recalculates only forecast fields without copying physical area', async () => {

@@ -48,7 +48,8 @@ export function normalizeTenureLabel(tenure = '') {
 }
 
 export function getPlotTenureLabel(plot = {}) {
-  return normalizeTenureLabel(getPlotPricingTenure(plot));
+  const tenure = getPlotPricingTenure(plot);
+  return tenure ? normalizeTenureLabel(tenure) : 'Unreviewed';
 }
 
 export function getTenureBadgeTone(tenure = '') {

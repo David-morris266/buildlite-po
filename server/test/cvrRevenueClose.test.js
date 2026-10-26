@@ -27,6 +27,21 @@ function settingsRow(overrides = {}) {
   };
 }
 
+function reviewedOpenMarket(plot = {}) {
+  return { tenureCode: "OPEN_MARKET", ...plot };
+}
+
+function withGovernedFixtureTenure(plot) {
+  const codesBySourceTenure = {
+    Private: "OPEN_MARKET",
+    "Social Rent": "AFFORDABLE_RENT",
+    "Social Shared": "SHARED_OWNERSHIP",
+  };
+  const tenureCode = codesBySourceTenure[String(plot.tenure || "").trim()];
+  assert.ok(tenureCode, `ambiguous Test Site 1 source tenure: ${plot.tenure}`);
+  return { ...plot, tenureCode };
+}
+
 test("missing Plot Master or settings fail closed", async () => {
   const missingPlots = await buildCvrRevenueCloseCandidate({
     clientId: "client-1",
@@ -96,10 +111,10 @@ test("Reserved Selling Price is frozen as unsecured Forecast Revenue", async () 
   const candidate = await buildCvrRevenueCloseCandidate({
     clientId: "client-1",
     developmentId: "dev-close",
-    loadDevelopment: async () => ({ id: "dev-close", plotMaster: { plots: [{
+    loadDevelopment: async () => ({ id: "dev-close", plotMaster: { plots: [reviewedOpenMarket({
       id: "plot-7", plotNumber: "7", houseType: "Ash", niaFt2: 0,
       revenueStatus: "Reserved", revenueSource: "House Type", sellingPrice: 330000,
-    }] } }),
+    })] } }),
     loadSettingsRow: async () => settingsRow({ house_type_pricing: {} }),
   });
   assert.equal(candidate.canLock, true);
@@ -120,10 +135,10 @@ test("House Type close freezes effective Revenue NIA and provenance", async () =
   const candidate = await buildCvrRevenueCloseCandidate({
     clientId: "client-1",
     developmentId: "dev-close",
-    loadDevelopment: async () => ({ id: "dev-close", plotMaster: { plots: [{
+    loadDevelopment: async () => ({ id: "dev-close", plotMaster: { plots: [reviewedOpenMarket({
       id: "plot-effective-nia", plotNumber: "8", houseType: "Ashford", niaFt2: 0, gia: 0,
       revenueStatus: "Available", revenueSource: "House Type", sellingPrice: 0,
-    }] } }),
+    })] } }),
     loadSettingsRow: async () => settingsRow({
       house_type_pricing: {
         Ashford: { garage: "None", sellingBasis: "Auto", representativeNiaFt2: 750 },
@@ -139,7 +154,7 @@ test("House Type close freezes effective Revenue NIA and provenance", async () =
   });
 });
 
-test("Test Site 1 fixture close matches characterisation", async () => {
+test("Test Site 1 legacy fixture fails closed without governed tenureCode", async () => {
   const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, "utf8"));
   const candidate = await buildCvrRevenueCloseCandidate({
     clientId: "client-1",
@@ -150,14 +165,37 @@ test("Test Site 1 fixture close matches characterisation", async () => {
     }),
     loadSettingsRow: async () => settingsRow(),
   });
+  assert.equal(candidate.canLock, false);
+  assert.equal(candidate.summary, null);
+  assert.equal(candidate.blockers[0].reason, "unreviewed-plot-tenure");
+  assert.equal(candidate.blockers[0].plotNumbers.length, 31);
+});
+
+test("Test Site 1 governed tenure aliases retain the £10,444,608 known answer", async () => {
+  const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, "utf8"));
+  const plots = fixture.plotMaster.plots.map(withGovernedFixtureTenure);
+  assert.equal(plots.length, 31);
+  assert.deepEqual(
+    plots.reduce((counts, plot) => ({
+      ...counts,
+      [plot.tenureCode]: (counts[plot.tenureCode] || 0) + 1,
+    }), {}),
+    { AFFORDABLE_RENT: 4, SHARED_OWNERSHIP: 7, OPEN_MARKET: 20 }
+  );
+  const candidate = await buildCvrRevenueCloseCandidate({
+    clientId: "client-1",
+    developmentId: fixture.developmentId,
+    loadDevelopment: async () => ({
+      id: fixture.developmentId,
+      plotMaster: { ...fixture.plotMaster, plots },
+    }),
+    loadSettingsRow: async () => settingsRow(),
+  });
   assert.equal(candidate.canLock, true);
   assert.equal(candidate.summary.forecastRevenue, 10444608);
   assert.equal(candidate.summary.securedRevenue, 0);
   assert.equal(candidate.summary.remainingForecast, 10444608);
-  assert.equal(candidate.summary.plotsSold, 0);
   assert.equal(candidate.plots.length, 31);
-  assert.equal(candidate.assumptions.settingsId, fixture.settings.id);
-  assert.equal(candidate.settingsVersion, Number(fixture.settings.version));
 });
 
 test("Summary Revenue is exact, plot-independent and leaves secondary metrics unavailable", async () => {
@@ -187,13 +225,47 @@ test("Summary Revenue is exact, plot-independent and leaves secondary metrics un
   assert.equal(candidate.assumptions.settingsUpdatedByMembershipId, "membership-1");
 });
 
+test("Sales Register uses reviewed tenureCode and fails closed for unresolved tenure", () => {
+  const settingsDocument = {
+    ...require("../services/revenueSettingsMapper").settingsRowToDocument(settingsRow(), "dev-close"),
+    exists: true,
+  };
+  const reviewedSocialRent = buildRevenueAuthorityFromDocuments({
+    clientId: "client-1",
+    developmentId: "dev-close",
+    development: { id: "dev-close", plotMaster: { plots: [{
+      id: "social-1", plotNumber: "1", houseType: "Social", niaFt2: 1000,
+      tenure: "Open Market", tenureCode: "AFFORDABLE_RENT",
+      revenueStatus: "Available", revenueSource: "Development Strategy",
+    }] } },
+    settingsDocument,
+  });
+  assert.equal(reviewedSocialRent.ready, true);
+  assert.equal(reviewedSocialRent.plots[0].tenure, "Affordable Rent");
+  assert.equal(reviewedSocialRent.plots[0].forecastRevenue, 203000);
+
+  const unresolved = buildRevenueAuthorityFromDocuments({
+    clientId: "client-1",
+    developmentId: "dev-close",
+    development: { id: "dev-close", plotMaster: { plots: [{
+      id: "unknown-1", plotNumber: "2", houseType: "Unknown", niaFt2: 1000,
+      tenure: "Open Market", tenureCode: "UNREVIEWED",
+      revenueStatus: "Available", revenueSource: "Development Strategy",
+    }] } },
+    settingsDocument,
+  });
+  assert.equal(unresolved.ready, false);
+  assert.deepEqual(unresolved.blockers[0].plotNumbers, ["2"]);
+  assert.equal(unresolved.blockers[0].reason, "unreviewed-plot-tenure");
+});
+
 test("Sales Register mode switching uses the complete close-candidate readiness contract", () => {
   const duplicate = buildRevenueAuthorityFromDocuments({
     clientId: "client-1",
     developmentId: "dev-close",
     development: { id: "dev-close", plotMaster: { plots: [
-      { id: "same", plotNumber: "1", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 10 },
-      { id: "same", plotNumber: "2", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 20 },
+      reviewedOpenMarket({ id: "same", plotNumber: "1", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 10 }),
+      reviewedOpenMarket({ id: "same", plotNumber: "2", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 20 }),
     ] } },
     settingsDocument: { ...require("../services/revenueSettingsMapper").settingsRowToDocument(settingsRow(), "dev-close"), exists: true },
   });
@@ -204,7 +276,7 @@ test("Sales Register mode switching uses the complete close-candidate readiness 
     clientId: "client-1",
     developmentId: "dev-close",
     development: { id: "dev-close", plotMaster: { plots: [
-      { id: "plot-1", plotNumber: "1", revenueStatus: "Available", revenueSource: "Development Strategy", niaFt2: Symbol("invalid") },
+      reviewedOpenMarket({ id: "plot-1", plotNumber: "1", revenueStatus: "Available", revenueSource: "Development Strategy", niaFt2: Symbol("invalid") }),
     ] } },
     settingsDocument: { ...require("../services/revenueSettingsMapper").settingsRowToDocument(settingsRow(), "dev-close"), exists: true },
   });

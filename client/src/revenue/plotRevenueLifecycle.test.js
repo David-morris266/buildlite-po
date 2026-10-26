@@ -45,6 +45,7 @@ function manualPlot(overrides = {}) {
     houseType: 'Arundel',
     niaFt2: 686,
     revenueCategory: 'Open Market',
+    tenureCode: 'OPEN_MARKET',
     revenueSource: 'Manual Value',
     manualForecastValue: overrides.manualForecastValue ?? 255100,
     forecastSellingPrice: overrides.forecastSellingPrice ?? 255100,
