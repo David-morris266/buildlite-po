@@ -56,14 +56,23 @@ test('established legacy CVR development can continue without retrospective Budg
  const commentary=await cvr.patchCvrPeriod(f.client.id,developmentId,result.period.id,{version:result.period.version,commentary:{keyCommercialIssues:'Still editable'}},{actor:'QS'});
  assert.equal(commentary.ok,true,commentary.message); assert.equal(commentary.period.reportingMonth,'2026-10-01');
 });
-test('CVR creation permits only a closed Reporting Period with a deterministic server clock',async()=>{
+test('CVR creation permits current-month Draft work but blocks submit/lock until month end',async()=>{
  const currentDate=new Date('2026-10-08T12:00:00.000Z');
  async function legacyDevelopment(label){const developmentId=`dev-${randomUUID()}`;await pool.query("INSERT INTO developments(id,client_id,job_number,development_name,status,payload) VALUES($1,$2,$3,$3,'live','{}')",[developmentId,f.client.id,label]);await pool.query("INSERT INTO cvr_periods(client_id,development_id,period_key,period_label,status,commentary,version,budget_source,submitted_at,submitted_by,approved_at,approved_by) VALUES($1,$2,'P00','P00','locked','{}',1,'legacy_cvr',NOW(),'legacy-test',NOW(),'legacy-test')",[f.client.id,developmentId]);return developmentId;}
  const closedDevelopment=await legacyDevelopment('CLOSED-PERIOD');
  const closed=await cvr.createCvrPeriod(f.client.id,closedDevelopment,{periodKey:'P01',periodLabel:'P01',reportingMonth:'2026-09'},{actor:'QS',currentDate});
  assert.equal(closed.ok,true,closed.message);
  const current=await cvr.createCvrPeriod(f.client.id,await legacyDevelopment('CURRENT-PERIOD'),{periodKey:'P01',periodLabel:'P01',reportingMonth:'2026-10'},{actor:'QS',currentDate});
- assert.equal(current.status,409); assert.equal(current.code,'CVR_REPORTING_PERIOD_NOT_CLOSED'); assert.equal(current.reportingPeriodState,'current');
+ assert.equal(current.ok,true,current.message); assert.equal(current.period.status,'draft'); assert.equal(current.period.reportingMonth,'2026-10-01');
+ const commentary=await cvr.patchCvrPeriod(f.client.id,current.period.developmentId,current.period.id,{version:current.period.version,commentary:{keyCommercialIssues:'Current-month forecast review in progress.'}},{actor:'QS'});
+ assert.equal(commentary.ok,true,commentary.message);
+ const submitCurrent=await cvr.submitCvrPeriod(f.client.id,current.period.developmentId,current.period.id,{}, {actor:'QS',currentDate});
+ assert.equal(submitCurrent.status,409); assert.equal(submitCurrent.code,'CVR_REPORTING_PERIOD_NOT_CLOSED'); assert.equal(submitCurrent.reportingPeriodState,'current');
+ assert.equal((await pool.query('SELECT status FROM cvr_periods WHERE id=$1',[current.period.id])).rows[0].status,'draft');
+ await pool.query("UPDATE cvr_periods SET status='submitted', submitted_at=NOW(), submitted_by='test-only' WHERE id=$1",[current.period.id]);
+ const lockCurrent=await cvr.approveCvrPeriod(f.client.id,current.period.developmentId,current.period.id,{}, {actor:'Director',currentDate});
+ assert.equal(lockCurrent.status,409); assert.equal(lockCurrent.code,'CVR_REPORTING_PERIOD_NOT_CLOSED'); assert.equal(lockCurrent.reportingPeriodState,'current');
+ assert.equal((await pool.query('SELECT status FROM cvr_periods WHERE id=$1',[current.period.id])).rows[0].status,'submitted');
  const future=await cvr.createCvrPeriod(f.client.id,await legacyDevelopment('FUTURE-PERIOD'),{periodKey:'P01',periodLabel:'P01',reportingMonth:'2026-11'},{actor:'QS',currentDate});
  assert.equal(future.status,409); assert.equal(future.code,'CVR_REPORTING_PERIOD_NOT_CLOSED'); assert.equal(future.reportingPeriodState,'future');
 });

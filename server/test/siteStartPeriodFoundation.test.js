@@ -731,7 +731,7 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
   assert.equal((await createFirstCvrFromSiteStart(client.id,developmentId,{reportingMonth:'2027-04',siteStartVersion:approved.period.version-1},{actor:'SS1 Director',auth:approvalAuth,currentDate:new Date('2027-05-02T12:00:00Z')})).status,409);
   const cutoverRequest = () => createFirstCvrFromSiteStart(client.id, developmentId, {
     reportingMonth: '2027-04', siteStartVersion: approved.period.version,
-  }, { actor: 'SS1 Director', auth: approvalAuth, currentDate: new Date('2027-05-02T12:00:00Z') });
+  }, { actor: 'SS1 Director', auth: approvalAuth, currentDate: new Date('2027-04-15T12:00:00Z') });
   const concurrentCutovers = await Promise.all([cutoverRequest(), cutoverRequest()]);
   assert.equal(concurrentCutovers.filter(result => result.ok).length, 1);
   assert.equal(concurrentCutovers.filter(result => result.status === 409).length, 1);
@@ -778,7 +778,7 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
   const submittedP01 = await submitCvrPeriod(client.id, developmentId, p01.period.id, {
     version: p01.period.version,
     comment: 'Submit governed first monthly CVR from Site Start.',
-  }, { actor: 'Forged Browser Actor', auth: approvalAuth });
+  }, { actor: 'Forged Browser Actor', auth: approvalAuth, currentDate: new Date('2027-05-02T12:00:00Z') });
   assert.equal(submittedP01.ok, true, submittedP01.message);
   assert.equal(submittedP01.period.submittedBy, approvalAuth.displayName);
   assert.equal((await pool.query(
@@ -839,7 +839,7 @@ test('guarded authority flow captures immutable appraisal and versions one Draft
   const approvedP01 = await approveCvrPeriod(client.id, developmentId, p01.period.id, {
     version: submittedP01.period.version,
     comment: 'Approve governed first monthly CVR from Site Start.',
-  }, { actor: 'SS1 Director', auth: approvalAuth });
+  }, { actor: 'SS1 Director', auth: approvalAuth, currentDate: new Date('2027-05-02T12:00:00Z') });
   assert.equal(approvedP01.ok, true, approvedP01.message);
   assert.equal(approvedP01.period.status, 'locked');
   assert.equal(approvedP01.period.snapshot.budgetSource.document.schemaVersion, 'cvr_site_start_budget_source_v1');

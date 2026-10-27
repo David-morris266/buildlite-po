@@ -287,12 +287,10 @@ async function createCvrPeriod(clientId, developmentId, body = {}, {
     validated.value.reportingMonth,
     currentDate || new Date()
   );
-  if (reportingPeriodState !== REPORTING_PERIOD_STATES.CLOSED) {
-    const message = reportingPeriodState === REPORTING_PERIOD_STATES.CURRENT
-      ? "The selected Reporting Period is still the current open month. Create its CVR after month end."
-      : reportingPeriodState === REPORTING_PERIOD_STATES.FUTURE
-        ? "The selected Reporting Period is in the future. Select a closed commercial month."
-        : "Reporting Period is required and must be a valid closed commercial month.";
+  if (reportingPeriodState === REPORTING_PERIOD_STATES.FUTURE || !reportingPeriodState) {
+    const message = reportingPeriodState === REPORTING_PERIOD_STATES.FUTURE
+        ? "The selected Reporting Period is in the future. Select the current or a closed commercial month."
+        : "Reporting Period is required and must be a valid calendar month.";
     return {
       ok: false,
       status: reportingPeriodState ? 409 : 400,
@@ -520,7 +518,7 @@ async function createFirstCvrFromSiteStart(clientId, developmentId, body = {}, o
   const reportingMonth = parseReportingMonth(body.reportingMonth, errors);
   if (!reportingMonth || errors.length) return { ok:false,status:400,message:'reportingMonth is required in YYYY-MM format.' };
   const reportingState = classifyReportingPeriod(reportingMonth, options.currentDate || new Date());
-  if (reportingState !== REPORTING_PERIOD_STATES.CLOSED) return { ok:false,status:409,code:'CVR_REPORTING_PERIOD_NOT_CLOSED',reportingPeriodState:reportingState,message:'The first CVR Reporting Period must be a valid closed commercial month.' };
+  if (reportingState === REPORTING_PERIOD_STATES.FUTURE || !reportingState) return { ok:false,status:reportingState ? 409 : 400,code:'CVR_REPORTING_PERIOD_NOT_CLOSED',reportingPeriodState:reportingState,message:reportingState === REPORTING_PERIOD_STATES.FUTURE ? 'The first CVR Reporting Period cannot be in the future.' : 'The first CVR Reporting Period must be a valid calendar month.' };
   const expectedVersion = parseExpectedVersion(body.siteStartVersion);
   if (expectedVersion == null) return { ok:false,status:400,message:'siteStartVersion is required and must be a positive integer.' };
   const dbClient = await pool.connect();
@@ -684,6 +682,7 @@ async function patchCvrPeriod(clientId, developmentId, periodId, body = {}, { ac
 async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, {
   actor,
   auth,
+  currentDate,
   buildCloseCandidate = require('./cvrCloseEngine').buildCvrCloseCandidate,
   buildWholeCloseCandidate = require('./cvrCommercialClose').buildWholeCvrCloseCandidate,
 } = {}) {
@@ -707,6 +706,13 @@ async function submitCvrPeriod(clientId, developmentId, periodId, body = {}, {
     if (!row) { await dbClient.query('ROLLBACK'); return { ok: false, status: 404, message: 'CVR period not found.' }; }
     authorization.assertServicePermission(auth, row.period_type === CVR_PERIOD_TYPES.siteStart ? permissions.SITE_START_MANAGE : permissions.CVR_SUBMIT);
     if (row.status !== CVR_PERIOD_STATUSES.draft) { await dbClient.query('ROLLBACK'); return notDraftMutationResult(row.status); }
+    if ((row.period_type || CVR_PERIOD_TYPES.monthly) === CVR_PERIOD_TYPES.monthly && row.reporting_month) {
+      const reportingPeriodState = classifyReportingPeriod(yearMonth(row.reporting_month), currentDate || new Date());
+      if (reportingPeriodState !== REPORTING_PERIOD_STATES.CLOSED) {
+        await dbClient.query('ROLLBACK');
+        return { ok:false,status:409,code:'CVR_REPORTING_PERIOD_NOT_CLOSED',reportingPeriodState,message:'A monthly CVR cannot be submitted until its Reporting Period has ended.' };
+      }
+    }
     if (row.period_type === CVR_PERIOD_TYPES.siteStart) {
       if (!row.forecast_as_at_month) { await dbClient.query('ROLLBACK'); return { ok:false,status:409,message:'Forecast as at is required before Site Start can be submitted.' }; }
       if (body.version != null && Number(body.version) !== Number(row.version)) { await dbClient.query('ROLLBACK'); return { ok:false,status:409,message:'CVR period version conflict.',period:await hydratePeriod(clientId,row,dbClient) }; }
@@ -890,6 +896,13 @@ async function approveCvrPeriod(clientId, developmentId, periodId, body = {}, op
         status: 409,
         message: `CVR period must be ${CVR_PERIOD_STATUSES.submitted} to ${CVR_PERIOD_AUDIT_ACTIONS.locked}.`,
       };
+    }
+    if ((row.period_type || CVR_PERIOD_TYPES.monthly) === CVR_PERIOD_TYPES.monthly && row.reporting_month) {
+      const reportingPeriodState = classifyReportingPeriod(yearMonth(row.reporting_month), options.currentDate || new Date());
+      if (reportingPeriodState !== REPORTING_PERIOD_STATES.CLOSED) {
+        await dbClient.query("ROLLBACK");
+        return { ok:false,status:409,code:'CVR_REPORTING_PERIOD_NOT_CLOSED',reportingPeriodState,message:'A monthly CVR cannot be approved and locked until its Reporting Period has ended.' };
+      }
     }
     if (expectedVersion != null && row.version !== expectedVersion) {
       await dbClient.query("ROLLBACK");

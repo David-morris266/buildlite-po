@@ -136,7 +136,7 @@ describe('CVRRegister hydration (BL-031B)', () => {
     });
     await flush();
 
-    expect(document.body.textContent).toContain('Select the closed commercial month this CVR reports.');
+    expect(document.body.textContent).toContain('Select the commercial month this CVR reports.');
     expect(document.body.textContent).toContain('Create P01');
     expect(getCvrMutationCallCounts().create).toBe(0);
 

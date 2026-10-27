@@ -77,7 +77,7 @@ export function earliestReportingMonthAfter(sourcePeriod) {
 export function buildCreateNextReportingMonthPrompt({ periods = [], sourcePeriod = null, currentDate } = {}) {
   const minimumMonth = earliestReportingMonthAfter(sourcePeriod);
   const suggestedMonth = sourcePeriod
-    ? minimumMonth && classifyReportingPeriod(minimumMonth, currentDate) === REPORTING_PERIOD_STATES.CLOSED
+    ? minimumMonth && classifyReportingPeriod(minimumMonth, currentDate) !== REPORTING_PERIOD_STATES.FUTURE
       ? minimumMonth
       : null
     : previousClosedCalendarMonth(currentDate);
