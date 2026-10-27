@@ -4,6 +4,7 @@ import CvrReportingMonthDialog from './CvrReportingMonthDialog';
 import CVRTable from './CVRTable';
 import CostCentreDrawer from './CostCentreDrawer';
 import CVRBudgetImportWizard from './CVRBudgetImportWizard';
+import CVRForecastImportWizard from './CVRForecastImportWizard';
 import CvrAddCostCodeDialog from './CvrAddCostCodeDialog';
 import { listPOs } from '../api';
 import { acknowledgeCvrVariationExposure } from '../api/cvrPeriods';
@@ -171,6 +172,7 @@ export default function CVRWorkspace({
   const [addOpen, setAddOpen] = useState(false);
   const [addFeedback, setAddFeedback] = useState('');
   const [budgetImportOpen, setBudgetImportOpen] = useState(false);
+  const [forecastImportOpen, setForecastImportOpen] = useState(false);
   const [notes, setNotes] = useState('');
   const [dialog, setDialog] = useState(null);
   const [rejectComment, setRejectComment] = useState('');
@@ -726,6 +728,17 @@ export default function CVRWorkspace({
     );
   }
 
+  if (forecastImportOpen && period && !siteStart && !readOnly) {
+    return (
+      <CVRForecastImportWizard
+        development={development}
+        period={period}
+        onCancel={() => { setForecastImportOpen(false); refresh(); }}
+        onComplete={() => refresh()}
+      />
+    );
+  }
+
   return (
     <div className="dev-cvr dev-cvr-workspace dev-cvr-workspace--focused">
       <ApplicationPageHeader
@@ -743,6 +756,13 @@ export default function CVRWorkspace({
                   onClick={() => setBudgetImportOpen(true)}
                 >
                   Import Budget
+                </button> : null}
+                {!siteStart && isCvrServerAuthorityEnabled() ? <button
+                  type="button"
+                  className="po-list-btn-secondary dev-cvr__shell-btn"
+                  onClick={() => setForecastImportOpen(true)}
+                >
+                  Import Forecast
                 </button> : null}
                 <button
                   type="button"

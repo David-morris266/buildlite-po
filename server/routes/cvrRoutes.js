@@ -34,6 +34,7 @@ const {
 const { adoptPrelimsForecasts } = require("../services/prelimsAdoptionApplyService");
 const { addDraftCvrCostCodeMember } = require("../services/cvrMembershipService");
 const { importDraftCvrBudget } = require("../services/cvrBudgetImportService");
+const { previewForecastOnboarding, applyForecastOnboarding } = require('../services/cvrForecastOnboardingService');
 const { buildCvrReportPayload } = require('../services/cvrReportService');
 const { renderCvrReportPdf } = require('../services/cvrReportRenderer');
 
@@ -64,6 +65,10 @@ function sendResult(res, result, successStatus = 200, payloadKey) {
     if (result.inactiveCodes) payload.inactiveCodes = result.inactiveCodes;
     if (result.duplicateCodes) payload.duplicateCodes = result.duplicateCodes;
     if (result.invalidBudget) payload.invalidBudget = result.invalidBudget;
+    if (result.invalidRows) payload.invalidRows = result.invalidRows;
+    if (result.exceptions) payload.exceptions = result.exceptions;
+    if (result.preview) payload.preview = result.preview;
+    if (result.discrepancies) payload.discrepancies = result.discrepancies;
     if (result.expectedReportingMonth) {
       payload.expectedReportingMonth = result.expectedReportingMonth;
     }
@@ -400,6 +405,26 @@ router.post("/cvr/periods/:periodId/budget-import", requirePermission(PERMISSION
   } catch (err) {
     console.error("[CVR] budget import error:", err);
     res.status(500).json({ message: "Failed to import CVR budget." });
+  }
+});
+
+router.post('/cvr/periods/:periodId/forecast-onboarding/preview', requirePermission(PERMISSIONS.CVR_EDIT), async (req, res) => {
+  try {
+    const result = await previewForecastOnboarding(req.buildliteAuth.clientId, req.params.developmentId, req.params.periodId, req.body || {}, { auth: req.buildliteAuth });
+    sendResult(res, result);
+  } catch (error) {
+    console.error('[CVR] Forecast onboarding preview error:', error);
+    res.status(500).json({ message: 'Failed to preview Forecast onboarding.' });
+  }
+});
+
+router.post('/cvr/periods/:periodId/forecast-onboarding/apply', requirePermission(PERMISSIONS.CVR_EDIT), async (req, res) => {
+  try {
+    const result = await applyForecastOnboarding(req.buildliteAuth.clientId, req.params.developmentId, req.params.periodId, req.body || {}, { auth: req.buildliteAuth });
+    sendResult(res, result);
+  } catch (error) {
+    console.error('[CVR] Forecast onboarding apply error:', error);
+    res.status(500).json({ message: 'Failed to apply Forecast onboarding.' });
   }
 });
 

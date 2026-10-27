@@ -207,3 +207,21 @@ export async function importCvrBudget(developmentId, periodId, payload = {}) {
   );
   return handleJson(res);
 }
+
+export async function previewCvrForecastOnboarding(developmentId, periodId, payload = {}) {
+  const res = await fetch(buildUrl(`${periodsUrl(developmentId, periodId)}/forecast-onboarding/preview`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(withActor(payload)),
+  });
+  return handleJson(res);
+}
+
+export async function applyCvrForecastOnboarding(developmentId, periodId, payload = {}) {
+  const res = await fetch(buildUrl(`${periodsUrl(developmentId, periodId)}/forecast-onboarding/apply`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(withActor(payload)),
+  });
+  return handleJson(res);
+}
