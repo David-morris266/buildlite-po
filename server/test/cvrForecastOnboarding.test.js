@@ -18,7 +18,7 @@ test.before(async () => {
   const membership = (await pool.query('INSERT INTO client_user_memberships(client_id,user_id,role_id,is_active) VALUES($1,$2,$3,true) RETURNING *', [client.id, user.id, role.id])).rows[0];
   const auth = { userId: user.id, membershipId: membership.id, providerUserId: user.provider_user_id, displayName: user.display_name, roleKey: 'qs', permissions: [PERMISSIONS.COMMERCIAL_READ, PERMISSIONS.DEVELOPMENT_BUDGET_POST, PERMISSIONS.CVR_EDIT] };
   const codes = {};
-  for (const [code, description] of [['1000', 'Land'], ['2000', 'Groundworks']]) codes[code] = (await pool.query('INSERT INTO cost_codes(client_id,code,description,is_active) VALUES($1,$2,$3,true) RETURNING *', [client.id, code, description])).rows[0];
+  for (const [code, description] of [['1000', 'Land'], ['2000', 'Groundworks'], ['5003', 'Zero-value active code'], ['5403', 'Landscaping']]) codes[code] = (await pool.query('INSERT INTO cost_codes(client_id,code,description,is_active) VALUES($1,$2,$3,true) RETURNING *', [client.id, code, description])).rows[0];
   fixture = { client, auth, codes };
 });
 test.after(async () => pool.end());
@@ -43,7 +43,8 @@ test('Forecast onboarding previews and atomically reconciles exact Target EFC wh
   assert.equal(previewed.preview.rows[0].systemForecast, 1000);
   assert.equal(previewed.preview.rows[0].requiredAdjustment, 234.56);
   assert.equal(previewed.preview.rows[0].replacesExistingAdjustment, true);
-  assert.deepEqual(previewed.preview.totals, { currentEfc: 1050, targetEfc: 1234.56, movement: 184.56, requiredAdjustment: 234.56 });
+  assert.deepEqual(previewed.preview.totals, { actualCost: 0, commitments: 0, systemForecast: 1000, changeExposure: 0, currentEfc: 1050, targetEfc: 1234.56, movement: 184.56, requiredAdjustment: 234.56 });
+  assert.deepEqual(previewed.preview.reconciliation, { completeMappedTarget: 1234.56, governedPreviewTarget: 1234.56, missingTargetValue: 0, exceptionalTargetValue: 0, exactlyReconciled: true });
   const applied = await service.applyForecastOnboarding(fixture.client.id, item.developmentId, item.period.id, { ...requested, previewFingerprint: previewed.preview.fingerprint, reason: 'Matt October CVR onboarding', confirmed: true }, { auth: fixture.auth });
   assert.equal(applied.ok, true, applied.message);
   assert.equal(applied.result.reconciled, true);
@@ -61,6 +62,26 @@ test('Forecast onboarding previews and atomically reconciles exact Target EFC wh
   assert.equal(repeatedPreview.preview.rows[0].movement, 0);
 });
 
+test('Forecast onboarding previews and atomically creates missing active Draft memberships', async () => {
+  const item = await draft('Missing active membership');
+  const requested = { sourceEvidence, rows: [
+    { costCodeKey: '5003', targetEfc: '0.00', rowNumber: 9, importedValue: '0' },
+    { costCodeKey: '5403', targetEfc: '4540.00', rowNumber: 142, importedValue: '4540' },
+  ] };
+  const previewed = await service.previewForecastOnboarding(fixture.client.id, item.developmentId, item.period.id, requested, { auth: fixture.auth });
+  assert.equal(previewed.ok, true, previewed.message);
+  assert.equal(previewed.preview.canApply, true);
+  assert.deepEqual(previewed.preview.rows.map(row => [row.costCodeKey, row.requiresMembershipCreation, row.systemForecast, row.targetEfc]), [
+    ['5003', true, 0, 0], ['5403', true, 0, 4540],
+  ]);
+  assert.deepEqual(previewed.preview.reconciliation, { completeMappedTarget: 4540, governedPreviewTarget: 4540, missingTargetValue: 0, exceptionalTargetValue: 0, exactlyReconciled: true });
+  const applied = await service.applyForecastOnboarding(fixture.client.id, item.developmentId, item.period.id, { ...requested, previewFingerprint: previewed.preview.fingerprint, reason: 'Add active workbook codes', confirmed: true }, { auth: fixture.auth });
+  assert.equal(applied.ok, true, applied.message);
+  const inputs = await periods.listCostCodeInputs(fixture.client.id, item.developmentId, item.period.id);
+  assert.equal(inputs.inputs.find(row => row.costCodeKey === '5003').commercialAdjustment, 0);
+  assert.equal(inputs.inputs.find(row => row.costCodeKey === '5403').commercialAdjustment, 4540);
+});
+
 test('Forecast onboarding rejects malformed, duplicate, unknown and below-floor rows', async () => {
   assert.deepEqual(service.deriveForecastPence({ targetPence: 150000, systemForecast: 1000, changeExposure: 200, recognisedObligation: 900, currentAdjustment: 0, currentEfc: 1200 }), {
     systemPence: 100000, changePence: 20000, recognisedPence: 90000, currentAdjustmentPence: 0, currentEfcPence: 120000, floorPence: 110000, requiredAdjustmentPence: 30000,
@@ -74,8 +95,14 @@ test('Forecast onboarding rejects malformed, duplicate, unknown and below-floor 
   const excludedActive = await service.previewForecastOnboarding(fixture.client.id, item.developmentId, item.period.id, { sourceEvidence, rows: [{ costCodeKey: '2000', targetEfc: '2000' }], excludedRows: [{ rowNumber: 7, costCode: '1000', description: 'Land', importedValue: '1,000', monetaryValue: 1000, reason: 'QS exclusion', explicitlyExcluded: true }] }, { auth: fixture.auth });
   assert.equal(excludedActive.ok, false); assert.equal(excludedActive.invalidRows[0].reason, 'Active recognised Cost Code cannot be excluded.');
   await pool.query("INSERT INTO ledger_transactions(client_id,development_id,transaction_date,cost_code_key,source_cost_code_key,resolved_cost_code_id,resolution_status,net_amount,supplier,reference,description,fingerprint,created_by) VALUES($1,$2,'2026-10-01','1000','1000',$3,'resolved',1500,'Test supplier','J1','Actual','forecast-floor-'||$2,'test')", [fixture.client.id, item.developmentId, fixture.codes['1000'].id]);
-  const below = await service.previewForecastOnboarding(fixture.client.id, item.developmentId, item.period.id, { sourceEvidence, rows: [{ costCodeKey: '1000', targetEfc: '1499.99', rowNumber: 45, importedValue: '1,499.99' }] }, { auth: fixture.auth });
+  await pool.query('INSERT INTO purchase_orders(po_number,payload,client_id) VALUES($1,$2,$3)', [`PO-${randomUUID()}`, { poNumber: 'PO-COMMIT', type: 'S', status: 'approved', supplierId: 'supplier-1', developmentId: item.developmentId, costRef: { developmentId: item.developmentId, costCode: '1000' }, subtotal: 1600 }, fixture.client.id]);
+  const below = await service.previewForecastOnboarding(fixture.client.id, item.developmentId, item.period.id, { sourceEvidence, rows: [{ costCodeKey: '1000', targetEfc: '1599.99', rowNumber: 45, importedValue: '1,599.99' }] }, { auth: fixture.auth });
   assert.equal(below.ok, true); assert.equal(below.preview.canApply, false); assert.equal(below.preview.exceptions[0].reason, 'Target EFC is below the governed forecast floor.');
+  assert.equal(below.preview.rows[0].actualCost, 1500);
+  assert.equal(below.preview.rows[0].commitments, 1600);
+  assert.equal(below.preview.totals.actualCost, 1500);
+  assert.equal(below.preview.totals.commitments, 1600);
+  assert.equal(below.preview.reconciliation.exceptionalTargetValue, 1599.99);
 });
 
 test('Forecast onboarding fails stale previews and rejects Submitted periods without partial writes', async () => {

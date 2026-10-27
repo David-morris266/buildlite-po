@@ -120,6 +120,20 @@ function deriveForecastPence({ targetPence, systemForecast, changeExposure, reco
   };
 }
 
+function zeroCloseRow(master) {
+  return {
+    costCodeKey: master.code,
+    description: master.description || '',
+    committed: 0,
+    actualCost: 0,
+    recognisedObligation: 0,
+    systemForecast: 0,
+    changeExposure: 0,
+    commercialAdjustment: 0,
+    finalForecast: 0,
+  };
+}
+
 async function governedCandidate(db, clientId, developmentId, periodId) {
   const periodResult = await getCvrPeriod(clientId, developmentId, periodId, db);
   if (!periodResult.ok) return periodResult;
@@ -182,11 +196,11 @@ async function buildPreview(db, clientId, developmentId, periodId, requestedRows
   const inputByKey = new Map(inputRows.map(row => [keyOf(row.cost_code_key), row]));
   const exceptions = [];
   const rows = requestedRows.map(requested => {
-    const current = closeByKey.get(requested.key);
-    if (!current) {
-      exceptions.push({ costCodeKey: requested.costCode, rowNumber: requested.rowNumber, importedValue: requested.importedValue, reason: 'Cost Code is not represented in the live governed CVR.' });
-      return null;
-    }
+    const governedRow = closeByKey.get(requested.key);
+    // The close engine includes every code carrying Budget, actual, commitment,
+    // exposure or CVR input evidence. Absence therefore permits a zero baseline
+    // only for an active Master code; apply creates its Draft membership atomically.
+    const current = governedRow || zeroCloseRow(masterByKey.get(requested.key));
     const { systemPence, changePence, currentAdjustmentPence, currentEfcPence, floorPence, requiredAdjustmentPence } = deriveForecastPence({
       targetPence: requested.targetPence,
       systemForecast: current.systemForecast,
@@ -200,6 +214,8 @@ async function buildPreview(db, clientId, developmentId, periodId, requestedRows
     return {
       costCodeKey: current.costCodeKey,
       description: current.description || masterByKey.get(requested.key)?.description || '',
+      actualCost: pounds(exactPence(current.actualCost) ?? 0),
+      commitments: pounds(exactPence(current.committed) ?? 0),
       currentEfc: pounds(currentEfcPence),
       targetEfc: pounds(requested.targetPence),
       movement: pounds(requested.targetPence - currentEfcPence),
@@ -209,18 +225,29 @@ async function buildPreview(db, clientId, developmentId, periodId, requestedRows
       currentAdjustment: pounds(currentAdjustmentPence),
       requiredAdjustment: pounds(requiredAdjustmentPence),
       replacesExistingAdjustment: currentAdjustmentPence !== requiredAdjustmentPence && currentAdjustmentPence !== 0,
+      requiresMembershipCreation: !governedRow,
       inputId: input?.id || null,
       inputVersion: input?.version == null ? null : Number(input.version),
     };
-  }).filter(Boolean);
+  });
   const inputVersions = inputRows.map(row => ({ costCodeKey: keyOf(row.cost_code_key), id: row.id, version: Number(row.version) }));
   const evidence = previewEvidence({ clientId, developmentId, periodId, governed, targets: requestedRows, inputVersions, sourceEvidence, excludedRows });
   const totals = rows.reduce((sum, row) => ({
+    actualCost: sum.actualCost + exactPence(row.actualCost),
+    commitments: sum.commitments + exactPence(row.commitments),
+    systemForecast: sum.systemForecast + exactPence(row.systemForecast),
+    changeExposure: sum.changeExposure + exactPence(row.changeExposure),
     currentEfc: sum.currentEfc + exactPence(row.currentEfc),
     targetEfc: sum.targetEfc + exactPence(row.targetEfc),
     movement: sum.movement + exactPence(row.movement),
     requiredAdjustment: sum.requiredAdjustment + exactPence(row.requiredAdjustment),
-  }), { currentEfc: 0, targetEfc: 0, movement: 0, requiredAdjustment: 0 });
+  }), { actualCost: 0, commitments: 0, systemForecast: 0, changeExposure: 0, currentEfc: 0, targetEfc: 0, movement: 0, requiredAdjustment: 0 });
+  const mappedTargetPence = requestedRows.reduce((sum, row) => sum + row.targetPence, 0);
+  const governedTargetPence = totals.targetEfc;
+  const exceptionalKeys = new Set(exceptions.map(item => keyOf(item.costCodeKey)));
+  const exceptionalTargetPence = requestedRows.reduce((sum, row) => sum + (exceptionalKeys.has(row.key) ? row.targetPence : 0), 0);
+  const missingTargetPence = mappedTargetPence - governedTargetPence;
+  const exactlyReconciled = rows.length === requestedRows.length && missingTargetPence === 0;
   return {
     ok: true,
     preview: {
@@ -233,7 +260,14 @@ async function buildPreview(db, clientId, developmentId, periodId, requestedRows
       excludedMonetaryTotal: pounds(excludedRows.reduce((sum, row) => sum + (row.monetaryPence || 0), 0)),
       rows,
       exceptions,
-      canApply: rows.length > 0 && exceptions.length === 0,
+      canApply: rows.length > 0 && exceptions.length === 0 && exactlyReconciled,
+      reconciliation: {
+        completeMappedTarget: pounds(mappedTargetPence),
+        governedPreviewTarget: pounds(governedTargetPence),
+        missingTargetValue: pounds(missingTargetPence),
+        exceptionalTargetValue: pounds(exceptionalTargetPence),
+        exactlyReconciled,
+      },
       totals: Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, pounds(value)])),
     },
     governed,
