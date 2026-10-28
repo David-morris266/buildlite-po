@@ -21,12 +21,52 @@ function aggregateHeads(rows=[],previousRows=null,siteStartRows=null,gia=null){
   return [...names].map(name=>{const currentEfc=current.get(name)?.finalForecast||0;const previousEfc=previous?(previous.get(name)?.finalForecast||0):null;const siteStartBudget=baseline?(baseline.get(name)?.finalForecast||0):null;return {name,siteStartBudget,previousEfc,currentEfc,costToComplete:current.get(name)?.costToComplete||0,changeExposure:current.get(name)?.changeExposure||0,periodMovement:previous?currentEfc-previousEfc:null,movementFromSiteStart:baseline?currentEfc-siteStartBudget:null,budgetVariance:baseline?currentEfc-siteStartBudget:null,efcPerFt2:gia?currentEfc/gia:null};}).sort((a,b)=>a.name.localeCompare(b.name));
 }
 
+function worksheetRows(currentRows=[],previousRows=null,siteStartRows=null,periodKey=''){
+  const keyOf=row=>String(row?.costCodeKey||'').trim().toLowerCase();
+  const current=new Map((currentRows||[]).map(row=>[keyOf(row),row]));
+  const previous=Array.isArray(previousRows)?new Map(previousRows.map(row=>[keyOf(row),row])):null;
+  const baseline=Array.isArray(siteStartRows)?new Map(siteStartRows.map(row=>[keyOf(row),row])):null;
+  const keys=new Set([...current.keys(),...(previous?.keys()||[]),...(baseline?.keys()||[])]);
+  const p01=periodNumber(periodKey)===1;
+  return [...keys].filter(Boolean).map(key=>{
+    const row=current.get(key)||{};
+    const previousRow=previous?.get(key)||null;
+    const baselineRow=baseline?.get(key)||null;
+    const finalEfc=Number(row.finalForecast)||0;
+    const siteStartBudget=baseline?Number(baselineRow?.finalForecast)||0:null;
+    const previousEfc=previous?Number(previousRow?.finalForecast)||0:null;
+    const comparator=previous?previousEfc:(p01&&baseline?siteStartBudget:null);
+    return {
+      commercialHead:String(row.commercialHead||previousRow?.commercialHead||baselineRow?.commercialHead||'Unallocated').trim()||'Unallocated',
+      costCode:String(row.costCodeKey||previousRow?.costCodeKey||baselineRow?.costCodeKey||key),
+      description:String(row.description||previousRow?.description||baselineRow?.description||''),
+      siteStartBudget,
+      actualCost:Number(row.actualCost)||0,
+      committed:Number(row.committed)||0,
+      certified:Number(row.certified)||0,
+      costToComplete:Number(row.costToComplete)||0,
+      uncommitted:Number(row.uncommittedForecast)||0,
+      changeExposure:Number(row.changeExposure)||0,
+      projectedAdjustment:Number(row.commercialAdjustment)||0,
+      finalEfc,
+      previousEfc,
+      movement:comparator==null?null:money(finalEfc-comparator),
+      benchmarkVariance:siteStartBudget==null?null:money(finalEfc-siteStartBudget),
+    };
+  }).sort((a,b)=>a.commercialHead.localeCompare(b.commercialHead)||a.costCode.localeCompare(b.costCode,undefined,{numeric:true,sensitivity:'base'}));
+}
+
+function worksheetTotals(rows=[]){
+  const fields=['siteStartBudget','actualCost','committed','certified','costToComplete','uncommitted','changeExposure','projectedAdjustment','finalEfc','previousEfc','movement','benchmarkVariance'];
+  return Object.fromEntries(fields.map(field=>[field,rows.some(row=>row[field]!=null)?sum(rows,field):null]));
+}
+
 function snapshotTotal(snapshot){return snapshot?.finalForecast==null?null:Number(snapshot.finalForecast);}
 function rowsReconcile(snapshot){return snapshot&&money(sum(snapshot.rows||[],'finalForecast'))===money(snapshotTotal(snapshot));}
 
 function auditActor(period,action){return period?.auditHistory?.find(entry=>entry.action===action)?.actor||null;}
 
-async function buildCvrReportPayload({clientId,developmentId,periodId,auth,now=new Date(),deps={}}){
+async function buildCvrReportPayload({clientId,developmentId,periodId,auth,now=new Date(),validateWorksheet=false,deps={}}){
   assertServicePermission(auth,PERMISSIONS.COMMERCIAL_READ);
   if(String(auth.clientId)!==String(clientId)) return {ok:false,status:403,message:'Tenant boundary violation.'};
   const loadDevelopment=deps.findDevelopmentById||findDevelopmentById;
@@ -81,9 +121,15 @@ async function buildCvrReportPayload({clientId,developmentId,periodId,auth,now=n
     : (evidence.giaEvidence&&evidence.giaEvidence.availabilityState!=='plot_master_missing'&&Number.isFinite(Number(giaPlotCount))?Number(giaPlotCount):null);
   const movementLabel=prior?'Period Movement':periodNumber(period.periodKey)===1?'Movement from Site Start':'Period Movement';
   const movementValue=prior?totals.periodMovement:periodNumber(period.periodKey)===1?totals.movementFromSiteStart:null;
+  const costCodeRows=worksheetRows(evidence.rows||[],previous?.rows||null,siteStartSnapshot?.rows||null,period.periodKey);
+  const costCodeTotals=worksheetTotals(costCodeRows);
+  const worksheetReconciliation=[['EFC',evidence.finalForecast,costCodeTotals.finalEfc],['Actual Cost',evidence.actualCost,costCodeTotals.actualCost],['Cost to Complete',evidence.costToComplete,costCodeTotals.costToComplete],['Site Start Budget',totals.siteStartBudget,costCodeTotals.siteStartBudget],['Period Movement',movementValue,costCodeTotals.movement],['Benchmark Variance',totals.budgetVariance,costCodeTotals.benchmarkVariance]];
+  const worksheetMismatch=worksheetReconciliation.find(([,header,rowTotal])=>header!=null&&money(header)!==money(rowTotal));
+  if(validateWorksheet&&worksheetMismatch)return {ok:false,status:409,message:`CVR worksheet reconciliation failed for ${worksheetMismatch[0]}.`};
   return {ok:true,payload:{brand,development:{id:development.id,name:development.developmentName,number:development.jobNumber,plotCount:Number.isFinite(plotCount)?plotCount:null},period:{id:period.id,key:period.periodKey,label:period.periodLabel,reportingMonth:period.reportingMonth,status:period.status,provisional:period.status!=='locked'},
     kpis:{forecastRevenue,efc,grossProfit:evidence.grossProfit==null?null:Number(evidence.grossProfit),grossMarginPercent:evidence.grossMarginPercent==null?null:Number(evidence.grossMarginPercent),costToComplete:Number(evidence.costToComplete),budgetVariance:totals.budgetVariance,periodMovement:movementValue,movementLabel},
     performance:{gia,totalDevelopmentCostPerFt2:totals.efcPerFt2,actualCost,efcIncurredPercent:efc&&actualCost!=null?(actualCost/efc)*100:null,programme:programme.ok?programme.programme:null,giaState:evidence.giaEvidence?.availabilityState||'legacy_unavailable'},heads,totals,trend:{locked:lockedTrend,provisional:period.status==='locked'||evidence.grossMarginPercent==null?null:{periodKey:period.periodKey,margin:Number(evidence.grossMarginPercent)}},exceptions,commentary,
+    worksheet:{rows:costCodeRows,totals:costCodeTotals,movementLabel,benchmarkLabel:'Variance from Approved Site Start Budget'},
     attribution:{created:period.createdBy||auditActor(period,'created')||null,submitted:period.submittedBy||auditActor(period,'submitted'),approved:period.approvedBy||auditActor(period,'locked')||evidence.createdBy||null},generatedAt:now.toISOString(),authority:{financial:period.status==='locked'?'immutable_snapshot':'governed_provisional',gia:period.status==='locked'?'frozen_snapshot':'current_plot_master'}}};}
 
-module.exports={buildCvrReportPayload,aggregateHeads};
+module.exports={buildCvrReportPayload,aggregateHeads,worksheetRows,worksheetTotals};

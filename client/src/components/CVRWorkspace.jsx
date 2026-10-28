@@ -7,7 +7,7 @@ import CVRBudgetImportWizard from './CVRBudgetImportWizard';
 import CVRForecastImportWizard from './CVRForecastImportWizard';
 import CvrAddCostCodeDialog from './CvrAddCostCodeDialog';
 import { listPOs } from '../api';
-import { acknowledgeCvrVariationExposure } from '../api/cvrPeriods';
+import { acknowledgeCvrVariationExposure, getCvrWorksheetExportData } from '../api/cvrPeriods';
 import { subscribeCommercialChanged } from '../commercial/commercialEvents';
 import { buildCvrWorkspaceModel, formatCvrMoney, formatCvrTotals } from '../cvr/cvrHelpers';
 import { applyCostCentreSaveToCvrRow } from '../cvr/cvrForecastEngine';
@@ -70,6 +70,7 @@ import { buildCvrCommercialHierarchyPresentation } from '../cvr/cvrCommercialHie
 import { CvrWorkflowDialog, SiteStartApprovalDialog } from './CvrLifecycleDialog';
 import { listActiveCostCodesForSelect } from '../admin/costCodeMasterStore';
 import { buildCostCodeCompleteness, representedCostCodeKeys } from '../cvr/cvrCostCodeCompleteness';
+import { downloadCvrWorksheet } from '../cvr/cvrWorksheetExport';
 
 function StatusBadge({ status }) {
   return (
@@ -173,6 +174,8 @@ export default function CVRWorkspace({
   const [addFeedback, setAddFeedback] = useState('');
   const [budgetImportOpen, setBudgetImportOpen] = useState(false);
   const [forecastImportOpen, setForecastImportOpen] = useState(false);
+  const [worksheetExportBusy, setWorksheetExportBusy] = useState(false);
+  const [worksheetExportError, setWorksheetExportError] = useState('');
   const [notes, setNotes] = useState('');
   const [dialog, setDialog] = useState(null);
   const [rejectComment, setRejectComment] = useState('');
@@ -639,6 +642,20 @@ export default function CVRWorkspace({
     setReportingMonthPrompt(action);
   }
 
+  async function handleWorksheetExport() {
+    if (!period?.id || worksheetExportBusy) return;
+    setWorksheetExportBusy(true);
+    setWorksheetExportError('');
+    try {
+      const report = await getCvrWorksheetExportData(development.id, period.id);
+      await downloadCvrWorksheet(report);
+    } catch (error) {
+      setWorksheetExportError(error?.message || 'Unable to export the CVR Worksheet.');
+    } finally {
+      setWorksheetExportBusy(false);
+    }
+  }
+
   async function handleConfirmReportingMonth(reportingMonth) {
     setReportingMonthBusy(true);
     try {
@@ -748,6 +765,14 @@ export default function CVRWorkspace({
         onBack={onBackToSummary}
         actions={(
           <div className="dev-cvr-period__actions dev-cvr-period__actions--inline">
+            {!siteStart && isCvrServerAuthorityEnabled() ? <button
+              type="button"
+              className="po-list-btn-secondary dev-cvr__shell-btn"
+              onClick={handleWorksheetExport}
+              disabled={worksheetExportBusy}
+            >
+              {worksheetExportBusy ? 'Preparing Excel…' : 'Export Excel'}
+            </button> : null}
             {!readOnly ? (
               <>
                 {legacyBudgetImportAvailable ? <button
@@ -824,6 +849,8 @@ export default function CVRWorkspace({
           ))}
         </dl>
       </ApplicationPageHeader>
+
+      {worksheetExportError ? <p className="po-list-feedback po-list-feedback--error" role="alert">{worksheetExportError}</p> : null}
 
       <CvrPeriodSubviewNav activeSubview={activeSubview} onSelect={onSelectSubview} />
 

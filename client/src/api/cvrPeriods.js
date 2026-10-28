@@ -225,3 +225,9 @@ export async function applyCvrForecastOnboarding(developmentId, periodId, payloa
   });
   return handleJson(res);
 }
+
+export async function getCvrWorksheetExportData(developmentId, periodId) {
+  const res = await fetch(buildUrl(`${periodsUrl(developmentId, periodId)}/worksheet-export`));
+  const data = await handleJson(res);
+  return data?.report || data;
+}

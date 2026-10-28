@@ -575,6 +575,10 @@ export async function listCvrPeriodInputs(developmentId, periodId) {
   return clone(store.inputsByPeriod.get(periodId) || []);
 }
 
+export async function getCvrWorksheetExportData() {
+  return { report: null };
+}
+
 export async function createCvrPeriodForDevelopment(developmentId, payload = {}) {
   store.createCallCount += 1;
   store.lastCreatePayload = clone({ developmentId, payload });

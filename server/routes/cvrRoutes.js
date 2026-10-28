@@ -202,6 +202,17 @@ function createCvrReportHandler({buildPayload=buildCvrReportPayload,renderPdf=re
 };}
 router.get('/cvr/periods/:periodId/report.pdf',requirePermission(PERMISSIONS.COMMERCIAL_READ),createCvrReportHandler());
 
+function createCvrWorksheetDataHandler({buildPayload=buildCvrReportPayload}={}){return async(req,res)=>{
+  try{
+    if(!isDbConfigured())return res.status(500).json({message:'Database not configured'});
+    const result=await buildPayload({clientId:req.buildliteAuth.clientId,developmentId:req.params.developmentId,periodId:req.params.periodId,auth:req.buildliteAuth,validateWorksheet:true});
+    if(!result.ok)return res.status(result.status||400).json({message:result.message,blockers:result.blockers});
+    res.set({'Cache-Control':'no-store'});
+    return res.status(200).json({report:result.payload});
+  }catch(error){return res.status(error.status||500).json({message:error.message||'Failed to prepare CVR Worksheet export.',code:error.code});}
+};}
+router.get('/cvr/periods/:periodId/worksheet-export',requirePermission(PERMISSIONS.COMMERCIAL_READ),createCvrWorksheetDataHandler());
+
 router.patch("/cvr/periods/:periodId", requirePermission(PERMISSIONS.CVR_EDIT), async (req, res) => {
   try {
     if (!isDbConfigured()) {
@@ -504,3 +515,4 @@ router.post("/cvr/periods/:periodId/prelims-adoption", requirePermission(PERMISS
 
 module.exports = router;
 module.exports.createCvrReportHandler = createCvrReportHandler;
+module.exports.createCvrWorksheetDataHandler = createCvrWorksheetDataHandler;
