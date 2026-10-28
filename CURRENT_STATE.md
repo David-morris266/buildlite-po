@@ -1,6 +1,25 @@
 # BuildLite Current State
 
-## Authoritative continuity checkpoint — 24 October 2026
+## Authoritative continuity checkpoint — 28 October 2026
+
+The current planning checkpoint is governed by `docs/Continuity and handovers/BuildLite_Continuity_Handover_28_Oct_2026.md` and Master Improvement Register v0.8. The 24 October checkpoint and detailed implementation/UAT history below remain authoritative historical evidence.
+
+- Repository `buildlite-V1-1` was last confirmed pushed at `02d985615381977b20e73ca8927b7e2b9676d93a`, 0 ahead / 0 behind at the checkpoint. Push is not deployment.
+- Main database evidence records PostgreSQL 18.6 and migration frontier 070. Exact live Render and Netlify SHAs after the latest trial were not separately captured; reverify application tiers and authority variables before release operations.
+- Levison Rose Poplar Road `DEV-002` retrospective onboarding/reporting is delivered: October P01 remains **Draft/provisional**, EFC **£767,712.02**, Actual Cost **£405,569.54**, CTC **£362,142.48**, with directors' PDF and full Excel Worksheet sent to Matt. Do not present it as approved or proof of commercial loss.
+- The earlier Levison recreate/reset proposal is no longer the immediate action. Preserve it as historical context and do not delete or rebuild the successful development without explicit authority.
+- Main's missing ledger server-authority flag caused the first Sage import to be browser-local while the server CVR remained PostgreSQL-authoritative. The flag was enabled and the 374 / £405,569.54 import repeated into PostgreSQL. Product safety must prevent future silent mixed-authority states.
+- Migration 070, current-month Draft creation, governed Forecast Onboarding and the full CVR Worksheet Excel export are implemented through `02d9856`. The Worksheet export is A3 landscape and exact-pence reconciled; Draft/Submitted remain provisional and Locked uses immutable evidence.
+- Valhalla Welford Road is next: preserve its existing 75-plot state, reconcile selling prices/Revenue, then continue realistic end-to-end commercial UAT.
+- JB PO204 remains unproven; John Burke's membership audit still contains activation only and no deactivation event. Both investigations remain open.
+- Optional per-user Light/Dark mode and common Excel importer standardisation remain open. Dark remains the default identity.
+- **Wave C3 Action Safety remains explicitly PAUSED; its discovery prompt has not been sent.** C4/C5 remain queued.
+
+Unresolved evidence: the Sage source/import difference is £648.70; movement attribution differs from the Projected Adjustment total by £0.19; exact current hosted application SHAs remain unverified. No financial rewrite is authorised by these discrepancies.
+
+The following 24 October checkpoint is retained as historical continuity and must not be read as the current next-action list.
+
+## Historical continuity checkpoint — 24 October 2026
 
 This dated checkpoint supersedes older “next action” statements for current planning only. The detailed implementation and UAT history below remains authoritative historical evidence and must not be shortened or discarded. The governing commercial model remains: immutable Land Purchase Appraisal → fixed approved Site Start Budget → monthly CVR P01, P02, P03, etc.; there is no rolling Current Budget and no P00. P01 movement is from Site Start and later movements are from the preceding Locked monthly CVR. System Forecast remains factual; Final Forecast is System Forecast + CE Expected Liability + Commercial Adjustment. Frozen Plot Master GIA and Revenue NIA are distinct authorities. Locked evidence is never rewritten.
 
@@ -22,7 +41,7 @@ This dated checkpoint supersedes older “next action” statements for current 
 6. **Excel importer standardisation.** Land Appraisal, Plot Master, Sales Register and Order Matrix support worksheet selection; Cost Code Master and CVR Budget remain first-sheet only. Plot Master and Sales Register still lack an explicit headerless mode. Standardise worksheet selection, header mode, mapping, preview, counts/totals and safe error states without replacing module-specific authority.
 7. **Wave C status.** C1 Commercial Readiness, C2 company-wide Certificate Register and safe Plot Master bulk update are implemented and included in the confirmed Main release `a1a947c`; JB runs the later `de3331a` release. **Wave C3 Action Safety is explicitly PAUSED; its discovery prompt has not been sent.** C4 and C5 remain queued.
 
-Canonical dated handover: `docs/Continuity and handovers/BuildLite_Continuity_Handover_24_Oct_2026.md`. Register planning authority: Master Improvement Register v0.7, which preserves the 76-item v0.6 baseline and adds separately identified 24 October requirements.
+Historical dated handover for that checkpoint: `docs/Continuity and handovers/BuildLite_Continuity_Handover_24_Oct_2026.md`. Its planning authority was Master Improvement Register v0.7, which preserves the 76-item v0.6 baseline and adds the separately identified 24 October requirements.
 
 ## GP-PILOT-05 CVR approval transaction-consistency closeout (14 October 2026)
 

@@ -1,6 +1,20 @@
 # BuildLite Project Spine
 
-## 24 October 2026 programme checkpoint
+## 28 October 2026 programme checkpoint
+
+The current programme is governed by `docs/Continuity and handovers/BuildLite_Continuity_Handover_28_Oct_2026.md` and Master Improvement Register v0.8. This is additive to the 24 October checkpoint and the detailed persistence history below.
+
+- Git `buildlite-V1-1` is last confirmed pushed at `02d9856`, 0 ahead / 0 behind at the checkpoint. Exact live Main Render/Netlify SHAs were not separately captured; push, build, download and deployment are distinct evidence.
+- Wave C1, Wave C2 and safe Plot Master update remain implemented. **Wave C3 remains PAUSED and its discovery prompt has not been sent.** C4/C5 remain queued.
+- Levison Poplar Road retrospective onboarding/reporting is delivered with P01 Draft EFC £767,712.02 and Actual Cost £405,569.54. It remains provisional, not approved evidence or proof of loss. Do not reset the successful development without explicit authority.
+- Migration 070, current-month CVR Draft creation, governed Forecast Onboarding and the full A3 CVR Worksheet Excel export are implemented. Prevent recurrence of mixed browser-local Ledger and server CVR authority.
+- Active pilot priorities are Valhalla Welford Road Revenue/end-to-end UAT, outstanding JB PO204, the unresolved John Burke membership discrepancy and common Excel importer standardisation.
+- Optional per-user Light/Dark mode remains discovery only; dark charcoal/emerald remains default.
+- Commercial authority is unchanged: fixed Site Start Budget, no rolling Current Budget or P00, factual System Forecast, auditable QS judgement in Final Forecast, immutable Locked evidence and client-owned Cost Codes.
+
+The following 24 October programme checkpoint is retained for historical context.
+
+## Historical 24 October 2026 programme checkpoint
 
 The current product programme is governed by `docs/Continuity and handovers/BuildLite_Continuity_Handover_24_Oct_2026.md` and the Master Improvement Register v0.7. This checkpoint is additive; the detailed persistence history below remains valid.
 
