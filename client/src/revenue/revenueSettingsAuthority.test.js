@@ -76,6 +76,66 @@ describe('BL-032A revenue authority', () => {
     expect(getRevenueSettingsCallCounts().get).toBe(0);
   });
 
+  it('AUTHORITY ON leaves a new development pricing strategy blank while preserving persisted legacy values', async () => {
+    authorityEnabled.value = true;
+    await ensureRevenueSettingsReady('dev-new-blank');
+    expect(getRevenueStrategy('dev-new-blank')).toMatchObject({
+      openMarket: { ratePerFt2: null },
+      affordableHousing: { affordableRent: null, sharedOwnership: null },
+      garagePremiums: { none: null, single: null, double: null },
+    });
+
+    seedMockRevenueSettings('dev-legacy-pricing', buildServerRevenueSettingsFixture({
+      id:'legacy-settings', developmentId:'dev-legacy-pricing', exists:true,
+      revenueStrategy:{
+        openMarket:{ratePerFt2:350,effectiveDate:''},
+        affordableHousing:{affordableRent:58,sharedOwnership:72,firstHomes:70,additionality:65,discountMarketSale:70,other:100},
+        garagePremiums:{none:0,single:12500,double:22500},
+      },
+      recognitionSettings:{},
+    }));
+    await ensureRevenueSettingsReady('dev-legacy-pricing');
+    expect(getRevenueStrategy('dev-legacy-pricing')).toMatchObject({
+      openMarket:{ratePerFt2:350},
+      affordableHousing:{affordableRent:58,sharedOwnership:72},
+      garagePremiums:{none:0,single:12500,double:22500},
+    });
+  });
+
+  it('preserves missing assumptions through the real server-authority save pipeline', async () => {
+    authorityEnabled.value = true;
+    await ensureRevenueSettingsReady('dev-new-summary');
+    const blankRecord = getRevenueRecord('dev-new-summary');
+    const summarySaved = await saveRevenueRecord('dev-new-summary', {
+      ...blankRecord,
+      revenueMode: 'summary',
+      summaryRevenueLines: [{ id: 'summary', description: 'Approved GDV', forecastRevenue: 1250000 }],
+    });
+    expect(summarySaved.ok).toBe(true);
+    let payload = getRevenueSettingsCallCounts().lastPutPayload;
+    expect(payload.revenueStrategy.openMarket.ratePerFt2).toBeNull();
+    expect(Object.values(payload.revenueStrategy.affordableHousing)).toEqual([
+      null, null, null, null, null, null,
+    ]);
+    expect(payload.revenueStrategy.garagePremiums).toEqual({ none: null, single: null, double: null });
+
+    await ensureRevenueSettingsReady('dev-partial-strategy');
+    const partialSaved = await saveRevenueStrategy(
+      'dev-partial-strategy',
+      { openMarket: { ratePerFt2: 300, effectiveDate: '' } },
+      null,
+      { establishPricingAssumptions: true }
+    );
+    expect(partialSaved.ok).toBe(true);
+    payload = getRevenueSettingsCallCounts().lastPutPayload;
+    expect(payload.establishPricingAssumptions).toBe(true);
+    expect(payload.revenueStrategy.openMarket.ratePerFt2).toBe(300);
+    expect(Object.values(payload.revenueStrategy.affordableHousing)).toEqual([
+      null, null, null, null, null, null,
+    ]);
+    expect(payload.revenueStrategy.garagePremiums).toEqual({ none: null, single: null, double: null });
+  });
+
   it('AUTHORITY ON loads and maps server settings faithfully', async () => {
     authorityEnabled.value = true;
     seedMockRevenueSettings(

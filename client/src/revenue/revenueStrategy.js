@@ -51,22 +51,33 @@ export function emptyRevenueStrategy() {
   };
 }
 
+export function blankRevenueStrategy() {
+  return {
+    openMarket: { ratePerFt2: null, effectiveDate: '' },
+    affordableHousing: Object.fromEntries(AFFORDABLE_HOUSING_TYPES.map((item) => [item.key, null])),
+    garagePremiums: { none: null, single: null, double: null },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 function normalizePercent(value, fallback) {
+  if (value == null || value === '') return fallback;
   const amount = Number(value);
   if (!Number.isFinite(amount)) return fallback;
   return Math.max(0, Math.min(100, Math.round(amount * 100) / 100));
 }
 
-function normalizeGaragePremiums(input = {}) {
+function normalizeGaragePremiums(input = {}, { fillMissingWithDefaults = true } = {}) {
+  const defaults = fillMissingWithDefaults ? DEFAULT_GARAGE_PREMIUMS : blankRevenueStrategy().garagePremiums;
   return {
-    none: roundPlotMoney(input.none ?? DEFAULT_GARAGE_PREMIUMS.none),
-    single: roundPlotMoney(input.single ?? DEFAULT_GARAGE_PREMIUMS.single),
-    double: roundPlotMoney(input.double ?? DEFAULT_GARAGE_PREMIUMS.double),
+    none: input.none == null || input.none === '' ? defaults.none : roundPlotMoney(input.none),
+    single: input.single == null || input.single === '' ? defaults.single : roundPlotMoney(input.single),
+    double: input.double == null || input.double === '' ? defaults.double : roundPlotMoney(input.double),
   };
 }
 
-export function normalizeRevenueStrategy(strategy = {}) {
-  const defaults = emptyRevenueStrategy();
+export function normalizeRevenueStrategy(strategy = {}, { fillMissingWithDefaults = true } = {}) {
+  const defaults = fillMissingWithDefaults ? emptyRevenueStrategy() : blankRevenueStrategy();
   const affordableHousing = {};
   for (const item of AFFORDABLE_HOUSING_TYPES) {
     affordableHousing[item.key] = normalizePercent(
@@ -77,11 +88,14 @@ export function normalizeRevenueStrategy(strategy = {}) {
 
   return {
     openMarket: {
-      ratePerFt2: roundPlotMoney(strategy.openMarket?.ratePerFt2 ?? defaults.openMarket.ratePerFt2),
+      ratePerFt2:
+        strategy.openMarket?.ratePerFt2 == null || strategy.openMarket?.ratePerFt2 === ''
+          ? defaults.openMarket.ratePerFt2
+          : roundPlotMoney(strategy.openMarket.ratePerFt2),
       effectiveDate: String(strategy.openMarket?.effectiveDate || '').trim(),
     },
     affordableHousing,
-    garagePremiums: normalizeGaragePremiums(strategy.garagePremiums),
+    garagePremiums: normalizeGaragePremiums(strategy.garagePremiums, { fillMissingWithDefaults }),
     updatedAt: strategy.updatedAt || new Date().toISOString(),
   };
 }
@@ -111,7 +125,10 @@ export function normalizeHouseTypePricingMap(input = {}) {
 
 export function getRevenueStrategy(developmentId) {
   const record = getRevenueRecord(developmentId);
-  return normalizeRevenueStrategy(record.revenueStrategy || emptyRevenueStrategy());
+  return normalizeRevenueStrategy(
+    record.revenueStrategy || blankRevenueStrategy(),
+    { fillMissingWithDefaults: false }
+  );
 }
 
 export function getHouseTypePricing(developmentId) {
@@ -123,7 +140,7 @@ export function saveRevenueStrategy(developmentId, strategy, houseTypePricing = 
   const record = getRevenueRecord(developmentId);
   const next = {
     ...record,
-    revenueStrategy: normalizeRevenueStrategy(strategy),
+    revenueStrategy: normalizeRevenueStrategy(strategy, { fillMissingWithDefaults: false }),
     metadata: {
       ...record.metadata,
       version: 3,

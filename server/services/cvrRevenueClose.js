@@ -14,6 +14,8 @@ const {
   isSecuredRevenueStatus,
   DEFAULT_REVENUE_SOURCE,
   getPlotRevenueTenureAuthority,
+  getAffordablePercentKey,
+  resolveEffectivePlotGarage,
 } = require("./cvrRevenueCloseFormulas");
 const { buildCvrGiaSnapshotEvidence } = require("./cvrGiaSnapshotEvidence");
 
@@ -81,22 +83,58 @@ function pricingAssumptionsEstablishment(settingsDocument) {
   };
 }
 
-function plotAssumptionDependency(plot = {}, houseTypePricing = {}) {
+function plotAssumptionDependency(plot = {}, strategy = {}, houseTypePricing = {}, pricingEstablished = false) {
   if (hasIndependentPlotForecast(plot)) return null;
+  const source = plot.revenueSource || DEFAULT_REVENUE_SOURCE;
+  // Persisted legacy strategies were already authoritative before explicit
+  // per-plot override markers existed. Keep their finite Manual Values usable,
+  // while an unestablished development still requires the explicit marker.
+  if (
+    pricingEstablished &&
+    source === "Manual Value" &&
+    Number.isFinite(Number(plot.manualForecastValue))
+  ) {
+    return null;
+  }
+  const houseTypeRecord = houseTypePricing[String(plot.houseType || "").trim()] || {};
+  const calculatedFromRate = source === "Development Strategy" || (
+    source === DEFAULT_REVENUE_SOURCE &&
+    !(houseTypeRecord.sellingBasis === "Manual" && houseTypeRecord.manualForecastValue != null && Number(houseTypeRecord.manualForecastValue) >= 0)
+  );
+  const rate = strategy.openMarket?.ratePerFt2;
+  if (pricingEstablished && calculatedFromRate && (rate == null || rate === "" || !Number.isFinite(Number(rate)))) {
+    return "open-market-rate-missing";
+  }
   const tenure = getPlotRevenueTenureAuthority(plot);
   if (!tenure.resolved) return "unreviewed-tenure";
   const affordable = !["OPEN_MARKET", "OTHER"].includes(tenure.normalizedTenureCode);
-  const source = plot.revenueSource || DEFAULT_REVENUE_SOURCE;
-  if (source === "Plot Override") return affordable ? "affordable-percentage" : null;
-  if (source === DEFAULT_REVENUE_SOURCE) {
-    const record = houseTypePricing[String(plot.houseType || "").trim()] || {};
-    if (record.sellingBasis === "Manual" && Number(record.manualForecastValue) >= 0) {
-      return affordable ? "affordable-percentage" : null;
-    }
-    return "house-type-auto-pricing";
+  const affordableKey = affordable ? getAffordablePercentKey(tenure.tenure) : null;
+  const affordablePercent = affordableKey ? strategy.affordableHousing?.[affordableKey] : null;
+  const hasAffordablePercent = !affordableKey || (
+    affordablePercent != null && affordablePercent !== "" && Number.isFinite(Number(affordablePercent))
+  );
+  if (source === "Plot Override") {
+    if (!pricingEstablished) return affordable ? "affordable-percentage" : null;
+    return hasAffordablePercent ? null : "affordable-percentage-missing";
   }
-  if (source === "Development Strategy") return "development-strategy";
-  return "pricing-assumptions";
+  if (source === DEFAULT_REVENUE_SOURCE) {
+    if (houseTypeRecord.sellingBasis === "Manual" && houseTypeRecord.manualForecastValue != null && Number(houseTypeRecord.manualForecastValue) >= 0) {
+      if (!pricingEstablished) return affordable ? "affordable-percentage" : null;
+      return hasAffordablePercent ? null : "affordable-percentage-missing";
+    }
+    if (!pricingEstablished) return "house-type-auto-pricing";
+  } else if (source === "Development Strategy") {
+    if (!pricingEstablished) return "development-strategy";
+  } else {
+    return pricingEstablished ? "pricing-assumptions-missing" : "pricing-assumptions";
+  }
+  const garage = resolveEffectivePlotGarage(plot, houseTypePricing);
+  if (["Single", "Double"].includes(garage)) {
+    const key = garage.toLowerCase();
+    const premium = strategy.garagePremiums?.[key];
+    if (premium == null || premium === "" || !Number.isFinite(Number(premium))) return `${key}-garage-premium-missing`;
+  }
+  return hasAffordablePercent ? null : "affordable-percentage-missing";
 }
 
 function establishmentEvidence(plots = [], settingsDocument = null) {
@@ -109,7 +147,12 @@ function establishmentEvidence(plots = [], settingsDocument = null) {
     const provenance = plot.forecastImportProvenance;
     if (plot.revenueSource === "Manual Value" && provenance && !provenance.supersededAt) sources.imported += 1;
     else if (plot.revenueSource === "Manual Value") sources.manual += 1;
-    const dependency = pricing.established ? null : plotAssumptionDependency(plot, houseTypes);
+    const dependency = plotAssumptionDependency(
+      plot,
+      settingsDocument?.revenueStrategy || {},
+      houseTypes,
+      pricing.established
+    );
     if (dependency) {
       sources.unresolved += 1;
       dependentPlots.push({ plotId: plotIdentity(plot, dependentPlots.length), plotNumber: String(plot.plotNumber || ""), reason: dependency });
@@ -296,16 +339,6 @@ function buildRevenueAuthorityFromDocuments({ clientId, developmentId, developme
     });
     return notReady({ clientId, developmentId, blockers, sources, establishment });
   }
-  if (establishment.dependentPlots.length) {
-    blockers.push({
-      source: "revenueSettings",
-      reason: "pricing-assumptions-not-established",
-      plotNumbers: establishment.dependentPlots.map((plot) => plot.plotNumber),
-      message: `${establishment.dependentPlots.length} plot forecast${establishment.dependentPlots.length === 1 ? "" : "s"} depend on pricing assumptions that have not been established.`,
-    });
-    return notReady({ clientId, developmentId, blockers, sources, establishment });
-  }
-
   const invalid = invalidSecuredPlots(plots);
   if (invalid.length) {
     const plotNumbers = invalid.map((plot) => String(plot.plotNumber || plot.id || "?"));
@@ -326,6 +359,16 @@ function buildRevenueAuthorityFromDocuments({ clientId, developmentId, developme
       reason: "unreviewed-plot-tenure",
       plotNumbers,
       message: `Plot Master tenure review is required for: ${plotNumbers.join(", ")}.`,
+    });
+    return notReady({ clientId, developmentId, blockers, sources, establishment });
+  }
+
+  if (establishment.dependentPlots.length) {
+    blockers.push({
+      source: "revenueSettings",
+      reason: "pricing-assumptions-not-established",
+      plotNumbers: establishment.dependentPlots.map((plot) => plot.plotNumber),
+      message: `${establishment.dependentPlots.length} plot forecast${establishment.dependentPlots.length === 1 ? "" : "s"} depend on pricing assumptions that have not been established.`,
     });
     return notReady({ clientId, developmentId, blockers, sources, establishment });
   }

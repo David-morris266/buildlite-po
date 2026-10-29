@@ -85,6 +85,15 @@ function unsavedDocument(developmentId) {
     exists: false,
     id: null,
     version: 0,
+    revenueStrategy: {
+      openMarket: { ratePerFt2: null, effectiveDate: '' },
+      affordableHousing: {
+        affordableRent: null, sharedOwnership: null, firstHomes: null,
+        additionality: null, discountMarketSale: null, other: null,
+      },
+      garagePremiums: { none: null, single: null, double: null },
+      updatedAt: null,
+    },
   });
 }
 

@@ -42,6 +42,9 @@ function emptyDocument(developmentId) {
 function settingsRowToDocument(row, developmentId) {
   if (!row) return emptyDocument(developmentId);
   const errors = [];
+  const hasPricingAuthorityMarker = Boolean(
+    row.recognition_settings?.pricingAssumptionsAuthority
+  );
   return {
     id: row.id,
     developmentId: row.development_id,
@@ -49,7 +52,9 @@ function settingsRowToDocument(row, developmentId) {
     recognitionPolicy: row.recognition_policy || DEFAULT_REVENUE_RECOGNITION_POLICY,
     revenueMode: row.revenue_mode === "summary" ? "summary" : "sales_register",
     summaryRevenueLines: Array.isArray(row.summary_revenue_lines) ? row.summary_revenue_lines : [],
-    revenueStrategy: normalizeRevenueStrategy(row.strategy, errors),
+    revenueStrategy: normalizeRevenueStrategy(row.strategy, errors, {
+      fillMissingWithDefaults: !hasPricingAuthorityMarker,
+    }),
     houseTypePricing: normalizeHouseTypePricing(row.house_type_pricing, errors),
     revenueAdjustments: Array.isArray(row.revenue_adjustments) ? row.revenue_adjustments : [],
     recognitionSettings:

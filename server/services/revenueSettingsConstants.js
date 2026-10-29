@@ -42,12 +42,21 @@ function emptyRevenueStrategy() {
   };
 }
 
+function blankRevenueStrategy() {
+  return {
+    openMarket: { ratePerFt2: null, effectiveDate: "" },
+    affordableHousing: Object.fromEntries(AFFORDABLE_HOUSING_KEYS.map((key) => [key, null])),
+    garagePremiums: { none: null, single: null, double: null },
+    updatedAt: null,
+  };
+}
+
 function emptySettingsDocument() {
   return {
     revenueMode: "sales_register",
     summaryRevenueLines: [],
     recognitionPolicy: DEFAULT_REVENUE_RECOGNITION_POLICY,
-    revenueStrategy: emptyRevenueStrategy(),
+    revenueStrategy: blankRevenueStrategy(),
     houseTypePricing: {},
     revenueAdjustments: [],
     recognitionSettings: {},
@@ -62,5 +71,6 @@ module.exports = {
   DEFAULT_GARAGE_PREMIUMS,
   LOCAL_RECORD_SCHEMA_VERSION,
   emptyRevenueStrategy,
+  blankRevenueStrategy,
   emptySettingsDocument,
 };

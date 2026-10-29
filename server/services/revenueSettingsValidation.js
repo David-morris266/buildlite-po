@@ -9,6 +9,7 @@ const {
   DEFAULT_REVENUE_RECOGNITION_POLICY,
   REVENUE_RECOGNITION_POLICIES,
   emptyRevenueStrategy,
+  blankRevenueStrategy,
 } = require("./revenueSettingsConstants");
 
 function roundMoney(value) {
@@ -18,7 +19,8 @@ function roundMoney(value) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-function normalizePercent(value, fallback) {
+function normalizePercent(value, fallback = null) {
+  if (value == null || value === "") return fallback;
   const amount = Number(value);
   if (!Number.isFinite(amount)) return fallback;
   return Math.max(0, Math.min(100, Math.round(amount * 100) / 100));
@@ -31,34 +33,39 @@ function parseCreateOrUpdateVersion(value) {
   return parsed;
 }
 
-function normalizeGaragePremiums(input = {}, errors) {
+function normalizeGaragePremiums(input = {}, errors, { fillMissingWithDefaults = false } = {}) {
+  const defaults = fillMissingWithDefaults ? DEFAULT_GARAGE_PREMIUMS : blankRevenueStrategy().garagePremiums;
   if (input == null || input === "") {
-    return { ...DEFAULT_GARAGE_PREMIUMS };
+    return { ...defaults };
   }
   if (typeof input !== "object" || Array.isArray(input)) {
     errors.push("revenueStrategy.garagePremiums must be an object.");
-    return { ...DEFAULT_GARAGE_PREMIUMS };
+    return { ...defaults };
   }
-  const none = roundMoney(input.none ?? DEFAULT_GARAGE_PREMIUMS.none);
-  const single = roundMoney(input.single ?? DEFAULT_GARAGE_PREMIUMS.single);
-  const double = roundMoney(input.double ?? DEFAULT_GARAGE_PREMIUMS.double);
-  if (none == null || single == null || double == null) {
+  const none = input.none == null || input.none === "" ? defaults.none : roundMoney(input.none);
+  const single = input.single == null || input.single === "" ? defaults.single : roundMoney(input.single);
+  const double = input.double == null || input.double === "" ? defaults.double : roundMoney(input.double);
+  const hasInvalidValue = ["none", "single", "double"].some(
+    (key) => input[key] != null && input[key] !== "" && roundMoney(input[key]) == null
+  );
+  if (hasInvalidValue) {
     errors.push("revenueStrategy.garagePremiums values must be finite amounts.");
-    return { ...DEFAULT_GARAGE_PREMIUMS };
+    return { ...defaults };
   }
   return { none, single, double };
 }
 
-function normalizeRevenueStrategy(input, errors) {
-  const defaults = emptyRevenueStrategy();
+function normalizeRevenueStrategy(input, errors, { fillMissingWithDefaults = false } = {}) {
+  const defaults = fillMissingWithDefaults ? emptyRevenueStrategy() : blankRevenueStrategy();
   if (input == null || input === "") return defaults;
   if (typeof input !== "object" || Array.isArray(input)) {
     errors.push("revenueStrategy must be an object.");
     return defaults;
   }
 
-  const ratePerFt2 = roundMoney(input.openMarket?.ratePerFt2 ?? defaults.openMarket.ratePerFt2);
-  if (ratePerFt2 == null) {
+  const rawRate = input.openMarket?.ratePerFt2;
+  const ratePerFt2 = rawRate == null || rawRate === "" ? defaults.openMarket.ratePerFt2 : roundMoney(rawRate);
+  if (rawRate != null && rawRate !== "" && ratePerFt2 == null) {
     errors.push("revenueStrategy.openMarket.ratePerFt2 must be a finite amount.");
   }
 
@@ -69,17 +76,17 @@ function normalizeRevenueStrategy(input, errors) {
   for (const key of AFFORDABLE_HOUSING_KEYS) {
     affordableHousing[key] = normalizePercent(
       source[key],
-      DEFAULT_AFFORDABLE_PERCENTAGES[key]
+      fillMissingWithDefaults ? DEFAULT_AFFORDABLE_PERCENTAGES[key] : null
     );
   }
 
   return {
     openMarket: {
-      ratePerFt2: ratePerFt2 ?? defaults.openMarket.ratePerFt2,
+      ratePerFt2,
       effectiveDate: String(input.openMarket?.effectiveDate || "").trim(),
     },
     affordableHousing,
-    garagePremiums: normalizeGaragePremiums(input.garagePremiums, errors),
+    garagePremiums: normalizeGaragePremiums(input.garagePremiums, errors, { fillMissingWithDefaults }),
     updatedAt: input.updatedAt ? String(input.updatedAt) : null,
   };
 }

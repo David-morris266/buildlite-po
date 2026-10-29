@@ -6,7 +6,7 @@
  * the server cache only. No localStorage fallback and no dual-write.
  */
 
-import { emptyRevenueStrategy, normalizeHouseTypePricingMap, normalizeRevenueStrategy } from './revenueStrategy';
+import { blankRevenueStrategy, emptyRevenueStrategy, normalizeHouseTypePricingMap, normalizeRevenueStrategy } from './revenueStrategy';
 import { isRevenueServerAuthorityEnabled } from './revenueAuthority';
 import { requireCachedRevenueSettings } from './revenueSettingsServerCache';
 import { putServerRevenueSettings } from './revenueSettingsServerMutations';
@@ -30,9 +30,10 @@ function writeStore(store) {
 
 export function emptyRevenueRecord() {
   return {
+    exists: false,
     revenueMode: 'sales_register',
     summaryRevenueLines: [],
-    revenueStrategy: emptyRevenueStrategy(),
+    revenueStrategy: blankRevenueStrategy(),
     houseTypePricing: {},
     revenueAdjustments: [],
     recognitionSettings: {},
@@ -50,9 +51,16 @@ function normalizeRevenueRecord(record = {}) {
   const version = Number(record.metadata?.version) || 2;
 
   return {
+    exists: true,
     revenueMode: record.revenueMode === 'summary' ? 'summary' : 'sales_register',
     summaryRevenueLines: Array.isArray(record.summaryRevenueLines) ? record.summaryRevenueLines : [],
-    revenueStrategy: normalizeRevenueStrategy(record.revenueStrategy || empty.revenueStrategy),
+    // The server mapper is responsible for grandfathering genuinely legacy
+    // rows. Save normalization must preserve missing values from every other
+    // record, otherwise a PUT silently establishes illustrative defaults.
+    revenueStrategy: normalizeRevenueStrategy(
+      record.revenueStrategy || blankRevenueStrategy(),
+      { fillMissingWithDefaults: false }
+    ),
     houseTypePricing: normalizeHouseTypePricingMap(record.houseTypePricing || {}),
     revenueAdjustments: Array.isArray(record.revenueAdjustments)
       ? record.revenueAdjustments
@@ -72,6 +80,8 @@ function normalizeRevenueRecord(record = {}) {
 }
 
 function fromCachedSettings(cached) {
+  const pricingAuthority = cached.recognitionSettings?.pricingAssumptionsAuthority;
+  const fillMissingWithDefaults = cached.exists !== false && !pricingAuthority;
   return {
     id: cached.id || null,
     exists: cached.exists !== false && Boolean(cached.id),
@@ -80,7 +90,10 @@ function fromCachedSettings(cached) {
     revenueMode: cached.revenueMode === 'summary' ? 'summary' : 'sales_register',
     summaryRevenueLines: Array.isArray(cached.summaryRevenueLines) ? cached.summaryRevenueLines : [],
     revenueAuthority: cached.revenueAuthority || null,
-    revenueStrategy: normalizeRevenueStrategy(cached.revenueStrategy || emptyRevenueStrategy()),
+    revenueStrategy: normalizeRevenueStrategy(
+      cached.revenueStrategy || (fillMissingWithDefaults ? emptyRevenueStrategy() : blankRevenueStrategy()),
+      { fillMissingWithDefaults }
+    ),
     houseTypePricing: normalizeHouseTypePricingMap(cached.houseTypePricing || {}),
     revenueAdjustments: Array.isArray(cached.revenueAdjustments) ? cached.revenueAdjustments : [],
     recognitionSettings:

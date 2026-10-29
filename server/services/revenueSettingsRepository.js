@@ -103,6 +103,36 @@ async function putRevenueSettings(clientId, developmentId, body = {}, { actor, a
       ...requestedRecognitionSettings,
       ...(pricingAssumptionsAuthority ? { pricingAssumptionsAuthority } : {}),
     };
+    if (validated.establishPricingAssumptions) {
+      const currentDevelopment = await findDevelopmentById(clientId, developmentId, dbClient);
+      const proposedSettings = {
+        ...(existing ? settingsRowToDocument(existing, developmentId) : emptyDocument(developmentId)),
+        ...validated.value,
+        exists: true,
+        id: existing?.id || null,
+        version: existing?.version || 0,
+        revenueMode: "sales_register",
+      };
+      const { buildRevenueAuthorityFromDocuments } = require("./cvrRevenueClose");
+      const detailedAuthority = buildRevenueAuthorityFromDocuments({
+        clientId,
+        developmentId,
+        development: currentDevelopment,
+        settingsDocument: proposedSettings,
+      });
+      const missingAssumptions = detailedAuthority.establishment?.dependentPlots?.filter(
+        (item) => item.reason !== "unreviewed-tenure"
+      ) || [];
+      if (missingAssumptions.length) {
+        await dbClient.query("ROLLBACK");
+        return {
+          ok: false,
+          status: 400,
+          message: `${missingAssumptions.length} plot forecast${missingAssumptions.length === 1 ? "" : "s"} depend on missing pricing assumptions.`,
+          errors: missingAssumptions.map((item) => item.plotNumber),
+        };
+      }
+    }
     const submitted = await dbClient.query(`SELECT 1 FROM cvr_periods WHERE client_id=$1 AND development_id=$2 AND status='submitted' LIMIT 1`, [clientId, developmentId]);
     if (submitted.rowCount && (existing?.revenue_mode === 'summary' || validated.value.revenueMode === 'summary' || existing?.revenue_mode !== validated.value.revenueMode)) {
       await dbClient.query("ROLLBACK");

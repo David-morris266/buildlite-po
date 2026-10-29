@@ -61,6 +61,7 @@ export default function RevenueStrategyPanel({
     () => calculateRatePerM2(draft.openMarket.ratePerFt2),
     [draft.openMarket.ratePerFt2]
   );
+  const hasOpenMarketRate = draft.openMarket.ratePerFt2 != null && draft.openMarket.ratePerFt2 !== '';
 
   const isBusy = busyActionKey === 'save-strategy';
 
@@ -153,13 +154,13 @@ export default function RevenueStrategyPanel({
                 type="number"
                 min="0"
                 step="1"
-                value={draft.openMarket.ratePerFt2 || ''}
+                value={draft.openMarket.ratePerFt2 ?? ''}
                 disabled={isBusy}
                 onChange={(event) => updateOpenMarket('ratePerFt2', event.target.value)}
               />
             </StrategyField>
             <StrategyField label="£/m²">
-              <input className="input" type="text" value={`£${formatMoney(ratePerM2)}`} readOnly />
+              <input className="input" type="text" value={hasOpenMarketRate ? `£${formatMoney(ratePerM2)}` : ''} readOnly />
             </StrategyField>
             <StrategyField label="Effective">
               <input

@@ -118,7 +118,9 @@ if (!isDbConfigured()) {
     assert.equal(res.body.exists, false);
     assert.equal(res.body.version, 0);
     assert.equal(res.body.recognitionPolicy, "completion");
-    assert.equal(res.body.revenueStrategy.openMarket.ratePerFt2, 350);
+    assert.equal(res.body.revenueStrategy.openMarket.ratePerFt2, null);
+    assert.equal(res.body.revenueStrategy.affordableHousing.affordableRent, null);
+    assert.deepEqual(res.body.revenueStrategy.garagePremiums, { none: null, single: null, double: null });
     assert.deepEqual(res.body.revenueAdjustments, []);
     assert.deepEqual(res.body.recognitionSettings, {});
 
@@ -266,6 +268,138 @@ if (!isDbConfigured()) {
     assert.equal(persisted.body.version, 1);
     assert.equal(persisted.body.revenueMode, "summary");
     assert.deepEqual(persisted.body.recognitionSettings.pricingAssumptionsAuthority, { schemaVersion: 1, established: false });
+  });
+
+  test("explicit establishment rejects missing required assumptions without inventing defaults", async () => {
+    const active = await getActiveClient();
+    const developmentId = await createDevelopment(active);
+    await pool.query(
+      `UPDATE developments SET payload=$1::jsonb WHERE id=$2 AND client_id=$3`,
+      [JSON.stringify({ plotMaster: { plots: [{
+        id: "plot-auto-required",
+        plotNumber: "1",
+        houseType: "Ash",
+        garage: "Single",
+        garageOverride: true,
+        gia: 1000,
+        tenureCode: "OPEN_MARKET",
+        revenueStatus: "Available",
+        revenueSource: "House Type",
+      }] } }), developmentId, active.id]
+    );
+
+    const rejected = await request(app)
+      .put(`/api/developments/${developmentId}/revenue/settings`)
+      .send({
+        version: 0,
+        revenueMode: "sales_register",
+        establishPricingAssumptions: true,
+        revenueStrategy: { openMarket: { ratePerFt2: 300 } },
+      });
+    assert.equal(rejected.status, 400);
+    assert.match(rejected.body.message, /pricing assumptions/i);
+    const count = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM development_revenue_settings WHERE development_id=$1`,
+      [developmentId]
+    );
+    assert.equal(count.rows[0].n, 0);
+
+    const established = await request(app)
+      .put(`/api/developments/${developmentId}/revenue/settings`)
+      .send({
+        version: 0,
+        revenueMode: "sales_register",
+        establishPricingAssumptions: true,
+        revenueStrategy: {
+          openMarket: { ratePerFt2: 400, effectiveDate: "" },
+          affordableHousing: {},
+          garagePremiums: { single: 0 },
+        },
+      });
+    assert.equal(established.status, 201);
+    assert.equal(established.body.revenueStrategy.openMarket.ratePerFt2, 400);
+    assert.equal(established.body.revenueStrategy.affordableHousing.affordableRent, null);
+    assert.deepEqual(established.body.revenueStrategy.garagePremiums, { none: null, single: 0, double: null });
+    assert.equal(established.body.recognitionSettings.pricingAssumptionsAuthority.established, true);
+  });
+
+  test("establishment validates assumptions directly and rolls back despite earlier readiness blockers", async () => {
+    const active = await getActiveClient();
+    const developmentId = await createDevelopment(active);
+    await pool.query(
+      `UPDATE developments SET payload=$1::jsonb WHERE id=$2 AND client_id=$3`,
+      [JSON.stringify({ plotMaster: { plots: [{
+        id: "plot-masked-blocker",
+        plotNumber: "1",
+        houseType: "Ash",
+        gia: 1000,
+        tenureCode: "UNREVIEWED",
+        revenueStatus: "Reserved",
+        sellingPrice: 0,
+        sellingPriceRequiresConfirmation: true,
+        revenueSource: "House Type",
+      }] } }), developmentId, active.id]
+    );
+    const created = await request(app)
+      .put(`/api/developments/${developmentId}/revenue/settings`)
+      .send({ version: 0, revenueMode: "sales_register" });
+    assert.equal(created.status, 201);
+
+    const rejected = await request(app)
+      .put(`/api/developments/${developmentId}/revenue/settings`)
+      .send({ version: 1, revenueMode: "sales_register", establishPricingAssumptions: true });
+    assert.equal(rejected.status, 400);
+    assert.match(rejected.body.message, /missing pricing assumptions/i);
+
+    const persisted = await request(app).get(`/api/developments/${developmentId}/revenue/settings`);
+    assert.equal(persisted.status, 200);
+    assert.equal(persisted.body.version, 1);
+    assert.equal(persisted.body.revenueStrategy.openMarket.ratePerFt2, null);
+    assert.deepEqual(persisted.body.recognitionSettings.pricingAssumptionsAuthority, {
+      schemaVersion: 1,
+      established: false,
+    });
+  });
+
+  test("explicit and grandfathered zero assumptions retain existing calculation semantics", async () => {
+    const active = await getActiveClient();
+    const developmentId = await createDevelopment(active);
+    await pool.query(
+      `UPDATE developments SET payload=$1::jsonb WHERE id=$2 AND client_id=$3`,
+      [JSON.stringify({ plotMaster: { plots: [{
+        id: "plot-zero-rate",
+        plotNumber: "1",
+        houseType: "Ash",
+        gia: 1000,
+        tenureCode: "OPEN_MARKET",
+        revenueStatus: "Available",
+        revenueSource: "Development Strategy",
+      }] } }), developmentId, active.id]
+    );
+    const established = await request(app)
+      .put(`/api/developments/${developmentId}/revenue/settings`)
+      .send({
+        version: 0,
+        revenueMode: "sales_register",
+        establishPricingAssumptions: true,
+        revenueStrategy: { openMarket: { ratePerFt2: 0 }, affordableHousing: {}, garagePremiums: {} },
+      });
+    assert.equal(established.status, 201, established.body?.message);
+    assert.equal(established.body.revenueStrategy.openMarket.ratePerFt2, 0);
+    assert.equal(established.body.revenueAuthority.ready, true);
+    assert.equal(established.body.revenueAuthority.summary.forecastRevenue, 0);
+
+    await pool.query(
+      `UPDATE development_revenue_settings
+       SET recognition_settings='{}'::jsonb
+       WHERE client_id=$1 AND development_id=$2`,
+      [active.id, developmentId]
+    );
+    const grandfathered = await request(app).get(`/api/developments/${developmentId}/revenue/settings`);
+    assert.equal(grandfathered.status, 200);
+    assert.equal(grandfathered.body.revenueStrategy.openMarket.ratePerFt2, 0);
+    assert.equal(grandfathered.body.revenueAuthority.ready, true);
+    assert.equal(grandfathered.body.revenueAuthority.summary.forecastRevenue, 0);
   });
 
   test("PUT increments version and stale version returns 409", async () => {
