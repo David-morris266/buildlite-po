@@ -81,4 +81,51 @@ describe('SalesRegisterImportWizard worksheet ownership', () => {
     expect(document.body.textContent).toContain('Worksheet: Sheet1');
     expect(container.querySelector('select[aria-label="Map column Plot"]')?.value).toBe('plotNumber');
   });
+
+  it('shows authoritative reconciliation before collapsible row detail and requires confirmation before Apply', async () => {
+    const single = { SheetNames: ['Sheet1'], Sheets: { Sheet1: { rows: [['Plot', 'House Type', 'Forecast Price'], ['1', 'Birch', 325000]] } } };
+    const { parseExcelFile } = await import('../payments/excelImport');
+    parseExcelFile.mockResolvedValueOnce(single);
+    const onPreview = vi.fn(async () => ({ preview: {
+      sourceRowCount: 1,
+      acceptedRowCount: 1,
+      rejectedRowCount: 0,
+      excludedRowCount: 0,
+      sourceTotal: 325000,
+      projectedAuthoritativeGdv: 325000,
+      difference: 0,
+      canApply: true,
+      fingerprint: 'reviewed-fingerprint',
+      errors: [],
+      authorityBlockers: [],
+    } }));
+    const onApply = vi.fn(async () => undefined);
+    act(() => root.render(<SalesRegisterImportWizard plots={[{ id: 'p1', plotNumber: '1', houseType: 'Ash', revenueStatus: 'Available' }]} developmentVersion={1} onCancel={vi.fn()} onPreview={onPreview} onApply={onApply} />));
+    const input = container.querySelector('input[type="file"]');
+    const file = new File(['csv'], 'sales.csv', { type: 'text/csv' });
+    await act(async () => { Object.defineProperty(input, 'files', { value: [file], configurable: true }); input.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve(); });
+    const treatment = container.querySelector('select[aria-label="Imported price treatment"]');
+    act(() => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(treatment, 'forecast_manual_value'); treatment.dispatchEvent(new Event('change', { bubbles: true })); });
+    clickButton('Review proposed changes');
+    const reason = container.querySelector('textarea');
+    act(() => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(reason, 'Reviewed customer sales evidence'); reason.dispatchEvent(new Event('input', { bubbles: true })); });
+    const previewButton = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Preview authoritative GDV');
+    expect(previewButton.disabled, document.body.textContent).toBe(false);
+    await act(async () => { previewButton.click(); await Promise.resolve(); });
+
+    const reconciliation = container.querySelector('.revenue-sales-import__reconciliation');
+    const rows = container.querySelector('.revenue-sales-import__rows');
+    expect(reconciliation).toBeTruthy();
+    expect(rows).toBeTruthy();
+    expect(rows.querySelector('summary').textContent).toContain('1 House Type mismatch');
+    expect(reconciliation.compareDocumentPosition(rows) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(rows.open).toBe(false);
+    const apply = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Apply 1 reviewed rows');
+    expect(apply.disabled).toBe(true);
+    const confirmation = container.querySelector('.revenue-sales-import__confirmation input[type="checkbox"]');
+    act(() => confirmation.click());
+    expect(apply.disabled).toBe(false);
+    await act(async () => { apply.click(); await Promise.resolve(); });
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ previewFingerprint: 'reviewed-fingerprint' }));
+  });
 });

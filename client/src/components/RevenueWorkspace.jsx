@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AdminKpiGrid } from './admin/adminUi';
 
@@ -224,6 +224,12 @@ export default function RevenueWorkspace({
 
   const [houseTypePreview, setHouseTypePreview] = useState(null);
 
+  const strategyDraftBaseline = useRef(null);
+
+  const houseTypeDraftBaseline = useRef(null);
+
+  const [pricingDraftDirty, setPricingDraftDirty] = useState(false);
+
   const [lastWorkflowStats, setLastWorkflowStats] = useState(null);
 
   const [drawerPlotId, setDrawerPlotId] = useState(null);
@@ -233,7 +239,9 @@ export default function RevenueWorkspace({
 
 
   const handleStrategyPreview = useCallback((draft) => {
-
+    const serialised = JSON.stringify(draft);
+    if (strategyDraftBaseline.current === null) strategyDraftBaseline.current = serialised;
+    else setPricingDraftDirty((current) => current || serialised !== strategyDraftBaseline.current);
     setStrategyPreview(draft);
 
   }, []);
@@ -241,7 +249,9 @@ export default function RevenueWorkspace({
 
 
   const handleHouseTypePreview = useCallback((draft) => {
-
+    const serialised = JSON.stringify(draft);
+    if (houseTypeDraftBaseline.current === null) houseTypeDraftBaseline.current = serialised;
+    else setPricingDraftDirty((current) => current || serialised !== houseTypeDraftBaseline.current);
     setHouseTypePreview(draft);
 
   }, []);
@@ -256,6 +266,7 @@ export default function RevenueWorkspace({
   const [savingSummary, setSavingSummary] = useState(false);
   const [summaryMessage, setSummaryMessage] = useState('');
   const [importOpen, setImportOpen] = useState(false);
+  const [workspaceView, setWorkspaceView] = useState('overview');
 
   useEffect(() => {
     let cancelled = false;
@@ -355,7 +366,24 @@ export default function RevenueWorkspace({
 
 
 
-  const dashboardKpis = useMemo(() => buildRevenueDashboardKpis(summary), [summary]);
+  const forecastSourceCounts = useMemo(() => ({
+    imported: plots.filter((plot) => (
+      plot.revenueSource === 'Manual Value' &&
+      Boolean(plot.forecastImportProvenance) &&
+      !plot.forecastImportProvenance.supersededAt
+    )).length,
+    manual: plots.filter((plot) => (
+      plot.revenueSource === 'Manual Value' &&
+      plot.manualOverrideExplicit === true &&
+      (!plot.forecastImportProvenance || Boolean(plot.forecastImportProvenance.supersededAt))
+    )).length,
+  }), [plots]);
+
+  const dashboardKpis = useMemo(() => [
+    ...buildRevenueDashboardKpis(summary).filter((item) => item.key !== 'manualOverrides'),
+    { key: 'importedForecasts', label: 'Imported forecasts', value: forecastSourceCounts.imported, format: 'count' },
+    { key: 'genuineManualOverrides', label: 'Manual overrides', value: forecastSourceCounts.manual, format: 'count' },
+  ], [summary, forecastSourceCounts]);
 
 
 
@@ -484,6 +512,12 @@ export default function RevenueWorkspace({
 
     setHouseTypePreview(null);
 
+    strategyDraftBaseline.current = null;
+
+    houseTypeDraftBaseline.current = null;
+
+    setPricingDraftDirty(false);
+
     setLocalRefresh((value) => value + 1);
 
     if (workflowStats) {
@@ -508,6 +542,7 @@ export default function RevenueWorkspace({
 
     if (!plotId) return;
 
+    setWorkspaceView('register');
     setDrawerPlotId(plotId);
 
     setDrawerErrors([]);
@@ -579,7 +614,11 @@ export default function RevenueWorkspace({
   const hasCommercialActions = exceptions.length > 0 || actionableInsights.length > 0;
 
   async function saveRevenueMode(revenueMode, lines = summaryLines) {
-    if (revenueMode !== pricingContext.revenueMode && !window.confirm(`Switch Revenue mode to ${revenueMode === 'summary' ? 'Summary Revenue' : 'Sales Register'}? Existing data will be preserved but only the selected mode will contribute to CVR Revenue.`)) return;
+    const nextSummaryTotal = lines.reduce((sum, line) => sum + (Number(line.forecastRevenue) || 0), 0);
+    const authorityMessage = revenueMode === 'summary'
+      ? `Switch Revenue mode to Summary Revenue with a Forecast Revenue total of £${formatMoney(nextSummaryTotal)}? Existing data will be preserved but only Summary Revenue will contribute to CVR Revenue.`
+      : 'Switch Revenue mode to Sales Register? Existing data will be preserved but only the Sales Register will contribute to CVR Revenue.';
+    if (revenueMode !== pricingContext.revenueMode && !window.confirm(authorityMessage)) return;
     setSavingSummary(true); setSummaryMessage('');
     const result = await saveRevenueRecord(developmentId, { ...pricingContext.settings, revenueMode, summaryRevenueLines: lines });
     setSavingSummary(false);
@@ -592,6 +631,8 @@ export default function RevenueWorkspace({
     await applySalesRegisterImport(developmentId, payload);
     await refreshDevelopment(developmentId);
     setImportOpen(false);
+    setWorkspaceView('overview');
+    setSummaryMessage(`Sales Register import applied to ${payload.updates.length} plot${payload.updates.length === 1 ? '' : 's'}.`);
     handleStrategyChanged({ updatedCount: payload.updates.length, source: 'sales-register-import' });
   }
 
@@ -620,6 +661,37 @@ export default function RevenueWorkspace({
   }
 
   const activeRevenueView = selectedRevenueView || pricingContext.revenueMode || 'sales_register';
+  const authorityLabel = pricingContext.revenueMode === 'summary' ? 'Summary Revenue' : 'Plot-level Sales Register';
+  const summaryForecastRevenue = summaryLines.reduce(
+    (sum, line) => sum + (Number(line.forecastRevenue) || 0),
+    0
+  );
+  const persistedSummaryForecastRevenue = (pricingContext.summaryRevenueLines || []).reduce(
+    (sum, line) => sum + (Number(line.forecastRevenue) || 0),
+    0
+  );
+  const overviewForecastRevenue = pricingContext.revenueMode === 'summary'
+    ? persistedSummaryForecastRevenue
+    : summary.forecastRevenue;
+  const usesIllustrativePlotForecast = pricingContext.revenueMode === 'sales_register' &&
+    pricingContext.settings?.exists === false &&
+    !(plots.length > 0 && forecastSourceCounts.imported === plots.length);
+  const hasUnsavedSummaryDraft = JSON.stringify(summaryLines) !== JSON.stringify(pricingContext.summaryRevenueLines || []);
+  function returnToRevenueOverview() {
+    if (workspaceView === 'pricing' && pricingDraftDirty && !window.confirm('Discard unsaved Pricing Assumptions changes and return to the Revenue overview?')) return;
+    if (workspaceView === 'summary' && hasUnsavedSummaryDraft && !window.confirm('Discard unsaved Summary Revenue changes and return to the Revenue overview?')) return;
+    setStrategyPreview(null);
+    setHouseTypePreview(null);
+    strategyDraftBaseline.current = null;
+    houseTypeDraftBaseline.current = null;
+    setPricingDraftDirty(false);
+    if (workspaceView === 'summary') setSummaryLines(pricingContext.summaryRevenueLines || []);
+    closePlotDrawer();
+    setWorkspaceView('overview');
+  }
+  const plotSourceState = forecastSourceCounts.imported === plots.length && plots.length
+    ? 'Independent imported forecasts established for every plot.'
+    : `${forecastSourceCounts.imported} imported forecast${forecastSourceCounts.imported === 1 ? '' : 's'}, ${forecastSourceCounts.manual} genuine manual override${forecastSourceCounts.manual === 1 ? '' : 's'}.`;
 
   if (importOpen && activeRevenueView === 'sales_register') {
     return (
@@ -635,24 +707,72 @@ export default function RevenueWorkspace({
     );
   }
 
+  if (workspaceView === 'overview') {
+    return (
+      <div className="revenue-workspace revenue-overview">
+        <header className="revenue-overview__header">
+          <div>
+            <p className="revenue-workspace__zone-eyebrow">Revenue overview</p>
+            <h2 className="po-matrix-section__title">Current Revenue position</h2>
+            <p className="revenue-workspace__lead">Review the authoritative position, then open only the task you need.</p>
+          </div>
+          <span className="revenue-overview__authority">CVR authority: {authorityLabel}</span>
+        </header>
+
+        {summaryMessage ? <p className="po-list-feedback" role="status">{summaryMessage}</p> : null}
+
+        <div className="revenue-overview__kpis" aria-label="Revenue overview measures">
+          <article><span>{usesIllustrativePlotForecast ? 'Illustrative forecast — not established' : 'Forecast Revenue'}</span><strong>£{formatMoney(overviewForecastRevenue || 0)}</strong></article>
+          <article><span>Plots</span><strong>{plots.length}</strong></article>
+          <article><span>Imported forecasts</span><strong>{forecastSourceCounts.imported}</strong></article>
+          <article><span>Manual overrides</span><strong>{forecastSourceCounts.manual}</strong></article>
+          <article><span>Material exceptions</span><strong>{exceptions.length}</strong></article>
+        </div>
+
+        <div className="revenue-overview__modes">
+          <article className={`revenue-overview__mode${pricingContext.revenueMode === 'summary' ? ' revenue-overview__mode--authoritative' : ''}`}>
+            <div className="revenue-overview__mode-heading">
+              <h3>Summary Revenue</h3>
+              {pricingContext.revenueMode === 'summary' ? <span>Authoritative</span> : null}
+            </div>
+            <p>Maintain a concise development-level Forecast Revenue without plot pricing or sales lifecycle metrics.</p>
+            <p><strong>{summaryLines.length} revenue line{summaryLines.length === 1 ? '' : 's'}</strong> · £{formatMoney(summaryForecastRevenue)}</p>
+            <div className="po-button-row">
+              <button type="button" className="po-button" onClick={() => { setSelectedRevenueView('summary'); setWorkspaceView('summary'); }}>Open Summary Revenue</button>
+              {pricingContext.revenueMode !== 'summary' ? <button type="button" className="po-button" disabled={savingSummary} onClick={() => saveRevenueMode('summary', summaryLines.length ? summaryLines : [{ id: crypto.randomUUID(), description: 'Total Forecast Revenue', forecastRevenue: 0 }])}>Use for CVR Revenue</button> : null}
+            </div>
+          </article>
+
+          <article className={`revenue-overview__mode${pricingContext.revenueMode === 'sales_register' ? ' revenue-overview__mode--authoritative' : ''}`}>
+            <div className="revenue-overview__mode-heading">
+              <h3>Plot-level Sales Register</h3>
+              {pricingContext.revenueMode === 'sales_register' ? <span>Authoritative</span> : null}
+            </div>
+            <p>{plotSourceState}</p>
+            {pricingContext.settings?.exists === false && !(plots.length > 0 && forecastSourceCounts.imported === plots.length) ? <p className="revenue-overview__illustrative"><strong>Pricing assumptions are not established.</strong> Displayed £350/ft² and affordable percentages are illustrative only.</p> : null}
+            <div className="revenue-overview__actions">
+              <button type="button" className="po-button po-button--primary" onClick={() => { setSelectedRevenueView('sales_register'); setImportOpen(true); }}>Import Sales Register</button>
+              <button type="button" className="po-button" onClick={() => { setSelectedRevenueView('sales_register'); setWorkspaceView('pricing'); }}>Pricing Assumptions</button>
+              <button type="button" className="po-button" onClick={() => { setSelectedRevenueView('sales_register'); setWorkspaceView('register'); }}>Plot Revenue Register</button>
+              <button type="button" className="po-button" onClick={() => { setSelectedRevenueView('sales_register'); setWorkspaceView('analysis'); }}>Revenue Analysis</button>
+              {pricingContext.revenueMode !== 'sales_register' ? <button type="button" className="po-button" disabled={savingSummary} onClick={() => saveRevenueMode('sales_register')}>Use for CVR Revenue</button> : null}
+            </div>
+          </article>
+        </div>
+      </div>
+    );
+  }
+
 
 
   return (
 
     <div className="revenue-workspace">
-      <section className="revenue-workspace__section" aria-labelledby="revenue-mode-title">
-        <h2 id="revenue-mode-title" className="po-matrix-section__title">Revenue views and authority</h2>
-        <p className="revenue-workspace__current-mode"><strong>Authoritative CVR Revenue source:</strong> {pricingContext.revenueMode === 'summary' ? 'Summary Revenue' : 'Sales Register'}.</p>
-        <p className="revenue-workspace__lead">Choose a view to inspect. Changing view does not change CVR Revenue authority.</p>
-        <div className="po-button-row revenue-workspace__mode-switch" role="tablist" aria-label="Revenue view">
-          <button type="button" role="tab" aria-selected={activeRevenueView === 'summary'} className={activeRevenueView === 'summary' ? 'po-button po-button--primary' : 'po-button'} onClick={() => setSelectedRevenueView('summary')}>Summary Revenue</button>
-          <button type="button" role="tab" aria-selected={activeRevenueView === 'sales_register'} className={activeRevenueView === 'sales_register' ? 'po-button po-button--primary' : 'po-button'} onClick={() => setSelectedRevenueView('sales_register')}>Sales Register</button>
-        </div>
-        {activeRevenueView !== pricingContext.revenueMode ? <div className="po-button-row"><button type="button" className="po-button po-button--primary" disabled={savingSummary} onClick={() => saveRevenueMode(activeRevenueView, activeRevenueView === 'summary' && !summaryLines.length ? [{ id: crypto.randomUUID(), description: 'Total Forecast Revenue', forecastRevenue: 0 }] : summaryLines)}>{savingSummary ? 'Saving…' : `Use ${activeRevenueView === 'summary' ? 'Summary Revenue' : 'Sales Register'} for CVR Revenue`}</button></div> : null}
-        {summaryMessage ? <p role="status">{summaryMessage}</p> : null}
-      </section>
-
-      {activeRevenueView === 'summary' ? (
+      <div className="revenue-workspace__working-header">
+        <button type="button" className="po-list-btn-secondary" onClick={returnToRevenueOverview}>← Back to Revenue overview</button>
+        <span className="revenue-overview__authority">CVR authority: {authorityLabel}</span>
+      </div>
+      {workspaceView === 'summary' ? (
         <section className="revenue-workspace__section" aria-labelledby="summary-revenue-title">
           <h2 id="summary-revenue-title" className="po-matrix-section__title">Summary Revenue</h2>
           <p className="revenue-workspace__lead">Secured Revenue, Remaining Forecast and plot sales are not tracked in Summary Revenue.</p>
@@ -666,9 +786,9 @@ export default function RevenueWorkspace({
 
       {activeRevenueView === 'sales_register' ? <>
 
-      {pricingContext.settings?.exists === false ? <p className="po-list-feedback po-list-feedback--warning" role="status"><strong>Revenue pricing is not established.</strong> The displayed £350/ft² and affordable percentages are illustrative defaults only. Establish independent plot forecasts or explicitly save an approved strategy before relying on GDV.</p> : null}
+      {workspaceView === 'pricing' && pricingContext.settings?.exists === false ? <p className="po-list-feedback po-list-feedback--warning" role="status"><strong>Pricing Assumptions are optional and not established.</strong> The displayed £350/ft² and affordable percentages are illustrative defaults only. Independent imported forecasts do not require these assumptions.</p> : null}
 
-      <div className="revenue-workspace__zone revenue-workspace__zone--assumptions">
+      {workspaceView === 'pricing' ? <div className="revenue-workspace__zone revenue-workspace__zone--assumptions">
 
         <p className="revenue-workspace__zone-eyebrow">What pricing assumptions am I using?</p>
 
@@ -702,11 +822,11 @@ export default function RevenueWorkspace({
 
         />
 
-      </div>
+      </div> : null}
 
 
 
-      <div className="revenue-workspace__zone revenue-workspace__zone--position">
+      {workspaceView === 'analysis' ? <div className="revenue-workspace__zone revenue-workspace__zone--position">
 
         <p className="revenue-workspace__zone-eyebrow">What is the current commercial position?</p>
 
@@ -818,17 +938,17 @@ export default function RevenueWorkspace({
 
         <RevenueHouseTypeSummary summary={houseTypeSummary} />
 
-      </div>
+      </div> : null}
 
 
 
-      <div className="revenue-workspace__zone revenue-workspace__zone--intervention">
+      {(workspaceView === 'register' || workspaceView === 'analysis') ? <div className="revenue-workspace__zone revenue-workspace__zone--intervention">
 
         <p className="revenue-workspace__zone-eyebrow">Where do I need to intervene?</p>
 
 
 
-        <section className="po-module-card revenue-register" aria-labelledby="plot-revenue-register-title">
+        {workspaceView === 'register' ? <section className="po-module-card revenue-register" aria-labelledby="plot-revenue-register-title">
 
           <header className="revenue-register__header">
 
@@ -1008,9 +1128,9 @@ export default function RevenueWorkspace({
 
           )}
 
-        </section>
+        </section> : null}
 
-        <section className="po-module-card revenue-actions" aria-labelledby="commercial-actions-title">
+        {workspaceView === 'analysis' ? <section className="po-module-card revenue-actions" aria-labelledby="commercial-actions-title">
 
           <header className="revenue-workspace__header revenue-workspace__header--compact">
 
@@ -1168,13 +1288,13 @@ export default function RevenueWorkspace({
 
           ) : null}
 
-        </section>
+        </section> : null}
 
-      </div>
+      </div> : null}
 
 
 
-      {showDeveloperDiagnostics ? (
+      {workspaceView === 'analysis' && showDeveloperDiagnostics ? (
         <RevenueDiagnosticsPanel
           diagnostics={diagnostics}
           displayPricedPlots={displayPricedPlots}
@@ -1184,7 +1304,7 @@ export default function RevenueWorkspace({
 
 
 
-      <PlotDrawer
+      {workspaceView === 'register' ? <PlotDrawer
 
         open={Boolean(drawerPlotId)}
 
@@ -1200,7 +1320,7 @@ export default function RevenueWorkspace({
 
         onSave={handlePlotSave}
 
-      />
+      /> : null}
 
       </> : null}
     </div>
