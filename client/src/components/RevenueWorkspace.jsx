@@ -52,7 +52,7 @@ import {
   sortPlotRevenueRows,
 
 } from '../revenue/plotRevenueEngine';
-import { applySalesRegisterImport } from '../api/developments';
+import { applySalesRegisterImport, previewSalesRegisterImport } from '../api/developments';
 import { getDevelopment, refreshDevelopment } from '../developments/developmentStore';
 
 import { buildRevenueDiagnostics } from '../revenue/revenueDiagnostics';
@@ -595,6 +595,10 @@ export default function RevenueWorkspace({
     handleStrategyChanged({ updatedCount: payload.updates.length, source: 'sales-register-import' });
   }
 
+  function handleSalesRegisterPreview(payload) {
+    return previewSalesRegisterImport(developmentId, payload);
+  }
+
 
 
   if (loadError) {
@@ -623,6 +627,7 @@ export default function RevenueWorkspace({
         <SalesRegisterImportWizard
           plots={plots}
           developmentVersion={getDevelopment(developmentId)?.version}
+          onPreview={handleSalesRegisterPreview}
           onCancel={() => setImportOpen(false)}
           onApply={handleSalesRegisterApply}
         />
@@ -660,6 +665,8 @@ export default function RevenueWorkspace({
       ) : null}
 
       {activeRevenueView === 'sales_register' ? <>
+
+      {pricingContext.settings?.exists === false ? <p className="po-list-feedback po-list-feedback--warning" role="status"><strong>Revenue pricing is not established.</strong> The displayed £350/ft² and affordable percentages are illustrative defaults only. Establish independent plot forecasts or explicitly save an approved strategy before relying on GDV.</p> : null}
 
       <div className="revenue-workspace__zone revenue-workspace__zone--assumptions">
 

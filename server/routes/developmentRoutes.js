@@ -24,7 +24,7 @@ const { loadDevelopmentCommercialReadiness } = require('../services/developmentC
 const { requirePermission, assertPermission } = require('../auth/authorization');
 const { PERMISSIONS } = require('../auth/permissions');
 const plotTenureReview = require('../services/plotTenureReview');
-const { applySalesRegisterImport } = require('../services/salesRegisterImportService');
+const { applySalesRegisterImport, previewSalesRegisterImport } = require('../services/salesRegisterImportService');
 
 const router = express.Router();
 
@@ -118,10 +118,10 @@ router.post('/:id/plot-tenure-review/apply', requirePermission(PERMISSIONS.PLOT_
   catch(error){ console.error('[Plot tenure review] apply error:',error); res.status(500).json({message:'Failed to apply Plot Master tenure review.'}); }
 });
 
-router.post('/:id/revenue/sales-register-import', requirePermission(PERMISSIONS.REVENUE_MANAGE), async (req, res) => {
+function salesRegisterImportHandler(action) { return async (req, res) => {
   try {
     assertPermission(req.buildliteAuth, PERMISSIONS.PLOT_MASTER_MANAGE);
-    const result = await applySalesRegisterImport(
+    const result = await action(
       req.buildliteAuth.clientId,
       String(req.params.id || '').trim(),
       req.body || {},
@@ -132,15 +132,20 @@ router.post('/:id/revenue/sales-register-import', requirePermission(PERMISSIONS.
         message: result.message,
         code: result.code,
         development: result.development,
+        preview: result.preview,
+        period: result.period,
       });
     }
-    return res.json(result);
+    return res.status(result.status || 200).json(result);
   } catch (error) {
     if (error.status) return res.status(error.status).json({ message: error.message });
     console.error('[Sales Register import] apply error:', error);
     return res.status(500).json({ message: 'Failed to apply Sales Register import.' });
   }
-});
+}; }
+
+router.post('/:id/revenue/sales-register-import/preview', requirePermission(PERMISSIONS.REVENUE_MANAGE), salesRegisterImportHandler(previewSalesRegisterImport));
+router.post('/:id/revenue/sales-register-import', requirePermission(PERMISSIONS.REVENUE_MANAGE), salesRegisterImportHandler(applySalesRegisterImport));
 
 router.get("/:id", async (req, res) => {
   try {
@@ -246,7 +251,10 @@ router.put("/:id", async (req, res) => {
       routeId,
       patch,
       body.version,
-      { actor: body.plotMaster!==undefined ? req.buildliteAuth.displayName : provisionalActor(body) }
+      {
+        actor: body.plotMaster!==undefined ? req.buildliteAuth.displayName : provisionalActor(body),
+        authorityActor: body.plotMaster!==undefined ? req.buildliteAuth : null,
+      }
     );
 
     if (!result.ok) {

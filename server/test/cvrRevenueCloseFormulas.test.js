@@ -114,6 +114,15 @@ test("Reserved positive sellingPrice drives Forecast but remains unsecured", () 
   assert.equal(priced.reservedSellingPriceAuthority, true);
 });
 
+test("Reserved stale imported sellingPrice requires deliberate contractual confirmation", () => {
+  const result = enrichPlotWithPricing(
+    manualPlot({ revenueStatus:"Reserved", sellingPrice:250000, manualForecastValue:275000, sellingPriceRequiresConfirmation:true }),
+    strategy, {}, []
+  );
+  assert.equal(result.forecastRevenue,275000);
+  assert.equal(result.securedRevenue,0);
+});
+
 test("Available retained sellingPrice does not override configured source", () => {
   const priced = enrichPlotWithPricing(
     manualPlot({ revenueStatus: "Available", sellingPrice: 330000 }), strategy(), {}

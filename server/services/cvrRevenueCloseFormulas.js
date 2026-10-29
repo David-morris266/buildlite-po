@@ -277,7 +277,8 @@ function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing = {}, 
   const secured = isSecuredRevenueStatus(plot.revenueStatus);
   const contractPrice = roundPlotMoney(plot.sellingPrice || 0);
   const reservedSellingPriceAuthority =
-    normalizePlotRevenueStatus(plot.revenueStatus) === "Reserved" && contractPrice > 0;
+    normalizePlotRevenueStatus(plot.revenueStatus) === "Reserved" && contractPrice > 0 &&
+    plot.sellingPriceRequiresConfirmation !== true;
   const effectiveRevenueNia = resolveEffectiveRevenueNia(plot, houseTypePricing, plots);
 
   let forecastRevenue = derivedForecast;

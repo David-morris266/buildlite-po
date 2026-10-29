@@ -6,6 +6,7 @@ import { roundPlotMoney } from '../developments/plotCommercial';
 import { DEFAULT_REVENUE_SOURCE } from './revenueTypes';
 
 export function isGenuineManualOverride(plot = {}) {
+  if (plot.forecastImportProvenance?.schemaVersion === 'sales_register_forecast_v1') return true;
   if (plot.manualOverrideExplicit) return true;
   if (
     String(plot.revenueSource || '').trim() === 'Manual Value' &&

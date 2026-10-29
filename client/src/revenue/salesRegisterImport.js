@@ -1,9 +1,22 @@
-import { mappingToFieldByColumn, parseMoneyCell } from '../payments/excelImport';
+import { mappingToFieldByColumn, parseMoneyCell } from '../payments/excelImport.js';
+
+const CURRENCY_FLOAT_TOLERANCE_PENCE = 0.000001;
+
+export function canonicalCurrencyValue(value, { positive = false } = {}) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return null;
+  const scaled = amount * 100;
+  const integerPence = Math.round(scaled);
+  if (Math.abs(scaled - integerPence) > CURRENCY_FLOAT_TOLERANCE_PENCE) return null;
+  if (positive ? integerPence <= 0 : integerPence < 0) return null;
+  return integerPence / 100;
+}
 
 export const SALES_REGISTER_FIELDS = {
   plotNumber: { label: 'Plot Number', required: true },
   salesStatus: { label: 'Sales Status', required: false },
-  sellingPrice: { label: 'Selling Price', required: false },
+  sellingPrice: { label: 'Selling Price (contractual evidence)', required: false },
+  forecastPrice: { label: 'Forecast Price (adopt as Manual Value)', required: false },
   houseTypeEvidence: { label: 'House Type (evidence only)', required: false },
   unsupportedExtras: { label: 'Extras — not imported', unsupported: true },
   unsupportedIncentives: { label: 'Incentives — not imported', unsupported: true },
@@ -18,6 +31,7 @@ const ALIASES = {
   plotNumber: ['plot', 'plot no', 'plot no.', 'plot number', 'unit'],
   salesStatus: ['status', 'sales status', 'sale status'],
   sellingPrice: ['selling price', 'sale price', 'contract price'],
+  forecastPrice: ['forecast price', 'forecast selling price', 'forecast gdv', 'revenue', 'revenues'],
   houseTypeEvidence: ['house type', 'type', 'dwelling type'],
   unsupportedExtras: ['extras', 'extra'],
   unsupportedIncentives: ['incentives', 'incentive'],
@@ -69,10 +83,13 @@ export function buildSalesRegisterReview({
   fieldByColumn = [],
   plots = [],
   statusMapping = {},
+  treatment = 'contractual_selling_price',
 } = {}) {
   const plotIndex = fieldByColumn.indexOf('plotNumber');
   const statusIndex = fieldByColumn.indexOf('salesStatus');
   const priceIndex = fieldByColumn.indexOf('sellingPrice');
+  const forecastIndex = fieldByColumn.indexOf('forecastPrice');
+  const importedPriceIndex = treatment === 'forecast_manual_value' ? forecastIndex : priceIndex;
   const houseTypeIndex = fieldByColumn.indexOf('houseTypeEvidence');
   const errors = [];
   const changes = [];
@@ -87,7 +104,10 @@ export function buildSalesRegisterReview({
   }
 
   if (plotIndex < 0) errors.push('Map a Plot Number column.');
-  if (statusIndex < 0 && priceIndex < 0) errors.push('Map Sales Status or Selling Price.');
+  if (statusIndex < 0 && importedPriceIndex < 0) errors.push('Map Sales Status or the price column required by the selected treatment.');
+  if (treatment === 'forecast_manual_value' && importedPriceIndex < 0) {
+    errors.push('Map a Forecast Price column.');
+  }
   if (errors.length) return { ready: false, errors, changes: [], unsupportedColumns: [] };
 
   rows.slice(headerRowIndex + 1).forEach((row, offset) => {
@@ -126,21 +146,34 @@ export function buildSalesRegisterReview({
         proposed.push(`Sales Status: ${plot.revenueStatus || 'Available'} → ${mapped}`);
       }
     }
-    if (priceIndex >= 0) {
-      const price = parseMoneyCell(row[priceIndex]);
-      if (price == null || price < 0) errors.push(`Row ${sourceRow}: Selling Price is invalid.`);
+    if (importedPriceIndex >= 0 && String(row[importedPriceIndex] ?? '').trim() !== '') {
+      const parsedPrice = parseMoneyCell(row[importedPriceIndex]);
+      const price = canonicalCurrencyValue(parsedPrice, {
+        positive: treatment === 'forecast_manual_value',
+      });
+      if (price == null) errors.push(`Row ${sourceRow}: Imported price must be ${treatment === 'forecast_manual_value' ? 'greater than zero and ' : ''}valid to exact pence.`);
       else {
-        update.sellingPrice = price;
-        proposed.push(`Selling Price: £${Number(plot.sellingPrice || 0).toLocaleString('en-GB')} → £${price.toLocaleString('en-GB')}`);
+        update.importedPrice = price;
+        if (treatment === 'contractual_selling_price') update.sellingPrice = price;
+        proposed.push(`${treatment === 'forecast_manual_value' ? 'Forecast Manual Value' : 'Contractual Selling Price'}: £${price.toLocaleString('en-GB')}`);
       }
+    }
+    if (treatment === 'forecast_manual_value' && update.importedPrice == null) {
+      errors.push(`Row ${sourceRow}: Forecast Price is blank.`);
     }
     if ((update.revenueStatus === 'Exchanged' || update.revenueStatus === 'Completed') && !(Number(update.sellingPrice ?? plot.sellingPrice) > 0)) {
       errors.push(`Row ${sourceRow}: Plot ${plotNumber} requires a positive Selling Price for ${update.revenueStatus}.`);
     }
     changes.push({
       ...update,
+      sourceRowNumber: sourceRow,
       houseTypeEvidence: houseTypeIndex >= 0 ? String(row[houseTypeIndex] || '').trim() : '',
       currentHouseType: plot.houseType || '',
+      houseTypeMismatch:
+        houseTypeIndex >= 0 &&
+        Boolean(String(row[houseTypeIndex] || '').trim()) &&
+        String(row[houseTypeIndex] || '').trim().toLocaleLowerCase('en-GB') !==
+          String(plot.houseType || '').trim().toLocaleLowerCase('en-GB'),
       proposed,
     });
   });

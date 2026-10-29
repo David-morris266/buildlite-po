@@ -99,6 +99,15 @@ export function sheetToRows(sheet) {
   );
 }
 
+export function sheetToRawRows(sheet) {
+  if (!sheet || !XLSX) return [];
+  return XLSX.utils.sheet_to_json(sheet, {
+    header: 1,
+    defval: '',
+    raw: true,
+  });
+}
+
 function normaliseHeader(value) {
   return String(value || '')
     .trim()

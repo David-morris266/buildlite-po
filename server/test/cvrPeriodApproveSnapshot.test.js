@@ -13,6 +13,7 @@ const { pool, isDbConfigured } = require("../db");
 const { prepareIntegrationTestDatabase } = require("./integrationTestSetup");
 const { buildSubcontractOrderKey } = require("../services/packageKey");
 const { buildCvrCloseCandidate } = require("../services/cvrCloseEngine");
+const { buildCvrRevenueCloseCandidate } = require("../services/cvrRevenueClose");
 const {
   loadCvrCloseSources,
   sourceFailure,
@@ -2133,6 +2134,106 @@ if (!isDbConfigured()) {
     assert.notEqual(Number(locked.body.snapshot.grossProfit), 3);
   });
 
+  test("independently imported plot forecasts lock without saved pricing strategy and remain immutable", async () => {
+    const plots = [
+      { id: "independent-1", plotNumber: "1", houseType: "A", gia: 1000, tenureCode: "OPEN_MARKET", revenueStatus: "Available", revenueSource: "Development Strategy", sellingPrice: 600000 },
+      { id: "independent-2", plotNumber: "2", houseType: "B", gia: 900, tenureCode: "AFFORDABLE_RENT", revenueStatus: "Available", revenueSource: "Development Strategy", sellingPrice: 450000 },
+    ];
+    const world = await setupBase({ seedRevenue: false, plots });
+    const settingsBefore = await pool.query(
+      "SELECT COUNT(*)::int count FROM development_revenue_settings WHERE client_id=$1 AND development_id=$2",
+      [world.client.id, world.development.id]
+    );
+    assert.equal(settingsBefore.rows[0].count, 0);
+
+    const sourceEvidence = {
+      fileName: "independent-plot-forecasts.xlsx",
+      worksheet: "Sales Register",
+      sha256: "a".repeat(64),
+      sourceRowCount: 2,
+      mapping: [
+        { header: "Plot", destination: "plotNumber" },
+        { header: "Forecast", destination: "forecastPrice" },
+      ],
+    };
+    const importBody = {
+      version: world.development.version,
+      treatment: "forecast_manual_value",
+      reason: "Adopt independently reviewed plot forecasts",
+      sourceEvidence,
+      excludedRows: [],
+      updates: [
+        { plotId: "independent-1", plotNumber: "1", sourceRowNumber: 2, importedPrice: 600000 },
+        { plotId: "independent-2", plotNumber: "2", sourceRowNumber: 3, importedPrice: 450000 },
+      ],
+    };
+    const importPreview = await request(app)
+      .post(`/api/developments/${world.development.id}/revenue/sales-register-import/preview`)
+      .set("X-BuildLite-Client-Id", world.client.id)
+      .send(importBody);
+    assert.equal(importPreview.status, 200, importPreview.body?.message);
+    assert.equal(importPreview.body.preview.projectedAuthoritativeGdv, 1050000);
+    assert.equal(importPreview.body.preview.difference, 0);
+    const imported = await request(app)
+      .post(`/api/developments/${world.development.id}/revenue/sales-register-import`)
+      .set("X-BuildLite-Client-Id", world.client.id)
+      .send({ ...importBody, previewFingerprint: importPreview.body.preview.fingerprint });
+    assert.equal(imported.status, 200, imported.body?.message);
+
+    const submitted = await submitPeriod(world.development.id, world.period.id);
+    assert.equal(submitted.status, "submitted");
+    const locked = await request(app)
+      .post(`${periodUrl(world.development.id, world.period.id)}/approve`)
+      .send({ actor: "Director" });
+    assert.equal(locked.status, 200, locked.body?.message || JSON.stringify(locked.body));
+    assert.equal(locked.body.status, "locked");
+    assert.equal(Number(locked.body.snapshot.forecastRevenue), 1050000);
+    assert.equal(
+      locked.body.snapshot.plots.reduce((total, plot) => total + Number(plot.forecastRevenue), 0),
+      1050000
+    );
+
+    const revisedBody = {
+      ...importBody,
+      version: imported.body.development.version,
+      reason: "Adopt later live Revenue evidence",
+      sourceEvidence: { ...sourceEvidence, sha256: "b".repeat(64) },
+      updates: [
+        { plotId: "independent-1", plotNumber: "1", sourceRowNumber: 2, importedPrice: 610000 },
+        { plotId: "independent-2", plotNumber: "2", sourceRowNumber: 3, importedPrice: 450000 },
+      ],
+    };
+    const revisedPreview = await request(app)
+      .post(`/api/developments/${world.development.id}/revenue/sales-register-import/preview`)
+      .set("X-BuildLite-Client-Id", world.client.id)
+      .send(revisedBody);
+    assert.equal(revisedPreview.status, 200, revisedPreview.body?.message);
+    const revised = await request(app)
+      .post(`/api/developments/${world.development.id}/revenue/sales-register-import`)
+      .set("X-BuildLite-Client-Id", world.client.id)
+      .send({ ...revisedBody, previewFingerprint: revisedPreview.body.preview.fingerprint });
+    assert.equal(revised.status, 200, revised.body?.message);
+
+    const liveRevenue = await buildCvrRevenueCloseCandidate({
+      clientId: world.client.id,
+      developmentId: world.development.id,
+    });
+    assert.equal(liveRevenue.canLock, true);
+    assert.equal(liveRevenue.summary.forecastRevenue, 1060000);
+    const frozen = await getCvrPeriod(world.client.id, world.development.id, world.period.id);
+    assert.equal(frozen.ok, true);
+    assert.equal(Number(frozen.period.snapshot.forecastRevenue), 1050000);
+    assert.equal(
+      frozen.period.snapshot.plots.reduce((total, plot) => total + Number(plot.forecastRevenue), 0),
+      1050000
+    );
+    const settingsAfter = await pool.query(
+      "SELECT COUNT(*)::int count FROM development_revenue_settings WHERE client_id=$1 AND development_id=$2",
+      [world.client.id, world.development.id]
+    );
+    assert.equal(settingsAfter.rows[0].count, 0);
+  });
+
   test("Approve & Lock freezes complete governed Plot Master GIA independently of Revenue NIA", async () => {
     const world = await setupBase({ plots: [
       { id: "gia-1", plotNumber: "1", status: "Active", gia: 1076.4, nia: 850, tenureCode: "OPEN_MARKET", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 },
@@ -2195,8 +2296,8 @@ if (!isDbConfigured()) {
 
   test("incomplete GIA is frozen explicitly and does not add a CVR lock blocker", async () => {
     const world = await setupBase({ plots: [
-      { id: "gia-ok", plotNumber: "1", gia: 1000, revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 },
-      { id: "gia-missing", plotNumber: "2", gia: "", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 },
+      { id: "gia-ok", plotNumber: "1", gia: 1000, tenureCode: "OPEN_MARKET", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 },
+      { id: "gia-missing", plotNumber: "2", gia: "", tenureCode: "OPEN_MARKET", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 },
     ] });
     await submitPeriod(world.development.id, world.period.id);
     const locked = await request(app).post(`${periodUrl(world.development.id, world.period.id)}/approve`).send({ actor: "Director" });
@@ -2207,7 +2308,7 @@ if (!isDbConfigured()) {
   });
 
   test("a GIA evidence persistence failure rolls back the entire lock transaction", async () => {
-    const world = await setupBase({ plots: [{ id: "gia-rollback", plotNumber: "1", gia: 1000, revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 }] });
+    const world = await setupBase({ plots: [{ id: "gia-rollback", plotNumber: "1", gia: 1000, tenureCode: "OPEN_MARKET", revenueStatus: "Available", revenueSource: "Manual Value", manualForecastValue: 100000 }] });
     await submitPeriod(world.development.id, world.period.id);
     await assert.rejects(
       () => approveCvrPeriod(world.client.id, world.development.id, world.period.id, {}, { actor: "Director", failAfter: "giaEvidence" }),

@@ -172,6 +172,17 @@ export function normalizePlotCommercialFields(plot = {}, existing = null) {
     manualOverrideExplicit: Boolean(
       merged.manualOverrideExplicit ?? existing?.manualOverrideExplicit ?? false
     ),
+    forecastImportProvenance:
+      merged.forecastImportProvenance && typeof merged.forecastImportProvenance === 'object'
+        ? { ...merged.forecastImportProvenance }
+        : null,
+    sellingPriceRequiresConfirmation: Boolean(
+      merged.sellingPriceRequiresConfirmation ?? existing?.sellingPriceRequiresConfirmation ?? false
+    ),
+    sellingPriceConfirmation:
+      merged.sellingPriceConfirmation && typeof merged.sellingPriceConfirmation === 'object'
+        ? { ...merged.sellingPriceConfirmation }
+        : null,
     pricingMigrated:
       merged.pricingMigrated != null
         ? Boolean(merged.pricingMigrated)

@@ -50,10 +50,12 @@ export default function PlotDrawer({
   onSave,
 }) {
   const [form, setForm] = useState(EMPTY_FORM);
+  const [contractPriceConfirmed, setContractPriceConfirmed] = useState(false);
   const categoryOptions = listRevenueCategoryNames();
 
   useEffect(() => {
     if (!open) return;
+    setContractPriceConfirmed(false);
     if (plot) {
       setForm({
         plotNumber: plot.plotNumber || '',
@@ -121,6 +123,9 @@ export default function PlotDrawer({
       payload.forecastSellingPrice = payload.manualForecastValue;
       payload.manualOverrideExplicit = true;
     }
+    if (contractPriceConfirmed) {
+      payload.sellingPriceConfirmation = { requested: true };
+    }
     if (!payload.garageOverride) {
       payload.garageOverride = false;
     }
@@ -135,7 +140,15 @@ export default function PlotDrawer({
   const drawerEyebrow = openedFrom === 'Revenue' ? 'Revenue' : 'Plot Master';
   const closeLabel = openedFrom === 'Revenue' ? 'Back to Revenue' : 'Close';
   const reservedSellingPriceAuthority =
-    form.revenueStatus === 'Reserved' && Number(form.sellingPrice) > 0;
+    form.revenueStatus === 'Reserved' && Number(form.sellingPrice) > 0 &&
+    plot?.sellingPriceRequiresConfirmation !== true;
+  const needsContractPriceConfirmation = Boolean(
+    plot?.sellingPriceRequiresConfirmation === true &&
+    !['Reserved', 'Exchanged', 'Completed'].includes(plot?.revenueStatus) &&
+    ['Reserved', 'Exchanged', 'Completed'].includes(form.revenueStatus) &&
+    Number(form.sellingPrice) > 0 &&
+    Number(form.sellingPrice) === Number(plot?.sellingPrice)
+  );
 
   return (
     <PODrawerShell
@@ -377,6 +390,19 @@ export default function PlotDrawer({
                 placeholder="Contractual sale price from exchange"
               />
             </label>
+            {needsContractPriceConfirmation ? (
+              <label className="dev-form__field dev-form__field--wide">
+                <span className="dev-form__label">Contractual price confirmation</span>
+                <span>
+                  <input
+                    type="checkbox"
+                    checked={contractPriceConfirmed}
+                    onChange={(event) => setContractPriceConfirmed(event.target.checked)}
+                  />{' '}
+                  I confirm this is deliberately agreed contractual selling-price evidence, not the imported forecast allocation.
+                </span>
+              </label>
+            ) : null}
             <label className="dev-form__field">
               <span className="dev-form__label">Revenue Category</span>
               <select
@@ -432,7 +458,7 @@ export default function PlotDrawer({
         </section>
 
         <footer className="po-drawer-footer">
-          <button type="submit" className="po-btn-primary">
+          <button type="submit" className="po-btn-primary" disabled={needsContractPriceConfirmation && !contractPriceConfirmed}>
             {plot ? 'Save Plot' : 'Add Plot'}
           </button>
           <button type="button" className="po-list-btn-secondary" onClick={onClose}>

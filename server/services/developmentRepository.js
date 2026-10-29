@@ -150,12 +150,124 @@ async function createDevelopment(clientId, body = {}, { actor = null } = {}) {
   }
 }
 
+function applyPlotRevenueAuthority(existingDocument, patch, authorityActor = null) {
+  const incomingPlots = patch?.plotMaster?.plots;
+  const existingPlots = existingDocument?.plotMaster?.plots;
+  if (!Array.isArray(incomingPlots) || !Array.isArray(existingPlots)) {
+    return { ok: true, patch };
+  }
+
+  const existingById = new Map(existingPlots.map((plot) => [String(plot.id), plot]));
+  const actor = authorityActor && typeof authorityActor === 'object' ? authorityActor : null;
+  const actorEvidence = {
+    actorUserId: actor?.userId || null,
+    actorMembershipId: actor?.membershipId || null,
+    actorDisplayName: actor?.displayName || null,
+  };
+  const now = new Date().toISOString();
+  const contractStatuses = new Set(['Reserved', 'Exchanged', 'Completed']);
+  const inactiveContractStatuses = new Set(['Available', 'Cancelled']);
+
+  const plots = [];
+  for (const incoming of incomingPlots) {
+    const existing = existingById.get(String(incoming?.id));
+    if (!existing) {
+      plots.push(incoming);
+      continue;
+    }
+    const next = { ...incoming };
+    const previousStatus = String(existing.revenueStatus || 'Available');
+    const nextStatus = String(next.revenueStatus || 'Available');
+    const previousPricePence = Math.round(Number(existing.sellingPrice || 0) * 100);
+    const nextPricePence = Math.round(Number(next.sellingPrice || 0) * 100);
+    const priceChanged = previousPricePence !== nextPricePence;
+    const enteringContract = !contractStatuses.has(previousStatus) && contractStatuses.has(nextStatus);
+    const leavingContract = contractStatuses.has(previousStatus) && inactiveContractStatuses.has(nextStatus);
+    const confirmationRequested = next.sellingPriceConfirmation?.requested === true;
+
+    if (existing.sellingPriceRequiresConfirmation === true) {
+      if (enteringContract && nextPricePence > 0) {
+        if (!priceChanged && !confirmationRequested) {
+          return {
+            ok: false,
+            status: 409,
+            code: 'CONTRACT_PRICE_CONFIRMATION_REQUIRED',
+            message: `Plot ${existing.plotNumber || existing.id} requires explicit confirmation of its contractual reservation price.`,
+          };
+        }
+        if (!actor) {
+          return { ok: false, status: 403, code: 'AUTHENTICATED_ACTOR_REQUIRED', message: 'Authenticated actor evidence is required to confirm a contractual selling price.' };
+        }
+        next.sellingPriceRequiresConfirmation = false;
+        next.sellingPriceConfirmation = {
+          source: priceChanged ? 'plot_drawer_new_price' : 'plot_drawer_explicit_confirmation',
+          confirmedAt: now,
+          ...actorEvidence,
+        };
+      } else {
+        next.sellingPriceRequiresConfirmation = true;
+        next.sellingPriceConfirmation = existing.sellingPriceConfirmation || null;
+      }
+    } else if (priceChanged && contractStatuses.has(nextStatus) && nextPricePence > 0) {
+      if (!actor) {
+        return { ok: false, status: 403, code: 'AUTHENTICATED_ACTOR_REQUIRED', message: 'Authenticated actor evidence is required to confirm a contractual selling price.' };
+      }
+      next.sellingPriceRequiresConfirmation = false;
+      next.sellingPriceConfirmation = {
+        source: 'plot_drawer_new_price',
+        confirmedAt: now,
+        ...actorEvidence,
+      };
+    }
+
+    if (leavingContract && nextPricePence > 0) {
+      next.sellingPriceRequiresConfirmation = true;
+      next.sellingPriceConfirmation = {
+        ...(existing.sellingPriceConfirmation || {}),
+        invalidatedAt: now,
+        invalidatedReason: `status-changed-to-${nextStatus.toLowerCase()}`,
+        invalidatedByUserId: actor?.userId || null,
+        invalidatedByMembershipId: actor?.membershipId || null,
+        invalidatedByDisplayName: actor?.displayName || null,
+      };
+    }
+
+    const priorImport = existing.forecastImportProvenance;
+    if (priorImport) {
+      const previousForecastPence = Math.round(Number(existing.manualForecastValue || 0) * 100);
+      const nextForecastPence = Math.round(Number(next.manualForecastValue || 0) * 100);
+      next.forecastImportProvenance = previousForecastPence === nextForecastPence
+        ? priorImport
+        : {
+            ...priorImport,
+            supersededAt: now,
+            supersededReason: 'manual-forecast-edit',
+            supersededByUserId: actor?.userId || null,
+            supersededByMembershipId: actor?.membershipId || null,
+            supersededByDisplayName: actor?.displayName || null,
+          };
+    } else {
+      delete next.forecastImportProvenance;
+    }
+
+    plots.push(next);
+  }
+
+  return {
+    ok: true,
+    patch: {
+      ...patch,
+      plotMaster: { ...patch.plotMaster, plots },
+    },
+  };
+}
+
 async function updateDevelopment(
   clientId,
   id,
   patch = {},
   expectedVersion,
-  { actor = null } = {}
+  { actor = null, authorityActor = null } = {}
 ) {
   const parsedVersion = Number(expectedVersion);
   if (!Number.isInteger(parsedVersion) || parsedVersion < 1) {
@@ -178,14 +290,20 @@ async function updateDevelopment(
       await dbClient.query('ROLLBACK');
       return { ok: false, status: 409, message: 'Development version conflict.', development: existingDocument };
     }
+    const revenueAuthority = applyPlotRevenueAuthority(existingDocument, patch, authorityActor);
+    if (!revenueAuthority.ok) {
+      await dbClient.query('ROLLBACK');
+      return revenueAuthority;
+    }
+    const governedPatch = revenueAuthority.patch;
     const authority = await enforcePlotMasterMutationAuthority(
-      dbClient, clientId, id, existingDocument, patch
+      dbClient, clientId, id, existingDocument, governedPatch
     );
     if (!authority.ok) {
       await dbClient.query('ROLLBACK');
       return authority;
     }
-    const mergedDocument = mergeDevelopmentPatch(existingDocument, patch);
+    const mergedDocument = mergeDevelopmentPatch(existingDocument, governedPatch);
     const updateRow = documentToUpdateRow(mergedDocument, { actor });
     const { rows, rowCount } = await dbClient.query(
       `
@@ -242,4 +360,5 @@ module.exports = {
   createDevelopment,
   updateDevelopment,
   normalizeCreateDocument,
+  applyPlotRevenueAuthority,
 };

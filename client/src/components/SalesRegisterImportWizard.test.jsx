@@ -18,7 +18,7 @@ vi.mock('../payments/excelImport', async (importOriginal) => {
     ...actual,
     parseExcelFile: vi.fn(async () => workbook),
     getWorksheetSummaries: vi.fn((source) => source.SheetNames.map((name) => ({ name, rowCount: source.Sheets[name].rows.length }))),
-    sheetToRows: vi.fn((sheet) => sheet.rows),
+    sheetToRawRows: vi.fn((sheet) => sheet.rows),
   };
 });
 
@@ -27,7 +27,11 @@ import SalesRegisterImportWizard from './SalesRegisterImportWizard';
 describe('SalesRegisterImportWizard worksheet ownership', () => {
   let container;
   let root;
-  beforeEach(() => { container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); });
+  beforeEach(() => {
+    vi.stubGlobal('crypto', { subtle: { digest: vi.fn(async () => new Uint8Array(32).buffer) } });
+    if (!File.prototype.arrayBuffer) File.prototype.arrayBuffer = vi.fn(async () => new Uint8Array([1]).buffer);
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+  });
   afterEach(() => { act(() => root.unmount()); container.remove(); vi.clearAllMocks(); });
 
   function clickButton(label) {

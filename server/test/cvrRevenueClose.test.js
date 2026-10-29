@@ -64,6 +64,31 @@ test("missing Plot Master or settings fail closed", async () => {
   );
 });
 
+test("fully adopted independent plot forecasts do not require illustrative strategy defaults", async () => {
+  const candidate = await buildCvrRevenueCloseCandidate({
+    clientId: "client-1",
+    developmentId: "dev-close",
+    loadDevelopment: async () => ({
+      id: "dev-close",
+      plotMaster: {
+        plots: [reviewedOpenMarket({
+          id: "plot-independent",
+          plotNumber: "1",
+          revenueStatus: "Available",
+          revenueSource: "Manual Value",
+          manualOverrideExplicit: true,
+          manualForecastValue: 293400,
+        })],
+      },
+    }),
+    loadSettingsRow: async () => null,
+  });
+  assert.equal(candidate.canLock, true);
+  assert.equal(candidate.summary.forecastRevenue, 293400);
+  assert.equal(candidate.assumptions.openMarket.ratePerFt2, null);
+  assert.equal(candidate.settingsId, null);
+});
+
 test("invalid secured sellingPrice lists plot numbers and does not freeze £0", async () => {
   const plots = [
     {

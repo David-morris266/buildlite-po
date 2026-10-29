@@ -52,6 +52,7 @@ function manualPlot(overrides = {}) {
     id: overrides.id || 'plot-1',
     plotNumber: overrides.plotNumber || '1',
     houseType: 'Arundel',
+    tenureCode: 'OPEN_MARKET',
     niaFt2: 686,
     revenueCategory: 'Open Market',
     revenueSource: 'Manual Value',

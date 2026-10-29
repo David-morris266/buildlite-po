@@ -1,24 +1,14 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import {
-  detectHeaderRowIndex,
-  extractHeaders,
-  getWorksheetSummaries,
-  parseExcelFile,
-  sheetToRows,
-} from '../payments/excelImport';
-import {
-  CONTROLLED_SALES_STATUSES,
-  SALES_REGISTER_FIELDS,
-  autoDetectSalesRegisterColumns,
-  buildSalesRegisterReview,
-  isAcceptedSalesRegisterFile,
-  sourceSalesStatuses,
-} from '../revenue/salesRegisterImport';
+import { detectHeaderRowIndex, extractHeaders, getWorksheetSummaries, parseExcelFile, sheetToRawRows } from '../payments/excelImport';
+import { CONTROLLED_SALES_STATUSES, SALES_REGISTER_FIELDS, autoDetectSalesRegisterColumns, buildSalesRegisterReview, isAcceptedSalesRegisterFile, sourceSalesStatuses } from '../revenue/salesRegisterImport';
 
-export default function SalesRegisterImportWizard({ plots, developmentVersion, onCancel, onApply }) {
+const gbp = (value) => value == null ? 'Unavailable' : `£${Number(value).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+export default function SalesRegisterImportWizard({ plots, developmentVersion, onCancel, onPreview, onApply }) {
   const inputRef = useRef(null);
   const selectedWorksheetRef = useRef('');
   const [fileName, setFileName] = useState('');
+  const [sha256, setSha256] = useState('');
   const [workbook, setWorkbook] = useState(null);
   const [worksheets, setWorksheets] = useState([]);
   const [worksheet, setWorksheet] = useState('');
@@ -29,77 +19,139 @@ export default function SalesRegisterImportWizard({ plots, developmentVersion, o
   const [statusMapping, setStatusMapping] = useState({});
   const [step, setStep] = useState('upload');
   const [error, setError] = useState('');
-  const [applying, setApplying] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [treatment, setTreatment] = useState('contractual_selling_price');
+  const [reason, setReason] = useState('');
+  const [replaceSupersededImport, setReplaceSupersededImport] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [confirmed, setConfirmed] = useState(false);
+
+  const resetServerReview = useCallback(() => {
+    setPreview(null);
+    setConfirmed(false);
+  }, []);
 
   const loadSheet = useCallback((source, name) => {
-    const nextRows = sheetToRows(source.Sheets[name]);
+    const nextRows = sheetToRawRows(source.Sheets[name]);
     const header = detectHeaderRowIndex(nextRows);
     const nextHeaders = extractHeaders(nextRows[header] || []);
     const mapping = autoDetectSalesRegisterColumns(nextHeaders);
     const statuses = sourceSalesStatuses(nextRows, header, mapping);
     selectedWorksheetRef.current = name;
-    setWorksheet(name); setRows(nextRows); setHeaderRowIndex(header); setHeaders(nextHeaders); setFieldByColumn(mapping);
+    setWorksheet(name);
+    setRows(nextRows);
+    setHeaderRowIndex(header);
+    setHeaders(nextHeaders);
+    setFieldByColumn(mapping);
     setStatusMapping(Object.fromEntries(statuses.map((value) => [value, CONTROLLED_SALES_STATUSES.includes(value) ? value : ''])));
+    setPreview(null);
+    setConfirmed(false);
   }, []);
 
   async function chooseFile(file) {
     setError('');
-    if (!isAcceptedSalesRegisterFile(file)) { setError('Choose an Excel or CSV file.'); return; }
+    resetServerReview();
+    if (!isAcceptedSalesRegisterFile(file)) {
+      setError('Choose an Excel or CSV file.');
+      return;
+    }
     try {
       const next = await parseExcelFile(file);
+      const hash = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
       const sheets = getWorksheetSummaries(next);
-      setFileName(file.name); setWorkbook(next); setWorksheets(sheets);
-      if (sheets.length === 1) { loadSheet(next, sheets[0].name); setStep('mapping'); }
-      else {
-        const initialWorksheet = sheets[0]?.name || '';
-        selectedWorksheetRef.current = initialWorksheet;
-        setWorksheet(initialWorksheet);
+      setSha256([...new Uint8Array(hash)].map((value) => value.toString(16).padStart(2, '0')).join(''));
+      setFileName(file.name);
+      setWorkbook(next);
+      setWorksheets(sheets);
+      if (sheets.length === 1) {
+        loadSheet(next, sheets[0].name);
+        setStep('mapping');
+      } else {
+        const initial = sheets[0]?.name || '';
+        selectedWorksheetRef.current = initial;
+        setWorksheet(initial);
         setStep('worksheet');
       }
-    } catch { setError('BuildLite could not read that Sales Register file.'); }
+    } catch {
+      setError('BuildLite could not read that Sales Register file.');
+    }
   }
 
   const statuses = useMemo(() => sourceSalesStatuses(rows, headerRowIndex, fieldByColumn), [rows, headerRowIndex, fieldByColumn]);
-  const review = useMemo(() => buildSalesRegisterReview({ rows, headerRowIndex, fieldByColumn, plots, statusMapping }), [rows, headerRowIndex, fieldByColumn, plots, statusMapping]);
+  const review = useMemo(() => buildSalesRegisterReview({ rows, headerRowIndex, fieldByColumn, plots, statusMapping, treatment }), [rows, headerRowIndex, fieldByColumn, plots, statusMapping, treatment]);
 
   function setField(index, value) {
     setFieldByColumn((current) => current.map((field, column) => column === index ? value : (field === value && value !== 'ignore' ? 'ignore' : field)));
+    resetServerReview();
+  }
+
+  const payload = useMemo(() => ({
+    version: developmentVersion,
+    treatment,
+    reason,
+    replaceSupersededImport,
+    sourceEvidence: {
+      fileName,
+      worksheet,
+      sha256,
+      sourceRowCount: rows.slice(headerRowIndex + 1).filter((row) => (row || []).some((cell) => String(cell || '').trim())).length,
+      mapping: headers.map((header, index) => ({ header, destination: fieldByColumn[index] || 'ignore' })),
+    },
+    excludedRows: [],
+    updates: review.changes.map(({ plotId, plotNumber, revenueStatus, importedPrice, sourceRowNumber }) => ({
+      plotId, plotNumber, sourceRowNumber, importedPrice, ...(revenueStatus ? { revenueStatus } : {}),
+    })),
+  }), [developmentVersion, treatment, reason, replaceSupersededImport, fileName, worksheet, sha256, rows, headerRowIndex, headers, fieldByColumn, review.changes]);
+
+  async function previewDifferences() {
+    setBusy(true);
+    setError('');
+    resetServerReview();
+    try {
+      const result = await onPreview(payload);
+      setPreview(result.preview);
+    } catch (next) {
+      setError(next.message || 'Could not preview the Sales Register import.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function apply() {
-    setApplying(true); setError('');
+    setBusy(true);
+    setError('');
     try {
-      await onApply({
-        version: developmentVersion,
-        fileName,
-        worksheet,
-        updates: review.changes.map(({ plotId, plotNumber, revenueStatus, sellingPrice }) => ({
-          plotId, plotNumber,
-          ...(revenueStatus ? { revenueStatus } : {}),
-          ...(sellingPrice != null ? { sellingPrice } : {}),
-        })),
-      });
-    } catch (nextError) { setError(nextError.message || 'Could not apply the Sales Register import.'); }
-    finally { setApplying(false); }
+      await onApply({ ...payload, previewFingerprint: preview.fingerprint });
+    } catch (next) {
+      setError(next.message || 'Could not apply the Sales Register import.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return <section className="po-module-card po-import-wizard revenue-sales-import" aria-labelledby="sales-register-import-title">
-    <header><h2 id="sales-register-import-title">Import Sales Register</h2><p>Review existing customer sales facts against Plot Master before anything is applied.</p></header>
+    <header><h2 id="sales-register-import-title">Import Sales Register</h2><p>Review existing customer sales facts, plot identity, lifecycle evidence and price authority before anything is applied.</p></header>
     {error ? <p className="po-list-feedback po-list-feedback--error" role="alert">{error}</p> : null}
-    {step === 'upload' ? <>
-      <p>Excel (.xlsx/.xls) and CSV are supported. Multi-sheet workbooks can be reviewed worksheet by worksheet.</p>
-      <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" aria-label="Sales Register file" onChange={(event) => chooseFile(event.target.files?.[0])} />
-    </> : null}
+    {step === 'upload' ? <><p>Excel (.xlsx/.xls) and CSV are supported. Multi-sheet workbooks can be reviewed worksheet by worksheet.</p><input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" aria-label="Sales Register file" onChange={(event) => chooseFile(event.target.files?.[0])} /></> : null}
     {step === 'worksheet' ? <><h3>Choose worksheet</h3>{worksheets.map((sheet) => <label key={sheet.name} className="po-import-worksheet"><input type="radio" name="sales-sheet" checked={worksheet === sheet.name} onChange={() => loadSheet(workbook, sheet.name)} /> <strong>{sheet.name}</strong> · {sheet.rowCount} rows</label>)}<button type="button" className="po-btn-primary" onClick={() => { const selected = selectedWorksheetRef.current; if (selected && selected !== worksheet) loadSheet(workbook, selected); setStep('mapping'); }}>Continue</button></> : null}
-    {step === 'mapping' ? <><h3>Map columns</h3><p>Worksheet: <strong>{worksheet}</strong></p><div className="po-import-mapping">{headers.map((header, index) => <label key={`${header}-${index}`} className="po-import-mapping__row"><span className="po-import-mapping__header">{header}</span><select aria-label={`Map column ${header}`} value={fieldByColumn[index] || 'ignore'} onChange={(event) => setField(index, event.target.value)}>{Object.entries(SALES_REGISTER_FIELDS).map(([key, meta]) => <option key={key} value={key}>{meta.label}{meta.required ? ' (required)' : ''}</option>)}</select></label>)}</div>
-      {statuses.length ? <div><h3>Review Sales Status mapping</h3>{statuses.map((source) => <label key={source} className="po-import-mapping__row"><span>{source}</span><select aria-label={`Map source status ${source}`} value={statusMapping[source] || ''} onChange={(event) => setStatusMapping((current) => ({ ...current, [source]: event.target.value }))}><option value="">Choose controlled status</option>{CONTROLLED_SALES_STATUSES.map((status) => <option key={status}>{status}</option>)}</select></label>)}</div> : null}
-      <button type="button" className="po-list-btn-secondary" onClick={() => setStep(worksheets.length > 1 ? 'worksheet' : 'upload')}>Back</button>
-      <button type="button" className="po-btn-primary" onClick={() => setStep('review')}>Review proposed changes</button></> : null}
-    {step === 'review' ? <><h3>Review before Apply</h3><p><strong>No Plot Master data has changed yet.</strong></p>
+    {step === 'mapping' ? <>
+      <h3>Choose price authority and map columns</h3><p>Worksheet: <strong>{worksheet}</strong></p>
+      <label className="po-import-mapping__row"><span>Imported price treatment</span><select aria-label="Imported price treatment" value={treatment} onChange={(event) => { setTreatment(event.target.value); setReplaceSupersededImport(false); resetServerReview(); }}><option value="contractual_selling_price">Contractual selling-price evidence</option><option value="forecast_manual_value">Adopt as plot forecast — Manual Value</option></select></label>
+      <p>{treatment === 'forecast_manual_value' ? 'Available plot forecasts will be adopted without changing sales status or applying affordable discounts again.' : 'Use this only for genuine reservation, exchange or completion price evidence.'}</p>
+      <div className="po-import-mapping">{headers.map((header, index) => <label key={`${header}-${index}`} className="po-import-mapping__row"><span className="po-import-mapping__header">{header}</span><select aria-label={`Map column ${header}`} value={fieldByColumn[index] || 'ignore'} onChange={(event) => setField(index, event.target.value)}>{Object.entries(SALES_REGISTER_FIELDS).map(([key, meta]) => <option key={key} value={key}>{meta.label}{meta.required ? ' (required)' : ''}</option>)}</select></label>)}</div>
+      {statuses.length ? <div><h3>Review Sales Status mapping</h3>{statuses.map((source) => <label key={source} className="po-import-mapping__row"><span>{source}</span><select aria-label={`Map source status ${source}`} value={statusMapping[source] || ''} onChange={(event) => { setStatusMapping((current) => ({ ...current, [source]: event.target.value })); resetServerReview(); }}><option value="">Choose controlled status</option>{CONTROLLED_SALES_STATUSES.map((status) => <option key={status}>{status}</option>)}</select></label>)}</div> : null}
+      <button type="button" className="po-list-btn-secondary" onClick={() => setStep(worksheets.length > 1 ? 'worksheet' : 'upload')}>Back</button><button type="button" className="po-btn-primary" onClick={() => setStep('review')}>Review proposed changes</button>
+    </> : null}
+    {step === 'review' ? <>
+      <h3>Review before Apply</h3><p><strong>No Plot Master data has changed yet.</strong></p>
+      <label><span>Commercial reason</span><textarea value={reason} onChange={(event) => { setReason(event.target.value); resetServerReview(); }} /></label>
+      {treatment === 'forecast_manual_value' ? <label><input type="checkbox" checked={replaceSupersededImport} onChange={(event) => { setReplaceSupersededImport(event.target.checked); resetServerReview(); }} /> Replace previously imported forecasts that a QS subsequently edited. Superseded provenance remains recorded.</label> : null}
       {review.unsupportedColumns.length ? <div className="po-list-feedback"><strong>Recognised but not imported</strong><ul>{review.unsupportedColumns.map((column) => <li key={column.field}>{column.label}</li>)}</ul></div> : null}
       {review.errors.length ? <ul className="po-import-warnings">{review.errors.map((message) => <li key={message}>{message}</li>)}</ul> : null}
-      <div className="po-table-wrap"><table className="po-data-table"><thead><tr><th>Plot</th><th>House Type evidence</th><th>Reviewed changes</th></tr></thead><tbody>{review.changes.map((change) => <tr key={change.plotId}><td>{change.plotNumber}</td><td>{change.houseTypeEvidence || '—'}{change.houseTypeEvidence && change.houseTypeEvidence !== change.currentHouseType ? <small>Plot Master remains {change.currentHouseType}</small> : null}</td><td>{change.proposed.join(' · ') || 'No supported change'}</td></tr>)}</tbody></table></div>
-      <button type="button" className="po-btn-primary" disabled={!review.ready || applying} onClick={apply}>{applying ? 'Applying…' : `Apply ${review.changes.length} reviewed rows`}</button></> : null}
+      <div className="po-table-wrap"><table className="po-data-table"><thead><tr><th>Excel row</th><th>Plot</th><th>House Type evidence</th><th>Reviewed changes</th></tr></thead><tbody>{review.changes.map((change) => <tr key={change.plotId}><td>{change.sourceRowNumber}</td><td>{change.plotNumber}</td><td>{change.houseTypeEvidence || '—'}{change.houseTypeMismatch ? <strong className="po-import-warning"> — differs from Plot Master {change.currentHouseType || 'Unavailable'}</strong> : null}</td><td>{change.proposed.join(' · ') || 'No supported change'}</td></tr>)}</tbody></table></div>
+      <button type="button" className="po-btn-primary" disabled={!review.ready || busy || !reason.trim() || !sha256} onClick={previewDifferences}>{busy ? 'Building preview…' : 'Preview authoritative GDV'}</button>
+      {preview ? <div className="po-list-feedback"><strong>Server reconciliation</strong><p>Source rows: {preview.sourceRowCount} · Accepted: {preview.acceptedRowCount} · Rejected: {preview.rejectedRowCount} · Excluded: {preview.excludedRowCount}</p><p>Source price total: {gbp(preview.sourceTotal)} · Projected authoritative GDV: {gbp(preview.projectedAuthoritativeGdv)} · Difference: {gbp(preview.difference)}</p>{preview.errors?.length ? <ul>{preview.errors.map((item) => <li key={`${item.sourceRowNumber}-${item.plotNumber}`}>Row {item.sourceRowNumber} · Plot {item.plotNumber || '—'}: {item.reason}</li>)}</ul> : null}{preview.authorityBlockers?.length ? <ul>{preview.authorityBlockers.map((item, index) => <li key={index}>{item.message || item.reason}</li>)}</ul> : null}<label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> {treatment === 'forecast_manual_value' ? 'I confirm the source rows, forecast treatment and exact authoritative GDV reconcile.' : 'I confirm the source rows and contractual lifecycle evidence are correct; the displayed GDV difference is informational.'}</label><button type="button" className="po-btn-primary" disabled={!preview.canApply || !confirmed || busy} onClick={apply}>{busy ? 'Applying…' : `Apply ${preview.acceptedRowCount} reviewed rows`}</button></div> : null}
+    </> : null}
     <button type="button" className="po-list-btn-secondary" onClick={onCancel}>Cancel</button>
   </section>;
 }

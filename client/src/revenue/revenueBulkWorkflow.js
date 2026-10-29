@@ -15,7 +15,9 @@ import {
 } from './revenueStrategy';
 
 export function countManualOverrides(developmentId) {
-  return getPlots(developmentId).filter((plot) => plot.revenueSource === 'Manual Value').length;
+  return getPlots(developmentId).filter(
+    (plot) => plot.revenueSource === 'Manual Value' && !plot.forecastImportProvenance
+  ).length;
 }
 
 export function yieldToUi() {
@@ -76,7 +78,7 @@ export const REVENUE_BULK_ACTIONS = [
     key: 'clear-manual',
     label: 'Remove Plot Overrides',
     title: 'Remove all plot overrides?',
-    message: 'Every manually priced plot will revert to House Type pricing.',
+    message: 'Human-entered manual plot overrides will revert to House Type pricing. Adopted import forecasts are protected.',
     progressLabel: 'Removing plot overrides…',
     async run(developmentId) {
       const result = await bulkClearManualOverrides(developmentId);

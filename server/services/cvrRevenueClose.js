@@ -55,8 +55,15 @@ function dateOrNull(value) {
 function invalidSecuredPlots(plots = []) {
   return plots.filter((plot) => {
     if (!isSecuredRevenueStatus(plot.revenueStatus)) return false;
-    return !(Number(plot.sellingPrice) > 0);
+    return !(Number(plot.sellingPrice) > 0) || plot.sellingPriceRequiresConfirmation === true;
   });
+}
+
+function hasIndependentPlotForecast(plot = {}) {
+  const status = String(plot.revenueStatus || 'Available');
+  if (status === 'Cancelled' || status === 'Exchanged' || status === 'Completed') return true;
+  if (status === 'Reserved' && Number(plot.sellingPrice) > 0 && plot.sellingPriceRequiresConfirmation !== true) return true;
+  return plot.revenueSource === 'Manual Value' && plot.manualOverrideExplicit === true && Number.isFinite(Number(plot.manualForecastValue));
 }
 
 function snapshotPlotFromEnriched(plot, index) {
@@ -167,9 +174,13 @@ function buildRevenueAuthorityFromDocuments({ clientId, developmentId, developme
     sources.plotMaster = sourceOk(plots);
   }
 
-  if (!settingsDocument || settingsDocument.exists === false) {
+  const independentPlotForecasts = Array.isArray(plots) && plots.length > 0 && plots.every(hasIndependentPlotForecast);
+  if ((!settingsDocument || settingsDocument.exists === false) && !independentPlotForecasts) {
     sources.revenueSettings = sourceFailure("revenue-settings-missing");
     blockers.push({ source: "revenueSettings", reason: "revenue-settings-missing" });
+  } else if (!settingsDocument || settingsDocument.exists === false) {
+    settingsDocument = { id:null, exists:false, version:0, revenueMode:'sales_register', summaryRevenueLines:[], recognitionPolicy:'completion', revenueStrategy:{}, houseTypePricing:{}, revenueAdjustments:[], recognitionSettings:{}, independentlyEstablishedPlotForecasts:true };
+    sources.revenueSettings = sourceOk(settingsDocument, { reason:'independent-plot-forecasts' });
   } else {
     sources.revenueSettings = sourceOk(settingsDocument);
   }
@@ -198,7 +209,7 @@ function buildRevenueAuthorityFromDocuments({ clientId, developmentId, developme
       source: "plotMaster",
       reason: "invalid-secured-selling-price",
       plotNumbers,
-      message: `Exchanged/Completed plots require sellingPrice > 0: ${plotNumbers.join(", ")}.`,
+      message: `Reserved/Exchanged/Completed plots require deliberately confirmed contractual selling-price evidence: ${plotNumbers.join(", ")}.`,
     });
     return notReady({ clientId, developmentId, blockers, sources });
   }

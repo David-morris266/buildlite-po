@@ -304,7 +304,8 @@ export function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing
   const secured = isSecuredRevenueStatus(plot.revenueStatus);
   const contractPrice = roundPlotMoney(plot.sellingPrice || 0);
   const reservedSellingPriceAuthority =
-    String(plot.revenueStatus || '').trim() === 'Reserved' && contractPrice > 0;
+    String(plot.revenueStatus || '').trim() === 'Reserved' && contractPrice > 0 &&
+    plot.sellingPriceRequiresConfirmation !== true;
   const effectiveRevenueNia = resolveEffectiveRevenueNia(plot, houseTypePricing, plots);
   const pricingRequiresArea =
     !secured && !cancelled && !reservedSellingPriceAuthority && effectiveRevenueNia.areaRequired;

@@ -27,6 +27,7 @@ import {
   resolvePlotForecastPrice,
 } from './revenueStrategyCalculations';
 import {
+  bulkClearManualOverrides,
   bulkRecalculateHouseTypeValues,
   emptyRevenueStrategy,
   getHouseTypePricing,
@@ -377,6 +378,18 @@ describe('revenueStrategy store', () => {
     expect(plot.manualForecastValue).toBe(310000);
     expect(plot.manualOverrideExplicit).toBe(true);
     expect(plot.pricingMigrated).toBe(true);
+  });
+
+  it('protects adopted import forecasts from legacy migration and Remove Plot Overrides', async () => {
+    const development=await createDevelopment({jobNumber:'IMP-1',developmentName:'Imported Forecast'});
+    saveRevenueStrategy(development.id,emptyRevenueStrategy());
+    await addPlot(development.id,{plotNumber:'9',houseType:'Ash',tenureCode:'AFFORDABLE_RENT',revenueSource:'Manual Value',manualForecastValue:343864.8,forecastSellingPrice:343864.8,manualOverrideExplicit:true,pricingMigrated:false,forecastImportProvenance:{schemaVersion:'sales_register_forecast_v1',sha256:'a'.repeat(64)}});
+    await getRevenuePricingContext(development.id);
+    await bulkClearManualOverrides(development.id);
+    const plot=getDevelopment(development.id).plotMaster.plots[0];
+    expect(plot.revenueSource).toBe('Manual Value');
+    expect(plot.manualForecastValue).toBe(343864.8);
+    expect(plot.forecastImportProvenance.schemaVersion).toBe('sales_register_forecast_v1');
   });
 
   it('repairs misclassified manual plots created by old migration logic', async () => {

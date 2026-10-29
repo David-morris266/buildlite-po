@@ -7,10 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getRevenuePricingContext = vi.hoisted(() => vi.fn());
 const applySalesRegisterImport = vi.hoisted(() => vi.fn());
+const previewSalesRegisterImport = vi.hoisted(() => vi.fn());
 const saveRevenueRecord = vi.hoisted(() => vi.fn());
 
 vi.mock('../api/developments', () => ({
   applySalesRegisterImport,
+  previewSalesRegisterImport,
 }));
 
 vi.mock('../revenue/revenueStrategy', async (importOriginal) => {
@@ -25,9 +27,10 @@ vi.mock('../revenue/revenueStore', () => ({
   saveRevenueRecord,
 }));
 
-vi.mock('../admin/revenueCategoryStore', () => ({
-  ensureRevenueCategories: vi.fn(),
-}));
+vi.mock('../admin/revenueCategoryStore', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, ensureRevenueCategories: vi.fn() };
+});
 
 vi.mock('./RevenueStrategyPanel', () => ({
   default: () => <div>Revenue Strategy Panel</div>,

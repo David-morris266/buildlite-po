@@ -270,7 +270,9 @@ export async function bulkClearManualOverrides(developmentId) {
   const plots = getPlots(developmentId);
   const strategy = getRevenueStrategy(developmentId);
   const houseTypePricing = getHouseTypePricing(developmentId);
-  const eligible = plots.filter((plot) => plot.revenueSource === 'Manual Value');
+  const eligible = plots.filter(
+    (plot) => plot.revenueSource === 'Manual Value' && !plot.forecastImportProvenance
+  );
   const plotUpdates = [];
 
   for (const plot of eligible) {
