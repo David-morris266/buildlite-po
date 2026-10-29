@@ -89,6 +89,60 @@ test("fully adopted independent plot forecasts do not require illustrative strat
   assert.equal(candidate.settingsId, null);
 });
 
+test("new settings remain unestablished for dependent plots while exposing an independent partial subtotal", () => {
+  const settingsDocument = {
+    ...require("../services/revenueSettingsMapper").settingsRowToDocument(settingsRow({
+      recognition_settings: { pricingAssumptionsAuthority: { schemaVersion:1, established:false } },
+    }), "dev-close"),
+    exists: true,
+  };
+  const candidate = buildRevenueAuthorityFromDocuments({
+    clientId:"client-1", developmentId:"dev-close", settingsDocument,
+    development:{ id:"dev-close", plotMaster:{ plots:[
+      reviewedOpenMarket({ id:"imported", plotNumber:"1", revenueStatus:"Available", revenueSource:"Manual Value", manualOverrideExplicit:true, manualForecastValue:100000, forecastImportProvenance:{schemaVersion:"sales_register_forecast_v1"} }),
+      reviewedOpenMarket({ id:"calculated", plotNumber:"2", houseType:"Ash", gia:1000, revenueStatus:"Available", revenueSource:"House Type" }),
+    ] } },
+  });
+  assert.equal(candidate.ready, false);
+  assert.equal(candidate.establishment.partialForecastRevenue, 100000);
+  assert.equal(candidate.establishment.outstandingPlotCount, 1);
+  assert.deepEqual(candidate.establishment.breakdown, { imported:1, manual:0, calculated:0, unresolved:1 });
+  assert.ok(candidate.blockers.some((item) => item.reason === "pricing-assumptions-not-established"));
+});
+
+test("manual House Type values are independent for Open Market but still require affordable assumptions", () => {
+  const settingsDocument = {
+    ...require("../services/revenueSettingsMapper").settingsRowToDocument(settingsRow({
+      recognition_settings: { pricingAssumptionsAuthority: { schemaVersion: 1, established: false } },
+      house_type_pricing: { Ash: { sellingBasis: "Manual", manualForecastValue: 200000 } },
+    }), "dev-close"),
+    exists: true,
+  };
+  const candidate = buildRevenueAuthorityFromDocuments({
+    clientId: "client-1",
+    developmentId: "dev-close",
+    settingsDocument,
+    development: { id: "dev-close", plotMaster: { plots: [
+      reviewedOpenMarket({ id: "om", plotNumber: "1", houseType: "Ash", revenueStatus: "Available", revenueSource: "House Type" }),
+      { ...reviewedOpenMarket({ id: "ah", plotNumber: "2", houseType: "Ash", revenueStatus: "Available", revenueSource: "House Type" }), tenure: "Affordable Rent", tenureCode: "AFFORDABLE_RENT" },
+    ] } },
+  });
+  assert.equal(candidate.ready, false);
+  assert.equal(candidate.establishment.partialForecastRevenue, 200000);
+  assert.deepEqual(candidate.establishment.dependentPlots.map((plot) => plot.reason), ["affordable-percentage"]);
+});
+
+test("legacy markerless settings remain established and explicit assumptions establish new settings", () => {
+  const base = require("../services/revenueSettingsMapper").settingsRowToDocument(settingsRow(), "dev-close");
+  const development = { id:"dev-close", plotMaster:{ plots:[reviewedOpenMarket({ id:"calculated", plotNumber:"1", houseType:"Ash", gia:1000, revenueStatus:"Available", revenueSource:"Development Strategy" })] } };
+  const legacy = buildRevenueAuthorityFromDocuments({clientId:"client-1",developmentId:"dev-close",development,settingsDocument:{...base,exists:true}});
+  assert.equal(legacy.ready, true);
+  assert.equal(legacy.establishment.strategyEstablishmentSource, "legacy-grandfathered");
+  const explicit = buildRevenueAuthorityFromDocuments({clientId:"client-1",developmentId:"dev-close",development,settingsDocument:{...base,exists:true,recognitionSettings:{pricingAssumptionsAuthority:{schemaVersion:1,established:true,establishedAt:"2026-10-29T12:00:00.000Z"}}}});
+  assert.equal(explicit.ready, true);
+  assert.equal(explicit.establishment.strategyEstablishmentSource, "explicit");
+});
+
 test("invalid secured sellingPrice lists plot numbers and does not freeze £0", async () => {
   const plots = [
     {

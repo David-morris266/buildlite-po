@@ -66,6 +66,19 @@ const sampleContext = {
     garagePremiums: { none: 0, single: 12500, double: 22500 },
   },
   houseTypePricing: {},
+  revenueMode: 'sales_register',
+  summaryRevenueLines: [],
+  settings: {
+    id: 'settings-1',
+    exists: true,
+    version: 1,
+    revenueMode: 'sales_register',
+    revenueAuthority: {
+      ready: true,
+      summary: { forecastRevenue: 350000 },
+      establishment: { breakdown: { imported:0, calculated:1, manual:0, unresolved:0 }, outstandingPlotCount:0 },
+    },
+  },
 };
 
 describe('RevenueWorkspace async loading guard', () => {
@@ -157,7 +170,7 @@ describe('RevenueWorkspace async loading guard', () => {
       ...sampleContext,
       revenueMode: 'summary',
       summaryRevenueLines: [{ id:'line-1', description:'Private Sales', forecastRevenue:100000 }],
-      settings: { revenueMode:'summary', summaryRevenueLines:[], version:1 },
+      settings: { ...sampleContext.settings, revenueMode:'summary', summaryRevenueLines:[], version:1 },
     });
     renderRevenue();
     await act(async () => { await Promise.resolve(); });
@@ -179,7 +192,7 @@ describe('RevenueWorkspace async loading guard', () => {
       plots: Array.from({ length:48 }, (_, index) => ({ id:`plot-${index + 1}`, plotNumber:String(index + 1), houseType:'Type A', revenueStatus:'Available' })),
       revenueMode: 'summary',
       summaryRevenueLines: [{ id:'line-1', description:'Private Sales', forecastRevenue:100000 }],
-      settings: { revenueMode:'summary', summaryRevenueLines:[{ id:'line-1', description:'Private Sales', forecastRevenue:100000 }], version:1 },
+      settings: { ...sampleContext.settings, revenueMode:'summary', summaryRevenueLines:[{ id:'line-1', description:'Private Sales', forecastRevenue:100000 }], version:1 },
     });
     renderRevenue();
     await act(async () => { await Promise.resolve(); });
@@ -193,13 +206,43 @@ describe('RevenueWorkspace async loading guard', () => {
     expect(saveRevenueRecord).not.toHaveBeenCalled();
   });
 
+  it('withholds illustrative detailed financial analysis when Summary is authoritative but pricing is unestablished', async () => {
+    getRevenuePricingContext.mockResolvedValue({
+      ...sampleContext,
+      revenueMode:'summary',
+      summaryRevenueLines:[{ id:'line-1', description:'Summary', forecastRevenue:100000 }],
+      settings:{
+        ...sampleContext.settings,
+        revenueMode:'summary',
+        revenueAuthority:{
+          ready:true,
+          summary:{forecastRevenue:100000},
+          establishment:{strategyEstablished:false,outstandingPlotCount:1,breakdown:{imported:0,calculated:0,manual:0,unresolved:1}},
+        },
+      },
+    });
+    renderRevenue();
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { [...container.querySelectorAll('button')].find((button) => button.textContent === 'Revenue Analysis').click(); });
+
+    expect(document.body.textContent).toContain('Pricing assumptions not established');
+    expect(document.body.textContent).not.toContain('Revenue Dashboard');
+    expect(container.querySelector('.revenue-split__total')).toBeFalsy();
+    expect(document.body.textContent).not.toContain('Commercial Actions');
+    expect(container.querySelector('[aria-label="Plot status counts"]')).toBeTruthy();
+
+    await act(async () => { [...container.querySelectorAll('button')].find((button) => button.textContent === 'Review plots').click(); });
+    expect(document.body.textContent).toContain('Plot Revenue Register');
+    expect(saveRevenueRecord).not.toHaveBeenCalled();
+  });
+
   it('changes authority only through the explicit confirmed action', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     getRevenuePricingContext.mockResolvedValue({
       ...sampleContext,
       revenueMode: 'summary',
       summaryRevenueLines: [{ id:'line-1', description:'Private Sales', forecastRevenue:100000 }],
-      settings: { revenueMode:'summary', summaryRevenueLines:[{ id:'line-1', description:'Private Sales', forecastRevenue:100000 }], version:1 },
+      settings: { ...sampleContext.settings, revenueMode:'summary', summaryRevenueLines:[{ id:'line-1', description:'Private Sales', forecastRevenue:100000 }], version:1 },
     });
     renderRevenue();
     await act(async () => { await Promise.resolve(); });
@@ -221,7 +264,7 @@ describe('RevenueWorkspace async loading guard', () => {
     getRevenuePricingContext.mockResolvedValue({
       ...sampleContext,
       revenueMode: 'sales_register',
-      settings: { exists:true, revenueMode:'sales_register', version:1 },
+      settings: { ...sampleContext.settings, exists:true, revenueMode:'sales_register', version:1, revenueAuthority:{ ready:true, summary:{forecastRevenue:780000}, establishment:{strategyEstablished:false,outstandingPlotCount:0,breakdown:{imported:1,calculated:0,manual:2,unresolved:0}} } },
       plots: [
         { id:'imported', plotNumber:'1', tenureCode:'OPEN_MARKET', revenueStatus:'Available', revenueSource:'Manual Value', manualOverrideExplicit:true, manualForecastValue:250000, forecastImportProvenance:{ schemaVersion:'sales_register_forecast_v1' } },
         { id:'manual', plotNumber:'2', tenureCode:'OPEN_MARKET', revenueStatus:'Available', revenueSource:'Manual Value', manualOverrideExplicit:true, manualForecastValue:260000 },
@@ -233,7 +276,7 @@ describe('RevenueWorkspace async loading guard', () => {
 
     const measures = container.querySelector('.revenue-overview__kpis');
     expect(measures.textContent).toContain('Imported forecasts1');
-    expect(measures.textContent).toContain('Manual overrides2');
+    expect(measures.textContent).toContain('QS-edited / manual2');
     expect(document.body.textContent).not.toContain('Independent imported forecasts established for every plot.');
     expect(saveRevenueRecord).not.toHaveBeenCalled();
 
@@ -249,7 +292,7 @@ describe('RevenueWorkspace async loading guard', () => {
     getRevenuePricingContext.mockResolvedValue({
       ...sampleContext,
       revenueMode: 'sales_register',
-      settings: { exists:true, revenueMode:'sales_register', version:1 },
+      settings: { ...sampleContext.settings, exists:true, revenueMode:'sales_register', version:1 },
       plots: [{ id:'plot-1', plotNumber:'1', tenureCode:'OPEN_MARKET', tenureResolved:true, revenueStatus:'Available', forecastSellingPrice:0 }],
     });
     renderRevenue();
@@ -266,7 +309,7 @@ describe('RevenueWorkspace async loading guard', () => {
 
   it('keeps unsaved Pricing Assumptions intact when discard is cancelled', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    getRevenuePricingContext.mockResolvedValue({ ...sampleContext, revenueMode:'sales_register', settings:{ exists:true, revenueMode:'sales_register', version:1 } });
+    getRevenuePricingContext.mockResolvedValue({ ...sampleContext, revenueMode:'sales_register', settings:{ ...sampleContext.settings, exists:true, revenueMode:'sales_register', version:1 } });
     renderRevenue();
     await act(async () => { await Promise.resolve(); });
     await act(async () => { [...container.querySelectorAll('button')].find((button) => button.textContent === 'Pricing Assumptions').click(); });
@@ -282,17 +325,23 @@ describe('RevenueWorkspace async loading guard', () => {
   });
 
   it('labels unestablished strategy output as illustrative and keeps persisted Summary totals authoritative', async () => {
-    getRevenuePricingContext.mockResolvedValueOnce({ ...sampleContext, revenueMode:'sales_register', settings:{ exists:false, revenueMode:'sales_register', version:1 } });
+    getRevenuePricingContext.mockResolvedValueOnce({ ...sampleContext, revenueMode:'sales_register', settings:{ exists:false, revenueMode:'sales_register', version:0, revenueAuthority:{ ready:false, summary:null, establishment:{breakdown:{imported:0,calculated:0,manual:0,unresolved:1},partialForecastRevenue:0,outstandingPlotCount:1} } } });
     renderRevenue();
     await act(async () => { await Promise.resolve(); });
-    expect(document.body.textContent).toContain('Illustrative forecast — not established');
+    expect(document.body.textContent).toContain('Revenue Not Established');
+    expect(container.querySelector('.revenue-overview__kpis')?.textContent).toContain('Forecast RevenueUnavailable');
+    const reviewPlots = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Review plots');
+    expect(reviewPlots).toBeTruthy();
+    await act(async () => { reviewPlots.click(); });
+    expect(document.body.textContent).toContain('Plot Revenue Register');
+    expect(saveRevenueRecord).not.toHaveBeenCalled();
     act(() => root.unmount());
     root = createRoot(container);
     getRevenuePricingContext.mockResolvedValueOnce({
       ...sampleContext,
       revenueMode:'summary',
       summaryRevenueLines:[{ id:'line-1', description:'Persisted', forecastRevenue:100000 }],
-      settings:{ exists:true, revenueMode:'summary', version:1 },
+      settings:{ ...sampleContext.settings, exists:true, revenueMode:'summary', version:1, revenueAuthority:{ready:true,summary:{forecastRevenue:100000},establishment:{breakdown:{imported:0,calculated:0,manual:0,unresolved:0}}} },
     });
     renderRevenue();
     await act(async () => { await Promise.resolve(); });
@@ -308,7 +357,7 @@ describe('RevenueWorkspace async loading guard', () => {
 
   it('confirms the exact zero Summary Revenue total before changing authority', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    getRevenuePricingContext.mockResolvedValue({ ...sampleContext, revenueMode:'sales_register', summaryRevenueLines:[], settings:{ exists:true, revenueMode:'sales_register', version:1 } });
+    getRevenuePricingContext.mockResolvedValue({ ...sampleContext, revenueMode:'sales_register', summaryRevenueLines:[], settings:{ ...sampleContext.settings, exists:true, revenueMode:'sales_register', version:1 } });
     renderRevenue();
     await act(async () => { await Promise.resolve(); });
     const summaryCard = [...container.querySelectorAll('.revenue-overview__mode')].find((element) => element.textContent.includes('Summary Revenue'));

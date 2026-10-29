@@ -119,7 +119,7 @@ export function getHouseTypePricing(developmentId) {
   return normalizeHouseTypePricingMap(record.houseTypePricing || {});
 }
 
-export function saveRevenueStrategy(developmentId, strategy, houseTypePricing = null) {
+export function saveRevenueStrategy(developmentId, strategy, houseTypePricing = null, { establishPricingAssumptions = false } = {}) {
   const record = getRevenueRecord(developmentId);
   const next = {
     ...record,
@@ -128,6 +128,7 @@ export function saveRevenueStrategy(developmentId, strategy, houseTypePricing = 
       ...record.metadata,
       version: 3,
     },
+    establishPricingAssumptions,
   };
   if (houseTypePricing != null) {
     next.houseTypePricing = normalizeHouseTypePricingMap(houseTypePricing);

@@ -66,6 +66,89 @@ function hasIndependentPlotForecast(plot = {}) {
   return plot.revenueSource === 'Manual Value' && plot.manualOverrideExplicit === true && Number.isFinite(Number(plot.manualForecastValue));
 }
 
+function pricingAssumptionsEstablishment(settingsDocument) {
+  if (!settingsDocument || settingsDocument.exists === false) {
+    return { established: false, source: "not-established", authority: null };
+  }
+  const authority = settingsDocument.recognitionSettings?.pricingAssumptionsAuthority;
+  if (!authority || authority.schemaVersion !== 1) {
+    return { established: true, source: "legacy-grandfathered", authority: null };
+  }
+  return {
+    established: authority.established === true,
+    source: authority.established === true ? "explicit" : "not-established",
+    authority,
+  };
+}
+
+function plotAssumptionDependency(plot = {}, houseTypePricing = {}) {
+  if (hasIndependentPlotForecast(plot)) return null;
+  const tenure = getPlotRevenueTenureAuthority(plot);
+  if (!tenure.resolved) return "unreviewed-tenure";
+  const affordable = !["OPEN_MARKET", "OTHER"].includes(tenure.normalizedTenureCode);
+  const source = plot.revenueSource || DEFAULT_REVENUE_SOURCE;
+  if (source === "Plot Override") return affordable ? "affordable-percentage" : null;
+  if (source === DEFAULT_REVENUE_SOURCE) {
+    const record = houseTypePricing[String(plot.houseType || "").trim()] || {};
+    if (record.sellingBasis === "Manual" && Number(record.manualForecastValue) >= 0) {
+      return affordable ? "affordable-percentage" : null;
+    }
+    return "house-type-auto-pricing";
+  }
+  if (source === "Development Strategy") return "development-strategy";
+  return "pricing-assumptions";
+}
+
+function establishmentEvidence(plots = [], settingsDocument = null) {
+  const pricing = pricingAssumptionsEstablishment(settingsDocument);
+  const houseTypes = settingsDocument?.houseTypePricing || {};
+  const sources = { imported: 0, manual: 0, calculated: 0, unresolved: 0 };
+  const dependentPlots = [];
+  const independentPlots = [];
+  for (const plot of plots) {
+    const provenance = plot.forecastImportProvenance;
+    if (plot.revenueSource === "Manual Value" && provenance && !provenance.supersededAt) sources.imported += 1;
+    else if (plot.revenueSource === "Manual Value") sources.manual += 1;
+    const dependency = pricing.established ? null : plotAssumptionDependency(plot, houseTypes);
+    if (dependency) {
+      sources.unresolved += 1;
+      dependentPlots.push({ plotId: plotIdentity(plot, dependentPlots.length), plotNumber: String(plot.plotNumber || ""), reason: dependency });
+    } else {
+      if (plot.revenueSource !== "Manual Value") sources.calculated += 1;
+      independentPlots.push(plot);
+    }
+  }
+  let partialForecastRevenue = 0;
+  if (!pricing.established && independentPlots.length) {
+    const priced = enrichPlotsWithPricing(
+      independentPlots,
+      settingsDocument?.revenueStrategy || {},
+      houseTypes
+    );
+    partialForecastRevenue = summarizePricedPlots(priced).forecastRevenue;
+  }
+  return {
+    strategyEstablished: pricing.established,
+    strategyEstablishmentSource: pricing.source,
+    strategyAuthority: pricing.authority,
+    established: dependentPlots.length === 0 && plots.length > 0,
+    breakdown: sources,
+    dependentPlots,
+    partialForecastRevenue,
+    outstandingPlotCount: dependentPlots.length,
+  };
+}
+
+function duplicatePlotIdentity(plots = []) {
+  const seen = new Set();
+  for (const [index, plot] of plots.entries()) {
+    const identity = plotIdentity(plot, index);
+    if (seen.has(identity)) return identity;
+    seen.add(identity);
+  }
+  return null;
+}
+
 function snapshotPlotFromEnriched(plot, index) {
   return {
     plotId: plotIdentity(plot, index),
@@ -123,7 +206,7 @@ function freezeAssumptions(settingsDocument) {
   };
 }
 
-function notReady({ clientId, developmentId, blockers, sources }) {
+function notReady({ clientId, developmentId, blockers, sources, establishment = null }) {
   return {
     ready: false,
     complete: false,
@@ -135,6 +218,7 @@ function notReady({ clientId, developmentId, blockers, sources }) {
     summary: null,
     plots: [],
     assumptions: null,
+    establishment,
   };
 }
 
@@ -174,6 +258,7 @@ function buildRevenueAuthorityFromDocuments({ clientId, developmentId, developme
     sources.plotMaster = sourceOk(plots);
   }
 
+  const establishment = establishmentEvidence(Array.isArray(plots) ? plots : [], settingsDocument);
   const independentPlotForecasts = Array.isArray(plots) && plots.length > 0 && plots.every(hasIndependentPlotForecast);
   if ((!settingsDocument || settingsDocument.exists === false) && !independentPlotForecasts) {
     sources.revenueSettings = sourceFailure("revenue-settings-missing");
@@ -188,19 +273,38 @@ function buildRevenueAuthorityFromDocuments({ clientId, developmentId, developme
   const summaryMode = settingsDocument?.revenueMode === "summary";
   if (summaryMode) {
     const settingsBlockers = blockers.filter((item) => item.source === "revenueSettings");
-    if (settingsBlockers.length) return notReady({ clientId, developmentId, blockers: settingsBlockers, sources });
+    if (settingsBlockers.length) return notReady({ clientId, developmentId, blockers: settingsBlockers, sources, establishment });
     const lines = settingsDocument.summaryRevenueLines || [];
-    if (!lines.length) return notReady({ clientId, developmentId, blockers:[{source:"revenueSettings",reason:"summary-revenue-lines-missing"}], sources });
+    if (!lines.length) return notReady({ clientId, developmentId, blockers:[{source:"revenueSettings",reason:"summary-revenue-lines-missing"}], sources, establishment });
     const forecastRevenue = lines.reduce((total, line) => roundPlotMoney(total + Number(line.forecastRevenue || 0)), 0);
     return {
       ready:true, complete:true, canLock:true, clientId, developmentId, blockers:[], sourceReadiness:sources,
       summary:{ forecastRevenue, securedRevenue:null, remainingForecast:null, plotsSold:null, plotsRemaining:null },
       plots:[], assumptions:freezeAssumptions(settingsDocument), settingsId:settingsDocument.id,
       settingsVersion:Number(settingsDocument.version)||null,
+      establishment: { ...establishment, established: true, authorityMode: "summary" },
     };
   }
 
-  if (blockers.length) return notReady({ clientId, developmentId, blockers, sources });
+  if (blockers.length) return notReady({ clientId, developmentId, blockers, sources, establishment });
+  const duplicateIdentity = duplicatePlotIdentity(plots);
+  if (duplicateIdentity) {
+    blockers.push({
+      source: "plotMaster",
+      reason: "duplicate-plot-id",
+      message: `Duplicate plot identity in Plot Master: ${duplicateIdentity}.`,
+    });
+    return notReady({ clientId, developmentId, blockers, sources, establishment });
+  }
+  if (establishment.dependentPlots.length) {
+    blockers.push({
+      source: "revenueSettings",
+      reason: "pricing-assumptions-not-established",
+      plotNumbers: establishment.dependentPlots.map((plot) => plot.plotNumber),
+      message: `${establishment.dependentPlots.length} plot forecast${establishment.dependentPlots.length === 1 ? "" : "s"} depend on pricing assumptions that have not been established.`,
+    });
+    return notReady({ clientId, developmentId, blockers, sources, establishment });
+  }
 
   const invalid = invalidSecuredPlots(plots);
   if (invalid.length) {
@@ -211,7 +315,7 @@ function buildRevenueAuthorityFromDocuments({ clientId, developmentId, developme
       plotNumbers,
       message: `Reserved/Exchanged/Completed plots require deliberately confirmed contractual selling-price evidence: ${plotNumbers.join(", ")}.`,
     });
-    return notReady({ clientId, developmentId, blockers, sources });
+    return notReady({ clientId, developmentId, blockers, sources, establishment });
   }
 
   const unresolvedTenure = plots.filter((plot) => !getPlotRevenueTenureAuthority(plot).resolved);
@@ -223,7 +327,7 @@ function buildRevenueAuthorityFromDocuments({ clientId, developmentId, developme
       plotNumbers,
       message: `Plot Master tenure review is required for: ${plotNumbers.join(", ")}.`,
     });
-    return notReady({ clientId, developmentId, blockers, sources });
+    return notReady({ clientId, developmentId, blockers, sources, establishment });
   }
 
   let priced;
@@ -235,29 +339,18 @@ function buildRevenueAuthorityFromDocuments({ clientId, developmentId, developme
     );
   } catch (err) {
     blockers.push({ source: "revenue", reason: "revenue-calculation-failed", error: err.message });
-    return notReady({ clientId, developmentId, blockers, sources });
+    return notReady({ clientId, developmentId, blockers, sources, establishment });
   }
 
   const summary = summarizePricedPlots(priced);
   const snapshotPlots = priced.map((plot, index) => snapshotPlotFromEnriched(plot, index));
-  const seen = new Set();
-  for (const row of snapshotPlots) {
-    if (seen.has(row.plotId)) {
-      blockers.push({
-        source: "plotMaster",
-        reason: "duplicate-plot-id",
-        message: `Duplicate plot identity in Plot Master: ${row.plotId}.`,
-      });
-      return notReady({ clientId, developmentId, blockers, sources });
-    }
-    seen.add(row.plotId);
-  }
 
   return {
     ready: true, complete: true, canLock: true, clientId, developmentId, blockers: [],
     sourceReadiness: sources, summary, plots: snapshotPlots,
     assumptions: freezeAssumptions(settingsDocument), settingsId: settingsDocument.id,
     settingsVersion: Number(settingsDocument.version) || null,
+    establishment: { ...establishment, established: true, authorityMode: "sales_register" },
   };
 }
 

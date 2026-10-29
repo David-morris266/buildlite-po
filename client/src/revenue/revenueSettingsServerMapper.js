@@ -60,5 +60,6 @@ export function toServerRevenueSettingsPayload(record = {}) {
       record.recognitionSettings && typeof record.recognitionSettings === 'object'
         ? record.recognitionSettings
         : {},
+    establishPricingAssumptions: record.establishPricingAssumptions === true,
   };
 }

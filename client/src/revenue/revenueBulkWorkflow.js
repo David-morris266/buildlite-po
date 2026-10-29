@@ -123,12 +123,12 @@ export async function runBulkActionWorkflow(developmentId, action) {
 }
 
 export function saveRevenueStrategyOnly(developmentId, draft) {
-  return saveRevenueStrategy(developmentId, draft);
+  return saveRevenueStrategy(developmentId, draft, null, { establishPricingAssumptions: true });
 }
 
 export async function runSaveStrategyApplyWorkflow(developmentId, draft) {
   const manualPreserved = countManualOverrides(developmentId);
-  const saveResult = await Promise.resolve(saveRevenueStrategy(developmentId, draft));
+  const saveResult = await Promise.resolve(saveRevenueStrategy(developmentId, draft, null, { establishPricingAssumptions: true }));
   if (!saveResult.ok) {
     return { ok: false, errors: saveResult.errors || ['Could not save revenue strategy.'] };
   }

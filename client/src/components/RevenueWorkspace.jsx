@@ -661,21 +661,20 @@ export default function RevenueWorkspace({
   }
 
   const activeRevenueView = selectedRevenueView || pricingContext.revenueMode || 'sales_register';
-  const authorityLabel = pricingContext.revenueMode === 'summary' ? 'Summary Revenue' : 'Plot-level Sales Register';
+  const revenueAuthority = pricingContext.settings?.revenueAuthority || null;
+  const revenueEstablished = revenueAuthority?.ready === true;
+  const authorityLabel = revenueEstablished
+    ? (pricingContext.revenueMode === 'summary' ? 'Summary Revenue' : 'Plot-level Sales Register')
+    : 'Revenue not established';
   const summaryForecastRevenue = summaryLines.reduce(
     (sum, line) => sum + (Number(line.forecastRevenue) || 0),
     0
   );
-  const persistedSummaryForecastRevenue = (pricingContext.summaryRevenueLines || []).reduce(
-    (sum, line) => sum + (Number(line.forecastRevenue) || 0),
-    0
+  const overviewForecastRevenue = revenueEstablished ? revenueAuthority.summary?.forecastRevenue : null;
+  const authorityBreakdown = revenueAuthority?.establishment?.breakdown || {};
+  const detailedPricingEstablished = revenueAuthority?.establishment?.strategyEstablished === true || (
+    plots.length > 0 && revenueAuthority?.establishment?.outstandingPlotCount === 0
   );
-  const overviewForecastRevenue = pricingContext.revenueMode === 'summary'
-    ? persistedSummaryForecastRevenue
-    : summary.forecastRevenue;
-  const usesIllustrativePlotForecast = pricingContext.revenueMode === 'sales_register' &&
-    pricingContext.settings?.exists === false &&
-    !(plots.length > 0 && forecastSourceCounts.imported === plots.length);
   const hasUnsavedSummaryDraft = JSON.stringify(summaryLines) !== JSON.stringify(pricingContext.summaryRevenueLines || []);
   function returnToRevenueOverview() {
     if (workspaceView === 'pricing' && pricingDraftDirty && !window.confirm('Discard unsaved Pricing Assumptions changes and return to the Revenue overview?')) return;
@@ -721,15 +720,29 @@ export default function RevenueWorkspace({
 
         {summaryMessage ? <p className="po-list-feedback" role="status">{summaryMessage}</p> : null}
 
+        {!revenueEstablished ? <section className="revenue-overview__setup" aria-labelledby="revenue-setup-title">
+          <h3 id="revenue-setup-title">Revenue Not Established</h3>
+          <p>No authoritative Forecast Revenue is available. Choose how this development will establish Revenue; opening an option does not change CVR authority.</p>
+          {revenueAuthority?.establishment?.partialForecastRevenue > 0 ? <p><strong>Partial established plot subtotal:</strong> £{formatMoney(revenueAuthority.establishment.partialForecastRevenue)} · {revenueAuthority.establishment.outstandingPlotCount} plot{revenueAuthority.establishment.outstandingPlotCount === 1 ? '' : 's'} outstanding. This is not authoritative CVR Revenue.</p> : null}
+          <div className="revenue-overview__setup-actions">
+            <button type="button" className="po-button" onClick={() => { setSelectedRevenueView('summary'); setWorkspaceView('summary'); }}>Enter Summary Revenue</button>
+            <button type="button" className="po-button po-button--primary" onClick={() => { setSelectedRevenueView('sales_register'); setImportOpen(true); }}>Import Plot Prices</button>
+            <button type="button" className="po-button" onClick={() => { setSelectedRevenueView('sales_register'); setWorkspaceView('pricing'); }}>Calculate Plot Prices</button>
+            <button type="button" className="po-button" onClick={() => { setSelectedRevenueView('sales_register'); setWorkspaceView('register'); }}>Review plots</button>
+          </div>
+        </section> : null}
+
         <div className="revenue-overview__kpis" aria-label="Revenue overview measures">
-          <article><span>{usesIllustrativePlotForecast ? 'Illustrative forecast — not established' : 'Forecast Revenue'}</span><strong>£{formatMoney(overviewForecastRevenue || 0)}</strong></article>
+          <article><span>Forecast Revenue</span><strong>{overviewForecastRevenue == null ? 'Unavailable' : `£${formatMoney(overviewForecastRevenue)}`}</strong></article>
           <article><span>Plots</span><strong>{plots.length}</strong></article>
-          <article><span>Imported forecasts</span><strong>{forecastSourceCounts.imported}</strong></article>
-          <article><span>Manual overrides</span><strong>{forecastSourceCounts.manual}</strong></article>
+          <article><span>Imported forecasts</span><strong>{authorityBreakdown.imported ?? forecastSourceCounts.imported}</strong></article>
+          <article><span>Calculated forecasts</span><strong>{authorityBreakdown.calculated ?? 0}</strong></article>
+          <article><span>QS-edited / manual</span><strong>{authorityBreakdown.manual ?? forecastSourceCounts.manual}</strong></article>
+          <article><span>Unresolved plots</span><strong>{authorityBreakdown.unresolved ?? 0}</strong></article>
           <article><span>Material exceptions</span><strong>{exceptions.length}</strong></article>
         </div>
 
-        <div className="revenue-overview__modes">
+        {revenueEstablished ? <div className="revenue-overview__modes">
           <article className={`revenue-overview__mode${pricingContext.revenueMode === 'summary' ? ' revenue-overview__mode--authoritative' : ''}`}>
             <div className="revenue-overview__mode-heading">
               <h3>Summary Revenue</h3>
@@ -758,7 +771,7 @@ export default function RevenueWorkspace({
               {pricingContext.revenueMode !== 'sales_register' ? <button type="button" className="po-button" disabled={savingSummary} onClick={() => saveRevenueMode('sales_register')}>Use for CVR Revenue</button> : null}
             </div>
           </article>
-        </div>
+        </div> : null}
       </div>
     );
   }
@@ -829,6 +842,22 @@ export default function RevenueWorkspace({
       {workspaceView === 'analysis' ? <div className="revenue-workspace__zone revenue-workspace__zone--position">
 
         <p className="revenue-workspace__zone-eyebrow">What is the current commercial position?</p>
+
+        {!detailedPricingEstablished ? <>
+          <section className="po-module-card revenue-actions" aria-labelledby="revenue-analysis-unestablished-title">
+            <h2 id="revenue-analysis-unestablished-title" className="po-matrix-section__title">Pricing assumptions not established</h2>
+            <p className="revenue-workspace__lead">Detailed Revenue financial analysis is unavailable until every plot has an independent forecast or Pricing Assumptions are explicitly established. Illustrative defaults are not shown as authoritative GDV.</p>
+            <button type="button" className="po-button po-button--primary" onClick={() => setWorkspaceView('register')}>Review plots</button>
+          </section>
+          <div className="revenue-position-strip__status" aria-label="Plot status counts">
+            {STATUS_STRIP_ITEMS.map((item) => (
+              <span key={item.key} className="revenue-position-strip__chip">
+                <span className="revenue-position-strip__chip-label">{item.label}</span>
+                <strong className="revenue-position-strip__chip-value">{String(statusCounts[item.key] ?? 0)}</strong>
+              </span>
+            ))}
+          </div>
+        </> : <>
 
 
 
@@ -937,6 +966,8 @@ export default function RevenueWorkspace({
 
 
         <RevenueHouseTypeSummary summary={houseTypeSummary} />
+
+        </>}
 
       </div> : null}
 
@@ -1130,7 +1161,7 @@ export default function RevenueWorkspace({
 
         </section> : null}
 
-        {workspaceView === 'analysis' ? <section className="po-module-card revenue-actions" aria-labelledby="commercial-actions-title">
+        {workspaceView === 'analysis' && detailedPricingEstablished ? <section className="po-module-card revenue-actions" aria-labelledby="commercial-actions-title">
 
           <header className="revenue-workspace__header revenue-workspace__header--compact">
 

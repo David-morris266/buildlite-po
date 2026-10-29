@@ -173,7 +173,12 @@ export function buildRevenueExceptions(plots = []) {
       });
     }
 
-    if (forecast > 0 && selling > 0 && forecast < selling && status !== 'Exchanged' && status !== 'Completed') {
+    const confirmedContractPrice = (
+      (status === 'Reserved' && plot.sellingPriceRequiresConfirmation !== true) ||
+      status === 'Exchanged' ||
+      status === 'Completed'
+    );
+    if (forecast > 0 && selling > 0 && forecast < selling && confirmedContractPrice) {
       exceptions.push({
         id: `forecast-low:${plot.id}`,
         type: 'forecastLowerThanPrice',

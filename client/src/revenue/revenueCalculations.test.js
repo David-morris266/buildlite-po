@@ -324,10 +324,19 @@ describe('plotRevenueEngine', () => {
         forecastSellingPrice: 0,
         revenueStatus: 'Completed',
       },
+      {
+        id: 'plot-z',
+        plotNumber: '19',
+        sellingPrice: 285000,
+        forecastSellingPrice: 250000,
+        revenueStatus: 'Reserved',
+        sellingPriceRequiresConfirmation: false,
+      },
     ]);
 
     expect(exceptions.some((item) => item.type === 'missingNia')).toBe(true);
-    expect(exceptions.some((item) => item.type === 'forecastLowerThanPrice')).toBe(true);
+    expect(exceptions.some((item) => item.type === 'forecastLowerThanPrice' && item.plotId === 'plot-x')).toBe(false);
+    expect(exceptions.some((item) => item.type === 'forecastLowerThanPrice' && item.plotId === 'plot-z')).toBe(true);
     expect(exceptions.some((item) => item.type === 'completedNoPrice')).toBe(true);
     expect(exceptions.some((item) => item.type === 'reservedStillAvailable')).toBe(false);
   });

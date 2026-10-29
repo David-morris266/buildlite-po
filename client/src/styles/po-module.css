@@ -4065,6 +4065,9 @@
 .revenue-overview__mode-heading span { color:var(--accent); font-size:.72rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
 .revenue-overview__illustrative { padding:10px 12px; border-left:3px solid var(--warning,#f59e0b); background:color-mix(in srgb, var(--warning,#f59e0b) 8%, transparent); }
 .revenue-overview__actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.revenue-overview__setup { display:grid; gap:12px; padding:18px; border:1px solid color-mix(in srgb, var(--warning,#f59e0b) 55%, var(--line)); border-radius:var(--radius-md); background:color-mix(in srgb, var(--warning,#f59e0b) 7%, var(--panel)); }
+.revenue-overview__setup h3,.revenue-overview__setup p { margin:0; }
+.revenue-overview__setup-actions { display:flex; flex-wrap:wrap; gap:8px; }
 .revenue-sales-import__preview-action { margin:14px 0; }
 .revenue-sales-import__reconciliation { display:grid; gap:14px; margin:16px 0; padding:16px; border:1px solid color-mix(in srgb, var(--accent) 55%, var(--line)); border-radius:var(--radius-md); background:color-mix(in srgb, var(--accent) 6%, var(--panel)); }
 .revenue-sales-import__reconciliation h3 { margin:0; }

@@ -307,6 +307,10 @@ export function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing
     String(plot.revenueStatus || '').trim() === 'Reserved' && contractPrice > 0 &&
     plot.sellingPriceRequiresConfirmation !== true;
   const effectiveRevenueNia = resolveEffectiveRevenueNia(plot, houseTypePricing, plots);
+  const activeImportedForecast = (plot.revenueSource || DEFAULT_REVENUE_SOURCE) === 'Manual Value' &&
+    Boolean(plot.forecastImportProvenance) && !plot.forecastImportProvenance.supersededAt;
+  const genuineManualOverride = (plot.revenueSource || DEFAULT_REVENUE_SOURCE) === 'Manual Value' &&
+    !activeImportedForecast;
   const pricingRequiresArea =
     !secured && !cancelled && !reservedSellingPriceAuthority && effectiveRevenueNia.areaRequired;
 
@@ -350,10 +354,13 @@ export function enrichPlotWithPricing(plot = {}, strategy = {}, houseTypePricing
     tenureAuthoritySource: tenureAuthority.authoritySource,
     pricingSource: reservedSellingPriceAuthority
       ? 'Reserved Selling Price'
-      : plot.revenueSource || DEFAULT_REVENUE_SOURCE,
+      : activeImportedForecast
+        ? 'Imported Forecast'
+        : plot.revenueSource || DEFAULT_REVENUE_SOURCE,
     fallbackPricingSource: plot.revenueSource || DEFAULT_REVENUE_SOURCE,
     reservedSellingPriceAuthority,
-    isManualOverride: (plot.revenueSource || DEFAULT_REVENUE_SOURCE) === 'Manual Value',
+    isImportedForecast: activeImportedForecast,
+    isManualOverride: genuineManualOverride,
     pricingRequiresArea,
   };
 }
@@ -389,8 +396,9 @@ export function applyStrategyToPlots(
 export function buildStrategySummaryMetrics(plots = [], strategy = {}, houseTypePricing = {}) {
   const enriched = enrichPlotsWithPricing(plots, strategy, houseTypePricing);
   const priced = enriched.filter((plot) => roundPlotMoney(plot.effectivePrice) > 0);
-  const autoPriced = enriched.filter((plot) => !plot.isManualOverride && plot.effectivePrice > 0);
+  const autoPriced = enriched.filter((plot) => !plot.isManualOverride && !plot.isImportedForecast && plot.effectivePrice > 0);
   const manualOverrides = enriched.filter((plot) => plot.isManualOverride);
+  const importedForecasts = enriched.filter((plot) => plot.isImportedForecast);
   const openMarketPlots = enriched.filter(
     (plot) => getPlotRevenueTenureAuthority(plot).normalizedTenureCode === 'OPEN_MARKET'
   );
@@ -438,6 +446,7 @@ export function buildStrategySummaryMetrics(plots = [], strategy = {}, houseType
   return {
     autoPricedPlotCount: autoPriced.length,
     manualOverrideCount: manualOverrides.length,
+    importedForecastCount: importedForecasts.length,
     averageOmPerFt2,
     averageAhPercentOfOm,
     totalGaragePremium: roundPlotMoney(totalGaragePremium),
@@ -497,6 +506,15 @@ export function buildStrategyInsights(plots = [], strategy = {}, houseTypePricin
       label: 'Plots with Manual Overrides',
       value: `${manualOverrides.length} plot${manualOverrides.length === 1 ? '' : 's'}`,
       plotId: manualOverrides[0]?.id || null,
+    });
+  }
+  const importedForecasts = enriched.filter((plot) => plot.isImportedForecast);
+  if (importedForecasts.length) {
+    items.push({
+      key: 'imported-forecasts',
+      label: 'Plots with Imported Forecasts',
+      value: `${importedForecasts.length} plot${importedForecasts.length === 1 ? '' : 's'}`,
+      plotId: importedForecasts[0]?.id || null,
     });
   }
 

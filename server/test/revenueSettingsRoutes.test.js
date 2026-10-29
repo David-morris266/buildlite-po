@@ -163,6 +163,10 @@ if (!isDbConfigured()) {
     assert.equal(created.body.recognitionPolicy, "completion");
     assert.equal(created.body.revenueStrategy.openMarket.ratePerFt2, 375);
     assert.equal(created.body.houseTypePricing["Type A"].representativeNiaFt2, 950);
+    assert.deepEqual(created.body.recognitionSettings.pricingAssumptionsAuthority, {
+      schemaVersion: 1,
+      established: false,
+    });
     assert.equal(created.body.createdBy, routeAuth.displayName);
     assert.equal(created.body.revenueAuthority.ready, false);
     assert.ok(created.body.revenueAuthority.blockers.some((item) => item.reason === "plot-master-unavailable"));
@@ -174,6 +178,94 @@ if (!isDbConfigured()) {
     assert.equal(loaded.body.revenueStrategy.garagePremiums.single, 13000);
     assert.equal(loaded.body.revenueAuthority.ready, false);
     assert.ok(loaded.body.revenueAuthority.blockers.some((item) => item.reason === "plot-master-unavailable"));
+  });
+
+  test("only explicit Pricing Assumptions establishment sets server-owned actor evidence", async () => {
+    const active = await getActiveClient();
+    const developmentId = await createDevelopment(active);
+    const created = await request(app)
+      .put(`/api/developments/${developmentId}/revenue/settings`)
+      .send({
+        version: 0,
+        revenueMode: "summary",
+        summaryRevenueLines: [{ id: "total", description: "Total Forecast Revenue", forecastRevenue: 0 }],
+        recognitionSettings: { pricingAssumptionsAuthority: { schemaVersion: 1, established: true, establishedBy: "forged" } },
+      });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.revenueAuthority.ready, true);
+    assert.equal(created.body.revenueAuthority.summary.forecastRevenue, 0);
+    assert.deepEqual(created.body.recognitionSettings.pricingAssumptionsAuthority, { schemaVersion:1, established:false });
+
+    const established = await request(app)
+      .put(`/api/developments/${developmentId}/revenue/settings`)
+      .send({
+        version: 1,
+        revenueMode: "summary",
+        summaryRevenueLines: [{ id: "total", description: "Total Forecast Revenue", forecastRevenue: 0 }],
+        establishPricingAssumptions: true,
+      });
+    assert.equal(established.status, 200);
+    const authority = established.body.recognitionSettings.pricingAssumptionsAuthority;
+    assert.equal(authority.schemaVersion, 1);
+    assert.equal(authority.established, true);
+    assert.equal(authority.establishedBy, routeAuth.displayName);
+    assert.equal(authority.establishedByUserId, routeAuth.userId);
+    assert.equal(authority.establishedByMembershipId, routeAuth.membershipId);
+    assert.ok(Date.parse(authority.establishedAt));
+
+    const preserved = await request(app)
+      .put(`/api/developments/${developmentId}/revenue/settings`)
+      .send({
+        version: 2,
+        revenueMode: "summary",
+        summaryRevenueLines: [{ id: "total", description: "Total Forecast Revenue", forecastRevenue: 1 }],
+      });
+    assert.equal(preserved.status, 200);
+    assert.deepEqual(preserved.body.recognitionSettings.pricingAssumptionsAuthority, authority);
+  });
+
+  test("Summary save cannot accidentally establish or switch to unestablished House Type Auto Revenue", async () => {
+    const active = await getActiveClient();
+    const developmentId = await createDevelopment(active);
+    await pool.query(
+      `UPDATE developments SET payload=$1::jsonb WHERE id=$2 AND client_id=$3`,
+      [JSON.stringify({ plotMaster: { plots: [{
+        id: "plot-auto-1",
+        plotNumber: "1",
+        houseType: "Ash",
+        gia: 1000,
+        tenureCode: "OPEN_MARKET",
+        revenueStatus: "Available",
+        revenueSource: "House Type",
+      }] } }), developmentId, active.id]
+    );
+
+    const summary = await request(app)
+      .put(`/api/developments/${developmentId}/revenue/settings`)
+      .send({
+        version: 0,
+        revenueMode: "summary",
+        summaryRevenueLines: [{ id: "total", description: "Total Forecast Revenue", forecastRevenue: 250000 }],
+      });
+    assert.equal(summary.status, 201);
+    assert.equal(summary.body.revenueMode, "summary");
+    assert.deepEqual(summary.body.recognitionSettings.pricingAssumptionsAuthority, { schemaVersion: 1, established: false });
+
+    const blocked = await request(app)
+      .put(`/api/developments/${developmentId}/revenue/settings`)
+      .send({
+        version: 1,
+        revenueMode: "sales_register",
+        summaryRevenueLines: summary.body.summaryRevenueLines,
+      });
+    assert.equal(blocked.status, 409);
+    assert.match(blocked.body.message, /Sales Register must be ready/i);
+
+    const persisted = await request(app).get(`/api/developments/${developmentId}/revenue/settings`);
+    assert.equal(persisted.status, 200);
+    assert.equal(persisted.body.version, 1);
+    assert.equal(persisted.body.revenueMode, "summary");
+    assert.deepEqual(persisted.body.recognitionSettings.pricingAssumptionsAuthority, { schemaVersion: 1, established: false });
   });
 
   test("PUT increments version and stale version returns 409", async () => {

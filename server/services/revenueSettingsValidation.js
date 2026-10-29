@@ -202,6 +202,7 @@ function validatePutSettingsBody(body = {}) {
   return {
     ok: true,
     expectedVersion,
+    establishPricingAssumptions: body.establishPricingAssumptions === true,
     value: {
       recognitionPolicy,
       revenueStrategy,

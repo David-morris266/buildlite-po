@@ -15,6 +15,15 @@ describe('Summary Revenue server mapping', () => {
     expect(normalizeServerRevenueSettings({id:'settings-1'}, 'dev-1').revenueMode).toBe('sales_register');
   });
 
+  it('sends the explicit establishment command separately from untrusted recognition settings', () => {
+    const payload = toServerRevenueSettingsPayload({
+      developmentId:'dev-1', version:0, establishPricingAssumptions:true,
+      recognitionSettings:{ pricingAssumptionsAuthority:{ established:true, establishedBy:'browser' } },
+    });
+    expect(payload.establishPricingAssumptions).toBe(true);
+    expect(payload.recognitionSettings.pricingAssumptionsAuthority).toEqual({ established:true, establishedBy:'browser' });
+  });
+
   it('maps the legacy demo label to the governed description field', () => {
     const mapped = normalizeServerRevenueSettings({
       id:'settings-1',

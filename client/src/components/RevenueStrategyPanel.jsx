@@ -135,7 +135,7 @@ export default function RevenueStrategyPanel({
         <div className="revenue-strategy__header-copy">
           <h2 id="revenue-strategy-title" className="po-matrix-section__title">Pricing Assumptions</h2>
           <p className="revenue-workspace__lead revenue-strategy__lead">
-            Development-wide defaults for auto-priced plots.
+            Development-wide assumptions for auto-priced plots. Unsaved values are illustrative until explicitly established.
           </p>
         </div>
         <button type="button" className="po-btn-primary revenue-strategy__save" onClick={handleSaveClick} disabled={isBusy}>
@@ -224,8 +224,8 @@ export default function RevenueStrategyPanel({
 
       <RevenueConfirmDialog
         open={saveDialogOpen}
-        title="Save Revenue Strategy"
-        message="Apply these changes to all Auto-priced plots?"
+        title="Establish Pricing Assumptions"
+        message="Save these Pricing Assumptions as governed Revenue evidence and apply them to all Auto-priced plots? Choose No to establish the assumptions without bulk repricing."
         confirmLabel="Yes"
         cancelLabel="Cancel"
         busy={isBusy}

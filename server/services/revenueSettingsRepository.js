@@ -80,6 +80,29 @@ async function putRevenueSettings(clientId, developmentId, body = {}, { actor, a
   try {
     await dbClient.query("BEGIN");
     const existing = await findSettingsRow(clientId, developmentId, dbClient);
+    const existingRecognitionSettings = existing?.recognition_settings && typeof existing.recognition_settings === 'object'
+      ? existing.recognition_settings
+      : {};
+    const requestedRecognitionSettings = { ...validated.value.recognitionSettings };
+    delete requestedRecognitionSettings.pricingAssumptionsAuthority;
+    let pricingAssumptionsAuthority = existingRecognitionSettings.pricingAssumptionsAuthority || null;
+    if (!existing) {
+      pricingAssumptionsAuthority = { schemaVersion: 1, established: false };
+    }
+    if (validated.establishPricingAssumptions) {
+      pricingAssumptionsAuthority = {
+        schemaVersion: 1,
+        established: true,
+        establishedAt: new Date().toISOString(),
+        establishedBy: auth?.displayName || actor || null,
+        establishedByUserId: auth?.userId || null,
+        establishedByMembershipId: auth?.membershipId || null,
+      };
+    }
+    validated.value.recognitionSettings = {
+      ...requestedRecognitionSettings,
+      ...(pricingAssumptionsAuthority ? { pricingAssumptionsAuthority } : {}),
+    };
     const submitted = await dbClient.query(`SELECT 1 FROM cvr_periods WHERE client_id=$1 AND development_id=$2 AND status='submitted' LIMIT 1`, [clientId, developmentId]);
     if (submitted.rowCount && (existing?.revenue_mode === 'summary' || validated.value.revenueMode === 'summary' || existing?.revenue_mode !== validated.value.revenueMode)) {
       await dbClient.query("ROLLBACK");

@@ -126,6 +126,7 @@ export function saveRevenueRecord(developmentId, record) {
         houseTypePricing: next.houseTypePricing,
         revenueAdjustments: next.revenueAdjustments,
         recognitionSettings: next.recognitionSettings,
+        establishPricingAssumptions: record.establishPricingAssumptions === true,
       });
     } catch (error) {
       return Promise.resolve({ ok: false, errors: [error?.message || 'Revenue settings are not ready.'] });
