@@ -64,7 +64,8 @@ async function ensureSchema() {
   await pool.query(fs.readFileSync(MIGRATION_024, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_025, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_026, "utf8"));
-  await pool.query(fs.readFileSync(MIGRATION_027, "utf8"));
+  const hasTerms = await pool.query("SELECT 1 FROM information_schema.tables WHERE table_name='subcontract_terms_families'");
+  if (!hasTerms.rowCount) await pool.query(fs.readFileSync(MIGRATION_027, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_028, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_031, "utf8"));
   await pool.query(fs.readFileSync(MIGRATION_032, "utf8"));
@@ -225,7 +226,7 @@ async function savePo(clientId, po) {
     `
       INSERT INTO purchase_orders (po_number, payload, client_id)
       VALUES ($1, $2, $3)
-      ON CONFLICT (po_number)
+      ON CONFLICT (client_id, po_number)
       DO UPDATE SET payload = EXCLUDED.payload, client_id = EXCLUDED.client_id
     `,
     [po.poNumber, po, clientId]

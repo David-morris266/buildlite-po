@@ -11,6 +11,11 @@ const buildUrl = (path) =>
 
 async function handleJson(res) {
   if (!res.ok) {
+    const contentType = String(res.headers?.get?.('content-type') || '').toLowerCase();
+    if (contentType.includes('application/json')) {
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.message || body?.error || res.statusText || 'Request failed');
+    }
     const text = await res.text().catch(() => '');
     throw new Error(text || res.statusText || 'Request failed');
   }

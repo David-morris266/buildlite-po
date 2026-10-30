@@ -156,7 +156,7 @@ async function savePo(clientId, po) {
     `
       INSERT INTO purchase_orders (po_number, payload, client_id)
       VALUES ($1, $2, $3)
-      ON CONFLICT (po_number)
+      ON CONFLICT (client_id, po_number)
       DO UPDATE SET payload = EXCLUDED.payload, client_id = EXCLUDED.client_id
     `,
     [po.poNumber, po, clientId]

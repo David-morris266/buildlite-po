@@ -4,6 +4,21 @@
 
 const STORAGE_KEY = 'buildlite_po_development_refs_v1';
 
+function activeTenantId() {
+  try {
+    return String(localStorage.getItem('buildlite_active_client_id') || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function storageIdentity(poNumber, tenantId = activeTenantId()) {
+  const number = String(poNumber || '').trim();
+  const tenant = String(tenantId || '').trim();
+  if (!number) return '';
+  return tenant ? `${tenant}::${number}` : number;
+}
+
 function readAll() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -19,25 +34,26 @@ function writeAll(data) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
-export function savePoDevelopmentRef(poNumber, ref = {}) {
+export function savePoDevelopmentRef(poNumber, ref = {}, tenantId) {
   const number = String(poNumber || '').trim();
   if (!number || !ref.developmentId) return null;
 
   const all = readAll();
-  all[number] = {
+  const identity = storageIdentity(number, tenantId);
+  all[identity] = {
     developmentId: ref.developmentId,
     developmentNumber: ref.developmentNumber || '',
     developmentName: ref.developmentName || '',
     updatedAt: new Date().toISOString(),
   };
   writeAll(all);
-  return all[number];
+  return all[identity];
 }
 
-export function getPoDevelopmentRefByNumber(poNumber) {
-  const number = String(poNumber || '').trim();
-  if (!number) return null;
-  return readAll()[number] || null;
+export function getPoDevelopmentRefByNumber(poNumber, tenantId) {
+  const identity = storageIdentity(poNumber, tenantId);
+  if (!identity) return null;
+  return readAll()[identity] || null;
 }
 
 export function enrichPoWithDevelopmentRef(po) {

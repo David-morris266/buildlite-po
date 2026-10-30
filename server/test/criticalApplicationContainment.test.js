@@ -42,7 +42,6 @@ async function makeClient(label) {
 
 function poPayload(poNumber, supplier = null, overrides = {}) {
   return {
-    poNumber,
     type: 'M',
     supplierId: supplier?.id || '',
     supplierSnapshot: supplier || { name: 'Containment Supplier' },
@@ -51,6 +50,13 @@ function poPayload(poNumber, supplier = null, overrides = {}) {
     items: [{ description: 'Consultancy', qty: 1, rate: 1000, amount: 1000, costCode: '1100' }],
     ...overrides,
   };
+}
+
+async function createServerPo(app, supplier, overrides = {}) {
+  const response = await request(app).post('/api/po').send(poPayload(null, supplier, overrides));
+  assert.equal(response.status, 201, response.text);
+  poNumbers.push(response.body.poNumber);
+  return response.body;
 }
 
 async function createApprovedSupplier(app, name) {
@@ -70,10 +76,10 @@ test.before(async () => {
 test.after(async () => {
   if (!isDbConfigured()) return;
   if (poNumbers.length) {
-    await pool.query('DELETE FROM package_purchase_orders WHERE po_number=ANY($1::text[])', [poNumbers]);
-    await pool.query('DELETE FROM purchase_order_terms_overrides WHERE po_number=ANY($1::text[])', [poNumbers]);
-    await pool.query('DELETE FROM purchase_order_terms_bindings WHERE po_number=ANY($1::text[])', [poNumbers]);
-    await pool.query('DELETE FROM purchase_orders WHERE po_number=ANY($1::text[])', [poNumbers]);
+    await pool.query('DELETE FROM package_purchase_orders WHERE client_id=ANY($1::uuid[]) AND po_number=ANY($2::text[])', [clients, poNumbers]);
+    await pool.query('DELETE FROM purchase_order_terms_overrides WHERE client_id=ANY($1::uuid[]) AND po_number=ANY($2::text[])', [clients, poNumbers]);
+    await pool.query('DELETE FROM purchase_order_terms_bindings WHERE client_id=ANY($1::uuid[]) AND po_number=ANY($2::text[])', [clients, poNumbers]);
+    await pool.query('DELETE FROM purchase_orders WHERE client_id=ANY($1::uuid[]) AND po_number=ANY($2::text[])', [clients, poNumbers]);
   }
   if (supplierIds.length) await pool.query('DELETE FROM suppliers WHERE id=ANY($1::text[])', [supplierIds]);
   if (clients.length) await pool.query('DELETE FROM clients WHERE id=ANY($1::uuid[])', [clients]);
@@ -144,9 +150,7 @@ test('approved supplier identity changes require reapproval while contact change
   assert.equal(contactOnly.status, 200);
   assert.equal(contactOnly.body.approvalStatus, 'approved');
 
-  const historicNumber = `M-HISTORIC-SNAPSHOT-${Date.now()}`;
-  poNumbers.push(historicNumber);
-  assert.equal((await request(app).post('/api/po').send(poPayload(historicNumber, contactOnly.body))).status, 201);
+  const historicNumber = (await createServerPo(app, contactOnly.body)).poNumber;
   assert.equal((await request(app).post(`/api/po/${historicNumber}/request-approval`).send()).status, 200);
   assert.equal((await request(app).post(`/api/po/${historicNumber}/approve`).send({ status: 'Approved' })).status, 200);
 
@@ -169,9 +173,7 @@ test('approved supplier identity changes require reapproval while contact change
   assert.equal(historic.supplierSnapshot.name, 'Stable Supplier Ltd');
   assert.notEqual(historic.supplierSnapshot.vatNumber, 'GB 999 888 777');
 
-  const number = `M-REAPPROVAL-${Date.now()}`;
-  poNumbers.push(number);
-  assert.equal((await request(app).post('/api/po').send(poPayload(number, changed.body))).status, 201);
+  const number = (await createServerPo(app, changed.body)).poNumber;
   assert.equal((await request(app).post(`/api/po/${number}/request-approval`).send()).status, 400);
 });
 
@@ -184,9 +186,7 @@ test('inactive and unknown supplier approval states fail closed', async t => {
   const inactive = await request(appFor(clientId, [...permissions, PERMISSIONS.PO_EDIT], 'Supplier State Operator'))
     .put(`/api/po/suppliers/${supplier.id}`).send({ active: false });
   assert.equal(inactive.status, 200);
-  const inactiveNumber = `M-INACTIVE-${Date.now()}`;
-  poNumbers.push(inactiveNumber);
-  assert.equal((await request(app).post('/api/po').send(poPayload(inactiveNumber, inactive.body))).status, 201);
+  const inactiveNumber = (await createServerPo(app, inactive.body)).poNumber;
   assert.equal((await request(app).post(`/api/po/${inactiveNumber}/request-approval`).send()).status, 400);
 
   const unknownId = `sup-unknown-${randomUUID()}`;
@@ -195,9 +195,7 @@ test('inactive and unknown supplier approval states fail closed', async t => {
     'INSERT INTO suppliers(id,name,payload,client_id) VALUES($1,$2,$3,$4)',
     [unknownId, 'Unknown State Supplier', { id: unknownId, name: 'Unknown State Supplier', approvalStatus: 'mystery', approvedSupplier: true }, clientId]
   );
-  const unknownNumber = `M-UNKNOWN-${Date.now()}`;
-  poNumbers.push(unknownNumber);
-  assert.equal((await request(app).post('/api/po').send(poPayload(unknownNumber, { id: unknownId }))).status, 201);
+  const unknownNumber = (await createServerPo(app, { id: unknownId })).poNumber;
   assert.equal((await request(app).post(`/api/po/${unknownNumber}/request-approval`).send()).status, 400);
 });
 
@@ -237,9 +235,7 @@ test('contradictory supplier approval evidence cannot be promoted by routine edi
     false
   );
 
-  const number = `M-CONTRADICTORY-${Date.now()}`;
-  poNumbers.push(number);
-  assert.equal((await request(app).post('/api/po').send(poPayload(number, edited.body))).status, 201);
+  const number = (await createServerPo(app, edited.body)).poNumber;
   assert.equal((await request(app).post(`/api/po/${number}/request-approval`).send()).status, 400);
   assert.equal((await request(app).post(`/api/po/suppliers/${supplierId}/approve`).send()).status, 409);
 
@@ -275,12 +271,7 @@ test('contradictory supplier approval evidence cannot be promoted by routine edi
         approvedSupplier: malformedFlag,
       }, clientId]
     );
-    const malformedNumber = `M-MALFORMED-${Date.now()}-${String(malformedFlag)}`;
-    poNumbers.push(malformedNumber);
-    assert.equal(
-      (await request(app).post('/api/po').send(poPayload(malformedNumber, { id: malformedId }))).status,
-      201
-    );
+    const malformedNumber = (await createServerPo(app, { id: malformedId })).poNumber;
     assert.equal(
       (await request(app).post(`/api/po/${malformedNumber}/request-approval`).send()).status,
       400
@@ -294,9 +285,7 @@ test('PO approval decisions require an Issued and Pending lifecycle state', asyn
   const permissions = [PERMISSIONS.PO_CREATE, PERMISSIONS.PO_EDIT, PERMISSIONS.PO_SUBMIT, PERMISSIONS.PO_APPROVE];
   const app = appFor(clientId, permissions, 'Lifecycle Operator');
   const supplier = await createApprovedSupplier(app, 'Lifecycle Supplier');
-  const number = `M-LIFECYCLE-${Date.now()}`;
-  poNumbers.push(number);
-  assert.equal((await request(app).post('/api/po').send(poPayload(number, supplier))).status, 201);
+  const number = (await createServerPo(app, supplier)).poNumber;
   assert.equal((await request(app).post(`/api/po/${number}/approve`).send({ status: 'Approved' })).status, 409);
   assert.equal((await request(app).post(`/api/po/${number}/approve`).send({ status: 'Rejected' })).status, 409);
   assert.equal((await request(app).post(`/api/po/${number}/request-approval`).send()).status, 200);
@@ -358,13 +347,13 @@ test('legacy suppliers without modern approval fields remain usable but tenant-o
     [supplierId, 'Legacy Approved Supplier', { name: 'Legacy Approved Supplier' }, clientId]
   );
   const app = appFor(clientId, [PERMISSIONS.PO_CREATE, PERMISSIONS.PO_SUBMIT], 'Legacy PO Operator');
-  const number = `M-LEGACY-SUP-${Date.now()}`;
-  poNumbers.push(number);
-  const created = await request(app).post('/api/po').send(poPayload(number, {
+  const created = await request(app).post('/api/po').send(poPayload(null, {
     id: supplierId,
     name: 'Forged Legacy Name',
   }));
   assert.equal(created.status, 201);
+  const number = created.body.poNumber;
+  poNumbers.push(number);
   assert.equal(created.body.supplierId, supplierId);
   assert.equal(created.body.supplierSnapshot.name, 'Legacy Approved Supplier');
   const submitted = await request(app).post(`/api/po/${number}/request-approval`).send();
@@ -414,36 +403,43 @@ test('legacy supplier defaults do not fabricate identity changes', async t => {
   assert.doesNotMatch(evidence[0].note, /termsDays|supplierType|defaultVat/);
 });
 
-test('global PO-number collisions fail closed without transferring tenant ownership', async t => {
+test('tenant-scoped PO numbers can repeat without transferring tenant ownership', async t => {
   if (!isDbConfigured()) return t.skip('guarded buildlite_test is not configured');
   const tenantA = await makeClient('Containment PO A');
   const tenantB = await makeClient('Containment PO B');
   const permissions = [PERMISSIONS.PO_CREATE, PERMISSIONS.PO_EDIT];
-  const number = `M-COLLIDE-${Date.now()}`;
-  poNumbers.push(number);
   const appA = appFor(tenantA, [...permissions, PERMISSIONS.PO_APPROVE], 'Tenant A Creator');
   const appB = appFor(tenantB, [...permissions, PERMISSIONS.PO_APPROVE], 'Tenant B Creator');
   const supplierA = await createApprovedSupplier(appA, 'Collision Supplier A');
   const supplierB = await createApprovedSupplier(appB, 'Collision Supplier B');
-  const first = await request(appA)
-    .post('/api/po')
-    .send(poPayload(number, supplierA, {
+  const first = await request(appA).post('/api/po').send(poPayload(null, supplierA, {
       status: 'Approved',
       approval: { status: 'Approved', history: [{ action: 'APPROVED', by: 'Forged' }] },
       createdBy: 'Forged',
-    }));
+  }));
   assert.equal(first.status, 201);
+  poNumbers.push(first.body.poNumber);
   assert.equal(first.body.status, 'Draft');
   assert.equal(first.body.approval.status, 'Draft');
   assert.deepEqual(first.body.approval.history.map(entry => entry.action), ['CREATED']);
   assert.equal(first.body.approval.history[0].by, 'Tenant A Creator');
 
-  const collision = await request(appB).post('/api/po').send(poPayload(number, supplierB));
-  assert.equal(collision.status, 409);
-  const stored = (await pool.query('SELECT client_id,payload FROM purchase_orders WHERE po_number=$1', [number])).rows[0];
-  assert.equal(stored.client_id, tenantA);
-  assert.equal(stored.payload.status, 'Draft');
-  assert.equal((await request(appFor(tenantB, permissions)).put(`/api/po/${number}`).send({ title: 'Taken Over' })).status, 404);
+  const second = await request(appB).post('/api/po').send(poPayload(null, supplierB));
+  assert.equal(second.status, 201);
+  poNumbers.push(second.body.poNumber);
+  assert.equal(second.body.poNumber, first.body.poNumber);
+  const stored = await pool.query(
+    'SELECT client_id,payload FROM purchase_orders WHERE po_number=$1 AND client_id=ANY($2::uuid[]) ORDER BY client_id',
+    [first.body.poNumber, [tenantA, tenantB]]
+  );
+  assert.equal(stored.rowCount, 2);
+  assert.deepEqual(new Set(stored.rows.map(row => row.client_id)), new Set([tenantA, tenantB]));
+  const tenantBEdit = await request(appFor(tenantB, permissions))
+    .put(`/api/po/${first.body.poNumber}`)
+    .send({ title: 'Tenant B only', supplierId: supplierB.id });
+  assert.equal(tenantBEdit.status, 200);
+  const tenantARead = await request(appA).get(`/api/po/${first.body.poNumber}`);
+  assert.notEqual(tenantARead.body.title, 'Tenant B only');
 });
 
 test('PO supplier snapshots are authoritative through create, edit, submit and approval', async t => {
@@ -453,18 +449,17 @@ test('PO supplier snapshots are authoritative through create, edit, submit and a
   const app = appFor(clientId, permissions, 'Snapshot Operator');
   const supplier = await createApprovedSupplier(app, 'Authoritative Architect');
   const other = await createApprovedSupplier(app, 'Other Supplier');
-  const number = `M-SNAPSHOT-${Date.now()}`;
-  poNumbers.push(number);
-
-  const mismatch = await request(app).post('/api/po').send(poPayload(`${number}-BAD`, supplier, {
+  const mismatch = await request(app).post('/api/po').send(poPayload(null, supplier, {
     supplierSnapshot: { id: other.id, name: 'Forged Mismatch' },
   }));
   assert.equal(mismatch.status, 400);
 
-  const created = await request(app).post('/api/po').send(poPayload(number, supplier, {
+  const created = await request(app).post('/api/po').send(poPayload(null, supplier, {
     supplierSnapshot: { id: supplier.id, name: 'Forged Browser Name', approvedSupplier: true },
   }));
   assert.equal(created.status, 201);
+  const number = created.body.poNumber;
+  poNumbers.push(number);
   assert.equal(created.body.supplierSnapshot.name, 'Authoritative Architect');
 
   const edited = await request(app).put(`/api/po/${number}`).send({
@@ -475,12 +470,12 @@ test('PO supplier snapshots are authoritative through create, edit, submit and a
   assert.equal(edited.status, 200);
   assert.equal(edited.body.supplierSnapshot.name, 'Authoritative Architect');
 
-  await pool.query(`UPDATE purchase_orders SET payload=jsonb_set(payload,'{supplierSnapshot,name}','"Forged Stored Name"') WHERE po_number=$1`, [number]);
+  await pool.query(`UPDATE purchase_orders SET payload=jsonb_set(payload,'{supplierSnapshot,name}','"Forged Stored Name"') WHERE client_id=$1 AND po_number=$2`, [clientId, number]);
   const submitted = await request(app).post(`/api/po/${number}/request-approval`).send();
   assert.equal(submitted.status, 200);
   assert.equal(submitted.body.supplierSnapshot.name, 'Authoritative Architect');
 
-  await pool.query(`UPDATE purchase_orders SET payload=jsonb_set(payload,'{supplierSnapshot,name}','"Forged Before Approval"') WHERE po_number=$1`, [number]);
+  await pool.query(`UPDATE purchase_orders SET payload=jsonb_set(payload,'{supplierSnapshot,name}','"Forged Before Approval"') WHERE client_id=$1 AND po_number=$2`, [clientId, number]);
   const approved = await request(app).post(`/api/po/${number}/approve`).send({ status: 'Approved' });
   assert.equal(approved.status, 200);
   assert.equal(approved.body.supplierId, supplier.id);
@@ -499,9 +494,7 @@ test('approved POs cannot be edited, rejected or deleted', async t => {
   ];
   const app = appFor(clientId, permissions, 'Governed PO Operator');
   const supplier = await createApprovedSupplier(app, 'Governed Supplier');
-  const number = `M-LOCKED-${Date.now()}`;
-  poNumbers.push(number);
-  assert.equal((await request(app).post('/api/po').send(poPayload(number, supplier))).status, 201);
+  const number = (await createServerPo(app, supplier)).poNumber;
   const submitted = await request(app).post(`/api/po/${number}/request-approval`).send({ by: 'Forged Submitter' });
   assert.equal(submitted.status, 200);
   assert.equal(submitted.body.approval.history.at(-1).by, 'Governed PO Operator');
@@ -517,9 +510,7 @@ test('a Draft PO with governed downstream evidence cannot be deleted', async t =
   const clientId = await makeClient('Containment dependency tenant');
   const app = appFor(clientId, [PERMISSIONS.PO_CREATE, PERMISSIONS.PO_APPROVE, PERMISSIONS.PO_DELETE_DRAFT]);
   const supplier = await createApprovedSupplier(app, 'Dependency Supplier');
-  const number = `S-DEPENDENCY-${Date.now()}`;
-  poNumbers.push(number);
-  assert.equal((await request(app).post('/api/po').send(poPayload(number, supplier, { type: 'S' }))).status, 201);
+  const number = (await createServerPo(app, supplier, { type: 'S' })).poNumber;
   await pool.query(
     `INSERT INTO purchase_order_terms_bindings(client_id,po_number,resolved_source,binding_event,bound_by)
      VALUES($1,$2,'unconfigured','po_approval','Containment Test')`,
@@ -528,7 +519,7 @@ test('a Draft PO with governed downstream evidence cannot be deleted', async t =
   const deletion = await request(app).delete(`/api/po/${number}`);
   assert.equal(deletion.status, 409);
   assert.match(deletion.body.message, /dependencies/i);
-  assert.equal(Number((await pool.query('SELECT count(*) count FROM purchase_orders WHERE po_number=$1', [number])).rows[0].count), 1);
+  assert.equal(Number((await pool.query('SELECT count(*) count FROM purchase_orders WHERE client_id=$1 AND po_number=$2', [clientId, number])).rows[0].count), 1);
 });
 
 test('legacy Approved evidence blocks edit, submit, reject and delete even when top-level status is stale', async t => {
@@ -556,9 +547,7 @@ test('concurrent lifecycle mutations cannot overwrite or delete an approved PO',
   const app = appFor(clientId, permissions, 'Concurrency Operator');
   const supplier = await createApprovedSupplier(app, 'Concurrency Supplier');
 
-  const number = `M-RACE-${Date.now()}`;
-  poNumbers.push(number);
-  assert.equal((await request(app).post('/api/po').send(poPayload(number, supplier, { title: 'Original' }))).status, 201);
+  const number = (await createServerPo(app, supplier, { title: 'Original' })).poNumber;
   assert.equal((await request(app).post(`/api/po/${number}/request-approval`).send()).status, 200);
   const [approval, edit, rejection] = await Promise.all([
     request(app).post(`/api/po/${number}/approve`).send({ status: 'Approved' }),
@@ -568,23 +557,21 @@ test('concurrent lifecycle mutations cannot overwrite or delete an approved PO',
   assert.equal(approval.status, 200);
   assert.ok([200, 409].includes(edit.status));
   assert.ok([200, 409].includes(rejection.status));
-  const stored = (await pool.query('SELECT payload FROM purchase_orders WHERE po_number=$1', [number])).rows[0].payload;
+  const stored = (await pool.query('SELECT payload FROM purchase_orders WHERE client_id=$1 AND po_number=$2', [clientId, number])).rows[0].payload;
   assert.equal(stored.status, 'Approved');
   assert.equal(stored.approval.status, 'Approved');
   assert.equal(stored.approval.history.filter(entry => entry.action === 'APPROVED').length, 1);
   const approvedIndex = stored.approval.history.findIndex(entry => entry.action === 'APPROVED');
   assert.equal(stored.approval.history.slice(approvedIndex + 1).some(entry => ['UPDATED', 'REJECTED'].includes(entry.action)), false);
 
-  const deleteNumber = `M-RACE-DELETE-${Date.now()}`;
-  poNumbers.push(deleteNumber);
-  assert.equal((await request(app).post('/api/po').send(poPayload(deleteNumber, supplier))).status, 201);
+  const deleteNumber = (await createServerPo(app, supplier)).poNumber;
   assert.equal((await request(app).post(`/api/po/${deleteNumber}/request-approval`).send()).status, 200);
   const [approveDeleteRace, deletion] = await Promise.all([
     request(app).post(`/api/po/${deleteNumber}/approve`).send({ status: 'Approved' }),
     request(app).delete(`/api/po/${deleteNumber}`),
   ]);
   assert.ok([[200, 409], [404, 200]].some(([approveStatus, deleteStatus]) => approveDeleteRace.status === approveStatus && deletion.status === deleteStatus));
-  const remaining = (await pool.query('SELECT payload FROM purchase_orders WHERE po_number=$1', [deleteNumber])).rows[0]?.payload;
+  const remaining = (await pool.query('SELECT payload FROM purchase_orders WHERE client_id=$1 AND po_number=$2', [clientId, deleteNumber])).rows[0]?.payload;
   if (remaining) assert.equal(remaining.status, 'Approved');
 });
 

@@ -147,14 +147,24 @@ async function init() {
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS purchase_orders (
-      po_number TEXT PRIMARY KEY,
+      po_number TEXT NOT NULL,
       payload   JSONB NOT NULL,
-      client_id UUID REFERENCES clients(id)
+      client_id UUID NOT NULL REFERENCES clients(id),
+      PRIMARY KEY (client_id, po_number)
     );
   `);
 
   await pool.query(`
     ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES clients(id);
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS purchase_order_number_sequences (
+      client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      order_type TEXT NOT NULL CHECK (order_type IN ('S','M','P')),
+      next_number BIGINT NOT NULL CHECK (next_number > 0),
+      PRIMARY KEY (client_id, order_type)
+    );
   `);
 
   await pool.query(`

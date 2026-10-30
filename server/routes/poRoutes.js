@@ -16,6 +16,10 @@ const { bindOnApproval, resolveForPo } = require("../services/subcontractTermsRe
 const { requirePermission, requireAnyPermission, actorFromAuth } = require('../auth/authorization');
 const { PERMISSIONS } = require('../auth/permissions');
 const { asyncRoute } = require('../middleware/asyncRoute');
+const {
+  normaliseOrderType,
+  insertPurchaseOrderWithNumber,
+} = require('../services/purchaseOrderNumbering');
 
 const router = express.Router();
 
@@ -262,16 +266,6 @@ async function dbGetPO(clientId, poNumber, dbClient = pool, { forUpdate = false 
   return rows[0]?.payload || null;
 }
 
-async function dbSavePO(clientId, po) {
-  try {
-    await pool.query(`INSERT INTO purchase_orders (po_number,payload,client_id) VALUES($1,$2,$3)`,[po.poNumber,po,clientId]);
-  } catch (error) {
-    if (error.code === '23505') return false;
-    throw error;
-  }
-  return true;
-}
-
 async function dbSavePOWithClient(dbClient, clientId, po) {
   const result=await dbClient.query(`UPDATE purchase_orders SET payload=$1 WHERE client_id=$2 AND po_number=$3`,[po,clientId,po.poNumber]);
   if(result.rowCount!==1)throw Object.assign(new Error('Purchase Order changed or is unavailable for this tenant.'),{status:409});
@@ -304,21 +298,6 @@ async function dbHasPoDependencies(clientId, poNumber, dbClient = pool) {
 /* =========================================
  * SHARED HELPERS (unchanged logic)
  * ======================================= */
-
-function nextNumberForType(all, type) {
-  const prefix = String(type || "M").toUpperCase();
-  const nums = all
-    .filter(
-      (p) =>
-        (p.type || "").toUpperCase() === prefix &&
-        typeof p.poNumber === "string"
-    )
-    .map((p) => parseInt((p.poNumber || "").replace(/\D+/g, ""), 10))
-    .filter(Number.isFinite);
-
-  const max = nums.length ? Math.max(...nums) : 0;
-  return `${prefix}${String(max + 1).padStart(4, "0")}`;
-}
 
 function computeTotals(items = [], vatRateDefault = 0.2) {
   const net = items.reduce((sum, it) => {
@@ -674,97 +653,124 @@ router.post("/po", requirePermission(PERMISSIONS.PO_CREATE), asyncRoute(async (r
   if (!active) return res.status(404).json({ error: "No active client set" });
 
   const body = req.body || {};
-  const all = await dbReadPOs(active.id);
-
-  const type = (body.type || "M").toUpperCase();
-  const poNumber = body.poNumber || nextNumberForType(all, type);
+  if (Object.prototype.hasOwnProperty.call(body, "poNumber")) {
+    return res.status(400).json({
+      message: "Purchase Order numbers are allocated by BuildLite and must not be supplied by the browser.",
+    });
+  }
+  let type;
+  try {
+    type = normaliseOrderType(body.type || "M");
+  } catch (error) {
+    return res.status(error.status || 400).json({ message: error.message });
+  }
   const now = new Date().toISOString();
 
   const status = "Draft";
   const approvalStatus = "Draft";
 
-  let supplier;
+  const dbClient = await pool.connect();
   try {
-    supplier = await resolveAuthoritativeSupplier(active.id, body);
+    await dbClient.query("BEGIN");
+    const supplier = await resolveAuthoritativeSupplier(
+      active.id,
+      body,
+      null,
+      dbClient,
+      { lock: true }
+    );
+
+    const items = Array.isArray(body.items)
+      ? body.items.map((it) => ({
+          description: it.description || "",
+          uom: it.uom || it.unit || "nr",
+          qty: Number(it.qty || it.quantity || 0),
+          rate: Number(it.rate || it.unitRate || 0),
+          amount:
+            it.amount != null
+              ? Number(it.amount) || 0
+              : Number(it.qty || 0) * Number(it.rate || 0),
+          costCode: it.costCode || body.costRef?.costCode || "",
+        }))
+      : [];
+
+    const vatRateDefault = Number(body.vatRateDefault == null ? 0.2 : body.vatRateDefault) || 0;
+    const retentionRateDefault =
+      Number(body.retentionRateDefault == null ? 0.05 : body.retentionRateDefault) || 0;
+    const totals = computeTotals(items, vatRateDefault);
+    const clauses = body.clauses || {};
+
+    const po = await insertPurchaseOrderWithNumber(
+      dbClient,
+      active.id,
+      type,
+      (poNumber) => ({
+        poNumber,
+        type,
+
+        supplierId: supplier.supplierId,
+        supplierSnapshot: supplier.supplierSnapshot,
+
+        costRef: {
+          jobId: body.costRef?.jobId || "",
+          developmentId: body.costRef?.developmentId || "",
+          jobCode: body.costRef?.jobCode || "",
+          costCode: body.costRef?.costCode || "",
+          element: body.costRef?.element || "",
+        },
+
+        developmentId: body.developmentId || "",
+        developmentNumber: body.developmentNumber || "",
+        developmentName: body.developmentName || "",
+        developmentStatus: body.developmentStatus || "",
+        development: body.development || null,
+
+        job: body.job || null,
+
+        title: body.title || "",
+        clauses,
+
+        items,
+        subtotal: totals.net,
+        vatRateDefault: totals.vatRate,
+        retentionRateDefault,
+        totals,
+
+        approval: { status: approvalStatus, history: [] },
+        status,
+        requiredBy: body.requiredBy || "",
+        notes: body.notes || "",
+
+        createdBy: req.buildliteAuth.displayName,
+        createdByEmail: req.buildliteAuth.email || "",
+        createdByName: req.buildliteAuth.displayName,
+        updatedBy: req.buildliteAuth.displayName,
+        createdAt: now,
+        updatedAt: now,
+        archived: false,
+      })
+    );
+
+    pushHistory(po, "CREATED", req.buildliteAuth.displayName, "Draft created");
+    await dbClient.query(
+      "UPDATE purchase_orders SET payload=$1 WHERE client_id=$2 AND po_number=$3",
+      [po, active.id, po.poNumber]
+    );
+
+    await dbClient.query("COMMIT");
+    res.status(201).json(po);
   } catch (error) {
-    return res.status(error.status || 500).json({ message: error.message });
+    await rollbackQuietly(dbClient);
+    if (error.code === "23505") {
+      return res.status(409).json({
+        message: "Purchase Order number could not be allocated safely. Please retry.",
+      });
+    }
+    if (error.status) return res.status(error.status).json({ message: error.message });
+    throw error;
+  } finally {
+    dbClient.release();
   }
-
-  const items = Array.isArray(body.items)
-    ? body.items.map((it) => ({
-        description: it.description || "",
-        uom: it.uom || it.unit || "nr",
-        qty: Number(it.qty || it.quantity || 0),
-        rate: Number(it.rate || it.unitRate || 0),
-        amount:
-          it.amount != null
-            ? Number(it.amount) || 0
-            : Number(it.qty || 0) * Number(it.rate || 0),
-        costCode: it.costCode || body.costRef?.costCode || "",
-      }))
-    : [];
-
-  const vatRateDefault = Number(body.vatRateDefault == null ? 0.2 : body.vatRateDefault) || 0;
-  const retentionRateDefault =
-    Number(body.retentionRateDefault == null ? 0.05 : body.retentionRateDefault) || 0;
-  const totals = computeTotals(items, vatRateDefault);
-  const clauses = body.clauses || {};
-
-  const po = {
-    poNumber,
-    type,
-
-    supplierId: supplier.supplierId,
-    supplierSnapshot: supplier.supplierSnapshot,
-
-    costRef: {
-      jobId: body.costRef?.jobId || "",
-      developmentId: body.costRef?.developmentId || "",
-      jobCode: body.costRef?.jobCode || "",
-      costCode: body.costRef?.costCode || "",
-      element: body.costRef?.element || "",
-    },
-
-    developmentId: body.developmentId || "",
-    developmentNumber: body.developmentNumber || "",
-    developmentName: body.developmentName || "",
-    developmentStatus: body.developmentStatus || "",
-    development: body.development || null,
-
-    job: body.job || null,
-
-    title: body.title || "",
-    clauses,
-
-    items,
-    subtotal: totals.net,
-    vatRateDefault: totals.vatRate,
-    retentionRateDefault,
-    totals,
-
-    approval: { status: approvalStatus, history: [] },
-    status,
-    requiredBy: body.requiredBy || "",
-    notes: body.notes || "",
-
-    createdBy: req.buildliteAuth.displayName,
-    createdByEmail: req.buildliteAuth.email || "",
-    createdByName: req.buildliteAuth.displayName,
-    updatedBy: req.buildliteAuth.displayName,
-    createdAt: now,
-    updatedAt: now,
-    archived: false,
-  };
-
-  pushHistory(
-    po,
-    "CREATED",
-    req.buildliteAuth.displayName,
-    "Draft created"
-  );
-
-  if(!await dbSavePO(active.id, po))return res.status(409).json({message:'Purchase Order number is unavailable. Choose another number.'});
-  res.status(201).json(po);
 }));
 
 /* =========================================
@@ -785,6 +791,13 @@ router.put("/po/:poNumber", requirePermission(PERMISSIONS.PO_EDIT), asyncRoute(a
     if (!["draft", "rejected"].includes(currentStatus) || hasApprovedAuthority(po)) {
       throw routeError(409, "Approved Purchase Orders are immutable. Only a never-approved Draft or Rejected order can be changed.");
     }
+    if (body.type != null) {
+      const existingType = String(po.type || po.poNumber?.slice(0, 1) || "").trim().toUpperCase();
+      const requestedType = String(body.type).trim().toUpperCase();
+      if (requestedType !== existingType) {
+        throw routeError(400, "Purchase Order type cannot be changed after its number has been allocated.");
+      }
+    }
 
     const supplier = await resolveAuthoritativeSupplier(active.id, body, po, dbClient);
     let items = po.items || [];
@@ -804,7 +817,6 @@ router.put("/po/:poNumber", requirePermission(PERMISSIONS.PO_EDIT), asyncRoute(a
 
     po.supplierId = supplier.supplierId;
     po.supplierSnapshot = supplier.supplierSnapshot;
-    if (body.type) po.type = String(body.type).toUpperCase();
     po.costRef = {
       jobId: body.costRef?.jobId ?? po.costRef?.jobId ?? "",
       developmentId: body.costRef?.developmentId ?? po.costRef?.developmentId ?? "",

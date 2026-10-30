@@ -182,6 +182,18 @@ async function prepareIntegrationTestDatabase(pool) {
       'utf8'
     ));
   }
+  const poPrimaryKey = await pool.query(
+    `SELECT pg_get_constraintdef(oid) definition
+     FROM pg_constraint
+     WHERE conname='purchase_orders_pkey'
+       AND conrelid='purchase_orders'::regclass`
+  );
+  if (!poPrimaryKey.rows[0]?.definition?.includes('(client_id, po_number)')) {
+    await pool.query(fs.readFileSync(
+      path.join(__dirname, '..', 'migrations', '071_tenant_purchase_order_numbering.sql'),
+      'utf8'
+    ));
+  }
   const activeClientId = await ensureActiveTestClient(pool);
   await ensureDefaultTestPrincipal(pool, activeClientId);
 }
