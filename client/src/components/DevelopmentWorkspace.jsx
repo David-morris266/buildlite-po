@@ -654,8 +654,10 @@ export default function DevelopmentWorkspace({
     onLedgerChanged?.();
   }
 
-  function handleCvrChanged() {
-    setCvrRefresh((value) => value + 1);
+  function handleCvrChanged(change = {}) {
+    if (change.skipWorkspaceCvrRefresh !== true) {
+      setCvrRefresh((value) => value + 1);
+    }
     onCvrChanged?.();
   }
 

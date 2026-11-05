@@ -11,6 +11,7 @@ import {
   getCvrInputListCallCount,
   getCvrPeriodGetCallCount,
   getCvrPeriodListCallCount,
+  queueMockCvrLiveEvidenceResponse,
   resetCvrPeriodApiStore,
   seedMockCvrInputs,
   seedMockCvrPeriod,
@@ -27,10 +28,12 @@ import {
   getCvrInputLoadState,
   getCvrPeriodLoadState,
   getAuthoritativeCvrOpenState,
+  getDraftCvrLiveEvidenceReadiness,
   openAuthoritativeCvrPeriod,
   patchCachedCvrPeriod,
   refreshCvrPeriodsForDevelopment,
   refreshCvrInputsForPeriod,
+  refreshDraftCvrLiveEvidence,
   upsertCachedCvrInput,
   upsertCachedCvrPeriod,
 } from './cvrPeriodServerCache';
@@ -90,6 +93,29 @@ describe('cvrPeriodServerCache (BL-031B)', () => {
     expect(getCvrPeriodGetCallCount()).toBe(1);
     expect(getCvrInputListCallCount()).toBe(2);
     expect(getAuthoritativeCvrOpenState(DEV_A, 'P01')).toEqual({ state: 'current', error: null });
+  });
+
+  it('fails closed after a live-evidence refresh error and prevents an older response replacing newer evidence', async () => {
+    seedMockCvrPeriod(DEV_A, buildServerCvrPeriodFixture({ id: PERIOD_A, developmentId: DEV_A }));
+    seedMockCvrInputs(PERIOD_A, []);
+    await openAuthoritativeCvrPeriod(DEV_A, 'P01');
+
+    queueMockCvrLiveEvidenceResponse({
+      evidence: { rows: [{ costCodeKey: '1000', committed: 100 }] },
+      delayMs: 30,
+    });
+    queueMockCvrLiveEvidenceResponse({
+      evidence: { rows: [{ costCodeKey: '1000', committed: 200 }] },
+    });
+    const older = refreshDraftCvrLiveEvidence(DEV_A, PERIOD_A);
+    const newer = refreshDraftCvrLiveEvidence(DEV_A, PERIOD_A);
+    await Promise.all([older, newer]);
+    expect(getCachedCvrPeriods(DEV_A)[0].liveEvidence.rows[0].committed).toBe(200);
+
+    queueMockCvrLiveEvidenceResponse({ error: new Error('Close candidate unavailable') });
+    await expect(refreshDraftCvrLiveEvidence(DEV_A, PERIOD_A)).rejects.toThrow('Close candidate unavailable');
+    expect(getDraftCvrLiveEvidenceReadiness(PERIOD_A).loadState).toBe('error');
+    expect(getCachedCvrPeriods(DEV_A)[0].liveEvidence).toBeNull();
   });
 
   it('keeps authoritative opening failures explicit and retryable', async () => {

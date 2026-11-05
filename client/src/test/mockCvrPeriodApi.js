@@ -5,6 +5,9 @@
 const store = {
   periodsByDevelopment: new Map(),
   inputsByPeriod: new Map(),
+  liveEvidenceByPeriod: new Map(),
+  liveEvidenceResponses: [],
+  liveEvidenceCallCount: 0,
   listDelayMs: 0,
   listShouldReject: false,
   listRejectError: null,
@@ -64,6 +67,9 @@ function listForDevelopment(developmentId) {
 export function resetCvrPeriodApiStore() {
   store.periodsByDevelopment.clear();
   store.inputsByPeriod.clear();
+  store.liveEvidenceByPeriod.clear();
+  store.liveEvidenceResponses = [];
+  store.liveEvidenceCallCount = 0;
   store.listDelayMs = 0;
   store.listShouldReject = false;
   store.listRejectError = null;
@@ -108,6 +114,18 @@ export function seedMockCvrPeriod(developmentId, period) {
 
 export function seedMockCvrInputs(periodId, inputs) {
   store.inputsByPeriod.set(periodId, clone(inputs || []));
+}
+
+export function seedMockCvrLiveEvidence(periodId, evidence) {
+  store.liveEvidenceByPeriod.set(periodId, clone(evidence));
+}
+
+export function queueMockCvrLiveEvidenceResponse({ evidence = null, error = null, delayMs = 0 } = {}) {
+  store.liveEvidenceResponses.push({ evidence: clone(evidence), error, delayMs });
+}
+
+export function getCvrLiveEvidenceCallCount() {
+  return store.liveEvidenceCallCount;
 }
 
 export function setCvrPeriodListDelay(ms) {
@@ -480,18 +498,27 @@ export function buildServerCvrRevenueSnapshotFixture(overrides = {}) {
 function snapshotFromApprovedPeriod(existing) {
   if (existing.snapshot) return existing.snapshot;
   const inputs = store.inputsByPeriod.get(existing.id) || [];
-  const rows = inputs.map((input) =>
+  const inputByKey = new Map(inputs.map((input) => [String(input.costCodeKey || '').toLowerCase(), input]));
+  const positions = existing.budgetSource?.document?.positions || [];
+  const positionByKey = new Map(positions.map((position) => [String(position.costCode || '').toLowerCase(), position]));
+  const keys = new Set([...inputByKey.keys(), ...positionByKey.keys()]);
+  const rows = [...keys].map((key) => {
+    const input = inputByKey.get(key) || {};
+    const position = positionByKey.get(key) || {};
+    const originalBudget = position.originalPence == null ? input.originalBudget ?? null : Number(position.originalPence) / 100;
+    const currentBudget = position.currentPence == null ? input.currentBudget ?? originalBudget : Number(position.currentPence) / 100;
+    return (
     buildServerCvrSnapshotRowFixture({
       id: `snap-row-${input.id}`,
       snapshotId: `snap-${existing.id}`,
-      costCodeKey: input.costCodeKey,
-      costCodeLabel: input.costCodeLabel || input.costCodeKey,
-      description: input.description || '',
+      costCodeKey: input.costCodeKey || position.costCode,
+      costCodeLabel: input.costCodeLabel || position.costCode,
+      description: input.description || position.description || '',
       commercialHead: input.commercialHead || '',
       commercialFamily: input.commercialFamily || '',
       trade: input.trade || '',
-      originalBudget: input.originalBudget ?? null,
-      currentBudget: input.currentBudget ?? null,
+      originalBudget,
+      currentBudget,
       commercialAdjustment: input.commercialAdjustment ?? 0,
       adjustmentReason: input.adjustmentReason || input.commercialReason || '',
       manualAccrual: input.manualAccrual ?? 0,
@@ -502,16 +529,17 @@ function snapshotFromApprovedPeriod(existing) {
       certified: 0,
       actualCost: 0,
       currentCost: input.manualAccrual ?? 0,
-      systemForecast: 0,
+      uncommittedForecast: currentBudget || 0,
+      systemForecast: currentBudget || 0,
       expectedLiability: 0,
       expectedLiabilityCaptured: true,
       expectedLiabilityProvenance: [],
-      finalForecast: input.commercialAdjustment ?? 0,
-      costToComplete: 0,
+      finalForecast: (currentBudget || 0) + (input.commercialAdjustment ?? 0),
+      costToComplete: currentBudget || 0,
       outstandingCertified: 0,
       variance: 0,
-    })
-  );
+    }));
+  });
   return buildServerCvrSnapshotFixture({
     id: `snap-${existing.id}`,
     developmentId: existing.developmentId,
@@ -566,6 +594,38 @@ export async function getCvrPeriodById(developmentId, periodId) {
     throw new CvrPeriodApiError('CVR period not found.', { status: 404 });
   }
   return clone(found);
+}
+
+export async function getDraftCvrLiveEvidence(developmentId, periodId) {
+  store.liveEvidenceCallCount += 1;
+  const queued = store.liveEvidenceResponses.shift();
+  if (queued?.delayMs) await new Promise((resolve) => setTimeout(resolve, queued.delayMs));
+  else await delay();
+  if (queued?.error) throw queued.error;
+  const period = listForDevelopment(developmentId).find((item) => item.id === periodId);
+  if (!period) throw new CvrPeriodApiError('CVR period not found.', { status: 404 });
+  const evidence = clone(queued?.evidence || store.liveEvidenceByPeriod.get(periodId) || snapshotFromApprovedPeriod(period));
+  const inputByKey = new Map((store.inputsByPeriod.get(periodId) || []).map((input) => [String(input.costCodeKey || '').toLowerCase(), input]));
+  evidence.rows = (evidence.rows || []).map((row) => {
+    const input = inputByKey.get(String(row.costCodeKey || '').toLowerCase());
+    if (!input) return row;
+    const currentBudget = input.currentBudget ?? row.currentBudget;
+    const manualAccrual = Number(input.manualAccrual || 0);
+    const currentCost = Number(row.actualCost || 0) + manualAccrual;
+    const recognised = Math.max(Number(row.committed || 0), Number(row.certified || 0), currentCost);
+    const uncommitted = currentBudget == null ? 0 : Math.max(0, Number(currentBudget) - recognised);
+    const systemForecast = recognised + uncommitted;
+    const commercialAdjustment = Number(input.commercialAdjustment || 0);
+    const finalForecast = Math.max(recognised, systemForecast + Number(row.expectedLiability || 0) + Number(row.vaExposureUplift || 0) + commercialAdjustment);
+    return {
+      ...row, currentBudget, manualAccrual, currentCost,
+      recognisedObligation: recognised, uncommittedForecast: uncommitted,
+      systemForecast, commercialAdjustment,
+      adjustmentReason: input.adjustmentReason || input.commercialReason || '',
+      finalForecast, costToComplete: Math.max(0, finalForecast - currentCost),
+    };
+  });
+  return evidence;
 }
 
 export async function listCvrPeriodInputs(developmentId, periodId) {

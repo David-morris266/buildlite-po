@@ -37,6 +37,7 @@ const { importDraftCvrBudget } = require("../services/cvrBudgetImportService");
 const { previewForecastOnboarding, applyForecastOnboarding } = require('../services/cvrForecastOnboardingService');
 const { buildCvrReportPayload } = require('../services/cvrReportService');
 const { renderCvrReportPdf } = require('../services/cvrReportRenderer');
+const { buildCvrCloseCandidate } = require('../services/cvrCloseEngine');
 
 const router = express.Router({ mergeParams: true });
 
@@ -188,6 +189,51 @@ router.get("/cvr/periods/:periodId", async (req, res) => {
     res.status(500).json({ message: "Failed to load CVR period." });
   }
 });
+
+function createDraftCvrLiveEvidenceHandler({
+  buildCandidate = buildCvrCloseCandidate,
+  loadPeriod = getCvrPeriod,
+  databaseConfigured = isDbConfigured,
+} = {}) {
+  return async (req, res) => {
+    try {
+      if (!databaseConfigured()) return res.status(500).json({ message: "Database not configured" });
+      const periodResult = await loadPeriod(
+        req.buildliteAuth.clientId,
+        req.params.developmentId,
+        req.params.periodId
+      );
+      if (!periodResult.ok) return sendResult(res, periodResult);
+      if (periodResult.period.status !== 'draft') {
+        return res.status(409).json({ message: 'Live CVR evidence is available for Draft periods only.' });
+      }
+      const candidate = await buildCandidate({
+        clientId: req.buildliteAuth.clientId,
+        developmentId: req.params.developmentId,
+        periodId: req.params.periodId,
+        variationExposureDocument: periodResult.period.variationExposure?.document || null,
+        developmentBudgetDocument: periodResult.period.budgetSource?.document || null,
+        commercialHierarchyDocument: periodResult.period.commercialHierarchy?.document || null,
+      });
+      if (!candidate?.ready || !candidate?.complete || !candidate?.snapshot) {
+        return res.status(409).json({
+          message: 'Current governed CVR evidence is unavailable.',
+          blockers: candidate?.blockers || [],
+        });
+      }
+      res.set({ 'Cache-Control': 'no-store' });
+      return res.status(200).json({ evidence: candidate.snapshot });
+    } catch (err) {
+      return res.status(err.status || 500).json({ message: err.message || 'Failed to load governed CVR evidence.' });
+    }
+  };
+}
+
+router.get(
+  "/cvr/periods/:periodId/live-evidence",
+  requirePermission(PERMISSIONS.COMMERCIAL_READ),
+  createDraftCvrLiveEvidenceHandler()
+);
 
 function createCvrReportHandler({buildPayload=buildCvrReportPayload,renderPdf=renderCvrReportPdf}={}){return async(req,res)=>{
   try{
@@ -516,3 +562,4 @@ router.post("/cvr/periods/:periodId/prelims-adoption", requirePermission(PERMISS
 module.exports = router;
 module.exports.createCvrReportHandler = createCvrReportHandler;
 module.exports.createCvrWorksheetDataHandler = createCvrWorksheetDataHandler;
+module.exports.createDraftCvrLiveEvidenceHandler = createDraftCvrLiveEvidenceHandler;

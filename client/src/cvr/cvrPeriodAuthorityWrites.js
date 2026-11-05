@@ -12,6 +12,7 @@ import {
   ensureCvrInputsReadyForPeriod,
   getCachedCvrInputs,
   getCachedCvrPeriodByKey,
+  refreshDraftCvrLiveEvidence,
 } from './cvrPeriodServerCache';
 import {
   addServerCvrCostCodeMember,
@@ -372,7 +373,12 @@ export async function createCostCentreOnServer(developmentId, periodKey, centre)
   if (!mapped.ok) return mapped;
   const result = await createServerCvrPeriodInput(developmentId, resolved.period.id, mapped.value);
   if (!result.ok) return result;
-  return { ok: true, costCentre: result.input };
+  try {
+    await refreshDraftCvrLiveEvidence(developmentId, resolved.period.id);
+    return { ok: true, costCentre: result.input, liveEvidenceRefreshAttempted: true };
+  } catch (error) {
+    return { ok: true, costCentre: result.input, liveEvidenceRefreshAttempted: true, liveEvidenceRefreshError: error };
+  }
 }
 
 export async function patchCostCentreOnServer(developmentId, periodKey, centre) {
@@ -393,7 +399,12 @@ export async function patchCostCentreOnServer(developmentId, periodKey, centre) 
     payload
   );
   if (!result.ok) return result;
-  return { ok: true, costCentre: result.input };
+  try {
+    await refreshDraftCvrLiveEvidence(developmentId, resolved.period.id);
+    return { ok: true, costCentre: result.input, liveEvidenceRefreshAttempted: true };
+  } catch (error) {
+    return { ok: true, costCentre: result.input, liveEvidenceRefreshAttempted: true, liveEvidenceRefreshError: error };
+  }
 }
 
 export async function addCostCodeMemberOnServer(developmentId, periodKey, costCodeKey, actor) {

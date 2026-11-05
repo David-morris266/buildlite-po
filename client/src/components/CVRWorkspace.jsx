@@ -55,7 +55,9 @@ import {
 } from '../cvr/cvrHistoricConstants';
 import {
   getCvrPeriodReadiness,
+  getDraftCvrLiveEvidenceReadiness,
   openAuthoritativeCvrPeriod,
+  refreshDraftCvrLiveEvidence,
   upsertCachedCvrPeriod,
 } from '../cvr/cvrPeriodServerCache';
 import { isLedgerServerAuthorityEnabled } from '../ledger/ledgerAuthority';
@@ -194,6 +196,7 @@ export default function CVRWorkspace({
   const [companyCostCodes, setCompanyCostCodes] = useState([]);
   const [costCodeCompletenessError, setCostCodeCompletenessError] = useState('');
   const [costCodeCompletenessLoading, setCostCodeCompletenessLoading] = useState(true);
+  const [draftEvidenceNotice, setDraftEvidenceNotice] = useState('');
 
   const period = useMemo(() => {
     void refreshToken;
@@ -270,10 +273,16 @@ export default function CVRWorkspace({
 
   useEffect(() => {
     const unsubscribe = subscribeCommercialChanged(() => {
-      setLocalRefresh((value) => value + 1);
+      const refreshLive = isCvrServerAuthorityEnabled() && period?.status === 'draft' && period?.id
+        ? refreshDraftCvrLiveEvidence(development.id, period.id)
+        : Promise.resolve();
+      setDraftEvidenceNotice('');
+      refreshLive
+        .catch((error) => setDraftEvidenceNotice(error?.message || 'Governed Draft CVR evidence could not be refreshed.'))
+        .finally(() => setLocalRefresh((value) => value + 1));
     });
     return unsubscribe;
-  }, []);
+  }, [development.id, period?.id, period?.status]);
 
   const workspace = useMemo(() => {
     void refreshToken;
@@ -411,10 +420,34 @@ export default function CVRWorkspace({
     return buildCertificatesForCostCentre(development.id, selectedRow.costCodeKey, pos);
   }, [selectedRow, development.id, pos, workspace?.historic, workspace?.historicUnavailable]);
 
-  function refresh() {
+  async function refresh({ afterSuccessfulSave = false } = {}) {
+    const refreshLive = isCvrServerAuthorityEnabled() && period?.status === 'draft' && period?.id
+      ? refreshDraftCvrLiveEvidence(development.id, period.id)
+      : Promise.resolve();
+    setDraftEvidenceNotice('');
+    try {
+      await refreshLive;
+      return true;
+    } catch (error) {
+      setDraftEvidenceNotice(afterSuccessfulSave
+        ? 'Projected Adjustment was saved, but the governed CVR figures could not be refreshed. Do not repeat the save; retry the evidence refresh.'
+        : error?.message || 'Governed Draft CVR evidence could not be refreshed.');
+      return false;
+    } finally {
+      setLocalRefresh((value) => value + 1);
+      onCvrChanged?.();
+      onPeriodChanged?.();
+    }
+  }
+
+  function finishAuthorityMutationRefresh(result, savedLabel) {
+    if (!result?.liveEvidenceRefreshAttempted) return false;
+    setDraftEvidenceNotice(result.liveEvidenceRefreshError
+      ? `${savedLabel} was saved, but the governed CVR figures could not be refreshed. Do not repeat the save; retry the evidence refresh.`
+      : '');
     setLocalRefresh((value) => value + 1);
-    onCvrChanged?.();
-    onPeriodChanged?.();
+    onCvrChanged?.({ skipWorkspaceCvrRefresh: true });
+    return true;
   }
 
   async function handleSaveCommercialAdjustment(values) {
@@ -432,7 +465,9 @@ export default function CVRWorkspace({
     setSelectedRow((prev) =>
       prev ? applyCostCentreSaveToCvrRow(prev, result.costCentre) : prev
     );
-    refresh();
+    if (!finishAuthorityMutationRefresh(result, 'Projected Adjustment')) {
+      await refresh({ afterSuccessfulSave: true });
+    }
     return result;
   }
 
@@ -476,7 +511,7 @@ export default function CVRWorkspace({
       window.alert(result.errors?.[0] || 'Could not save cost-code input.');
       return;
     }
-    refresh();
+    if (!finishAuthorityMutationRefresh(result, 'Cost-code input')) refresh();
   }
 
   async function handleSaveNotes(patch) {
@@ -496,7 +531,7 @@ export default function CVRWorkspace({
     setSelectedRow((prev) =>
       prev ? applyCostCentreSaveToCvrRow(prev, result.costCentre || patch) : prev
     );
-    refresh();
+    if (!finishAuthorityMutationRefresh(result, patch.manualAccrual != null ? 'Manual accrual' : 'Cost-code notes')) refresh();
     return result;
   }
 
@@ -689,6 +724,9 @@ export default function CVRWorkspace({
   );
   const cvrError = cvrReadiness.loadState === 'error' || workspace.loadState === 'error';
   const ledgerError = ledgerReadiness.loadState === 'error';
+  const draftEvidenceReadiness = period?.status === 'draft'
+    ? getDraftCvrLiveEvidenceReadiness(period.id)
+    : { ready: true, loadState: 'snapshot', error: null };
   const historic = Boolean(workspace.historic);
   const historicUnavailable = Boolean(workspace.historicUnavailable);
 
@@ -709,6 +747,23 @@ export default function CVRWorkspace({
         ) : (
           <p role="status">Loading current CVR…</p>
         )}
+      </div>
+    );
+  }
+
+  if (isCvrServerAuthorityEnabled() && period?.status === 'draft' && draftEvidenceReadiness.loadState === 'error') {
+    return (
+      <div className="dev-cvr dev-cvr-workspace dev-cvr-workspace--focused">
+        <ApplicationPageHeader
+          breadcrumbs={pageNavigation?.breadcrumbs || []}
+          title={development.developmentName}
+          lead={`Development ${development.jobNumber || '—'}`}
+          onBack={onBackToSummary}
+        />
+        <div className="po-list-feedback po-list-feedback--error" role="alert">
+          <p>{draftEvidenceNotice || 'Governed Draft CVR figures are unavailable or stale. Financial figures are hidden until refreshed.'}</p>
+          <button type="button" className="po-list-btn-secondary" onClick={() => void refresh()}>Retry governed evidence</button>
+        </div>
       </div>
     );
   }

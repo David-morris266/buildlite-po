@@ -35,6 +35,7 @@ import {
   getLastUpsertPayload,
   resetCvrPeriodApiStore,
   seedMockCvrInputs,
+  seedMockCvrLiveEvidence,
   seedMockCvrPeriod,
   setCvrInputListReject,
   setCvrUpsertInputsReject,
@@ -246,6 +247,15 @@ describe('BL-031F QS input carry-forward', () => {
     mockOrders.push(liveWipeOrder(50260));
     const created = await createNextCvrPeriod(DEV);
     expect(created.ok).toBe(true);
+    seedMockCvrLiveEvidence(created.period.id, {
+      schemaVersion: 3, rows: [{
+        costCodeKey: '5231', costCodeLabel: '5231 — Cleaning', currentBudget: 0,
+        committed: 50260, certified: 0, actualCost: 0, currentCost: 100,
+        manualAccrual: 100, systemForecast: 50260, expectedLiability: 0,
+        vaExposureUplift: 0, changeExposure: 0, commercialAdjustment: 500,
+        finalForecast: 50760, costToComplete: 50660, outstandingCertified: 0,
+      }],
+    });
     await ensureCvrPeriodAndInputsReady(DEV, 'P02');
 
     const live = buildCvrModel(DEV, { periodKey: 'P02', pos: [{ id: 'po-wipe' }] });

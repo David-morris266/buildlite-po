@@ -46,6 +46,7 @@ import {
   getLastCvrAddMemberPayload,
   resetCvrPeriodApiStore,
   seedMockCvrInputs,
+  seedMockCvrLiveEvidence,
   seedMockCvrPeriod,
 } from '../test/mockCvrPeriodApi';
 import { resetCommercialEventApiStore } from '../test/mockCommercialEventApi';
@@ -106,6 +107,15 @@ describe('BL-037C fact-only auto-row overlay membership', () => {
       })
     );
     seedMockCvrInputs(PERIOD_ID, []);
+    seedMockCvrLiveEvidence(PERIOD_ID, {
+      schemaVersion: 3, rows: [{
+        costCodeKey: '2300', costCodeLabel: '2300 — Brickwork',
+        currentBudget: null, committed: 250000, certified: 0, actualCost: 0,
+        currentCost: 0, systemForecast: 250000, expectedLiability: 0,
+        vaExposureUplift: 0, changeExposure: 0, commercialAdjustment: 0,
+        finalForecast: 250000, costToComplete: 250000, outstandingCertified: 0,
+      }],
+    });
   });
 
   afterEach(() => {

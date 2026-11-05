@@ -79,6 +79,12 @@ export async function getCvrPeriodById(developmentId, periodId) {
   return handleJson(res);
 }
 
+export async function getDraftCvrLiveEvidence(developmentId, periodId) {
+  const res = await fetch(buildUrl(`${periodsUrl(developmentId, periodId)}/live-evidence`));
+  const data = await handleJson(res);
+  return data?.evidence || null;
+}
+
 export async function createCvrPeriodForDevelopment(developmentId, payload = {}) {
   const res = await fetch(buildUrl(periodsUrl(developmentId)), {
     method: 'POST',

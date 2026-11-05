@@ -8,6 +8,7 @@
 
 import {
   CvrPeriodApiError,
+  getDraftCvrLiveEvidence,
   getCvrPeriodById,
   listCvrPeriodInputs,
   listCvrPeriodsForDevelopment,
@@ -19,6 +20,7 @@ import {
   normalizeServerCvrPeriod,
   normalizeServerCvrPeriodList,
 } from './cvrPeriodServerMapper';
+import { normalizeServerCvrSnapshot } from './cvrSnapshotMapper';
 
 export class CvrPeriodCacheError extends Error {
   constructor(message, { code = 'ERROR', status = 0 } = {}) {
@@ -41,6 +43,9 @@ const inputLoadPromiseByPeriod = new Map();
 const periodDevelopmentById = new Map();
 const authoritativeOpenState = new Map();
 const authoritativeOpenPromise = new Map();
+const liveEvidenceStateByPeriod = new Map();
+const liveEvidenceErrorByPeriod = new Map();
+const liveEvidenceGenerationByPeriod = new Map();
 
 const openKey = (developmentId, periodKey) => `${developmentId || ''}:${periodKey || ''}`;
 
@@ -128,6 +133,14 @@ export function getCvrInputReadinessForPeriodKey(developmentId, periodKey) {
     return { ready: true, loadState: 'loaded', error: null, missingPeriod: true };
   }
   return getCvrInputReadiness(period.id);
+}
+
+export function getDraftCvrLiveEvidenceReadiness(periodId) {
+  if (!periodId) return readinessOf('idle', null);
+  return readinessOf(
+    liveEvidenceStateByPeriod.get(periodId) || 'idle',
+    liveEvidenceErrorByPeriod.get(periodId) || null
+  );
 }
 
 export function getCachedCvrInputs(periodId) {
@@ -231,6 +244,38 @@ async function fetchInputs(developmentId, periodId) {
   return inputs;
 }
 
+export async function refreshDraftCvrLiveEvidence(developmentId, periodId) {
+  const period = getCachedCvrPeriodById(periodId);
+  if (!period || period.status !== 'draft') return null;
+  const generation = (liveEvidenceGenerationByPeriod.get(periodId) || 0) + 1;
+  liveEvidenceGenerationByPeriod.set(periodId, generation);
+  liveEvidenceStateByPeriod.set(periodId, 'loading');
+  liveEvidenceErrorByPeriod.set(periodId, null);
+  try {
+    const document = await getDraftCvrLiveEvidence(developmentId, periodId);
+    const evidence = normalizeServerCvrSnapshot(document);
+    if (!evidence) {
+      throw new CvrPeriodCacheError('Governed Draft CVR evidence is unavailable.', {
+        code: 'CVR_LIVE_EVIDENCE_UNAVAILABLE',
+      });
+    }
+    if (liveEvidenceGenerationByPeriod.get(periodId) !== generation) return null;
+    const currentPeriod = getCachedCvrPeriodById(periodId);
+    if (!currentPeriod || currentPeriod.status !== 'draft') return null;
+    currentPeriod.liveEvidence = evidence;
+    liveEvidenceStateByPeriod.set(periodId, 'loaded');
+    return evidence;
+  } catch (error) {
+    const wrapped = wrapApiError(error, 'Unable to refresh governed Draft CVR evidence');
+    if (liveEvidenceGenerationByPeriod.get(periodId) !== generation) return null;
+    const currentPeriod = getCachedCvrPeriodById(periodId);
+    if (currentPeriod?.status === 'draft') currentPeriod.liveEvidence = null;
+    liveEvidenceStateByPeriod.set(periodId, 'error');
+    liveEvidenceErrorByPeriod.set(periodId, wrapped);
+    throw wrapped;
+  }
+}
+
 export async function refreshCvrInputsForPeriod(developmentId, periodId) {
   if (!periodId) return [];
   inputLoadStateByPeriod.set(periodId, 'loading');
@@ -296,6 +341,7 @@ export async function ensureCvrPeriodAndInputsReady(developmentId, periodKey) {
     : periods[periods.length - 1];
   if (!period?.id) return { periods, inputs: [] };
   const inputs = await ensureCvrInputsReadyForPeriod(developmentId, period.id);
+  if (period.status === 'draft') await refreshDraftCvrLiveEvidence(developmentId, period.id);
   return { periods, period, inputs };
 }
 
@@ -317,6 +363,7 @@ export function openAuthoritativeCvrPeriod(developmentId, periodKey) {
       const currentDocument = await getCvrPeriodById(developmentId, listed.id);
       const period = upsertCachedCvrPeriod(developmentId, currentDocument);
       await refreshCvrInputsForPeriod(developmentId, period.id);
+      if (period.status === 'draft') await refreshDraftCvrLiveEvidence(developmentId, period.id);
       authoritativeOpenState.set(key, { state: 'current', error: null });
       return { period: getCachedCvrPeriodByKey(developmentId, periodKey), inputs: getCachedCvrInputs(period.id) };
     } catch (error) {
@@ -343,6 +390,9 @@ export function resetCvrPeriodServerCache() {
   periodDevelopmentById.clear();
   authoritativeOpenState.clear();
   authoritativeOpenPromise.clear();
+  liveEvidenceStateByPeriod.clear();
+  liveEvidenceErrorByPeriod.clear();
+  liveEvidenceGenerationByPeriod.clear();
 }
 
 export function replaceCachedCvrPeriods(developmentId, documents) {
@@ -375,6 +425,9 @@ export function upsertCachedCvrPeriod(developmentId, document) {
     document.id ? getCachedCvrInputs(document.id) : null
   );
   const mapped = normalizeServerCvrPeriod(document, inputs);
+  if (mapped.status === 'draft' && existingPeriod?.liveEvidence) {
+    mapped.liveEvidence = existingPeriod.liveEvidence;
+  }
   const existing = getCachedCvrPeriods(developmentId).filter(
     (item) => item.id !== mapped.id && item.periodKey !== mapped.periodKey
   );

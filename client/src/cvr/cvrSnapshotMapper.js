@@ -183,6 +183,11 @@ export function normalizeCvrSnapshotRow(document) {
     currentCost,
   });
   const frozenChangeExposure = metadata.changeExposure || null;
+  const liveChangeExposure = firstDefined(document.changeExposure, document.change_exposure);
+  const liveChangeExposureEvidence = firstDefined(
+    document.changeExposureEvidence,
+    document.change_exposure_evidence
+  );
 
   return {
     id: firstDefined(document.id, null),
@@ -218,9 +223,13 @@ export function normalizeCvrSnapshotRow(document) {
     currentCost,
     recognisedObligation,
     uncommittedForecast: calculateUncommittedForecast(currentBudget, recognisedObligation),
-    changeExposure: frozenChangeExposure == null ? null : Number(frozenChangeExposure.amount || 0),
-    changeExposureCaptured: frozenChangeExposure != null,
-    changeExposureEvidence: Array.isArray(frozenChangeExposure?.evidence) ? frozenChangeExposure.evidence : [],
+    changeExposure: frozenChangeExposure == null
+      ? (liveChangeExposure == null ? null : Number(liveChangeExposure))
+      : Number(frozenChangeExposure.amount || 0),
+    changeExposureCaptured: frozenChangeExposure != null || liveChangeExposure != null,
+    changeExposureEvidence: frozenChangeExposure != null
+      ? (Array.isArray(frozenChangeExposure.evidence) ? frozenChangeExposure.evidence : [])
+      : (Array.isArray(liveChangeExposureEvidence) ? liveChangeExposureEvidence : []),
     systemForecast: moneyFrom(document, 'systemForecast', 'system_forecast', 0),
     expectedLiability: nullableMoneyFrom(document, 'expectedLiability', 'expected_liability'),
     expectedLiabilityCaptured:
@@ -240,6 +249,7 @@ export function normalizeCvrSnapshotRow(document) {
       );
       return Array.isArray(value) ? value.map((item) => ({ ...item })) : [];
     })(),
+    vaExposureUplift: moneyFrom(document, 'vaExposureUplift', 'va_exposure_uplift', 0),
     finalForecast: moneyFrom(document, 'finalForecast', 'final_forecast', 0),
     costToComplete: moneyFrom(document, 'costToComplete', 'cost_to_complete', 0),
     outstandingCertified: moneyFrom(

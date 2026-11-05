@@ -28,11 +28,14 @@ import {
   buildServerCvrInputFixture,
   buildServerCvrPeriodFixture,
   getCvrInputListCallCount,
+  getCvrLiveEvidenceCallCount,
   getCvrMutationCallCounts,
   getCvrPeriodGetCallCount,
   getCvrPeriodListCallCount,
   resetCvrPeriodApiStore,
+  queueMockCvrLiveEvidenceResponse,
   seedMockCvrInputs,
+  seedMockCvrLiveEvidence,
   seedMockCvrPeriod,
   setCvrPeriodListDelay,
   setCvrPeriodListReject,
@@ -139,6 +142,100 @@ describe('CVRWorkspace input hydration (BL-031B)', () => {
     expect(document.body.querySelector('[aria-label*="Cost Code Storyboard for 5231"]')).toBeNull();
     expect(document.activeElement).toBe(rowButton);
     expect(container.textContent).toContain('5231');
+  });
+
+  it('renders governed Draft commitment evidence after a hard reopen and keeps QS adjustment editable', async () => {
+    seedMockCvrPeriod(
+      DEV.id,
+      buildServerCvrPeriodFixture({
+        id: PERIOD_ID,
+        developmentId: DEV.id,
+        periodKey: 'SITE_START',
+        periodType: 'site_start',
+        status: 'draft',
+      })
+    );
+    seedMockCvrInputs(PERIOD_ID, [
+      buildServerCvrInputFixture({
+        id: 'input-5545', periodId: PERIOD_ID, costCodeKey: '5545',
+        costCodeLabel: '5545 — Plot Fencing', currentBudget: 127166.20,
+      }),
+    ]);
+    seedMockCvrLiveEvidence(PERIOD_ID, {
+      schemaVersion: 3,
+      currentBudget: 127166.20,
+      committed: 126894.54,
+      finalForecast: 127166.20,
+      rows: [{
+        costCodeKey: '5545', costCodeLabel: '5545 — Plot Fencing',
+        currentBudget: 127166.20, committed: 126894.54, certified: 0,
+        actualCost: 0, currentCost: 0, recognisedObligation: 126894.54,
+        uncommittedForecast: 271.66, systemForecast: 127166.20,
+        expectedLiability: 0, vaExposureUplift: 0, changeExposure: 0,
+        commercialAdjustment: 0, finalForecast: 127166.20,
+        costToComplete: 127166.20, outstandingCertified: 0, variance: 0,
+      }],
+    });
+
+    await act(async () => root.render(<CVRWorkspace development={DEV} periodKey="SITE_START" />));
+    await flush();
+    await flush();
+
+    expect(container.textContent).toContain('£126,894.54');
+    expect(container.textContent).toContain('£271.66');
+    expect(container.textContent).toContain('£127,166.20');
+    const rowButton = [...container.querySelectorAll('button')].find((button) => button.textContent === '5545');
+    act(() => rowButton.click());
+    expect(document.body.textContent).toContain('Projected Adjustment');
+    expect(document.body.querySelector('.dev-cvr-drawer__adjustment-input')?.disabled).toBe(false);
+  });
+
+  it('hides stale figures after refresh failure while preserving a successfully saved Projected Adjustment', async () => {
+    const onCvrChanged = vi.fn();
+    seedMockCvrPeriod(DEV.id, buildServerCvrPeriodFixture({
+      id: PERIOD_ID, developmentId: DEV.id, periodKey: 'P01', status: 'draft',
+    }));
+    seedMockCvrInputs(PERIOD_ID, [buildServerCvrInputFixture({
+      id: 'input-5545', periodId: PERIOD_ID, costCodeKey: '5545',
+      costCodeLabel: '5545 — Plot Fencing', currentBudget: 127166.20,
+    })]);
+    seedMockCvrLiveEvidence(PERIOD_ID, {
+      schemaVersion: 3,
+      rows: [{
+        costCodeKey: '5545', costCodeLabel: '5545 — Plot Fencing',
+        currentBudget: 127166.20, committed: 126894.54, certified: 0,
+        actualCost: 0, currentCost: 0, recognisedObligation: 126894.54,
+        uncommittedForecast: 271.66, systemForecast: 127166.20,
+        expectedLiability: 0, vaExposureUplift: 0, changeExposure: 0,
+        commercialAdjustment: 0, finalForecast: 127166.20,
+        costToComplete: 127166.20, outstandingCertified: 0, variance: 0,
+      }],
+    });
+    await act(async () => root.render(<CVRWorkspace development={DEV} periodKey="P01" onCvrChanged={onCvrChanged} />));
+    await flush(); await flush();
+    expect(getCvrLiveEvidenceCallCount()).toBe(1);
+
+    act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === '5545').click());
+    const adjustment = document.body.querySelector('.dev-cvr-drawer__adjustment-input');
+    const reason = document.body.querySelector('.dev-cvr-drawer__reason-input');
+    act(() => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(adjustment, '100');
+      adjustment.dispatchEvent(new Event('input', { bubbles: true }));
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(reason, 'QS reviewed forecast movement');
+      reason.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    queueMockCvrLiveEvidenceResponse({ error: new Error('Close candidate unavailable') });
+    await act(async () => document.body.querySelector('.dev-cvr-drawer__save-adjustment').click());
+    await flush(); await flush();
+
+    expect(getCvrMutationCallCounts().patchInput).toBe(1);
+    expect(getCvrLiveEvidenceCallCount()).toBe(2);
+    expect(onCvrChanged).toHaveBeenCalledOnce();
+    expect(onCvrChanged).toHaveBeenCalledWith({ skipWorkspaceCvrRefresh: true });
+    expect(container.textContent).toContain('Projected Adjustment was saved');
+    expect(container.textContent).toContain('Do not repeat the save');
+    expect(container.textContent).toContain('Retry governed evidence');
+    expect(container.textContent).not.toContain('£126,894.54');
   });
 
   it('renders a development-budget baseline without CVR inputs and hides legacy Budget Import', async () => {

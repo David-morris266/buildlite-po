@@ -4,7 +4,8 @@ const {
   buildContractAuthority,
   buildVariationOrderCertificationReadiness,
 } = require("../services/variationOrderAuthority");
-const { buildCommitmentsByCostCode } = require("../services/cvrCloseEngine");
+const { buildCommitmentsByCostCode, buildCvrCloseCandidate } = require("../services/cvrCloseEngine");
+const { sourceOk } = require("../services/cvrCloseSources");
 const { validateLinesAgainstEvents } = require("../services/paymentCertificateValidation");
 
 const event = (id, value, overrides = {}) => ({
@@ -100,6 +101,80 @@ test("CVR committed/System authority uses the Issued VO substitution", () => {
   const issuedVo = { ...vo("issued", 4500), orderKey };
   const after = buildCommitmentsByCostCode("dev-1", [po], events, [issuedVo]);
   assert.equal(after.totals.get("5218"), 239500);
+});
+
+test("Welford Draft close authority includes a direct issued VO at the package Cost Code", () => {
+  const orderKey = "welford::boundary-fencing::5545";
+  const po = {
+    type: "S", status: "approved", supplierId: "boundary-fencing",
+    subtotal: 125894.54, poNumber: "S0016", developmentId: "welford",
+    costRef: { costCode: "5545" },
+  };
+  const commitments = buildCommitmentsByCostCode("welford", [po], [], [{
+    id: "vo-direct-1", status: "issued", signedValue: 1000,
+    orderKey, sourceCommercialEvents: [],
+  }]);
+  assert.equal(commitments.totals.get("5545"), 126894.54);
+});
+
+test("real Draft close candidate reconciles Welford budget, direct VO commitment, uncommitted and EFC", async () => {
+  const developmentId = "welford";
+  const periodId = "site-start-welford";
+  const orderKey = "welford::boundary-fencing::5545";
+  const candidate = await buildCvrCloseCandidate({
+    clientId: "valhalla",
+    developmentId,
+    periodId,
+    loadSources: async () => ({
+      ok: true,
+      sources: {
+        development: sourceOk({ id: developmentId }),
+        period: sourceOk({
+          id: periodId,
+          periodKey: "SITE_START",
+          periodType: "site_start",
+          commentary: {},
+          budgetSource: {
+            document: {
+              positions: [{
+                costCode: "5545",
+                description: "Plot Fencing",
+                originalPence: 12716620,
+                currentPence: 12716620,
+              }],
+            },
+          },
+        }),
+        inputs: sourceOk([]),
+        purchaseOrders: sourceOk([{
+          type: "S", status: "approved", supplierId: "boundary-fencing",
+          subtotal: 125894.54, poNumber: "S0016", developmentId,
+          costRef: { developmentId, costCode: "5545" },
+        }]),
+        commercialEvents: sourceOk([]),
+        variationOrders: sourceOk([{
+          id: "vo-direct-1", status: "issued", signedValue: 1000,
+          orderKey, sourceCommercialEvents: [],
+        }]),
+        certificates: sourceOk([]),
+        ledger: sourceOk([]),
+      },
+    }),
+  });
+
+  assert.equal(candidate.ready, true);
+  const row = candidate.snapshot.rows.find((item) => item.costCodeKey === "5545");
+  assert.deepEqual({
+    budget: row.currentBudget,
+    committed: row.committed,
+    uncommitted: row.uncommittedForecast,
+    efc: row.finalForecast,
+  }, {
+    budget: 127166.20,
+    committed: 126894.54,
+    uncommitted: 271.66,
+    efc: 127166.20,
+  });
 });
 
 test("an issued VO removes its source CE from new certificate eligibility", () => {

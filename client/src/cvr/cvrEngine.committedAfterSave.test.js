@@ -53,6 +53,7 @@ import {
   buildServerCvrPeriodFixture,
   resetCvrPeriodApiStore,
   seedMockCvrInputs,
+  seedMockCvrLiveEvidence,
   seedMockCvrPeriod,
 } from '../test/mockCvrPeriodApi';
 import {
@@ -163,6 +164,20 @@ describe('CVR committed values remain after cost-code save', () => {
         manualAccrual: 0,
       }),
     ]);
+    seedMockCvrLiveEvidence(PERIOD_ID, {
+      schemaVersion: 3, rows: [
+        { costCodeKey: '5231', costCodeLabel: '5231 — Cleaning', currentBudget: 0,
+          committed: 50250, certified: 2150, actualCost: 0, currentCost: 0,
+          systemForecast: 50250, expectedLiability: 0, vaExposureUplift: 0,
+          changeExposure: 0, commercialAdjustment: 0, finalForecast: 50250,
+          costToComplete: 50250, outstandingCertified: 2150 },
+        { costCodeKey: '2300', costCodeLabel: '2300 — Brickwork', currentBudget: 0,
+          committed: 250000, certified: 0, actualCost: 0, currentCost: 0,
+          systemForecast: 250000, expectedLiability: 0, vaExposureUplift: 0,
+          changeExposure: 0, commercialAdjustment: 0, finalForecast: 250000,
+          costToComplete: 250000, outstandingCertified: 0 },
+      ],
+    });
     buildApprovedVariationFixture({
       id: 'ce-0020',
       developmentId: DEV,

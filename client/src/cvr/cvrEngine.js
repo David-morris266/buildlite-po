@@ -240,6 +240,24 @@ function collectCostCodeKeys(sources) {
 export function buildCvrRows(developmentId, options = {}) {
   const periodKey = options.periodKey || CVR_DEFAULT_PERIOD_KEY;
   const pos = options.pos || [];
+  const period = options.period || null;
+
+  if (isCvrServerAuthorityEnabled() && period?.status === 'draft' && period.liveEvidence) {
+    const inputsByKey = new Map(
+      (period.costCentres || []).map((input) => [normaliseCostCodeKey(input.costCodeKey), input])
+    );
+    return (period.liveEvidence.rows || []).map((source) => {
+      const key = normaliseCostCodeKey(source.costCodeKey);
+      const input = inputsByKey.get(key);
+      return {
+        ...snapshotRowToCvrRow(source),
+        id: input?.id || `auto-${key}`,
+        historic: false,
+        isManual: Boolean(input),
+        canDelete: Boolean(input) && !source.committed && !source.certified && !source.actualCost,
+      };
+    });
+  }
 
   const commitments = buildCommitmentsByCostCode(developmentId, pos);
   const certified = buildCertifiedByCostCode(developmentId, pos);
@@ -573,10 +591,34 @@ export function buildCvrModel(developmentId, options = {}) {
     };
   }
 
+  if (isCvrServerAuthorityEnabled() && period?.status === 'draft' && !period.liveEvidence) {
+    return {
+      developmentId,
+      periodKey,
+      ready: false,
+      unavailable: true,
+      historic: false,
+      historicUnavailable: false,
+      reason: 'live-evidence',
+      loadState: 'loading',
+      error: null,
+      rows: [],
+      totals: buildCvrTotals([]),
+      developmentNotes: '',
+      summary: emptyCvrSummary(),
+    };
+  }
+
   const rows = buildCvrRows(developmentId, { ...options, period });
   const totals = buildCvrTotals(rows);
   const ledgerReady = readiness.ledgerReady !== false;
   if (!ledgerReady) {
+    for (const row of rows) {
+      row.actualCost = null;
+      row.currentCost = null;
+      row.costToComplete = null;
+      row.outstandingCertified = null;
+    }
     totals.actualCost = null;
     totals.currentCost = null;
     totals.costToComplete = null;
