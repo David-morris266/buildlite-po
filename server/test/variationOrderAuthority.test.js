@@ -45,6 +45,32 @@ test("negative Issued VO symmetrically supersedes its source credit", () => {
   assert.equal(result.issuedVariationOrderValue, -2500);
 });
 
+test("superseding VO displaces authority while a reversal nets the original exactly once", () => {
+  const original = { id: "vo-original", status: "issued", signedValue: 750 };
+  const superseded = buildContractAuthority({
+    originalOrderValue: 10000,
+    variationOrders: [original, { id: "vo-correction", status: "issued", signedValue: 500, supersedesId: original.id }],
+  });
+  assert.equal(superseded.issuedVariationOrderValue, 500);
+  assert.equal(superseded.currentContract, 10500);
+
+  const reversed = buildContractAuthority({
+    originalOrderValue: 10000,
+    variationOrders: [original, { id: "vo-reversal", status: "issued", signedValue: -750, reversesId: original.id }],
+  });
+  assert.equal(reversed.issuedVariationOrderValue, 0);
+  assert.equal(reversed.currentContract, 10000);
+});
+
+test("a direct negative omission VO reduces live contract authority", () => {
+  const result = buildContractAuthority({
+    originalOrderValue: 10000,
+    variationOrders: [{ id: "vo-omission", status: "issued", signedValue: -1250, sourceCommercialEvents: [] }],
+  });
+  assert.equal(result.issuedVariationOrderValue, -1250);
+  assert.equal(result.currentContract, 8750);
+});
+
 test("certification readiness accounts for historic CE certification and exposes excess", () => {
   assert.deepEqual(buildVariationOrderCertificationReadiness({ status: "issued", value: 4500, historicCertified: 2000, lineCount: 1 }), {
     isIssuedAuthority: true, certifiable: true, authorityValue: 4500, historicCertifiedValue: 2000,

@@ -49,7 +49,27 @@ async function listItems(clientId, { packageId, status = null } = {}, auth, db =
     `SELECT * FROM package_variation_account_items WHERE client_id=$1 AND package_id=$2${suffix} ORDER BY created_at,id`,params);
   const items=rows.map(mapItem);
   const authority=require('./variationAccountAuthorityRepository');
-  return Promise.all(items.map(async item=>({...item,authority:await authority.getProjection(clientId,item.id,auth,db)})));
+  const exposureRows = items.length
+    ? await require('./cvrVariationExposure').loadVariationExposureFacts(db || { query }, clientId, items[0].developmentId)
+    : [];
+  const exposureById = new Map(exposureRows.map(item => [item.variationAccountItemId, item]));
+  return Promise.all(items.map(async item => {
+    const storedAuthority = await authority.getProjection(clientId,item.id,auth,db);
+    const live = exposureById.get(item.id);
+    const liveAuthority = live ? {
+      ...storedAuthority,
+      effectiveCeAuthority: live.authorityComposition.effectiveCommercialEvent,
+      effectiveVoAuthority: live.authorityComposition.effectiveVariationOrder,
+      effectivePaymentAuthority: live.authorityComposition.effectivePaymentAuthority,
+      effectiveRecognisedAuthority: live.effectiveRecognisedAuthority,
+      remainingForecastExposure: live.remainingForecastExposure,
+    } : storedAuthority;
+    return {...item,authority:liveAuthority,
+      exposureClassification: live?.exposureClassification || null,
+      effectiveVaExposure: live?.effectiveVaExposure ?? null,
+      vaExposureUplift: live?.vaExposureUplift ?? null,
+    };
+  }));
 }
 
 async function getItem(clientId, id, auth, db = null) {

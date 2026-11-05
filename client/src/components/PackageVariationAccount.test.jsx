@@ -53,6 +53,14 @@ describe('PackageVariationAccount', () => {
     await act(async () => root.unmount());
   });
 
+  it('shows fully instructed authority without manufacturing a QS forecast', async () => {
+    const { host, root } = await render([{ id: 'va3', reference: 'VA-0003', description: 'Fully instructed scope', qsForecast: null, forecastStatus: 'pending', exposureClassification: 'fully_instructed', authority: { effectiveRecognisedAuthority: 750, remainingForecastExposure: null, allocations: [] } }]);
+    expect(host.textContent).toContain('Fully instructed — no additional forecast');
+    expect(host.textContent).toContain('Remaining forecast exposure£0.00');
+    expect(host.textContent).not.toContain('Forecast required');
+    await act(async () => root.unmount());
+  });
+
   it('refreshes the package certificate cache before publishing an authority allocation change', async () => {
     mocks.permissions.add('variation_account.authority_allocate');
     const before = { id: 'va1', reference: 'VA-0001', description: 'Roof variation', qsForecast: 7000, status: 'active', authority: { effectiveRecognisedAuthority: 0, remainingForecastExposure: 7000, allocations: [] } };

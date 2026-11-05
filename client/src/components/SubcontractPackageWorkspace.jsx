@@ -14,6 +14,7 @@ import { usePackageWorkspaceAssistantScope } from '../commercialAssistant/usePac
 import { mergeHydratedPackageIntoOrder, usePaymentCertificateServerHydration } from '../payments/usePaymentCertificateServerHydration';
 import PackageVariationAccount from './PackageVariationAccount';
 import { subscribeCommercialChanged } from '../commercial/commercialEvents';
+import DirectVariationOrderPanel from './DirectVariationOrderPanel';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -268,10 +269,13 @@ export default function SubcontractPackageWorkspace({
         ) : null}
 
         {activeTab === 'variation-account' ? (
-          <PackageVariationAccount
-            packageId={pkg.packageUuid || pkg.id}
-            focusItemId={variationAccountTarget?.itemId || navigationContext?.variationAccountTarget?.itemId || null}
-          />
+          <>
+            <DirectVariationOrderPanel order={authoritativeOrder} packageId={pkg.packageUuid || pkg.id} />
+            <PackageVariationAccount
+              packageId={pkg.packageUuid || pkg.id}
+              focusItemId={variationAccountTarget?.itemId || navigationContext?.variationAccountTarget?.itemId || null}
+            />
+          </>
         ) : null}
 
         {activeTab === 'history' ? (

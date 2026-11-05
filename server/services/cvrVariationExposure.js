@@ -6,7 +6,7 @@ const {
   fromPence,
 } = require('./variationAccountAuthorityRepository');
 
-const CALCULATION_VERSION = 'va_expected_exposure_v1';
+const CALCULATION_VERSION = 'va_expected_exposure_v2';
 
 const EXCEPTIONS = Object.freeze({
   FORECAST_BELOW_RECOGNISED_AUTHORITY: 'forecast_below_recognised_authority',
@@ -48,6 +48,7 @@ function calculateVariationExposure({
   allocations = [],
   substitutions = [],
   lockedAssessments = [],
+  draftAssessments = [],
 } = {}) {
   const exceptions = [];
   const itemCostCode = String(item?.costCode || '').trim();
@@ -70,7 +71,6 @@ function calculateVariationExposure({
     !allocationIds.has(substitution.successorAllocationId)
   );
   const forecastPending = item?.forecastStatus === 'pending' || item?.qsForecast == null;
-  if (forecastPending) exceptions.push(EXCEPTIONS.FORECAST_UNASSESSED);
   if (!item?.id || incompleteAllocation || incompleteAssessment || incompleteSubstitution) {
     exceptions.push(EXCEPTIONS.INCOMPLETE_SOURCE_PROVENANCE);
   }
@@ -86,7 +86,20 @@ function calculateVariationExposure({
     (sum, assessment) => sum + toPence(assessment.currentAssessment),
     0
   );
-  const facts = forecastPending ? [recognisedPence, certifiedPence].map(fromPence) : [forecastPence, recognisedPence, certifiedPence].map(fromPence);
+  const withinAuthority = value => {
+    const amount = toPence(value);
+    if (!amount) return true;
+    if (!recognisedPence || Math.sign(amount) !== Math.sign(recognisedPence)) return false;
+    return Math.abs(amount) <= Math.abs(recognisedPence);
+  };
+  const effectiveAllocations = projection.allocations.filter(entry => toPence(entry.effectiveAmount));
+  const fullyInstructed = Boolean(item?.id) && forecastPending && recognisedPence !== 0 && effectiveAllocations.length > 0 &&
+    effectiveAllocations.every(entry => entry.sourceType === 'variation_order_line' && entry.sourceStatus === 'issued') &&
+    effectiveAllocations.every(entry => entry.representedInCurrentContract !== false) &&
+    withinAuthority(item?.contractorValue) && withinAuthority(item?.contractorClaim) &&
+    withinAuthority(fromPence(certifiedPence)) && draftAssessments.every(entry => withinAuthority(fromPence(certifiedPence + toPence(entry.currentAssessment))));
+  if (forecastPending && !fullyInstructed) exceptions.push(EXCEPTIONS.FORECAST_UNASSESSED);
+  const facts = fullyInstructed ? [recognisedPence, certifiedPence].map(fromPence) : forecastPending ? [recognisedPence, certifiedPence].map(fromPence) : [forecastPence, recognisedPence, certifiedPence].map(fromPence);
   const opposingSigns = !forecastPending && !sameMaterialDirection(facts);
   if (opposingSigns) exceptions.push(EXCEPTIONS.OPPOSING_SIGN_EXPOSURE);
 
@@ -127,13 +140,14 @@ function calculateVariationExposure({
       ? item.forecastHistory.map((entry) => ({ ...entry }))
       : [],
     forecastStatus: forecastPending ? 'pending' : 'assessed',
+    exposureClassification: fullyInstructed ? 'fully_instructed' : forecastPending ? 'unassessed' : 'qs_forecast',
     effectiveRecognisedAuthority: fromPence(recognisedPence),
     cumulativeLockedCertification: fromPence(certifiedPence),
     effectiveVaExposure: effectiveExposure,
     authorityAlreadyInCurrentContract: fromPence(authorityInCurrentContractPence),
     vaExposureUplift: effectiveExposure == null
       ? null
-      : fromPence(toPence(effectiveExposure) - authorityInCurrentContractPence),
+      : fullyInstructed ? 0 : fromPence(toPence(effectiveExposure) - authorityInCurrentContractPence),
     remainingForecastExposure: effectiveExposure == null
       ? null
       : fromPence(toPence(effectiveExposure) - recognisedPence),
@@ -149,6 +163,9 @@ function calculateVariationExposure({
       substitutionIds: substitutions.map((entry) => entry.id),
       lockedAssessmentIds: lockedAssessments.map((entry) => entry.id),
     },
+    // Draft identity/version is not submitted evidence. Its monetary effect is
+    // represented by the classification and exceptions above, so harmless
+    // draft autosaves cannot invalidate a Submitted CVR.
     provenance: { allocations, substitutions, lockedAssessments },
   };
 }
@@ -163,9 +180,23 @@ async function loadVariationExposureFacts(db, clientId, developmentId) {
   if (!itemRows.length) return [];
   const ids = itemRows.map((row) => row.id);
   const [{ rows: allocationRows }, { rows: substitutionRows }, { rows: assessmentRows }, { rows: claimRows }, { rows: supersededCeRows }, { rows: forecastHistoryRows }] = await Promise.all([
-    db.query(`SELECT * FROM package_variation_account_authority_allocations WHERE client_id=$1 AND variation_account_item_id=ANY($2::uuid[]) ORDER BY created_at,id`, [clientId, ids]),
+    db.query(`SELECT a.*,
+      CASE WHEN a.source_type='variation_order_line' THEN vo.status ELSE a.source_status_snapshot END live_source_status,
+      CASE WHEN a.source_type<>'variation_order_line' THEN TRUE
+           WHEN vo.status<>'issued' THEN FALSE
+           WHEN vo.reverses_id IS NOT NULL THEN FALSE
+           WHEN EXISTS(SELECT 1 FROM variation_orders successor
+                        WHERE successor.client_id=vo.client_id
+                          AND (successor.supersedes_id=vo.id OR successor.reverses_id=vo.id)
+                          AND successor.status='issued') THEN FALSE
+           ELSE TRUE END represented_in_current_contract
+      FROM package_variation_account_authority_allocations a
+      LEFT JOIN variation_order_lines vol ON vol.client_id=a.client_id AND vol.id=a.variation_order_line_id
+      LEFT JOIN variation_orders vo ON vo.client_id=vol.client_id AND vo.id=vol.variation_order_id
+      WHERE a.client_id=$1 AND a.variation_account_item_id=ANY($2::uuid[])
+      ORDER BY a.created_at,a.id`, [clientId, ids]),
     db.query(`SELECT * FROM package_variation_account_authority_substitutions WHERE client_id=$1 AND variation_account_item_id=ANY($2::uuid[]) ORDER BY created_at,id`, [clientId, ids]),
-    db.query(`SELECT id,certificate_id,variation_account_item_id,application_variation_line_id,signed_current_assessment,previous_certified_at_lock,cumulative_certified_at_lock,source_authority_snapshot,locked_at,locked_by_user_id,version FROM package_variation_account_certificate_assessments WHERE client_id=$1 AND variation_account_item_id=ANY($2::uuid[]) AND status='locked' ORDER BY locked_at,id`, [clientId, ids]),
+    db.query(`SELECT id,certificate_id,variation_account_item_id,application_variation_line_id,signed_current_assessment,previous_certified_at_lock,cumulative_certified_at_lock,source_authority_snapshot,locked_at,locked_by_user_id,status,version FROM package_variation_account_certificate_assessments WHERE client_id=$1 AND variation_account_item_id=ANY($2::uuid[]) AND status<>'withdrawn' ORDER BY created_at,id`, [clientId, ids]),
     db.query(`SELECT l.variation_account_item_id,COALESCE(SUM(l.current_claim),0) contractor_claim
       FROM subcontract_payment_application_variation_lines l
       JOIN subcontract_payment_applications app ON app.id=l.application_id AND app.client_id=l.client_id
@@ -229,11 +260,13 @@ async function loadVariationExposureFacts(db, clientId, developmentId) {
     packageCostCode: row.package_cost_code,
     allocations: (allocationsByItem.get(row.id) || []).map((allocationRow) => ({
       ...mapAllocation(allocationRow),
-      representedInCurrentContract: allocationRow.source_type !== 'commercial_event' ||
-        !supersededCeIds.has(String(allocationRow.commercial_event_id)),
+      sourceStatus: allocationRow.live_source_status || allocationRow.source_status_snapshot,
+      representedInCurrentContract: allocationRow.source_type === 'commercial_event'
+        ? !supersededCeIds.has(String(allocationRow.commercial_event_id))
+        : allocationRow.represented_in_current_contract !== false,
     })),
     substitutions: (substitutionsByItem.get(row.id) || []).map(mapSubstitution),
-    lockedAssessments: (assessmentsByItem.get(row.id) || []).map((assessment) => ({
+    lockedAssessments: (assessmentsByItem.get(row.id) || []).filter((assessment) => !assessment.status || assessment.status === 'locked').map((assessment) => ({
       id: assessment.id,
       certificateId: assessment.certificate_id,
       applicationVariationLineId: assessment.application_variation_line_id,
@@ -243,6 +276,11 @@ async function loadVariationExposureFacts(db, clientId, developmentId) {
       sourceAuthoritySnapshot: assessment.source_authority_snapshot,
       lockedAt: assessment.locked_at,
       lockedByUserId: assessment.locked_by_user_id,
+      version: Number(assessment.version),
+    })),
+    draftAssessments: (assessmentsByItem.get(row.id) || []).filter((assessment) => assessment.status === 'draft').map((assessment) => ({
+      id: assessment.id,
+      currentAssessment: Number(assessment.signed_current_assessment),
       version: Number(assessment.version),
     })),
   }));

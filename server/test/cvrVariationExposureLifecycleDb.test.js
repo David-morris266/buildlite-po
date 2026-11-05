@@ -45,6 +45,10 @@ test.after(async () => {
   await pool.query(`ALTER TABLE package_variation_account_forecast_history DISABLE TRIGGER USER`);
   await pool.query(`DELETE FROM package_variation_account_forecast_history WHERE client_id=$1`, [fixture.client.id]);
   await pool.query(`ALTER TABLE package_variation_account_forecast_history ENABLE TRIGGER USER`);
+  await pool.query(`ALTER TABLE package_variation_account_certificate_assessments DISABLE TRIGGER USER`);
+  await pool.query(`DELETE FROM package_variation_account_certificate_assessments WHERE client_id=$1`, [fixture.client.id]);
+  await pool.query(`ALTER TABLE package_variation_account_certificate_assessments ENABLE TRIGGER USER`);
+  await pool.query(`DELETE FROM package_payment_certificates WHERE client_id=$1`, [fixture.client.id]);
   await pool.query(`ALTER TABLE package_variation_account_items DISABLE TRIGGER USER`);
   await pool.query(`DELETE FROM package_variation_account_items WHERE client_id=$1`, [fixture.client.id]);
   await pool.query(`ALTER TABLE package_variation_account_items ENABLE TRIGGER USER`);
@@ -115,6 +119,32 @@ test('Submit freezes, stale source blocks Lock, and Reject/resubmit appends fres
   assert.equal(historicRead.period.status, 'locked');
   assert.equal(historicRead.period.snapshot.variationExposure.document.items[0].qsForecast, 18000);
   assert.equal(laterRevision.item.qsForecast, 19000);
+});
+
+test('Submitted CVR remains lockable after a non-monetary Draft assessment edit', async (t) => {
+  if (!fixture) return t.skip();
+  const period = (await pool.query(`INSERT INTO cvr_periods(client_id,development_id,period_key,period_label,status,commentary,version)
+    VALUES($1,$2,'P-DRAFT-STABILITY','Draft stability','draft','{}',1) RETURNING *`, [fixture.client.id, fixture.developmentId])).rows[0];
+  const certificate = (await pool.query(`INSERT INTO package_payment_certificates
+    (client_id,package_id,development_id,order_key,certificate_number,status,payload,created_by,updated_by)
+    VALUES($1,$2,$3,$4,99,'draft','{}',$5,$5) RETURNING *`,
+  [fixture.client.id,fixture.packageRow.id,fixture.developmentId,fixture.packageRow.order_key,fixture.user.display_name])).rows[0];
+  const assessment = (await pool.query(`INSERT INTO package_variation_account_certificate_assessments
+    (client_id,development_id,package_id,certificate_id,variation_account_item_id,signed_current_assessment,assessment_basis,
+     created_by_user_id,created_by_membership_id,created_by_provider_user_id,created_by_display_name,
+     updated_by_user_id,updated_by_membership_id,updated_by_provider_user_id,updated_by_display_name)
+    VALUES($1,$2,$3,$4,$5,100,'Initial draft note',$6,$7,$8,$9,$6,$7,$8,$9) RETURNING *`,
+  [fixture.client.id,fixture.developmentId,fixture.packageRow.id,certificate.id,fixture.va.id,fixture.user.id,fixture.membership.id,fixture.user.provider_user_id,fixture.user.display_name])).rows[0];
+  const submitted = await submitCvrPeriod(fixture.client.id, fixture.developmentId, period.id, {}, { actor: fixture.user.display_name, auth: fixture.auth });
+  assert.equal(submitted.ok,true,submitted.message);
+  await pool.query(`UPDATE package_variation_account_certificate_assessments
+    SET assessment_basis='Clarified draft note only',version=version+1,updated_at=NOW()
+    WHERE id=$1`,[assessment.id]);
+  const comparison = await compareSubmittedVariationExposure(pool,{clientId:fixture.client.id,developmentId:fixture.developmentId,periodId:period.id});
+  assert.equal(comparison.stale,false,comparison.staleReasons.join(','));
+  const locked = await approveCvrPeriod(fixture.client.id,fixture.developmentId,period.id,{}, {actor:fixture.user.display_name,auth:fixture.auth});
+  assert.equal(locked.ok,true,locked.message);
+  assert.equal(locked.period.status,'locked');
 });
 
 test('same-direction acknowledgement is immutable, authenticated and attempt-specific', async (t) => {

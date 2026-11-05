@@ -69,6 +69,24 @@ function snapshotDocument(items) {
   }));
 }
 
+function materialExposureDocument(document) {
+  return (document?.items || []).map((item) => ({
+    variationAccountItemId: item.variationAccountItemId,
+    costCode: item.costCode,
+    qsForecast: item.qsForecast,
+    effectiveRecognisedAuthority: item.effectiveRecognisedAuthority,
+    cumulativeLockedCertification: item.cumulativeLockedCertification,
+    effectiveVaExposure: item.effectiveVaExposure,
+    authorityAlreadyInCurrentContract: item.authorityAlreadyInCurrentContract,
+    vaExposureUplift: item.vaExposureUplift,
+    remainingForecastExposure: item.remainingForecastExposure,
+    exceptions: [...(item.exceptions || [])].sort(),
+    allocationIds: [...(item.sourceVersions?.allocationIds || [])].sort(),
+    substitutionIds: [...(item.sourceVersions?.substitutionIds || [])].sort(),
+    lockedAssessmentIds: [...(item.sourceVersions?.lockedAssessmentIds || [])].sort(),
+  })).sort((a, b) => String(a.variationAccountItemId).localeCompare(String(b.variationAccountItemId)));
+}
+
 function blockingExceptions(document) {
   return (document?.items || []).flatMap((item) =>
     (item.exceptions || []).filter((code) => BLOCKING_EXCEPTIONS.has(code)).map((code) => ({
@@ -111,8 +129,18 @@ async function compareSubmittedVariationExposure(db, { clientId, developmentId, 
   const integrity = verifyJsonIntegrity(submitted.source_snapshot, submitted.source_snapshot_sha256, submitted.source_snapshot_hash_scheme);
   const staleReasons = [];
   if (!integrity.valid) staleReasons.push('submitted_snapshot_integrity_invalid');
-  if (submitted.calculation_version !== CALCULATION_VERSION) staleReasons.push('calculation_version_changed');
-  if (live.hash !== submitted.source_snapshot_sha256) staleReasons.push('variation_exposure_sources_changed');
+  if (submitted.calculation_version === CALCULATION_VERSION) {
+    if (live.hash !== submitted.source_snapshot_sha256) staleReasons.push('variation_exposure_sources_changed');
+  } else if (submitted.calculation_version === 'va_expected_exposure_v1') {
+    // V2 adds the fully-instructed classification. Existing v1 submissions that
+    // have the same material authority, certification and exposure remain
+    // lockable; no submitted evidence is rewritten.
+    if (hashCanonicalJson(materialExposureDocument(live.document)) !== hashCanonicalJson(materialExposureDocument(submitted.source_snapshot))) {
+      staleReasons.push('variation_exposure_sources_changed');
+    }
+  } else {
+    staleReasons.push('calculation_version_changed');
+  }
   staleReasons.push(...live.blockers.map((blocker) => blocker.reason));
   return { captured: true, legacy: false, stale: staleReasons.length > 0, staleReasons: [...new Set(staleReasons)], submitted, live, integrity };
 }
@@ -124,6 +152,7 @@ module.exports = {
   listAcknowledgements,
   appendAcknowledgement,
   snapshotDocument,
+  materialExposureDocument,
   blockingExceptions,
   buildLiveVariationExposure,
   appendSubmittedVariationExposure,

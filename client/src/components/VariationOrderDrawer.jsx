@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import PODrawerShell from './PODrawerShell';
 import { formatMoney, formatPoDateTime } from './poDrawerHelpers';
-import { approveAndIssueVariationOrder, submitVariationOrder, updateVariationOrder } from '../api/variationOrders';
+import { approveAndIssueVariationOrder, listDirectVariationOrderOverlaps, reviewDirectVariationOrderOverlaps, submitVariationOrder, updateVariationOrder } from '../api/variationOrders';
 import { formatVariationOrderReference, variationOrderStatusLabel } from '../variationOrders/variationOrderPresentation';
 import { getCompanySettings } from '../admin/companyStore';
 import { notifyCommercialChanged } from '../commercial/commercialEvents';
@@ -31,8 +31,11 @@ export default function VariationOrderDrawer({ open, variationOrder, onClose, on
   const [issueComment, setIssueComment] = useState('Formal instruction approved and issued.');
   const [costCodes, setCostCodes] = useState([]);
   const [costCodeError, setCostCodeError] = useState('');
+  const [overlapReview, setOverlapReview] = useState(null);
+  const [overlapReason, setOverlapReason] = useState('');
+  const [overlapConfirmed, setOverlapConfirmed] = useState(false);
 
-  useEffect(() => { setVo(variationOrder); setForm(formFrom(variationOrder)); setError(''); }, [variationOrder, open]);
+  useEffect(() => { setVo(variationOrder); setForm(formFrom(variationOrder)); setError(''); setOverlapReview(null); setOverlapReason(''); setOverlapConfirmed(false); }, [variationOrder, open]);
   useEffect(() => {
     if (!open || variationOrder?.status !== 'draft') return undefined;
     let current = true;
@@ -98,6 +101,29 @@ export default function VariationOrderDrawer({ open, variationOrder, onClose, on
     finally { setBusy(false); }
   }
 
+  async function loadOverlapReview() {
+    setBusy(true); setError('');
+    try {
+      const result = await listDirectVariationOrderOverlaps(vo.packageId);
+      setOverlapReview(result.records || []);
+      setOverlapReason(''); setOverlapConfirmed(false);
+    } catch (err) { setError(err.message || 'Current overlap evidence could not be loaded.'); }
+    finally { setBusy(false); }
+  }
+
+  async function saveOverlapReview() {
+    setBusy(true); setError('');
+    try {
+      apply(await reviewDirectVariationOrderOverlaps(vo.id, {
+        version: vo.version,
+        reason: overlapReason,
+        reviewedEvidence: (overlapReview || []).map(({ type, id }) => ({ type, id })),
+      }));
+      setOverlapReview(null); setOverlapConfirmed(false);
+    } catch (err) { setError(err.message || 'Overlap review could not be saved.'); }
+    finally { setBusy(false); }
+  }
+
   const total = form.lines.reduce((sum, line) => sum + (Number(line.netValue) || 0), 0);
   const company = getCompanySettings();
   return (
@@ -123,6 +149,7 @@ export default function VariationOrderDrawer({ open, variationOrder, onClose, on
           <p>VAT treatment: {form.vatTreatment === 'inherit' ? 'Inherited from the original order' : form.vatTreatment}. Retention and terms: {form.retentionTreatment === 'inherit' ? 'Inherited from the original order' : form.retentionTreatment}.</p>
           {vo.sourceCommercialEvents?.length && (form.lines.length > 1 || vo.sourceCommercialEvents.length > 1) ? <div className="vo-allocation-readiness vo-screen-actions"><h3>Issue authority allocation</h3><p>Allocate each source CE explicitly to VO lines. Where historic certification exists, allocate that separately; BuildLite will not infer a distribution.</p>{vo.sourceCommercialEvents.map((source) => <div key={source.id} className="vo-allocation-source"><p><strong>{source.eventNumber}</strong> · CE authority £{formatMoney(source.approvedValue)} · Historic certified £{formatMoney(source.historicCertifiedValue || 0)}</p><div className="po-table-wrap"><table className="po-data-table"><thead><tr><th>VO line</th><th>Line value</th><th>CE authority allocated</th><th>Historic certified allocated</th></tr></thead><tbody>{form.lines.map((line) => { const allocation = allocationFor(line.id, source.id); return <tr key={`${source.id}-${line.id}`}><td>{line.costCode} · {line.description}</td><td>£{formatMoney(Number(line.netValue) || 0)}</td><td><input type="number" step="0.01" disabled={!draft} value={allocation?.allocatedValue ?? ''} onChange={(event) => setAllocation(line.id, source.id, 'allocatedValue', event.target.value)} /></td><td><input type="number" step="0.01" disabled={!draft || !(Number(source.historicCertifiedValue) || 0)} value={allocation?.historicCertifiedValue ?? '0'} onChange={(event) => setAllocation(line.id, source.id, 'historicCertifiedValue', event.target.value)} /></td></tr>; })}</tbody></table></div></div>)}</div> : null}
         </div></section>
+        {vo.termsOverride?.directInstruction && vo.status !== 'issued' ? <section className="po-ce-drawer__section vo-screen-actions"><div className="po-ce-drawer__section-body"><h3>Direct instruction overlap review</h3><p>Refresh this review if new Commercial Event or Variation Account evidence has appeared since this instruction was created.</p>{overlapReview == null ? <button type="button" className="po-list-btn-secondary" disabled={busy} onClick={loadOverlapReview}>Review current overlaps</button> : <><ul>{overlapReview.length ? overlapReview.map((item) => <li key={`${item.type}:${item.id}`}><strong>{item.reference || item.id}</strong> · {item.type.replace('_', ' ')} · {item.status}</li>) : <li>No current open-risk overlap records.</li>}</ul><label className="po-ce-drawer__field po-ce-drawer__field--wide"><span>Re-review reason{overlapReview.length ? ' (required)' : ''}</span><textarea rows={2} value={overlapReason} onChange={(event) => setOverlapReason(event.target.value)} /></label><label><input type="checkbox" checked={overlapConfirmed} onChange={(event) => setOverlapConfirmed(event.target.checked)} /> I reviewed the current records shown above.</label><button type="button" className="po-btn-primary" disabled={busy || !overlapConfirmed || (overlapReview.length > 0 && !overlapReason.trim())} onClick={saveOverlapReview}>Save overlap re-review</button></>}</div></section> : null}
         {draft ? <div className="po-ce-drawer__actions vo-screen-actions"><button disabled={busy} className="po-list-btn-secondary" onClick={() => run('save')}>Save Draft</button><button disabled={busy} className="po-btn-primary" onClick={() => run('submit')}>Submit</button></div> : null}
         {submitted ? <section className="po-ce-drawer__workflow vo-screen-actions"><label className="po-ce-drawer__field po-ce-drawer__field--wide"><span>Issue comment</span><textarea rows={2} value={issueComment} onChange={(e) => setIssueComment(e.target.value)} /></label><button disabled={busy} className="po-btn-primary" onClick={() => run('approveIssue')}>Approve &amp; Issue</button></section> : null}
         {vo.audit?.length ? <section className="po-ce-drawer__section"><div className="po-ce-drawer__section-body"><h3>Audit history</h3><ol className="po-ce-drawer__audit-list">{vo.audit.map((entry) => <li key={entry.id}><strong>{entry.action}</strong><span>{formatPoDateTime(entry.createdAt)}</span><span>{entry.actor || '—'}</span>{entry.comment ? <p>{entry.comment}</p> : null}</li>)}</ol></div></section> : null}

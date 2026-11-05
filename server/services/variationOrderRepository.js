@@ -41,12 +41,15 @@ async function resolveDraftLineCostCodes(db, clientId, lines) {
   if (byId.size !== ids.length) {
     throw Object.assign(new Error('Every selected Variation Order Cost Code must be an active Cost Code Master record for this tenant.'), { httpStatus: 400 });
   }
+  const missingCodes = [...new Set((lines || []).filter(line => !String(line.costCodeId || '').trim()).map(line => String(line.costCode || '').trim()).filter(Boolean))];
+  const byCodeRows = missingCodes.length ? (await db.query(`SELECT id,code,COALESCE(description,element,'') description FROM cost_codes WHERE client_id=$1 AND is_active=true AND lower(code)=ANY($2::text[])`,[clientId,missingCodes.map(code=>code.toLowerCase())])).rows : [];
+  const byCode = new Map(byCodeRows.map(row => [String(row.code).toLowerCase(),row]));
   return (lines || []).map((line) => {
     const costCodeId = String(line.costCodeId || '').trim() || null;
-    const authority = costCodeId ? byId.get(costCodeId) : null;
+    const authority = costCodeId ? byId.get(costCodeId) : byCode.get(String(line.costCode || '').trim().toLowerCase());
     return {
       ...line,
-      costCodeId,
+      costCodeId: authority?.id || costCodeId,
       costCode: authority?.code || String(line.costCode || '').trim(),
       costCodeDescription: authority?.description || String(line.costCodeDescription || '').trim(),
       costCodeSourceEvidence: String(line.costCodeSourceEvidence || line.costCode || '').trim(),
@@ -54,15 +57,21 @@ async function resolveDraftLineCostCodes(db, clientId, lines) {
   });
 }
 
-function validateCreate(body = {}) {
+function validateCreate(body = {}, { direct = false } = {}) {
   const errors = [];
   if (!String(body.developmentId || "").trim()) errors.push("developmentId is required.");
   if (!String(body.packageId || "").trim()) errors.push("packageId is required.");
   if (!String(body.sourcePoNumber || "").trim()) errors.push("sourcePoNumber is required.");
   if (!String(body.description || "").trim()) errors.push("description is required.");
   if (!Array.isArray(body.lines) || body.lines.length === 0) errors.push("At least one line is required.");
-  if (!(body.sourceCommercialEvents || []).length && !body.supersedesId && !body.reversesId) {
+  if (!(body.sourceCommercialEvents || []).length && !body.supersedesId && !body.reversesId && !direct) {
     errors.push("At least one approved source Commercial Event is required.");
+  }
+  if (direct) {
+    const declaration = body.directInstruction || {};
+    if (!['independent', 'link_variation_account'].includes(declaration.treatment)) errors.push('Direct instruction treatment is required.');
+    if (declaration.treatment === 'link_variation_account' && !String(declaration.reason || '').trim()) errors.push('Direct instruction reason is required.');
+    if (declaration.treatment === 'link_variation_account' && !String(declaration.variationAccountItemId || '').trim()) errors.push('Linked Variation Account item is required.');
   }
   if (body.supersedesId && body.reversesId) errors.push("A Variation Order cannot both supersede and reverse another Variation Order.");
   if (!VAT_TREATMENTS.has(body.vatTreatment || "inherit")) errors.push("vatTreatment is invalid.");
@@ -83,6 +92,32 @@ function validateCreate(body = {}) {
     }
   }
   return errors;
+}
+
+async function loadPotentialDirectOverlaps(db, clientId, packageId) {
+  const [events, items] = await Promise.all([
+    db.query(`SELECT id,event_number reference,description,status FROM commercial_events
+      WHERE client_id=$1 AND package_id=$2 AND status IN('submitted','approved','includedInCertificate')
+        AND COALESCE(relationship_type,'')<>'recovery' AND COALESCE(event_type,'')<>'budgetTransfer'
+      ORDER BY created_at,id`, [clientId, packageId]),
+    db.query(`SELECT id,variation_reference reference,description,status FROM package_variation_account_items
+      WHERE client_id=$1 AND package_id=$2 AND status='active' ORDER BY created_at,id`, [clientId, packageId]),
+  ]);
+  return [
+    ...events.rows.map((row) => ({ type: 'commercial_event', ...row })),
+    ...items.rows.map((row) => ({ type: 'variation_account', ...row })),
+  ];
+}
+
+function evidenceKey(value) {
+  return `${String(value?.type || '')}:${String(value?.id || '')}`;
+}
+
+async function listDirectVariationOrderOverlaps(clientId, packageId, auth) {
+  assertServicePermission(auth, PERMISSIONS.VO_CREATE);
+  const packageRow = (await query('SELECT id FROM packages WHERE client_id=$1 AND id=$2', [clientId, packageId])).rows[0];
+  if (!packageRow) return fail(404, 'Package not found.');
+  return { ok: true, status: 200, records: await loadPotentialDirectOverlaps({ query }, clientId, packageId) };
 }
 
 async function loadVariationOrder(clientId, id, db = null) {
@@ -248,7 +283,7 @@ async function listCertificateReadyVariationOrderLines(clientId, packageId, db =
 async function validateCorrectiveRelationship(db, clientId, packageId, id, label) {
   if (!id) return null;
   const { rows } = await db.query(
-    "SELECT id, package_id, status FROM variation_orders WHERE client_id = $1 AND id = $2",
+    "SELECT id, package_id, status, terms_override FROM variation_orders WHERE client_id = $1 AND id = $2",
     [clientId, id]
   );
   if (!rows[0] || rows[0].package_id !== packageId) {
@@ -260,9 +295,13 @@ async function validateCorrectiveRelationship(db, clientId, packageId, id, label
   return rows[0];
 }
 
-async function createDraftVariationOrder(clientId, body = {}, { actor = actorFrom(body), auth = null } = {}) {
+async function createDraftVariationOrder(clientId, body = {}, { actor = actorFrom(body), auth = null, creationOrigin = null } = {}) {
   assertServicePermission(auth, PERMISSIONS.VO_CREATE);
-  const errors = validateCreate(body);
+  const direct = creationOrigin === 'direct_po';
+  if (!direct && (body.instructionOrigin != null || body.directInstruction != null || body.termsOverride?.directInstruction != null)) {
+    return fail(400, 'Direct instruction origin can only be established by the governed Direct Variation Order route.');
+  }
+  const errors = validateCreate(body, { direct });
   if (errors.length) return fail(400, errors.join(" "));
   const db = await pool.connect();
   try {
@@ -282,9 +321,26 @@ async function createDraftVariationOrder(clientId, body = {}, { actor = actorFro
       [clientId, pkg.id, body.sourcePoNumber]
     );
     if (!po.rows[0]) throw Object.assign(new Error("sourcePoNumber is not linked to the source package."), { httpStatus: 400 });
+    if (direct) {
+      const approvedPo = await db.query(`SELECT 1 FROM purchase_orders
+        WHERE client_id=$1 AND po_number=$2
+          AND (lower(COALESCE(payload->>'status',''))='approved' OR lower(COALESCE(payload#>>'{approval,status}',''))='approved')`,
+      [clientId,body.sourcePoNumber]);
+      if (!approvedPo.rows.length) throw Object.assign(new Error('Direct Variation Order requires an approved source Purchase Order.'), { httpStatus: 409 });
+    }
 
-    await validateCorrectiveRelationship(db, clientId, pkg.id, body.supersedesId, "Superseded");
-    await validateCorrectiveRelationship(db, clientId, pkg.id, body.reversesId, "Reversed");
+    const superseded = await validateCorrectiveRelationship(db, clientId, pkg.id, body.supersedesId, "Superseded");
+    const reversed = await validateCorrectiveRelationship(db, clientId, pkg.id, body.reversesId, "Reversed");
+    const predecessorDirect = (superseded || reversed)?.terms_override?.directInstruction || null;
+    if (direct && (superseded || reversed)) {
+      if (predecessorDirect?.schemaVersion !== 'direct_vo_v1') {
+        throw Object.assign(new Error('A direct corrective or reversal VO must relate to an existing direct VO.'), { httpStatus: 409 });
+      }
+      if (body.directInstruction?.treatment !== predecessorDirect.treatment
+          || (body.directInstruction?.variationAccountItemId || null) !== (predecessorDirect.variationAccountItemId || null)) {
+        throw Object.assign(new Error('A direct corrective or reversal VO must preserve its predecessor direct-instruction relationship.'), { httpStatus: 409 });
+      }
+    }
 
     const sourceIds = [...new Set((body.sourceCommercialEvents || []).map((item) => String(item.commercialEventId || item.id || "").trim()).filter(Boolean))];
     let sourceRows = [];
@@ -307,6 +363,26 @@ async function createDraftVariationOrder(clientId, body = {}, { actor = actorFro
     }
 
     const number = await allocateNextVariationOrderNumber(db, clientId, pkg.id);
+    const overlaps = direct ? await loadPotentialDirectOverlaps(db, clientId, pkg.id) : [];
+    const reviewed = new Set((body.directInstruction?.reviewedEvidence || []).map(evidenceKey));
+    const required = new Set(overlaps.map(evidenceKey));
+    if (direct && overlaps.length && body.directInstruction?.treatment === 'independent') {
+      if (!String(body.directInstruction.reason || '').trim() || required.size !== reviewed.size || [...required].some((key) => !reviewed.has(key))) {
+        throw Object.assign(new Error(`Independent direct instruction requires explicit review of overlapping records: ${overlaps.map((item) => item.reference || item.id).join(', ')}.`), { httpStatus: 409 });
+      }
+    }
+    if (direct && body.directInstruction?.treatment === 'link_variation_account' && !overlaps.some((item) => item.type === 'variation_account' && item.id === body.directInstruction.variationAccountItemId)) {
+      throw Object.assign(new Error('Linked Variation Account evidence is not an active overlap for this package.'), { httpStatus: 409 });
+    }
+    const directInstruction = direct ? {
+      schemaVersion: 'direct_vo_v1', treatment: body.directInstruction.treatment,
+      reason: String(body.directInstruction.reason || '').trim(),
+      variationAccountItemId: body.directInstruction.variationAccountItemId || null,
+      reviewedEvidence: overlaps.map((item) => ({ type: item.type, id: item.id, reference: item.reference || item.id, status: item.status })),
+    } : null;
+    const safeTermsOverride = { ...(body.termsOverride || {}) };
+    delete safeTermsOverride.directInstruction;
+    const termsOverride = { ...safeTermsOverride, ...(directInstruction ? { directInstruction } : {}) };
     const inserted = await db.query(
       `INSERT INTO variation_orders
        (client_id, development_id, package_id, order_key, source_po_number, supplier_id, normal_source_commercial_event_id,
@@ -315,7 +391,7 @@ async function createDraftVariationOrder(clientId, body = {}, { actor = actorFro
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16) RETURNING *`,
       [clientId, pkg.development_id, pkg.id, pkg.order_key, body.sourcePoNumber, pkg.supplier_id,
         body.normalSourceCommercialEventId || null, number, String(body.reference || ""), String(body.description).trim(), body.vatTreatment || "inherit",
-        body.retentionTreatment || "inherit", body.termsOverride || {}, body.supersedesId || null,
+        body.retentionTreatment || "inherit", termsOverride, body.supersedesId || null,
         body.reversesId || null, actor]
     );
     const vo = inserted.rows[0];
@@ -340,7 +416,7 @@ async function createDraftVariationOrder(clientId, body = {}, { actor = actorFro
     await db.query(
       `INSERT INTO variation_order_audit
        (client_id, variation_order_id, action, actor, new_status, new_version)
-       VALUES ($1,$2,'created',$3,'draft',1)`, [clientId, vo.id, actor]
+       VALUES ($1,$2,$3,$4,'draft',1)`, [clientId, vo.id, directInstruction ? 'created_direct' : 'created', actor]
     );
     await db.query("COMMIT");
     return { ok: true, status: 201, variationOrder: await loadVariationOrder(clientId, vo.id) };
@@ -350,6 +426,10 @@ async function createDraftVariationOrder(clientId, body = {}, { actor = actorFro
   } finally {
     db.release();
   }
+}
+
+async function createDirectVariationOrder(clientId, body = {}, options = {}) {
+  return createDraftVariationOrder(clientId, body, { ...options, creationOrigin: 'direct_po' });
 }
 
 async function createDraftVariationOrderFromCommercialEvent(clientId, commercialEventId, body = {}, { actor = actorFrom(body), auth = null } = {}) {
@@ -414,6 +494,9 @@ async function updateDraftVariationOrder(clientId, id, body = {}, { actor = acto
   assertServicePermission(auth, PERMISSIONS.VO_EDIT);
   const version = Number(body.version);
   if (!Number.isInteger(version) || version < 1) return fail(400, "version is required.");
+  if (body.instructionOrigin != null || body.directInstruction != null || body.termsOverride?.directInstruction != null) {
+    return fail(400, 'Variation Order instruction origin and direct evidence cannot be changed through Draft editing.');
+  }
   const errors = validateCreate({
     developmentId: body.developmentId || "preserved",
     packageId: body.packageId || "preserved",
@@ -444,11 +527,17 @@ async function updateDraftVariationOrder(clientId, id, body = {}, { actor = acto
     if (!row) throw Object.assign(new Error("Variation Order not found."), { httpStatus: 404 });
     if (row.version !== version) throw Object.assign(new Error("Variation Order has changed. Reload and try again."), { httpStatus: 409 });
     if (row.status !== VARIATION_ORDER_STATUSES.draft) throw Object.assign(new Error("Only Draft Variation Orders can be edited."), { httpStatus: 409 });
+    const safeTermsOverride = { ...(body.termsOverride || {}) };
+    delete safeTermsOverride.directInstruction;
+    const termsOverride = {
+      ...safeTermsOverride,
+      ...(row.terms_override?.directInstruction ? { directInstruction: row.terms_override.directInstruction } : {}),
+    };
     const updated = await db.query(
       `UPDATE variation_orders SET reference=$3, description=$4, vat_treatment=$5,
        retention_treatment=$6, terms_override=$7, version=version+1, updated_at=NOW(), updated_by=$8
        WHERE client_id=$1 AND id=$2 RETURNING *`,
-      [clientId, id, String(body.reference || ""), String(body.description).trim(), body.vatTreatment || "inherit", body.retentionTreatment || "inherit", body.termsOverride || {}, actor]
+      [clientId, id, String(body.reference || ""), String(body.description).trim(), body.vatTreatment || "inherit", body.retentionTreatment || "inherit", termsOverride, actor]
     );
     const existingLines = await db.query("SELECT id,cost_code_source_evidence FROM variation_order_lines WHERE client_id=$1 AND variation_order_id=$2", [clientId, id]);
     const existingLineIds = new Set(existingLines.rows.map((line) => line.id));
@@ -617,6 +706,26 @@ async function validateVariationOrderForSubmit(db, clientId, row) {
   if (validCodes.rows.length !== costCodes.length) {
     throw Object.assign(new Error("Every Variation Order line must reference an active tenant Cost Code Master identity."), { httpStatus: 400 });
   }
+  const direct = row.terms_override?.directInstruction;
+  if (direct?.schemaVersion === 'direct_vo_v1') {
+    const po = await db.query(`SELECT 1 FROM package_purchase_orders ppo
+      JOIN purchase_orders po ON po.client_id=ppo.client_id AND po.po_number=ppo.po_number
+      WHERE ppo.client_id=$1 AND ppo.package_id=$2 AND ppo.po_number=$3
+        AND (lower(COALESCE(po.payload->>'status',''))='approved' OR lower(COALESCE(po.payload#>>'{approval,status}',''))='approved')`,
+    [clientId,row.package_id,row.source_po_number]);
+    if (!po.rows.length) throw Object.assign(new Error('Direct Variation Order requires its approved source Purchase Order to remain valid.'), { httpStatus: 409 });
+    const overlaps = await loadPotentialDirectOverlaps(db, clientId, row.package_id);
+    const reviewed = new Set((direct.reviewedEvidence || []).map(evidenceKey));
+    const required = new Set(overlaps.map(evidenceKey));
+    if (overlaps.length && (!String(direct.reason || '').trim() || required.size !== reviewed.size || [...required].some((key) => !reviewed.has(key)))) {
+      throw Object.assign(new Error(`Direct instruction overlap review is stale. Review these records before Submit/Issue: ${overlaps.map((item) => item.reference || item.id).join(', ')}.`), { httpStatus: 409 });
+    }
+    if (direct.treatment === 'link_variation_account') {
+      const linked = await db.query(`SELECT 1 FROM package_variation_account_items WHERE client_id=$1 AND package_id=$2 AND id=$3 AND status='active'`,[clientId,row.package_id,direct.variationAccountItemId]);
+      if (!linked.rows.length) throw Object.assign(new Error('The linked Variation Account item is no longer valid for this package.'), { httpStatus: 409 });
+    }
+    return { lines: lines.rows, directInstruction: direct };
+  }
   const relation = await db.query(
     `SELECT ce.id FROM variation_order_commercial_events link
      JOIN commercial_events ce ON ce.id=link.commercial_event_id AND ce.client_id=link.client_id
@@ -626,6 +735,128 @@ async function validateVariationOrderForSubmit(db, clientId, row) {
   );
   if (!relation.rows.length) throw Object.assign(new Error("Variation Order source CE/PO/package relationship is no longer valid."), { httpStatus: 409 });
   await validateAndCompleteLineAllocations(db, clientId, row, row.updated_by);
+}
+
+async function reconcileDirectVariationAccount(db, clientId, row, actor, auth) {
+  const direct = row.terms_override?.directInstruction;
+  if (direct?.treatment !== 'link_variation_account') return;
+  // A reversal removes the predecessor's live contractual authority. It must
+  // not create a second, negative VA allocation against the same item.
+  if (row.reverses_id) return;
+  const ambiguous = await db.query(`SELECT a.id,a.source_type,a.source_reference_snapshot,
+    a.signed_allocated_amount
+      + COALESCE((SELECT SUM(r.signed_allocated_amount) FROM package_variation_account_authority_allocations r
+                  WHERE r.client_id=a.client_id AND r.reverses_allocation_id=a.id),0)
+      - COALESCE((SELECT SUM(s.signed_substituted_amount) FROM package_variation_account_authority_substitutions s
+                  WHERE s.client_id=a.client_id AND s.predecessor_allocation_id=a.id),0) effective
+    FROM package_variation_account_authority_allocations a
+    LEFT JOIN variation_order_lines allocated_line
+      ON allocated_line.client_id=a.client_id AND allocated_line.id=a.variation_order_line_id
+    LEFT JOIN variation_orders allocated_vo
+      ON allocated_vo.client_id=allocated_line.client_id AND allocated_vo.id=allocated_line.variation_order_id
+    WHERE a.client_id=$1 AND a.variation_account_item_id=$2
+      AND a.allocation_kind='authority' AND a.source_type IN('commercial_event','variation_order_line')
+      AND ($3::uuid IS NULL OR allocated_line.variation_order_id IS DISTINCT FROM $3::uuid)
+      AND (a.source_type='commercial_event' OR (
+        allocated_vo.status='issued' AND allocated_vo.reverses_id IS NULL
+        AND NOT EXISTS(SELECT 1 FROM variation_orders successor
+          WHERE successor.client_id=allocated_vo.client_id
+            AND (successor.supersedes_id=allocated_vo.id OR successor.reverses_id=allocated_vo.id)
+            AND successor.status='issued')
+      ))`,
+  [clientId,direct.variationAccountItemId,row.supersedes_id || null]);
+  const liveAmbiguous = ambiguous.rows.filter((entry) => Math.abs(Number(entry.effective)) > 0.005);
+  if (liveAmbiguous.length) {
+    throw Object.assign(new Error(`Linked Variation Account has CE/VO authority that cannot be silently replaced: ${liveAmbiguous.map((entry) => entry.source_reference_snapshot || entry.id).join(', ')}.`), { httpStatus: 409 });
+  }
+  const lines = (await db.query('SELECT * FROM variation_order_lines WHERE client_id=$1 AND variation_order_id=$2 ORDER BY line_number',[clientId,row.id])).rows;
+  for (const line of lines) {
+    const allocation = (await db.query(`INSERT INTO package_variation_account_authority_allocations
+      (client_id,development_id,package_id,variation_account_item_id,source_type,variation_order_line_id,signed_allocated_amount,reason,source_status_snapshot,source_value_snapshot,source_reference_snapshot,created_by_user_id,created_by_membership_id,created_by_provider_user_id,created_by_display_name)
+      VALUES($1,$2,$3,$4,'variation_order_line',$5,$6,$7,'issued',$6,$8,$9,$10,$11,$12) RETURNING *`,
+    [clientId,row.development_id,row.package_id,direct.variationAccountItemId,line.id,line.net_value,direct.reason,`${row.source_po_number}/${row.variation_order_number}`,auth.userId,auth.membershipId,auth.providerUserId,actor])).rows[0];
+    let remaining = Math.abs(Number(line.net_value));
+    const predecessors = (await db.query(`SELECT a.*,
+      a.signed_allocated_amount
+        + COALESCE((SELECT SUM(r.signed_allocated_amount) FROM package_variation_account_authority_allocations r
+                    WHERE r.client_id=a.client_id AND r.reverses_allocation_id=a.id),0)
+        - COALESCE((SELECT SUM(s.signed_substituted_amount) FROM package_variation_account_authority_substitutions s
+                    WHERE s.client_id=a.client_id AND s.predecessor_allocation_id=a.id),0) effective
+      FROM package_variation_account_authority_allocations a
+      WHERE a.client_id=$1 AND a.variation_account_item_id=$2 AND a.id<>$3
+        AND a.source_type='payment_authority' AND a.allocation_kind='authority'
+      ORDER BY a.created_at,a.id FOR UPDATE`,[clientId,direct.variationAccountItemId,allocation.id])).rows;
+    for (const predecessor of predecessors) {
+      if (!remaining || Math.sign(Number(predecessor.effective)) !== Math.sign(Number(line.net_value))) continue;
+      const amount = Math.sign(Number(line.net_value))*Math.min(remaining,Math.abs(Number(predecessor.effective)));
+      if (!amount) continue;
+      const substitution = (await db.query(`INSERT INTO package_variation_account_authority_substitutions
+        (client_id,package_id,variation_account_item_id,successor_allocation_id,predecessor_allocation_id,signed_substituted_amount,reason,created_by_user_id,created_by_membership_id,created_by_provider_user_id,created_by_display_name)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,[clientId,row.package_id,direct.variationAccountItemId,allocation.id,predecessor.id,amount,direct.reason,auth.userId,auth.membershipId,auth.providerUserId,actor])).rows[0];
+      await db.query(`INSERT INTO package_variation_account_authority_audit
+        (client_id,variation_account_item_id,substitution_id,action,detail,actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name)
+        VALUES($1,$2,$3,'substituted',$4,$5,$6,$7,$8)`,[clientId,direct.variationAccountItemId,substitution.id,JSON.stringify({directVariationOrderId:row.id,lineId:line.id,predecessorAllocationId:predecessor.id,amount}),auth.userId,auth.membershipId,auth.providerUserId,actor]);
+      remaining -= Math.abs(amount);
+    }
+    await db.query(`INSERT INTO package_variation_account_authority_audit(client_id,variation_account_item_id,allocation_id,action,detail,actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name)
+      VALUES($1,$2,$3,'allocated',$4,$5,$6,$7,$8)`,[clientId,direct.variationAccountItemId,allocation.id,JSON.stringify({directVariationOrderId:row.id,lineId:line.id,reconciled:true}),auth.userId,auth.membershipId,auth.providerUserId,actor]);
+  }
+}
+
+async function reviewDirectVariationOrderOverlaps(clientId, id, body = {}, { actor = actorFrom(body), auth = null } = {}) {
+  assertServicePermission(auth, PERMISSIONS.VO_SUBMIT);
+  const version = Number(body.version);
+  if (!Number.isInteger(version) || version < 1) return fail(400, 'version is required.');
+  const db = await pool.connect();
+  try {
+    await db.query('BEGIN');
+    const row = (await db.query('SELECT * FROM variation_orders WHERE client_id=$1 AND id=$2 FOR UPDATE', [clientId, id])).rows[0];
+    if (!row) throw Object.assign(new Error('Variation Order not found.'), { httpStatus: 404 });
+    if (Number(row.version) !== version) throw Object.assign(new Error('Variation Order has changed. Reload and try again.'), { httpStatus: 409 });
+    if (!['draft', 'submitted', 'approved'].includes(row.status)) throw Object.assign(new Error('Only live, unissued direct Variation Orders can have their overlap review refreshed.'), { httpStatus: 409 });
+    const direct = row.terms_override?.directInstruction;
+    if (direct?.schemaVersion !== 'direct_vo_v1') throw Object.assign(new Error('Overlap review is only available for governed direct Variation Orders.'), { httpStatus: 409 });
+    const overlaps = await loadPotentialDirectOverlaps(db, clientId, row.package_id);
+    const reviewed = new Set((body.reviewedEvidence || []).map(evidenceKey));
+    const required = new Set(overlaps.map(evidenceKey));
+    if (required.size !== reviewed.size || [...required].some(key => !reviewed.has(key))) {
+      throw Object.assign(new Error('The overlap evidence changed while it was being reviewed. Refresh and review the current records.'), { httpStatus: 409 });
+    }
+    const reason = String(body.reason || '').trim();
+    if (overlaps.length && !reason) throw Object.assign(new Error('An overlap re-review reason is required.'), { httpStatus: 400 });
+    if (direct.treatment === 'link_variation_account'
+        && !overlaps.some(item => item.type === 'variation_account' && item.id === direct.variationAccountItemId)) {
+      throw Object.assign(new Error('The linked Variation Account item is no longer valid for this package.'), { httpStatus: 409 });
+    }
+    const previous = new Set((direct.reviewedEvidence || []).map(evidenceKey));
+    if (previous.size === required.size && [...required].every(key => previous.has(key))) {
+      throw Object.assign(new Error('The governed overlap evidence is unchanged; no new approval cycle is required.'), { httpStatus: 409 });
+    }
+    const nextStatus = row.status === 'approved' ? 'submitted' : row.status;
+    const nextDirect = {
+      ...direct,
+      reason: reason || direct.reason,
+      reviewedEvidence: overlaps.map(item => ({ type:item.type, id:item.id, reference:item.reference || item.id, status:item.status })),
+      reviewedAt: new Date().toISOString(),
+      reviewedBy: actor,
+    };
+    const updated = (await db.query(`UPDATE variation_orders
+      SET terms_override=$3,status=$5,
+          approved_at=CASE WHEN $6 THEN NULL ELSE approved_at END,
+          approved_by=CASE WHEN $6 THEN NULL ELSE approved_by END,
+          version=version+1,updated_at=NOW(),updated_by=$4
+      WHERE client_id=$1 AND id=$2 RETURNING *`,
+    [clientId,id,{...(row.terms_override || {}),directInstruction:nextDirect},actor,nextStatus,row.status === 'approved'])).rows[0];
+    await db.query(`INSERT INTO variation_order_audit
+      (client_id,variation_order_id,action,actor,comment,prior_status,new_status,prior_version,new_version)
+      VALUES($1,$2,'overlap_reviewed',$3,$4,$5,$6,$7,$8)`,
+    [clientId,id,actor,reason,row.status,nextStatus,row.version,updated.version]);
+    await db.query('COMMIT');
+    return { ok:true,status:200,variationOrder:await loadVariationOrder(clientId,id) };
+  } catch (error) {
+    await db.query('ROLLBACK');
+    return fail(error.httpStatus || 500, error.httpStatus ? error.message : 'Failed to refresh direct Variation Order overlap review.');
+  } finally { db.release(); }
 }
 
 async function transitionVariationOrder(clientId, id, action, body = {}, { actor = actorFrom(body), auth = null } = {}) {
@@ -667,6 +898,7 @@ async function transitionVariationOrder(clientId, id, action, body = {}, { actor
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
       [clientId, id, action, actor, String(body.comment || ""), row.status, transition.to, row.version, updated.rows[0].version]
     );
+    if (issued) await reconcileDirectVariationAccount(db, clientId, updated.rows[0], actor, auth);
     await db.query("COMMIT");
     return { ok: true, status: 200, variationOrder: await loadVariationOrder(clientId, id) };
   } catch (error) {
@@ -708,6 +940,7 @@ async function approveAndIssueVariationOrder(clientId, id, body = {}, { actor = 
        version=version+1,updated_at=NOW(),updated_by=$3 WHERE client_id=$1 AND id=$2 RETURNING *`,
       [clientId, id, actor]
     );
+    await reconcileDirectVariationAccount(db, clientId, issued.rows[0], actor, auth);
     await db.query(
       `INSERT INTO variation_order_audit(client_id,variation_order_id,action,actor,comment,prior_status,new_status,prior_version,new_version,created_at)
        VALUES($1,$2,'issue',$3,$4,'approved','issued',$5,$6,clock_timestamp())`,
@@ -727,6 +960,9 @@ module.exports = {
   listVariationOrders,
   loadVariationOrder,
   listCertificateReadyVariationOrderLines,
+  listDirectVariationOrderOverlaps,
+  reviewDirectVariationOrderOverlaps,
+  createDirectVariationOrder,
   createDraftVariationOrder,
   createDraftVariationOrderFromCommercialEvent,
   updateDraftVariationOrder,

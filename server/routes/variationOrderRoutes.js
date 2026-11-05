@@ -38,6 +38,22 @@ router.post("/", requirePermission(PERMISSIONS.VO_CREATE), async (req, res) => {
   } catch (error) { console.error("[VariationOrders] create error:", error); res.status(500).json({ message: "Failed to create Variation Order." }); }
 });
 
+router.get("/direct-overlaps/:packageId", requirePermission(PERMISSIONS.VO_CREATE), async (req, res) => {
+  try {
+    const active = await activeClient(res); if (!active) return;
+    const result = await repository.listDirectVariationOrderOverlaps(active.id, req.params.packageId, req.buildliteAuth);
+    res.status(result.status).json(result.ok ? { records: result.records } : { message: result.message });
+  } catch (error) { console.error("[VariationOrders] direct overlap error:", error); res.status(500).json({ message: "Failed to review direct Variation Order overlaps." }); }
+});
+
+router.post("/direct", requirePermission(PERMISSIONS.VO_CREATE), async (req, res) => {
+  try {
+    const active = await activeClient(res); if (!active) return;
+    const result = await repository.createDirectVariationOrder(active.id, req.body || {}, { ...actorFromAuth(req.buildliteAuth, PERMISSIONS.VO_CREATE), auth:req.buildliteAuth });
+    res.status(result.status).json(result.ok ? result.variationOrder : { message: result.message });
+  } catch (error) { console.error("[VariationOrders] direct create error:", error); res.status(500).json({ message: "Failed to create direct Variation Order." }); }
+});
+
 router.post("/from-commercial-event/:commercialEventId", requirePermission(PERMISSIONS.VO_CREATE), async (req, res) => {
   try {
     const active = await activeClient(res); if (!active) return;
@@ -62,6 +78,14 @@ router.put("/:id", requirePermission(PERMISSIONS.VO_EDIT), async (req, res) => {
     const result = await repository.updateDraftVariationOrder(active.id, req.params.id, req.body || {}, { ...actorFromAuth(req.buildliteAuth, PERMISSIONS.VO_EDIT), auth:req.buildliteAuth });
     res.status(result.status).json(result.ok ? result.variationOrder : { message: result.message });
   } catch (error) { console.error("[VariationOrders] update error:", error); res.status(500).json({ message: "Failed to update Variation Order." }); }
+});
+
+router.post("/:id/review-overlaps", requirePermission(PERMISSIONS.VO_SUBMIT), async (req, res) => {
+  try {
+    const active = await activeClient(res); if (!active) return;
+    const result = await repository.reviewDirectVariationOrderOverlaps(active.id, req.params.id, req.body || {}, { actor: actorFromAuth(req.buildliteAuth, PERMISSIONS.VO_SUBMIT).actor, auth:req.buildliteAuth });
+    res.status(result.status).json(result.ok ? result.variationOrder : { message: result.message });
+  } catch (error) { console.error("[VariationOrders] overlap review error:", error); res.status(500).json({ message: "Failed to refresh direct Variation Order overlap review." }); }
 });
 
 router.post("/:id/approve-and-issue", requireAllPermissions([PERMISSIONS.VO_APPROVE, PERMISSIONS.VO_ISSUE]), async (req, res) => {

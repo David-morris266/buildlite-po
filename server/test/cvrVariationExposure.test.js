@@ -45,6 +45,41 @@ test('unassessed forecast is review-required and is never treated as zero', () =
   assert.ok(result.exceptions.includes(EXCEPTIONS.FORECAST_UNASSESSED));
 });
 
+test('fully instructed pending VA needs no duplicate forecast and adds zero exposure', () => {
+  const result = calculate({
+    item: item({ qsForecast: null, forecastStatus: 'pending', contractorValue: 750, contractorClaim: 750 }),
+    allocations: [allocation('variation_order_line', 750)],
+    lockedAssessments: [assessment(750)],
+  });
+  assert.equal(result.ready, true);
+  assert.equal(result.qsForecast, null);
+  assert.equal(result.exposureClassification, 'fully_instructed');
+  assert.equal(result.effectiveVaExposure, 750);
+  assert.equal(result.vaExposureUplift, 0);
+  assert.ok(!result.exceptions.includes(EXCEPTIONS.FORECAST_UNASSESSED));
+});
+
+test('pending VA remains blocked when claim or certification exceeds issued authority', () => {
+  for (const overrides of [
+    { item: item({ qsForecast: null, forecastStatus: 'pending', contractorValue: 751, contractorClaim: 751 }), lockedAssessments: [] },
+    { item: item({ qsForecast: null, forecastStatus: 'pending', contractorValue: 750, contractorClaim: 750 }), lockedAssessments: [assessment(751)] },
+  ]) {
+    const result = calculate({ ...overrides, allocations: [allocation('variation_order_line', 750)] });
+    assert.equal(result.ready, false);
+    assert.ok(result.exceptions.includes(EXCEPTIONS.FORECAST_UNASSESSED));
+  }
+});
+
+test('pending VA remains blocked when a Draft certificate assessment exceeds issued authority', () => {
+  const result = calculate({
+    item: item({ qsForecast: null, forecastStatus: 'pending', contractorValue: 5000, contractorClaim: 5000 }),
+    allocations: [allocation('variation_order_line', 5000)],
+    draftAssessments: [{ id: 'draft-assessment', currentAssessment: 5000.01, version: 1 }],
+  });
+  assert.equal(result.exposureClassification, 'unassessed');
+  assert.ok(result.exceptions.includes(EXCEPTIONS.FORECAST_UNASSESSED));
+});
+
 test('new Payment Authority and certification are evidence within forecast, not additions', () => {
   const result = calculate({
     allocations: [allocation('payment_authority', 8000)],
@@ -65,6 +100,56 @@ test('Issued VO authority already in Current Contract leaves only residual VA up
   assert.equal(result.effectiveVaExposure, 17000);
   assert.equal(result.vaExposureUplift, 5000);
   assert.equal(result.remainingForecastExposure, 5000);
+});
+
+test('superseded VO allocation is no longer live authority and exposes pending excess', () => {
+  const result = calculateVariationExposure({
+    item: item({ qsForecast: null, forecastStatus: 'pending', contractorValue: 750 }),
+    packageCostCode: '3000',
+    allocations: [{ ...allocation('variation_order_line',750,'old-vo'), representedInCurrentContract: false }],
+  });
+  assert.equal(result.effectiveRecognisedAuthority, 0);
+  assert.equal(result.exposureClassification, 'unassessed');
+  assert.equal(result.ready, false);
+  assert.ok(result.exceptions.includes('forecast_unassessed'));
+});
+
+test('reversed £750 VO leaves zero live authority and the £750 claim visible for QS judgement', () => {
+  const result = calculateVariationExposure({
+    item: item({ qsForecast: null, forecastStatus: 'pending', contractorValue: 750, contractorClaim: 750 }),
+    packageCostCode: '4330',
+    allocations: [
+      { ...allocation('variation_order_line', 750, 'original-vo'), representedInCurrentContract: false },
+      { ...allocation('variation_order_line', -750, 'reversal-vo'), representedInCurrentContract: false },
+    ],
+  });
+  assert.equal(result.contractorClaim, 750);
+  assert.equal(result.effectiveRecognisedAuthority, 0);
+  assert.equal(result.authorityAlreadyInCurrentContract, 0);
+  assert.equal(result.exposureClassification, 'unassessed');
+  assert.equal(result.ready, false);
+  assert.ok(result.exceptions.includes(EXCEPTIONS.FORECAST_UNASSESSED));
+});
+
+test('fully instructed classification uses live VO after CE substitution, VO supersession and PA reversal', () => {
+  const allocations = [
+    allocation('commercial_event',500,'ce'),
+    { ...allocation('variation_order_line',500,'old-vo'), representedInCurrentContract: false },
+    allocation('payment_authority',750,'pa'),
+    { ...allocation('payment_authority',-750,'pa-reversal'), allocationKind: 'reversal', reversesAllocationId: 'pa' },
+    allocation('variation_order_line',750,'live-vo'),
+  ];
+  const result = calculateVariationExposure({
+    item: item({ costCode: '3000', qsForecast: null, forecastStatus: 'pending', contractorValue: 750, contractorClaim: 750 }),
+    packageCostCode: '3000', allocations,
+    substitutions: [{ id: 'ce-to-old-vo', predecessorAllocationId: 'ce', successorAllocationId: 'old-vo', substitutedAmount: 500 }],
+    lockedAssessments: [{ id: 'locked', certificateId: 'certificate', currentAssessment: 750, lockedAt: '2026-11-01' }],
+  });
+  assert.equal(result.effectiveRecognisedAuthority,750);
+  assert.equal(result.exposureClassification,'fully_instructed');
+  assert.equal(result.effectiveVaExposure,750);
+  assert.equal(result.vaExposureUplift,0);
+  assert.equal(result.ready,true);
 });
 
 test('recognised authority floors exposure without rewriting QS Forecast', () => {
@@ -178,8 +263,8 @@ test('loader returns deterministic source/version facts from persisted-shape row
   assert.equal(result.effectiveVaExposure, 17000);
   assert.equal(result.effectiveRecognisedAuthority, 8000);
   assert.deepEqual(result.sourceVersions, {
-    variationAccountItemVersion: 4,
-    allocationIds: ['allocation-uuid'], substitutionIds: [], lockedAssessmentIds: ['assessment-uuid'],
+    variationAccountItemVersion: 4, allocationIds: ['allocation-uuid'], substitutionIds: [],
+    lockedAssessmentIds: ['assessment-uuid'],
   });
   assert.deepEqual(result.forecastHistory, [{
     id: 'history-uuid', priorValue: 16000, newValue: 17000, reason: 'Revised forecast',

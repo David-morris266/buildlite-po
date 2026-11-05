@@ -49,6 +49,18 @@ export function createVariationOrderFromCommercialEvent(commercialEventId) {
   return request(`/api/variation-orders/from-commercial-event/${encodeURIComponent(commercialEventId)}`, json('POST'));
 }
 
+export function createDirectVariationOrder(payload) {
+  return request('/api/variation-orders/direct', json('POST', payload));
+}
+
+export function listDirectVariationOrderOverlaps(packageId) {
+  return request(`/api/variation-orders/direct-overlaps/${encodeURIComponent(packageId)}`);
+}
+
+export function reviewDirectVariationOrderOverlaps(id, payload) {
+  return request(`/api/variation-orders/${encodeURIComponent(id)}/review-overlaps`, json('POST', payload));
+}
+
 export function updateVariationOrder(id, payload) {
   return request(`/api/variation-orders/${encodeURIComponent(id)}`, json('PUT', payload));
 }

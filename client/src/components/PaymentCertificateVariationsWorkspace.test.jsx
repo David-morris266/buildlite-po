@@ -74,6 +74,14 @@ describe('PaymentCertificateVariationsWorkspace simplified workflow',()=>{
     expect(host.textContent).not.toContain('Create VA');
   });
 
+  it('warns when cumulative certificate assessment exceeds live VO authority',async()=>{
+    mocks.lines.mockResolvedValue([{id:'line-1',variationAccountItemId:'va-1',contractorReference:'VO-1',description:'Instructed work',currentClaim:500,cumulativeClaim:500}]);
+    mocks.account.mockResolvedValue([{id:'va-1',status:'active',reference:'VA-0001',description:'Instructed work',forecastStatus:'pending',qsForecast:null,authority:{effectiveRecognisedAuthority:500,effectiveVoAuthority:500,allocations:[]}}]);
+    mocks.assessments.mockResolvedValue({items:[{variationAccountItemId:'va-1',reference:'VA-0001',description:'Instructed work',inCurrentApplication:true,previousCertified:0,contractorClaim:500,assessment:{id:'assessment-1',currentAssessment:550,basis:'Measured works'}}]});
+    await render();
+    expect(host.textContent).toContain('Assessment to date £550.00 exceeds current authority £500.00');
+  });
+
   it('submits claim assessment through the atomic reconciliation command',async()=>{
     await render();
     const select=host.querySelector('select');

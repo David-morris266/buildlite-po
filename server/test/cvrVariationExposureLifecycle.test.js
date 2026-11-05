@@ -7,6 +7,7 @@ const {
   buildLiveVariationExposure,
   compareSubmittedVariationExposure,
 } = require('../services/cvrVariationExposureSnapshot');
+const { CANONICAL_JSON_SHA256_V1, hashCanonicalJson } = require('../services/canonicalJsonIntegrity');
 
 function exposure(overrides = {}) {
   return {
@@ -77,6 +78,31 @@ test('Payment Release and irrelevant display metadata cannot make submitted evid
   const compared = await compareSubmittedVariationExposure(db, { clientId: 'client-1', developmentId: 'dev-1', periodId: 'period-1', loadFacts: async () => [liveWithIgnoredFacts] });
   assert.equal(compared.stale, false);
   assert.equal(compared.integrity.valid, true);
+});
+
+test('v1 submission remains lock-compatible when its material commercial evidence is unchanged', async () => {
+  const db = memoryDb();
+  const source = { calculationVersion:'va_expected_exposure_v1',items:[exposure()] };
+  db.rows.push({ id:'v1-submission',calculation_version:'va_expected_exposure_v1',source_snapshot:source,
+    source_snapshot_hash_scheme:CANONICAL_JSON_SHA256_V1,source_snapshot_sha256:hashCanonicalJson(source) });
+  const compared = await compareSubmittedVariationExposure(db,{clientId:'client-1',developmentId:'dev-1',periodId:'period-1',loadFacts:async()=>[{
+    ...exposure(),calculationVersion:'va_expected_exposure_v2',exposureClassification:'forecast_assessed',
+  }]});
+  assert.equal(compared.stale,false);
+  assert.deepEqual(compared.staleReasons,[]);
+});
+
+test('v1 submission becomes stale when live material authority changes', async () => {
+  const db = memoryDb();
+  const source = { calculationVersion:'va_expected_exposure_v1',items:[exposure()] };
+  db.rows.push({ id:'v1-submission',calculation_version:'va_expected_exposure_v1',source_snapshot:source,
+    source_snapshot_hash_scheme:CANONICAL_JSON_SHA256_V1,source_snapshot_sha256:hashCanonicalJson(source) });
+  const compared = await compareSubmittedVariationExposure(db,{clientId:'client-1',developmentId:'dev-1',periodId:'period-1',loadFacts:async()=>[exposure({
+    effectiveRecognisedAuthority:500,authorityAlreadyInCurrentContract:500,vaExposureUplift:16500,remainingForecastExposure:16500,
+    authorityComposition:{effectiveCommercialEvent:0,effectiveVariationOrder:500,effectivePaymentAuthority:0},
+  })]});
+  assert.equal(compared.stale,true);
+  assert.ok(compared.staleReasons.includes('variation_exposure_sources_changed'));
 });
 
 test('Reject/resubmit appends fresh reviewed evidence that can compare cleanly', async () => {

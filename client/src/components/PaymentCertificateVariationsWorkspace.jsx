@@ -23,9 +23,12 @@ function forecastLabel(item) {
   return item?.forecastStatus === 'pending' || item?.qsForecast == null ? 'Forecast pending' : `QS Forecast ${gbp(item.qsForecast)}`;
 }
 
-function authorityStatus(item, evidence, assessment) {
+function authorityStatus(item, evidence, assessment, cumulativeAssessment = 0) {
   const authority = item.authority || {};
   const value = Number(authority.effectiveRecognisedAuthority || 0);
+  const cumulative = Number(cumulativeAssessment || 0);
+  const exceedsAuthority = value && cumulative && (Math.sign(value) !== Math.sign(cumulative) || Math.abs(cumulative) > Math.abs(value) + 0.005);
+  if (exceedsAuthority) return { label: `Assessment to date ${gbp(cumulative)} exceeds current authority ${gbp(value)}`, tone: 'warning' };
   if (Number(authority.effectiveVoAuthority || 0)) return { label: `Current approved authority ${gbp(authority.effectiveVoAuthority)}`, tone: 'recognised' };
   if (Number(authority.effectiveCeAuthority || 0)) return { label: `Current approved authority ${gbp(authority.effectiveCeAuthority)}`, tone: 'recognised' };
   if (Number(authority.effectivePaymentAuthority || 0)) return { label: `Payment Authority recognised ${gbp(authority.effectivePaymentAuthority)}`, tone: 'recognised' };
@@ -184,7 +187,8 @@ export default function PaymentCertificateVariationsWorkspace({ packageId, certi
       const evidence = evidenceByItem.get(item.variationAccountItemId);
       const accountItem = items.find(entry => entry.id === item.variationAccountItemId) || item;
       const directSourceOverlap = hasDirectSourceOverlap(accountItem, certificate?.commercialLines);
-      const status = directSourceOverlap ? { label: 'Already included through another certificate route', tone: 'warning' } : authorityStatus(accountItem, evidence, item.assessment);
+      const cumulativeAssessment = item.assessment?.cumulativeCertified ?? Number(item.previousCertified || 0) + current;
+      const status = directSourceOverlap ? { label: 'Already included through another certificate route', tone: 'warning' } : authorityStatus(accountItem, evidence, item.assessment, cumulativeAssessment);
       const line = lineByItem.get(item.variationAccountItemId);
       return <tr key={item.variationAccountItemId}>
         <td><strong>{item.reference}</strong><br/>{item.description}<small>{item.inCurrentApplication ? 'Claimed this application' : Number(item.previousCertified) ? 'Previously certified' : 'Added existing variation'} · {forecastLabel(accountItem)}</small></td>

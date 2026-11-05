@@ -28,7 +28,11 @@ function sourceIds(vo) {
 }
 
 function buildContractAuthority({ originalOrderValue = 0, events = [], variationOrders = [] } = {}) {
-  const issued = (variationOrders || []).filter((vo) => vo?.status === "issued");
+  const issuedAll = (variationOrders || []).filter((vo) => vo?.status === "issued");
+  // Superseding instructions replace their predecessor. Reversals are signed
+  // instructions and must remain beside the original so they net exactly once.
+  const displaced = new Set(issuedAll.map(vo => vo.supersedesId || vo.supersedes_id).filter(Boolean).map(String));
+  const issued = issuedAll.filter(vo => !displaced.has(String(vo.id)));
   const supersededEventIds = new Set();
   for (const vo of issued) for (const id of sourceIds(vo)) supersededEventIds.add(id);
 
@@ -84,7 +88,7 @@ async function listVariationOrderAuthorityFacts(db, clientId, { developmentId = 
   if (developmentId) { params.push(developmentId); clauses.push(`vo.development_id=$${params.length}`); }
   if (packageIds) { params.push(packageIds); clauses.push(`vo.package_id=ANY($${params.length}::uuid[])`); }
   const { rows } = await db.query(
-    `SELECT vo.id, vo.package_id, vo.order_key, vo.status,
+    `SELECT vo.id, vo.package_id, vo.order_key, vo.status, vo.supersedes_id, vo.reverses_id,
             COALESCE((SELECT SUM(lines.net_value) FROM variation_order_lines lines
                        WHERE lines.client_id=vo.client_id AND lines.variation_order_id=vo.id),0)::float AS signed_value,
             COALESCE((SELECT array_agg(links.commercial_event_id) FROM variation_order_commercial_events links
@@ -94,6 +98,7 @@ async function listVariationOrderAuthorityFacts(db, clientId, { developmentId = 
   );
   return rows.map((row) => ({
     id: row.id, packageId: row.package_id, orderKey: row.order_key, status: row.status,
+    supersedesId: row.supersedes_id, reversesId: row.reverses_id,
     signedValue: money(row.signed_value),
     sourceCommercialEvents: (row.source_event_ids || []).map((id) => ({ commercialEventId: id })),
   }));

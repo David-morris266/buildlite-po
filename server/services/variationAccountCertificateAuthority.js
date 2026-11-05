@@ -86,9 +86,19 @@ async function loadVariationAssessmentAuthority(clientId, packageId, certificate
   const itemIds = [...new Set(assessments.map(item => item.variationAccountItemId))];
   const [itemsResult, allocationsResult, substitutionsResult, priorAssessmentsResult, supportUsagesResult] = await Promise.all([
     run(db, `SELECT id,variation_reference,current_qs_forecast FROM package_variation_account_items WHERE client_id=$1 AND package_id=$2 AND id=ANY($3::uuid[])`, [clientId, packageId, itemIds]),
-    run(db, `SELECT a.*,l.assessment_id payment_authority_assessment_id
+    run(db, `SELECT a.*,l.assessment_id payment_authority_assessment_id,
+      CASE WHEN a.source_type<>'variation_order_line' THEN TRUE
+           WHEN vo.status<>'issued' THEN FALSE
+           WHEN vo.reverses_id IS NOT NULL THEN FALSE
+           WHEN EXISTS(SELECT 1 FROM variation_orders successor
+                        WHERE successor.client_id=vo.client_id
+                          AND (successor.supersedes_id=vo.id OR successor.reverses_id=vo.id)
+                          AND successor.status='issued') THEN FALSE
+           ELSE TRUE END represented_in_current_contract
       FROM package_variation_account_authority_allocations a
       LEFT JOIN payment_authority_decision_lines l ON l.client_id=a.client_id AND l.id=a.payment_authority_decision_line_id
+      LEFT JOIN variation_order_lines vol ON vol.client_id=a.client_id AND vol.id=a.variation_order_line_id
+      LEFT JOIN variation_orders vo ON vo.client_id=vol.client_id AND vo.id=vol.variation_order_id
       WHERE a.client_id=$1 AND a.package_id=$2 AND a.variation_account_item_id=ANY($3::uuid[])
       ORDER BY a.created_at,a.id`, [clientId, packageId, itemIds]),
     run(db, `SELECT * FROM package_variation_account_authority_substitutions WHERE client_id=$1 AND package_id=$2 AND variation_account_item_id=ANY($3::uuid[]) ORDER BY created_at,id`, [clientId, packageId, itemIds]),
@@ -116,7 +126,10 @@ async function loadVariationAssessmentAuthority(clientId, packageId, certificate
   const result = new Map();
   for (const assessment of assessments) {
     const rows = allocationsByItem.get(assessment.variationAccountItemId) || [];
-    const allocations = rows.map(mapAllocation);
+    const allocations = rows.map(row => ({
+      ...mapAllocation(row),
+      representedInCurrentContract: row.represented_in_current_contract !== false,
+    }));
     const projection = buildProjection({
       item: {
         id: assessment.variationAccountItemId,
