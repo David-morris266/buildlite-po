@@ -35,15 +35,17 @@ describe('Cost Code Storyboard governed commercial evidence', () => {
 
   it('leads with the deterministic fencing explanation and exposes actor-backed source evidence', () => {
     const open = vi.fn();
-    render({ movement: { comparable: true, movement: 0, bridge: { committed: 1000, uncommittedForecast: -1000 },
+    render({ movement: { comparable: true, movement: 0, bridge: { committed: 1000, uncommittedForecast: -1000,
+      systemForecast: 0, changeExposure: 0, commercialAdjustment: 0 },
       previousCommercialEvidence: { captured: true, commitment: { reconciliation: 'reconciled', items: [{ type: 'purchase_order', id: 'S0016', includedAmount: 125894.54 }] } } },
       onOpenCommercialEvidence: open });
-    expect(node.textContent).toContain('Commercial position changed; EFC unchanged');
+    expect(node.textContent).toContain('Commitment changed; EFC unchanged');
     expect(node.textContent).toContain('existing allowance absorbed the commitment change');
-    const disclosure = [...node.querySelectorAll('details')].find((item) => item.querySelector('summary')?.textContent === 'Supporting commercial evidence');
-    expect(disclosure.textContent).toContain('S0016/VO-0001');
-    expect(disclosure.textContent).toContain('Issued VO by Commercial Director');
-    const buttons = [...disclosure.querySelectorAll('button')].filter((button) => button.textContent === 'Open record');
+    const records = node.querySelector('.dev-cvr-storyboard__commercial-records');
+    expect(records.textContent).toContain('S0016/VO-0001');
+    expect(records.textContent).toContain('Issued VO by Commercial Director');
+    expect(records.textContent).toContain('4 evidence groups with no contributing records');
+    const buttons = [...records.querySelectorAll('button')].filter((button) => button.textContent === 'Open record');
     act(() => buttons[1].click());
     expect(open).toHaveBeenCalledWith({ type: 'package', orderKey: 'pkg-1', tab: 'variations' });
   });
@@ -52,13 +54,22 @@ describe('Cost Code Storyboard governed commercial evidence', () => {
     const row = structuredClone(base);
     row.displayMetadata.commercialEvidence.commitment.items[1].authority = { actor: null, at: null, action: 'Issued VO' };
     render({ row });
-    const disclosure = [...node.querySelectorAll('details')].find((item) => item.querySelector('summary')?.textContent === 'Supporting commercial evidence');
-    expect(disclosure.textContent).toContain('Issued VO by Not recorded');
+    const records = node.querySelector('.dev-cvr-storyboard__commercial-records');
+    expect(records.textContent).toContain('Issued VO by Not recorded');
   });
 
   it('never substitutes current evidence for a legacy locked snapshot', () => {
     render({ row: { ...base, displayMetadata: {} }, historic: true });
     expect(node.textContent).toContain('Record-level commercial evidence was not captured for this historic CVR');
     expect(node.textContent).not.toContain('S0016/VO-0001');
+  });
+
+  it('places commercial records before forecast and editing sections', () => {
+    render({ movement: { comparable: true, movement: 0, bridge: { committed: 1000, uncommittedForecast: -1000,
+      systemForecast: 0, changeExposure: 0, commercialAdjustment: 0 },
+      previousCommercialEvidence: { captured: true, commitment: { reconciliation: 'reconciled', items: [{ type: 'purchase_order', id: 'S0016', includedAmount: 125894.54 }] } } } });
+    const text = node.textContent;
+    expect(text.indexOf('Commercial records supporting this position')).toBeLessThan(text.indexOf('Forecast position'));
+    expect(text.indexOf('Forecast position')).toBeLessThan(text.indexOf('Projected Adjustment'));
   });
 });

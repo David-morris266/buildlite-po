@@ -1,6 +1,9 @@
 import { formatCvrMoney } from './cvrHelpers';
 
 const pence = (value) => Number.isFinite(Number(value)) ? Math.round(Number(value) * 100) : 0;
+const optionalPence = (value) => value == null || value === '' || !Number.isFinite(Number(value))
+  ? null
+  : Math.round(Number(value) * 100);
 const signed = (value) => {
   const amount = pence(value);
   if (!amount) return formatCvrMoney(0);
@@ -44,12 +47,28 @@ export function buildStoryboardExplanation({ row, movement, siteStart = false } 
   const commitmentMovement = movement?.bridge?.committed ?? null;
   const allowanceMovement = movement?.bridge?.uncommittedForecast ?? null;
   const efcMovement = movement?.movement ?? null;
-  const unexplained = movement?.unexplained === true || pence(movement?.awaitingExplanation) !== 0;
+  const recordedResidual = optionalPence(movement?.residual);
+  const componentPence = [
+    optionalPence(movement?.bridge?.systemForecast),
+    optionalPence(movement?.bridge?.changeExposure),
+    optionalPence(movement?.bridge?.commercialAdjustment),
+  ];
+  const efcMovementPence = optionalPence(efcMovement);
+  const componentsComplete = componentPence.every((value) => value != null) && efcMovementPence != null;
+  const derivedResidual = componentsComplete
+    ? efcMovementPence - componentPence.reduce((sum, value) => sum + value, 0)
+    : null;
+  const financialRemainderPence = recordedResidual ?? derivedResidual;
+  const reconciliationConfirmed = financialRemainderPence != null;
+  const financialUnreconciled = reconciliationConfirmed && financialRemainderPence !== 0;
+  const attributionLimited = !financialUnreconciled && (
+    pence(movement?.awaitingExplanation) !== 0
+  );
 
   if (siteStart || !movement?.comparable) {
     return {
       title: siteStart ? 'Opening commercial position' : 'Current commercial position',
-      text: `The governed position is ${formatCvrMoney(row.finalForecast)} EFC, supported by ${formatCvrMoney(row.committed)} commitment, ${formatCvrMoney(row.changeExposure)} change exposure and ${signed(row.commercialAdjustment)} Projected Adjustment.`,
+      text: `EFC is ${formatCvrMoney(row.finalForecast)}, comprising ${formatCvrMoney(row.committed)} committed, ${formatCvrMoney(row.changeExposure)} change exposure and ${signed(row.commercialAdjustment)} Projected Adjustment.`,
       evidenceCaptured: Boolean(currentEvidence),
     };
   }
@@ -61,7 +80,7 @@ export function buildStoryboardExplanation({ row, movement, siteStart = false } 
     ? 'Commitment did not change.'
     : variation
       ? `${variation.reference} ${pence(commitmentMovement) > 0 ? 'increased' : 'reduced'} commitment by ${formatCvrMoney(Math.abs(commitmentMovement))}.`
-      : `Governed commitment evidence changed by ${signed(commitmentMovement)}.`;
+      : `Commitment changed by ${signed(commitmentMovement)}.`;
 
   const components = [
     `System Forecast ${signed(movement?.bridge?.systemForecast || 0)}`,
@@ -74,17 +93,31 @@ export function buildStoryboardExplanation({ row, movement, siteStart = false } 
       pence(allowanceMovement) === -pence(commitmentMovement)) {
     bridge = `The existing allowance absorbed the commitment change: Uncommitted moved by ${signed(allowanceMovement)}, so EFC remained ${formatCvrMoney(row.finalForecast)}.`;
   } else if (pence(efcMovement) !== 0) {
-    bridge = `The authoritative bridge is: ${components}. EFC is now ${formatCvrMoney(row.finalForecast)}.`;
+    bridge = `${components}. These movements give a current EFC of ${formatCvrMoney(row.finalForecast)}.`;
   } else {
-    bridge = `The authoritative bridge is: ${components}. EFC remained ${formatCvrMoney(row.finalForecast)}.`;
+    bridge = `${components}. EFC remained ${formatCvrMoney(row.finalForecast)}.`;
   }
-  if (unexplained) bridge += ' A non-zero remainder is not explained by the recorded movement components.';
+  if (financialUnreconciled) {
+    bridge += ` The component movements do not reconcile to the EFC movement; ${signed(financialRemainderPence / 100)} remains to be reviewed.`;
+  } else if (!reconciliationConfirmed) {
+    bridge += ' Reconciliation cannot be confirmed for this comparison.';
+  }
 
   return {
-    title: unexplained ? 'EFC movement includes an unexplained remainder'
-      : pence(efcMovement) === 0 ? 'Commercial position changed; EFC unchanged' : 'EFC movement explained',
+    title: financialUnreconciled ? 'Forecast movement needs reconciliation'
+      : !reconciliationConfirmed ? 'Forecast reconciliation cannot be confirmed'
+      : pence(efcMovement) === 0 ? 'Commitment changed; EFC unchanged'
+        : pence(efcMovement) > 0 ? `EFC increased by ${formatCvrMoney(efcMovement)}`
+          : `EFC reduced by ${formatCvrMoney(Math.abs(efcMovement))}`,
     text: `${commitmentLead} ${bridge}`,
     evidenceCaptured: Boolean(currentEvidence),
+    financialUnreconciled,
+    reconciliationConfirmed,
+    financialRemainder: financialRemainderPence == null ? null : financialRemainderPence / 100,
+    attributionLimited,
+    evidenceNote: attributionLimited
+      ? 'The visible financial movement reconciles. Available historic record evidence is not sufficient to identify one record as the sole cause.'
+      : null,
     commitmentChanges: changes,
   };
 }
