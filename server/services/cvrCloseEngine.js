@@ -37,6 +37,11 @@ const {
   normalizeTreatment,
 } = require("./commercialEventExpectedLiability");
 const { buildContractAuthority } = require("./variationOrderAuthority");
+const {
+  COMMERCIAL_EVIDENCE_KEY,
+  buildCommercialEvidenceByCostCode,
+  stripReservedCommercialEvidence,
+} = require('./cvrCommercialEvidence');
 
 function isRecoveryCommercialEvent(event) {
   return event?.relationshipType === RECOVERY_RELATIONSHIP_TYPE;
@@ -107,9 +112,11 @@ function buildSubcontractOrders(pos, developmentId) {
       costCode,
       committedValue: 0,
       poNumbers: [],
+      purchaseOrders: [],
     };
 
     existing.committedValue += getPoCommittedNet(po);
+    existing.purchaseOrders.push(po);
     const poNumber = getPoNumber(po);
     if (poNumber && !existing.poNumbers.includes(poNumber)) {
       existing.poNumbers.push(poNumber);
@@ -127,6 +134,7 @@ function addAmount(map, key, amount) {
 function buildCommitmentsByCostCode(developmentId, pos, events, variationOrders = []) {
   const totals = new Map();
   const labels = new Map();
+  const evidence = new Map();
 
   for (const order of buildSubcontractOrders(pos, developmentId)) {
     const key = normaliseCostCodeKey(order.costCode);
@@ -138,6 +146,14 @@ function buildCommitmentsByCostCode(developmentId, pos, events, variationOrders 
     });
     const amount = authority.currentContract;
     addAmount(totals, key, Number.isFinite(amount) ? amount : 0);
+    const facts = evidence.get(key) || [];
+    facts.push({
+      order,
+      authority,
+      events: eventsForOrder(events, order.orderKey),
+      variationOrders: variationOrders.filter((vo) => vo.orderKey === order.orderKey),
+    });
+    evidence.set(key, facts);
     if (!labels.has(key)) {
       labels.set(key, buildCostCodeLabel(key, order.costCode));
     }
@@ -149,12 +165,19 @@ function buildCommitmentsByCostCode(developmentId, pos, events, variationOrders 
     const key = normaliseCostCodeKey(costCode);
     if (!key) continue;
     addAmount(totals, key, getPoCommittedNet(po));
+    evidence.set(key, [...(evidence.get(key) || []), {
+      order: null,
+      authority: { currentContract: getPoCommittedNet(po) },
+      purchaseOrder: po,
+      events: [],
+      variationOrders: [],
+    }]);
     if (!labels.has(key)) {
       labels.set(key, buildCostCodeLabel(key, costCode));
     }
   }
 
-  return { totals, labels };
+  return { totals, labels, evidence };
 }
 
 function buildCertifiedByCostCode(developmentId, pos, certificates) {
@@ -377,6 +400,16 @@ async function buildCvrCloseCandidate({
   if (changeExposure.blockers.length) {
     return notReadyResult({ clientId, developmentId, periodId, sources, blockers: changeExposure.blockers });
   }
+  const commercialEvidenceByCostCode = buildCommercialEvidenceByCostCode({
+    developmentId,
+    commitmentAuthority: commitments,
+    changeExposure,
+    certifiedAuthority: certified,
+    actualAuthority: actuals,
+    certificates,
+    ledgerTransactions: transactions,
+    inputs,
+  });
   const hierarchyByCostCode = new Map((commercialHierarchyDocument?.costCodes || []).map((entry) => [normaliseCostCodeKey(entry.costCodeKey), entry]));
   const variationExposureByCostCode = new Map();
   const siteStartBudgetDocument = period.periodType === 'site_start'
@@ -461,9 +494,18 @@ async function buildCvrCloseCandidate({
       commercialAdjustment: manual?.commercialAdjustment ?? 0,
       adjustmentReason: manual?.adjustmentReason || "",
       notes: manual?.notes || "",
-      displayMetadata: hierarchy
-        ? { ...(manual?.displayMetadata || {}), commercialHierarchy: hierarchy }
-        : manual?.displayMetadata || {},
+      displayMetadata: {
+        ...stripReservedCommercialEvidence(manual?.displayMetadata || {}),
+        ...(hierarchy ? { commercialHierarchy: hierarchy } : {}),
+        [COMMERCIAL_EVIDENCE_KEY]: commercialEvidenceByCostCode.get(key) || {
+          version: 'cvr_commercial_evidence_v1', captured: true,
+          commitment: { count: 0, total: 0, reconciliation: 'reconciled', items: [] },
+          exposure: { count: 0, total: 0, reconciliation: 'reconciled', items: [] },
+          certified: { count: 0, total: 0, reconciliation: 'reconciled', items: [] },
+          actual: { count: 0, sourceCount: 0, omittedCount: 0, total: 0, reconciliation: 'reconciled', items: [] },
+          qsJudgement: { count: 0, total: 0, items: [] },
+        },
+      },
       committed: roundMoney(committed) ?? 0,
       certified: roundMoney(certifiedValue) ?? 0,
       actualCost: roundMoney(actualCost) ?? 0,

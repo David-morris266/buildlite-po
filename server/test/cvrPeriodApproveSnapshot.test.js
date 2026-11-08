@@ -913,6 +913,11 @@ if (!isDbConfigured()) {
     assert.equal(Number(row5231.expectedLiability), 0);
     assert.deepEqual(row5231.expectedLiabilityProvenance, []);
     assert.deepEqual(row5231.adjustmentHistory, [{ amount: 500, reason: "Test adjustment" }]);
+    assert.equal(row5231.displayMetadata.commercialEvidence.captured, true);
+    assert.equal(row5231.displayMetadata.commercialEvidence.version, "cvr_commercial_evidence_v1");
+    assert.ok(row5231.displayMetadata.commercialEvidence.commitment.items.some(
+      (item) => item.type === "purchase_order" && item.reference === world.po.poNumber
+    ));
     assert.equal(locked.body.snapshot.commentary.keyCommercialIssues, "Approve snapshot commentary");
     assert.ok(locked.body.snapshot.sourceReadiness);
 
@@ -933,6 +938,21 @@ if (!isDbConfigured()) {
       )
     );
     assert.ok(audit.some((item) => item.action === "locked" && item.comment === "Lock P01"));
+
+    const frozenEvidence = JSON.stringify(row5231.displayMetadata.commercialEvidence);
+    await pool.query(
+      `UPDATE purchase_orders
+          SET payload = jsonb_set(payload, '{subtotal}', '999999'::jsonb, true)
+        WHERE client_id = $1 AND po_number = $2`,
+      [world.client.id, world.po.poNumber]
+    );
+    const historic = await request(app).get(periodUrl(world.development.id, world.period.id));
+    assert.equal(historic.status, 200);
+    assert.equal(
+      JSON.stringify(findRow(historic.body.snapshot, "5231").displayMetadata.commercialEvidence),
+      frozenEvidence,
+      "locked Storyboard evidence must not rehydrate changed live PO evidence"
+    );
   });
 
   test("migration 069 compares current xid8 to snapshot xmin with epoch-safe xid semantics", async () => {

@@ -1,6 +1,7 @@
 /**
  * BL-031A — CVR period / cost-code input validation.
  */
+const { stripReservedCommercialEvidence } = require('./cvrCommercialEvidence');
 
 const {
   MAX_COST_CODE_KEY_LENGTH,
@@ -218,10 +219,11 @@ function validateCostCodeInputBody(body = {}, { requireVersion = false } = {}) {
     }
   }
 
-  const displayMetadata =
+  const rawDisplayMetadata =
     body.displayMetadata && typeof body.displayMetadata === "object" && !Array.isArray(body.displayMetadata)
       ? body.displayMetadata
       : {};
+  const displayMetadata = stripReservedCommercialEvidence(rawDisplayMetadata);
   if (Array.isArray(body.adjustmentHistory)) {
     displayMetadata.adjustmentHistory = body.adjustmentHistory;
   }

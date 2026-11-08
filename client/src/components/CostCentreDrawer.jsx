@@ -5,6 +5,7 @@ import { formatPoDate, formatPoDateTime } from './poDrawerHelpers';
 import { getAdjustmentState, enrichCvrForecastRow } from '../cvr/cvrForecastEngine';
 import { CVR_HISTORIC_DRAWER_NOTE } from '../cvr/cvrHistoricConstants';
 import { resolveCommercialAdjustmentOwnership } from '../cvr/cvrCommercialAdjustmentOwnership';
+import { buildStoryboardExplanation, commercialEvidenceOf } from '../cvr/cvrStoryboardEvidence';
 
 function parseMoney(value) {
   const text = String(value ?? '').trim();
@@ -133,12 +134,49 @@ function EvidenceTables({ packages, ledgerRows, certificates, ledgerReady, ledge
   </div></details>;
 }
 
+const EVIDENCE_GROUPS = [
+  ['commitment', 'Commitment authority'],
+  ['exposure', 'Commercial risk / exposure'],
+  ['certified', 'Certified expenditure'],
+  ['actual', 'Ledger actual'],
+  ['qsJudgement', 'QS forecast decisions'],
+];
+
+function CommercialEvidence({ evidence, historic, onOpen }) {
+  if (!evidence) {
+    return <section className="dev-cvr-storyboard__section"><h3>Commercial evidence</h3><p>{historic
+      ? 'Record-level commercial evidence was not captured for this historic CVR. Live records are not shown against immutable historic figures.'
+      : 'Server-owned record-level commercial evidence is unavailable for this position.'}</p></section>;
+  }
+  return <details className="dev-cvr-storyboard__disclosure"><summary>Supporting commercial evidence</summary><div className="dev-cvr-storyboard__disclosure-body">
+    {EVIDENCE_GROUPS.map(([key, label]) => {
+      const group = evidence[key] || { count: 0, total: 0, items: [] };
+      const count = key === 'actual' ? group.sourceCount ?? group.count : group.count;
+      return <section key={key} className="dev-cvr-storyboard__workflow-evidence">
+        <div><h4>{label}</h4><strong>{count} record{count === 1 ? '' : 's'} · {formatSignedMoney(group.total)}</strong>
+          {group.reconciliation ? <span>{group.reconciliation === 'reconciled' ? 'Reconciled to CVR' : 'Supporting records do not reconcile to the authoritative CVR total'}</span> : null}</div>
+        {group.items?.length ? <ul>{group.items.map((item) => <li key={`${item.type}-${item.id || item.reference}`}>
+          <div><strong>{item.reference}</strong><strong>{formatSignedMoney(item.includedAmount)}</strong></div>
+          {item.description ? <span>{item.description}</span> : null}
+          <span>{item.status || 'Recorded'} · {item.authority?.action || 'Governing actor'} by {item.authority?.actor || 'Not recorded'}{item.authority?.at ? ` · ${formatPoDateTime(item.authority.at)}` : ''}</span>
+          {item.navigation && ['package', 'certificate'].includes(item.navigation.type) && onOpen
+            ? <button type="button" className="cvr-summary__link-btn" onClick={() => onOpen(item.navigation)}>{historic ? 'Open related current record' : 'Open record'}</button> : null}
+        </li>)}</ul> : <p>No contributing records.</p>}
+        {group.omittedCount > 0 ? <p>{group.omittedCount} further ledger transaction{group.omittedCount === 1 ? '' : 's'} included in the total. Open Purchase Ledger for the complete live register.</p> : null}
+        {key === 'actual' && count > 0 && onOpen ? <button type="button" className="cvr-summary__link-btn" onClick={() => onOpen({ type: 'ledger' })}>Open Purchase Ledger</button> : null}
+      </section>;
+    })}
+    <p>{historic ? 'Evidence frozen when this CVR was locked.' : 'Evidence supplied by the governed live CVR close candidate.'}</p>
+  </div></details>;
+}
+
 export default function CostCentreDrawer({
   open, row, movement, packages = [], ledgerRows = [], certificates = [], ledgerReady = true,
   ledgerError = false, readOnly = false, historic = false, onClose, onSaveNotes,
   onSaveCommercialAdjustment, onOpenVariationAccount, onOpenAdjustmentWorkflow,
   storyboard = false, sideBySide = false,
   budgetLabel = 'Current Budget',
+  siteStart = false, onOpenCommercialEvidence,
 }) {
   const title = row?.costCodeLabel || 'Cost Code';
   const [adjustment, setAdjustment] = useState('');
@@ -179,6 +217,8 @@ export default function CostCentreDrawer({
   const accrualDirty = moneyChanged(accrual, displayRow.manualAccrual);
   const adjustmentOwnership = resolveCommercialAdjustmentOwnership(row);
   const workflowOwned = adjustmentOwnership.kind === 'workflow' && !manualReplacement;
+  const commercialEvidence = commercialEvidenceOf(displayRow);
+  const explanation = buildStoryboardExplanation({ row: displayRow, movement, siteStart });
 
   async function saveAdjustment() {
     if (readOnly || !adjustmentDirty || reasonMissing || adjustmentValue == null) return;
@@ -212,6 +252,8 @@ export default function CostCentreDrawer({
         <div><dt>Variance to Budget</dt><dd className={`dev-cvr__variance dev-cvr__variance--${displayRow.varianceState || 'neutral'}`}>{formatCvrMoney(displayRow.variance)}</dd></div>
       </dl>
 
+      {explanation ? <Section title={explanation.title} emphasis><p>{explanation.text}</p>{!explanation.evidenceCaptured ? <p className="po-list-feedback po-list-feedback--warning">Record-level source evidence is unavailable for this position; no live evidence has been substituted for historic facts.</p> : null}</Section> : null}
+
       <Section title="Forecast position" emphasis>
         {isHistoric ? <p role="status">{CVR_HISTORIC_DRAWER_NOTE}</p> : null}
         <dl className="dev-cvr-storyboard__forecast">
@@ -230,7 +272,8 @@ export default function CostCentreDrawer({
 
       {displayRow.variationExposureItems?.length ? <Section title="Variation Account">{displayRow.variationExposureItems.map((item) => <article key={item.variationAccountItemId} className="dev-cvr-storyboard__va"><div><strong>{item.reference || 'Unreferenced item'}</strong><span>{formatCvrMoney(item.vaExposureUplift)} CVR uplift</span></div>{item.exceptions?.length ? <p className="po-list-feedback po-list-feedback--warning">{item.exceptions.join(', ')}</p> : null}{item.variationAccountItemId && item.packageId ? <button type="button" className="cvr-summary__link-btn" onClick={() => onOpenVariationAccount?.({ id: item.variationAccountItemId, packageId: item.packageId, reference: item.reference })}>Open Variation Account item</button> : null}<details><summary>Authority detail</summary><dl className="dev-cvr-storyboard__forecast"><div><dt>QS Forecast</dt><dd>{formatCvrMoney(item.qsForecast)}</dd></div><div><dt>Recognised Authority</dt><dd>{formatCvrMoney(item.effectiveRecognisedAuthority)}</dd></div><div><dt>Commercial Event authority</dt><dd>{formatCvrMoney(item.authorityComposition?.effectiveCommercialEvent)}</dd></div><div><dt>Issued Variation Order authority</dt><dd>{formatCvrMoney(item.authorityComposition?.effectiveVariationOrder)}</dd></div><div><dt>Payment Authority</dt><dd>{formatCvrMoney(item.authorityComposition?.effectivePaymentAuthority)}</dd></div><div><dt>Remaining Exposure</dt><dd>{formatCvrMoney(item.remainingForecastExposure)}</dd></div></dl></details></article>)}</Section> : null}
 
-      {!isHistoric ? <EvidenceTables packages={packages} ledgerRows={ledgerRows} certificates={certificates} ledgerReady={ledgerReady} ledgerError={ledgerError} movement={movement} displayMetadata={displayRow.displayMetadata} /> : null}
+      <CommercialEvidence evidence={commercialEvidence} historic={isHistoric} onOpen={onOpenCommercialEvidence} />
+      {!commercialEvidence && !isHistoric ? <EvidenceTables packages={packages} ledgerRows={ledgerRows} certificates={certificates} ledgerReady={ledgerReady} ledgerError={ledgerError} movement={movement} displayMetadata={displayRow.displayMetadata} /> : null}
       <details className="dev-cvr-storyboard__disclosure"><summary>History &amp; notes</summary><div className="dev-cvr-storyboard__disclosure-body">{row.adjustmentHistory?.length ? <ul className="dev-cvr-drawer__history">{row.adjustmentHistory.map((entry) => <li key={entry.id}><strong>{formatCvrMoney(entry.previousAdjustment)} → {formatCvrMoney(entry.newAdjustment)}</strong><span>{displayAdjustmentHistoryReason(entry.reason || entry.newReason) || '—'}</span><span>{entry.user || '—'} · {formatPoDate(entry.date)}</span></li>)}</ul> : <p>No Projected Adjustments recorded yet.</p>}<label className="dev-form__field"><span className="dev-form__label">Notes</span><textarea className="input dev-cvr-drawer__notes" rows={3} value={notes} readOnly={readOnly || isHistoric} onChange={(event) => setNotes(event.target.value)} onBlur={() => void saveNotes()} /></label>{saveErrorScope === 'notes' ? <p className="po-list-feedback po-list-feedback--error" role="alert">{saveError}</p> : null}</div></details>
     </div>
   </Shell>;

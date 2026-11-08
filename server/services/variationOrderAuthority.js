@@ -88,7 +88,10 @@ async function listVariationOrderAuthorityFacts(db, clientId, { developmentId = 
   if (developmentId) { params.push(developmentId); clauses.push(`vo.development_id=$${params.length}`); }
   if (packageIds) { params.push(packageIds); clauses.push(`vo.package_id=ANY($${params.length}::uuid[])`); }
   const { rows } = await db.query(
-    `SELECT vo.id, vo.package_id, vo.order_key, vo.status, vo.supersedes_id, vo.reverses_id,
+    `SELECT vo.id, vo.package_id, vo.order_key, vo.source_po_number,
+            vo.variation_order_number, vo.reference, vo.description, vo.status,
+            vo.supersedes_id, vo.reverses_id, vo.approved_at, vo.approved_by,
+            vo.issued_at, vo.issued_by, vo.created_at, vo.created_by,
             COALESCE((SELECT SUM(lines.net_value) FROM variation_order_lines lines
                        WHERE lines.client_id=vo.client_id AND lines.variation_order_id=vo.id),0)::float AS signed_value,
             COALESCE((SELECT array_agg(links.commercial_event_id) FROM variation_order_commercial_events links
@@ -97,8 +100,14 @@ async function listVariationOrderAuthorityFacts(db, clientId, { developmentId = 
       WHERE ${clauses.join(" AND ")}`, params
   );
   return rows.map((row) => ({
-    id: row.id, packageId: row.package_id, orderKey: row.order_key, status: row.status,
+    id: row.id, packageId: row.package_id, orderKey: row.order_key,
+    sourcePoNumber: row.source_po_number, variationOrderNumber: row.variation_order_number,
+    displayReference: `${row.source_po_number}/${row.variation_order_number}`,
+    reference: row.reference, description: row.description, status: row.status,
     supersedesId: row.supersedes_id, reversesId: row.reverses_id,
+    approvedAt: row.approved_at, approvedBy: row.approved_by,
+    issuedAt: row.issued_at, issuedBy: row.issued_by,
+    createdAt: row.created_at, createdBy: row.created_by,
     signedValue: money(row.signed_value),
     sourceCommercialEvents: (row.source_event_ids || []).map((id) => ({ commercialEventId: id })),
   }));

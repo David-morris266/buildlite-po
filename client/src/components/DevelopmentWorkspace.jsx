@@ -800,6 +800,27 @@ export default function DevelopmentWorkspace({
     setPackageLaunchError('Variation Account item could not be found in this Development.');
   }
 
+  function handleOpenCvrCommercialEvidence(target) {
+    if (target?.type === 'ledger') {
+      handleSelectWorkspaceTab('ledger');
+      return;
+    }
+    if (!target?.orderKey) return;
+    const pkg = (model?.packages || []).find((item) => item.orderKey === target.orderKey);
+    if (!pkg) {
+      setPackageLaunchError('The source package could not be found in this Development.');
+      return;
+    }
+    handleOpenPackageFromDevelopment(pkg.orderKey, buildPackageWorkspaceLaunchContext({
+      packageRow: pkg,
+      openedFrom: PACKAGE_OPENED_FROM.DevelopmentPackages,
+      initialTab: target.type === 'certificate' ? 'certificates' : target.tab || 'overview',
+      certificateTarget: target.type === 'certificate' && target.certificateId
+        ? { certificateId: target.certificateId, navigationKey: target.certificateId }
+        : null,
+    }));
+  }
+
   function handleBackToDevelopmentPackages() {
     setPackageLaunch(null);
     setPackageLaunchError('');
@@ -1299,6 +1320,7 @@ export default function DevelopmentWorkspace({
               }}
               onPeriodChanged={handleCvrChanged}
               onOpenVariationAccount={handleOpenVariationAccountItem}
+              onOpenCommercialEvidence={handleOpenCvrCommercialEvidence}
               onOpenAdjustmentWorkflow={({ tabId }) => handleSelectWorkspaceTab(tabId)}
               initialCostCodeKey={cvrFocusCostCodeKey}
               hierarchyFilter={cvrHierarchyFilter}

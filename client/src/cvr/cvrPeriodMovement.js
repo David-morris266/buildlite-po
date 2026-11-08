@@ -4,6 +4,7 @@ import { listCvrPeriods } from './cvrPeriodStore';
 import { isCvrPeriodLocked } from './cvrPeriodStatus';
 import { normaliseHierarchyCostCodeKey, selectCvrCommercialHierarchy } from './cvrCommercialHierarchyPresentation';
 import { attributeCvrMovementRow } from './cvrMovementAttribution';
+import { buildStoryboardBridge, commercialEvidenceOf } from './cvrStoryboardEvidence';
 
 const LEGACY_COMPONENTS = [
   ['systemForecast', 'System Forecast'],
@@ -158,6 +159,9 @@ export function buildCvrPeriodComparison({ currentModel, previousModel, currentP
       residual: money(residualPence), residualLabel: formatSignedMovement(money(residualPence)),
       unexplained: residualPence == null ? movementPence !== 0 : residualPence !== 0,
       adjustmentReason, newCode, previousOnly, currentHierarchy: currentPath, previousHierarchy: previousPath, hierarchyChanged,
+      bridge: comparable ? buildStoryboardBridge(current, previousComponents) : null,
+      currentCommercialEvidence: commercialEvidenceOf(current),
+      previousCommercialEvidence: commercialEvidenceOf(previous),
     };
     return attributeCvrMovementRow({ row, current, previous: previousComponents, currentPeriod, previousPeriod });
   }).sort((a, b) => Math.abs(pence(b.movement) || 0) - Math.abs(pence(a.movement) || 0));

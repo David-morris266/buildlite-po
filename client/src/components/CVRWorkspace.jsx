@@ -157,6 +157,7 @@ export default function CVRWorkspace({
   activeSubview = 'worksheet',
   onSelectSubview,
   onOpenVariationAccount,
+  onOpenCommercialEvidence,
   onOpenAdjustmentWorkflow,
   initialCostCodeKey = null,
   hierarchyFilter = null,
@@ -1041,8 +1042,10 @@ export default function CVRWorkspace({
             onSaveNotes={handleSaveNotes}
             onSaveCommercialAdjustment={handleSaveCommercialAdjustment}
             onOpenVariationAccount={onOpenVariationAccount}
+            onOpenCommercialEvidence={onOpenCommercialEvidence}
             onOpenAdjustmentWorkflow={onOpenAdjustmentWorkflow}
             budgetLabel={siteStart ? 'Land Appraisal Baseline' : 'Current Budget'}
+            siteStart={siteStart}
           />
         </div>
       ) : null}
