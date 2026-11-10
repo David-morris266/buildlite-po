@@ -154,8 +154,10 @@ function CommercialEvidence({ evidence, historic, onOpen }) {
   });
   const empty = EVIDENCE_GROUPS.filter(([key]) => !active.some(([activeKey]) => activeKey === key));
   const navigationFor = (item) => {
-    if (item.type !== 'variation_order' || !item.id || !item.navigation?.orderKey) return item.navigation;
-    const navigation = { ...item.navigation };
+    if (item.type !== 'variation_order') return item.navigation;
+    const orderKey = item.navigation?.orderKey || item.orderKey;
+    if (!item.id || !orderKey) return null;
+    const navigation = { ...(item.navigation || {}), orderKey };
     delete navigation.tab;
     return { ...navigation, type: 'variation_order', variationOrderId: item.id };
   };
@@ -165,13 +167,18 @@ function CommercialEvidence({ evidence, historic, onOpen }) {
       return <section key={key} className="dev-cvr-storyboard__workflow-evidence">
         <div className="dev-cvr-storyboard__evidence-heading"><h4>{label}</h4><strong>{count} record{count === 1 ? '' : 's'} · {formatSignedMoney(group.total)}</strong>
           {group.reconciliation ? <span className={`dev-cvr-storyboard__reconciliation dev-cvr-storyboard__reconciliation--${group.reconciliation}`}>{group.reconciliation === 'reconciled' ? 'Reconciled to CVR' : 'Does not reconcile to the CVR total'}</span> : null}</div>
-        {group.items?.length ? <ul>{group.items.map((item) => <li key={`${item.type}-${item.id || item.reference}`}>
-          <div><strong>{item.reference}</strong><strong>{formatSignedMoney(item.includedAmount)}</strong></div>
-          {item.description ? <span>{item.description}</span> : null}
-          <span>{item.status || 'Recorded'} · {item.authority?.action || 'Governing actor'} by {item.authority?.actor || 'Not recorded'}{item.authority?.at ? ` · ${formatPoDateTime(item.authority.at)}` : ''}</span>
-          {item.navigation && ['package', 'certificate', 'variation_order'].includes(item.navigation.type) && onOpen
-            ? <button type="button" className="cvr-summary__link-btn" onClick={() => onOpen(navigationFor(item))}>{historic ? 'Open related current record' : 'Open record'}</button> : null}
-        </li>)}</ul> : <p>No contributing records.</p>}
+        {group.items?.length ? <ul>{group.items.map((item) => {
+          const navigation = navigationFor(item);
+          return <li key={`${item.type}-${item.id || item.reference}`}>
+            <div><strong>{item.reference}</strong><strong>{formatSignedMoney(item.includedAmount)}</strong></div>
+            {item.description ? <span>{item.description}</span> : null}
+            <span>{item.status || 'Recorded'} · {item.authority?.action || 'Governing actor'} by {item.authority?.actor || 'Not recorded'}{item.authority?.at ? ` · ${formatPoDateTime(item.authority.at)}` : ''}</span>
+            {navigation && ['package', 'certificate', 'variation_order'].includes(navigation.type) && onOpen
+              ? <button type="button" className="cvr-summary__link-btn" onClick={() => onOpen(navigation)}>{historic ? 'Open related current record' : 'Open record'}</button> : null}
+            {item.type === 'variation_order' && !navigation
+              ? <span className="po-list-feedback po-list-feedback--warning">VO record link unavailable: stable VO identity or package context was not captured.</span> : null}
+          </li>;
+        })}</ul> : <p>No contributing records.</p>}
         {group.omittedCount > 0 ? <p>{group.omittedCount} further ledger transaction{group.omittedCount === 1 ? '' : 's'} included in the total. Open Purchase Ledger for the complete live register.</p> : null}
         {key === 'actual' && count > 0 && onOpen ? <button type="button" className="cvr-summary__link-btn" onClick={() => onOpen({ type: 'ledger' })}>Open Purchase Ledger</button> : null}
       </section>;

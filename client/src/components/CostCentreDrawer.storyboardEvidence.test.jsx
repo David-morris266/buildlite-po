@@ -94,6 +94,30 @@ describe('Cost Code Storyboard governed commercial evidence', () => {
     expect(row.displayMetadata.commercialEvidence.commitment.items[1].navigation).toEqual({ type: 'package', orderKey: 'pkg-1', tab: 'variations' });
   });
 
+  it('renders exact navigation from realistic server VO identity when optional navigation metadata is absent', () => {
+    const open = vi.fn();
+    const row = structuredClone(base);
+    const item = row.displayMetadata.commercialEvidence.commitment.items[1];
+    item.orderKey = 'pkg-1';
+    item.navigation = null;
+    render({ row, onOpenCommercialEvidence: open });
+    const records = node.querySelector('.dev-cvr-storyboard__commercial-records');
+    const buttons = [...records.querySelectorAll('button')].filter((button) => button.textContent === 'Open record');
+    act(() => buttons[1].click());
+    expect(open).toHaveBeenCalledWith({ type: 'variation_order', variationOrderId: 'vo-1', orderKey: 'pkg-1' });
+  });
+
+  it('reports incomplete VO navigation instead of silently substituting a package or CE link', () => {
+    const row = structuredClone(base);
+    const item = row.displayMetadata.commercialEvidence.commitment.items[1];
+    item.navigation = null;
+    item.orderKey = null;
+    render({ row, onOpenCommercialEvidence: vi.fn() });
+    const records = node.querySelector('.dev-cvr-storyboard__commercial-records');
+    expect(records.textContent).toContain('VO record link unavailable: stable VO identity or package context was not captured.');
+    expect([...records.querySelectorAll('button')].filter((button) => button.textContent === 'Open record')).toHaveLength(1);
+  });
+
   it('places commercial records before forecast and editing sections', () => {
     render({ movement: { comparable: true, movement: 0, bridge: { committed: 1000, uncommittedForecast: -1000,
       systemForecast: 0, changeExposure: 0, commercialAdjustment: 0 },
