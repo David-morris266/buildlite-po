@@ -19,6 +19,7 @@ const getDevelopmentBudget = vi.hoisted(() => vi.fn());
 const listServerCostCodes = vi.hoisted(() => vi.fn());
 const getDevelopmentProgramme = vi.hoisted(() => vi.fn());
 const putDevelopmentProgramme = vi.hoisted(() => vi.fn());
+const getVariationOrder = vi.hoisted(() => vi.fn());
 
 vi.mock('../api', () => ({
   listPOs,
@@ -68,6 +69,7 @@ vi.mock('../api/costCodes', () => ({
 }));
 
 vi.mock('../api/cvrPeriods', async importOriginal => ({ ...(await importOriginal()), listCvrPeriodsForDevelopment: vi.fn().mockResolvedValue([]) }));
+vi.mock('../api/variationOrders', () => ({ getVariationOrder }));
 
 vi.mock('../auth/BuildLiteAuthProvider', () => ({
   useBuildLitePermission: () => true,
@@ -122,7 +124,8 @@ vi.mock('./DevelopmentPrelimsWorkspace', () => ({
 }));
 vi.mock('./CVRRegister', () => ({ default: ({ onOpenPeriod, createRequestToken }) => <div data-testid="cvr-panel" data-create-request-token={createRequestToken}>CVR panel<button onClick={() => onOpenPeriod?.('P04')}>Open P04</button></div> }));
 vi.mock('./CVRSummaryPage', () => ({ default: () => null }));
-vi.mock('./CVRWorkspace', () => ({ default: () => null }));
+vi.mock('./CVRWorkspace', () => ({ default: ({ onOpenCommercialEvidence, storyboardSuspended }) => <div data-testid="mock-cvr-workspace" data-storyboard-suspended={String(storyboardSuspended)}><span>Selected P01 cost code 5470</span><button type="button" onClick={() => onOpenCommercialEvidence?.({ type: 'variation_order', variationOrderId: 'vo-1', packageId: 'package-1', orderKey: 'order-key-1' })}>Open storyboard VO</button></div> }));
+vi.mock('./VariationOrderDrawer', () => ({ default: ({ open, variationOrder, onClose }) => open ? <div data-testid="variation-order-drawer">{variationOrder.displayReference}<button type="button" onClick={onClose}>Close VO</button></div> : null }));
 vi.mock('./SubcontractPackageWorkspace', () => ({
   default: () => <div data-testid="package-workspace">Package workspace</div>,
 }));
@@ -219,6 +222,10 @@ describe('DevelopmentWorkspace stability guards', () => {
       finalCompletion: '2030-08-31',
       totalPlots: 31,
       version: 1,
+    });
+    getVariationOrder.mockResolvedValue({
+      id: 'vo-1', packageId: 'package-1', orderKey: 'order-key-1',
+      displayReference: 'S0014/VO-0001', status: 'issued',
     });
   });
 
@@ -345,6 +352,52 @@ describe('DevelopmentWorkspace stability guards', () => {
       'Development workspace data is unavailable'
     );
     expect(document.body.textContent).toContain('Back to Developments');
+  });
+
+  it('opens the exact Storyboard Variation Order after validating package identity', async () => {
+    renderWorkspace({ initialActiveTab: 'cvr', initialCvrPeriodKey: 'P01', initialCvrSubview: 'worksheet' });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => {
+      [...container.querySelectorAll('button')].find((button) => button.textContent === 'Open storyboard VO').click();
+      await Promise.resolve();
+    });
+    expect(getVariationOrder).toHaveBeenCalledWith('vo-1');
+    expect(container.querySelector('[data-testid="variation-order-drawer"]')?.textContent).toContain('S0014/VO-0001');
+    expect(container.querySelector('[data-testid="mock-cvr-workspace"]')?.dataset.storyboardSuspended).toBe('true');
+    expect(container.textContent).not.toContain('Commercial Events panel');
+    act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Close VO').click());
+    expect(container.querySelector('[data-testid="mock-cvr-workspace"]')?.dataset.storyboardSuspended).toBe('false');
+    expect(container.textContent).toContain('Selected P01 cost code 5470');
+  });
+
+  it('fails closed when the Storyboard Variation Order belongs to another package', async () => {
+    getVariationOrder.mockResolvedValueOnce({ id: 'vo-1', packageId: 'other-package', orderKey: 'order-key-1', displayReference: 'S0014/VO-0001' });
+    renderWorkspace({ initialActiveTab: 'cvr', initialCvrPeriodKey: 'P01', initialCvrSubview: 'worksheet' });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => {
+      [...container.querySelectorAll('button')].find((button) => button.textContent === 'Open storyboard VO').click();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[data-testid="variation-order-drawer"]')).toBeNull();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('does not belong to the expected package');
+    expect(container.querySelector('[data-testid="mock-cvr-workspace"]')?.dataset.storyboardSuspended).toBe('true');
+  });
+
+  it('shows readable feedback when the exact Storyboard Variation Order is unavailable', async () => {
+    getVariationOrder.mockRejectedValueOnce(new Error('Variation Order not found.'));
+    renderWorkspace({ initialActiveTab: 'cvr', initialCvrPeriodKey: 'P01', initialCvrSubview: 'worksheet' });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => {
+      [...container.querySelectorAll('button')].find((button) => button.textContent === 'Open storyboard VO').click();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[data-testid="variation-order-drawer"]')).toBeNull();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Variation Order not found.');
+    expect(document.activeElement).toBe(container.querySelector('[role="alert"]'));
+    expect(container.querySelector('[data-testid="mock-cvr-workspace"]')?.dataset.storyboardSuspended).toBe('true');
+    act(() => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Return to CVR Storyboard').click());
+    expect(container.querySelector('[data-testid="mock-cvr-workspace"]')?.dataset.storyboardSuspended).toBe('false');
+    expect(container.textContent).toContain('Selected P01 cost code 5470');
   });
 
   it('switches to Revenue when selecting the Revenue tab from the workspace shell', async () => {

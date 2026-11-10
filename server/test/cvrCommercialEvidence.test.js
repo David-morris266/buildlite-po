@@ -36,7 +36,7 @@ test('real close engine proves Welford fencing commitment is absorbed by allowan
     clientId: 'tenant-valhalla', developmentId: 'dev-welford', periodId: 'period-p01',
     loadSources: async () => ({ ok: true, sources: sources({
       po: purchaseOrder,
-      variationOrders: [{ id: 'vo-1', orderKey, sourcePoNumber: 'S0016', variationOrderNumber: 'VO-0001',
+      variationOrders: [{ id: 'vo-1', packageId: 'package-boundary', orderKey, sourcePoNumber: 'S0016', variationOrderNumber: 'VO-0001',
         displayReference: 'S0016/VO-0001', description: 'Boundary fencing instruction', status: 'issued',
         signedValue: 1000, issuedBy: 'Commercial Director', issuedAt: '2026-11-02T09:00:00.000Z', sourceCommercialEvents: [] }],
     }) }),
@@ -56,6 +56,9 @@ test('real close engine proves Welford fencing commitment is absorbed by allowan
     ['S0016', 125894.54], ['S0016/VO-0001', 1000],
   ]);
   assert.equal(evidence.commitment.items[1].authority.actor, 'Commercial Director');
+  assert.deepEqual(evidence.commitment.items[1].navigation, {
+    type: 'variation_order', variationOrderId: 'vo-1', packageId: 'package-boundary', orderKey,
+  });
 });
 
 test('real close engine proves Welford drainage VO raises commitment and EFC by £1,750', async () => {
@@ -64,7 +67,7 @@ test('real close engine proves Welford drainage VO raises commitment and EFC by 
     clientId: 'tenant-valhalla', developmentId: 'dev-welford', periodId: 'period-p01',
     loadSources: async () => ({ ok: true, sources: sources({
       po: po('5470', 351716.53),
-      variationOrders: [{ id: 'vo-drainage', orderKey, sourcePoNumber: 'S0016',
+      variationOrders: [{ id: 'vo-drainage', packageId: 'package-drainage', orderKey, sourcePoNumber: 'S0016',
         variationOrderNumber: 'VO-0002', displayReference: 'S0016/VO-0002',
         description: 'Plot drainage uplift', status: 'issued', signedValue: 1750,
         issuedBy: 'Commercial Director', issuedAt: '2026-11-03T09:00:00.000Z', sourceCommercialEvents: [] }],
@@ -79,6 +82,7 @@ test('real close engine proves Welford drainage VO raises commitment and EFC by 
   assert.equal(row.systemForecast, 353466.53);
   assert.equal(row.finalForecast, 353466.53);
   assert.equal(row.displayMetadata.commercialEvidence.commitment.items.at(-1).includedAmount, 1750);
+  assert.equal(row.displayMetadata.commercialEvidence.commitment.items.at(-1).navigation.variationOrderId, 'vo-drainage');
 });
 
 test('evidence follows effective CE/VO authority through replacement, supersession, reversal and omission', async () => {
@@ -100,6 +104,8 @@ test('evidence follows effective CE/VO authority through replacement, supersessi
   assert.equal(byReference.get('CE-0001').includedAmount, 0);
   assert.equal(byReference.get('S0016/VO-0001').includedAmount, 0);
   assert.equal(byReference.get('S0016/VO-0002').includedAmount, 500);
+  assert.equal(byReference.get('S0016/VO-0002').navigation.type, 'variation_order');
+  assert.equal(byReference.get('S0016/VO-0002').navigation.variationOrderId, 'vo-2');
   assert.equal(byReference.get('S0016/VO-0003').includedAmount, -500);
   assert.equal(byReference.get('S0016/VO-0004').includedAmount, -250);
   assert.equal(docs.commitment.total, 351466.53);

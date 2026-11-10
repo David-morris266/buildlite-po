@@ -153,6 +153,12 @@ function CommercialEvidence({ evidence, historic, onOpen }) {
     return Number(group?.count || group?.sourceCount || 0) > 0 || (group?.items?.length || 0) > 0;
   });
   const empty = EVIDENCE_GROUPS.filter(([key]) => !active.some(([activeKey]) => activeKey === key));
+  const navigationFor = (item) => {
+    if (item.type !== 'variation_order' || !item.id || !item.navigation?.orderKey) return item.navigation;
+    const navigation = { ...item.navigation };
+    delete navigation.tab;
+    return { ...navigation, type: 'variation_order', variationOrderId: item.id };
+  };
   const renderGroup = ([key, label]) => {
       const group = evidence[key] || { count: 0, total: 0, items: [] };
       const count = key === 'actual' ? group.sourceCount ?? group.count : group.count;
@@ -163,8 +169,8 @@ function CommercialEvidence({ evidence, historic, onOpen }) {
           <div><strong>{item.reference}</strong><strong>{formatSignedMoney(item.includedAmount)}</strong></div>
           {item.description ? <span>{item.description}</span> : null}
           <span>{item.status || 'Recorded'} · {item.authority?.action || 'Governing actor'} by {item.authority?.actor || 'Not recorded'}{item.authority?.at ? ` · ${formatPoDateTime(item.authority.at)}` : ''}</span>
-          {item.navigation && ['package', 'certificate'].includes(item.navigation.type) && onOpen
-            ? <button type="button" className="cvr-summary__link-btn" onClick={() => onOpen(item.navigation)}>{historic ? 'Open related current record' : 'Open record'}</button> : null}
+          {item.navigation && ['package', 'certificate', 'variation_order'].includes(item.navigation.type) && onOpen
+            ? <button type="button" className="cvr-summary__link-btn" onClick={() => onOpen(navigationFor(item))}>{historic ? 'Open related current record' : 'Open record'}</button> : null}
         </li>)}</ul> : <p>No contributing records.</p>}
         {group.omittedCount > 0 ? <p>{group.omittedCount} further ledger transaction{group.omittedCount === 1 ? '' : 's'} included in the total. Open Purchase Ledger for the complete live register.</p> : null}
         {key === 'actual' && count > 0 && onOpen ? <button type="button" className="cvr-summary__link-btn" onClick={() => onOpen({ type: 'ledger' })}>Open Purchase Ledger</button> : null}

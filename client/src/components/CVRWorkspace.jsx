@@ -158,6 +158,7 @@ export default function CVRWorkspace({
   onSelectSubview,
   onOpenVariationAccount,
   onOpenCommercialEvidence,
+  storyboardSuspended = false,
   onOpenAdjustmentWorkflow,
   initialCostCodeKey = null,
   hierarchyFilter = null,
@@ -1022,7 +1023,7 @@ export default function CVRWorkspace({
             />
           </div>
           <CostCentreDrawer
-            open={Boolean(selectedRow)}
+            open={Boolean(selectedRow) && !storyboardSuspended}
             row={selectedRow}
             movement={selectedMovement}
             storyboard

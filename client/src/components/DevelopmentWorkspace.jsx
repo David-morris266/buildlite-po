@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import { listPOs } from '../api';
 import {
@@ -42,6 +42,7 @@ import {
 import DevelopmentCommercialEvents from './DevelopmentCommercialEvents';
 import DevelopmentVariationAccountRegister from './DevelopmentVariationAccountRegister';
 import { listVariationAccount } from '../api/variationAccounts';
+import { getVariationOrder } from '../api/variationOrders';
 import DevelopmentOverview, {
   DevelopmentPackagesTab,
   SummaryDashboard,
@@ -60,6 +61,7 @@ import DevelopmentSellingCostsWorkspace from './DevelopmentSellingCostsWorkspace
 import DevelopmentPrelimsWorkspace from './DevelopmentPrelimsWorkspace';
 import DevelopmentBudgetWorkspace from './DevelopmentBudgetWorkspace';
 import SubcontractPackageWorkspace from './SubcontractPackageWorkspace';
+import VariationOrderDrawer from './VariationOrderDrawer';
 import PackageWorkspaceNotFound from './PackageWorkspaceNotFound';
 import POLoading from './POLoading';
 import {
@@ -158,6 +160,16 @@ export default function DevelopmentWorkspace({
   const [commercialReadinessLoading, setCommercialReadinessLoading] = useState(true);
   const [commercialReadinessError, setCommercialReadinessError] = useState('');
   const [firstCvrCreateRequest, setFirstCvrCreateRequest] = useState(0);
+  const [storyboardVariationOrder, setStoryboardVariationOrder] = useState(null);
+  const [storyboardVariationOrderError, setStoryboardVariationOrderError] = useState('');
+  const [storyboardSuspendedForVariationOrder, setStoryboardSuspendedForVariationOrder] = useState(false);
+  const storyboardVariationOrderErrorRef = useRef(null);
+
+  useEffect(() => {
+    if (!storyboardVariationOrderError) return;
+    storyboardVariationOrderErrorRef.current?.focus();
+    storyboardVariationOrderErrorRef.current?.scrollIntoView?.({ block: 'center' });
+  }, [storyboardVariationOrderError]);
 
   useEffect(() => {
     let cancelled = false;
@@ -800,9 +812,40 @@ export default function DevelopmentWorkspace({
     setPackageLaunchError('Variation Account item could not be found in this Development.');
   }
 
-  function handleOpenCvrCommercialEvidence(target) {
+  async function handleOpenCvrCommercialEvidence(target) {
     if (target?.type === 'ledger') {
       handleSelectWorkspaceTab('ledger');
+      return;
+    }
+    if (target?.type === 'variation_order') {
+      setStoryboardVariationOrder(null);
+      setStoryboardVariationOrderError('');
+      setStoryboardSuspendedForVariationOrder(true);
+      if (!target.variationOrderId || !target.orderKey) {
+        setStoryboardVariationOrderError('The Variation Order link is incomplete and cannot be opened.');
+        return;
+      }
+      const pkg = (model?.packages || []).find((item) => item.orderKey === target.orderKey);
+      if (!pkg) {
+        setStoryboardVariationOrderError('The Variation Order package could not be found in this Development.');
+        return;
+      }
+      try {
+        const variationOrder = await getVariationOrder(target.variationOrderId);
+        const workspacePackageIds = [pkg.packageUuid, pkg.packageId, pkg.id].filter(Boolean).map(String);
+        const actualPackageId = String(variationOrder?.packageId || '');
+        const packageMatches = workspacePackageIds.length > 0 && workspacePackageIds.includes(actualPackageId) &&
+          (!target.packageId || String(target.packageId) === actualPackageId);
+        const orderMatches = String(variationOrder?.orderKey || '') === String(target.orderKey);
+        if (!variationOrder?.id || String(variationOrder.id) !== String(target.variationOrderId) ||
+            !packageMatches || !orderMatches) {
+          setStoryboardVariationOrderError('The Variation Order does not belong to the expected package and was not opened.');
+          return;
+        }
+        setStoryboardVariationOrder(variationOrder);
+      } catch (error) {
+        setStoryboardVariationOrderError(error?.message || 'The Variation Order is unavailable and could not be opened.');
+      }
       return;
     }
     if (!target?.orderKey) return;
@@ -1087,6 +1130,15 @@ export default function DevelopmentWorkspace({
           isCvrPeriodOpen ? ' dev-workspace--cvr-worksheet' : ''
         }`}
       >
+      {storyboardVariationOrderError ? (
+        <div ref={storyboardVariationOrderErrorRef} className="po-list-feedback po-list-feedback--error" role="alert" tabIndex={-1}>
+          <p>{storyboardVariationOrderError}</p>
+          <button type="button" className="po-list-btn-secondary" onClick={() => {
+            setStoryboardVariationOrderError('');
+            setStoryboardSuspendedForVariationOrder(false);
+          }}>Return to CVR Storyboard</button>
+        </div>
+      ) : null}
       {!isCvrPeriodOpen ? (
         <ApplicationPageHeader
           breadcrumbs={workspaceNavigation.breadcrumbs}
@@ -1321,6 +1373,7 @@ export default function DevelopmentWorkspace({
               onPeriodChanged={handleCvrChanged}
               onOpenVariationAccount={handleOpenVariationAccountItem}
               onOpenCommercialEvidence={handleOpenCvrCommercialEvidence}
+              storyboardSuspended={storyboardSuspendedForVariationOrder}
               onOpenAdjustmentWorkflow={({ tabId }) => handleSelectWorkspaceTab(tabId)}
               initialCostCodeKey={cvrFocusCostCodeKey}
               hierarchyFilter={cvrHierarchyFilter}
@@ -1381,6 +1434,16 @@ export default function DevelopmentWorkspace({
           )
         ) : null}
       </div>
+      <VariationOrderDrawer
+        open={Boolean(storyboardVariationOrder)}
+        variationOrder={storyboardVariationOrder}
+        onChanged={setStoryboardVariationOrder}
+        onClose={() => {
+          setStoryboardVariationOrder(null);
+          setStoryboardVariationOrderError('');
+          setStoryboardSuspendedForVariationOrder(false);
+        }}
+      />
     </div>
     </WorkspaceShell>
   );

@@ -127,7 +127,10 @@ function commitmentItemsForFact(fact) {
       includedAmount: displacedVo ? 0 : signedValue,
       status: displacedVo ? 'superseded' : vo.reversesId ? 'issued reversal' : 'issued',
       authority: actorEvidence(vo.issuedBy, vo.issuedAt, 'Issued VO'), orderKey: order?.orderKey,
-      navigation: order?.orderKey ? { type: 'package', orderKey: order.orderKey, tab: 'variations' } : null,
+      navigation: vo.id && order?.orderKey ? {
+        type: 'variation_order', variationOrderId: String(vo.id),
+        packageId: vo.packageId ? String(vo.packageId) : null, orderKey: order.orderKey,
+      } : null,
       relatedIds: [...sourceEventIds(vo), vo.supersedesId, vo.reversesId] }));
   }
   return items;

@@ -518,7 +518,7 @@ describe('CVRWorkspace input hydration (BL-031B)', () => {
     expect(storyboard.textContent).toContain('Selling Costs forecast adopted');
     expect(document.body.querySelectorAll('[aria-label*="Cost Code Storyboard for 6170"]')).toHaveLength(1);
 
-    measuredWidth = 1359;
+    measuredWidth = 1280;
     await act(async () => window.dispatchEvent(new Event('resize')));
     await flush();
     workbench = container.querySelector('.dev-cvr__workbench');
@@ -530,6 +530,17 @@ describe('CVRWorkspace input hydration (BL-031B)', () => {
     expect(document.documentElement.style.overflow).toBe('hidden');
     expect(document.body.style.overflow).toBe('hidden');
     expect(document.body.querySelectorAll('[aria-label*="Cost Code Storyboard for 6170"]')).toHaveLength(1);
+
+    await act(async () => { root.render(<CVRWorkspace development={DEV} periodKey="P01" storyboardSuspended />); });
+    await flush();
+    expect(document.body.querySelector('[aria-label*="Cost Code Storyboard for 6170"]')).toBeNull();
+    expect(document.documentElement.style.overflow).toBe('');
+    expect(document.body.style.overflow).toBe('');
+    await act(async () => { root.render(<CVRWorkspace development={DEV} periodKey="P01" storyboardSuspended={false} />); });
+    await flush();
+    storyboard = document.body.querySelector('.dev-cvr-storyboard--sheet');
+    expect(storyboard).not.toBeNull();
+    expect(storyboard.textContent).toContain('Selling Costs forecast adopted');
 
     measuredWidth = 1400;
     await act(async () => window.dispatchEvent(new Event('resize')));

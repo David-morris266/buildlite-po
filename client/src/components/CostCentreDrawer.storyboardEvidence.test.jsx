@@ -14,7 +14,7 @@ const base = {
     version: 'cvr_commercial_evidence_v1', captured: true,
     commitment: { count: 2, total: 126894.54, supportingTotal: 126894.54, reconciliation: 'reconciled', items: [
       { type: 'purchase_order', id: 'S0016', reference: 'S0016', description: 'Boundary Fencing', includedAmount: 125894.54, status: 'approved', authority: { actor: 'Commercial Director', at: '2026-10-30T10:00:00.000Z', action: 'Approved PO' }, navigation: { type: 'package', orderKey: 'pkg-1', tab: 'overview' } },
-      { type: 'variation_order', id: 'vo-1', reference: 'S0016/VO-0001', description: 'Fencing uplift', includedAmount: 1000, status: 'issued', authority: { actor: 'Commercial Director', at: '2026-11-02T09:00:00.000Z', action: 'Issued VO' }, navigation: { type: 'package', orderKey: 'pkg-1', tab: 'variations' } },
+      { type: 'variation_order', id: 'vo-1', reference: 'S0016/VO-0001', description: 'Fencing uplift', includedAmount: 1000, status: 'issued', authority: { actor: 'Commercial Director', at: '2026-11-02T09:00:00.000Z', action: 'Issued VO' }, navigation: { type: 'variation_order', variationOrderId: 'vo-1', packageId: 'package-1', orderKey: 'pkg-1' } },
     ] },
     exposure: { count: 0, total: 0, reconciliation: 'reconciled', items: [] }, certified: { count: 0, total: 0, items: [] },
     actual: { count: 0, sourceCount: 0, omittedCount: 0, total: 0, items: [] },
@@ -47,7 +47,7 @@ describe('Cost Code Storyboard governed commercial evidence', () => {
     expect(records.textContent).toContain('4 evidence groups with no contributing records');
     const buttons = [...records.querySelectorAll('button')].filter((button) => button.textContent === 'Open record');
     act(() => buttons[1].click());
-    expect(open).toHaveBeenCalledWith({ type: 'package', orderKey: 'pkg-1', tab: 'variations' });
+    expect(open).toHaveBeenCalledWith({ type: 'variation_order', variationOrderId: 'vo-1', packageId: 'package-1', orderKey: 'pkg-1' });
   });
 
   it('shows missing governing actor as not recorded instead of substituting another actor', () => {
@@ -58,10 +58,40 @@ describe('Cost Code Storyboard governed commercial evidence', () => {
     expect(records.textContent).toContain('Issued VO by Not recorded');
   });
 
+  it('preserves existing package record navigation beside exact VO navigation', () => {
+    const open = vi.fn();
+    render({ onOpenCommercialEvidence: open });
+    const records = node.querySelector('.dev-cvr-storyboard__commercial-records');
+    const buttons = [...records.querySelectorAll('button')].filter((button) => button.textContent === 'Open record');
+    act(() => buttons[0].click());
+    expect(open).toHaveBeenCalledWith({ type: 'package', orderKey: 'pkg-1', tab: 'overview' });
+  });
+
   it('never substitutes current evidence for a legacy locked snapshot', () => {
     render({ row: { ...base, displayMetadata: {} }, historic: true });
     expect(node.textContent).toContain('Record-level commercial evidence was not captured for this historic CVR');
     expect(node.textContent).not.toContain('S0016/VO-0001');
+  });
+
+  it('labels exact VO drill-through as a related current record for locked evidence', () => {
+    const open = vi.fn();
+    render({ historic: true, onOpenCommercialEvidence: open });
+    const records = node.querySelector('.dev-cvr-storyboard__commercial-records');
+    const buttons = [...records.querySelectorAll('button')].filter((button) => button.textContent === 'Open related current record');
+    act(() => buttons[1].click());
+    expect(open).toHaveBeenCalledWith({ type: 'variation_order', variationOrderId: 'vo-1', packageId: 'package-1', orderKey: 'pkg-1' });
+  });
+
+  it('upgrades a legacy frozen VO package link to exact stable-record navigation without changing its evidence', () => {
+    const open = vi.fn();
+    const row = structuredClone(base);
+    row.displayMetadata.commercialEvidence.commitment.items[1].navigation = { type: 'package', orderKey: 'pkg-1', tab: 'variations' };
+    render({ row, historic: true, onOpenCommercialEvidence: open });
+    const records = node.querySelector('.dev-cvr-storyboard__commercial-records');
+    const buttons = [...records.querySelectorAll('button')].filter((button) => button.textContent === 'Open related current record');
+    act(() => buttons[1].click());
+    expect(open).toHaveBeenCalledWith({ type: 'variation_order', variationOrderId: 'vo-1', orderKey: 'pkg-1' });
+    expect(row.displayMetadata.commercialEvidence.commitment.items[1].navigation).toEqual({ type: 'package', orderKey: 'pkg-1', tab: 'variations' });
   });
 
   it('places commercial records before forecast and editing sections', () => {
