@@ -13,9 +13,14 @@ const va = (id, amount, sourceCommercialEventId = null, extra = {}) => ({
 const total = result => result.totals.get('4100') || 0;
 
 test('same-direction linked CE and VA use one directional envelope', () => {
+  assert.equal(total(buildChangeExposureByCostCode([ce('ce-10', 10000)], [va('va-6', 6000, 'ce-10')])), 10000);
   assert.equal(total(buildChangeExposureByCostCode([ce('ce-1', 20000)], [va('va-1', 20000, 'ce-1')])), 20000);
   assert.equal(total(buildChangeExposureByCostCode([ce('ce-1', 20000)], [va('va-1', 30000, 'ce-1')])), 30000);
   assert.equal(total(buildChangeExposureByCostCode([ce('ce-1', 30000)], [va('va-1', 20000, 'ce-1')])), 30000);
+});
+
+test('an unassessed linked VA cannot hide its submitted CE exposure', () => {
+  assert.equal(total(buildChangeExposureByCostCode([ce('ce-1', 10000)], [va('va-1', null, 'ce-1')])), 10000);
 });
 
 test('Submitted CE Expected Liability and its identity-linked VA converge at the greater forecast', () => {
@@ -47,6 +52,8 @@ test('signed same-direction credits use directional envelope and opposing signs 
   const blocked = buildChangeExposureByCostCode([ce('ce-1', 20000)], [va('va-1', -20000, 'ce-1')]);
   assert.equal(blocked.blockers[0].reason, 'linked_exposure_opposing_signs');
   assert.equal(total(blocked), 0);
+  const mappedShape = buildChangeExposureByCostCode([ce('ce-mapped', 20000)], [{ id: 'va-mapped', costCode: '4100', vaExposureUplift: -20000, sourceCommercialEventId: 'ce-mapped' }]);
+  assert.equal(mappedShape.blockers[0].variationAccountItemId, 'va-mapped');
 });
 
 test('approved linked CE is not re-added; VA supplies only its authority residual', () => {

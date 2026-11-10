@@ -18,6 +18,7 @@ vi.mock('./SubcontractPackageOverview', () => ({ default: () => null, Subcontrac
 vi.mock('./OrderMatrixPlaceholderPreview', () => ({ default: () => null }));
 vi.mock('./PaymentCertificateWorkspace', () => ({ default: () => null }));
 vi.mock('./PackageCommercialEvents', () => ({ default: () => null }));
+vi.mock('./PackageVariationsWorkspace', () => ({ default: ({ variationAccountTarget }) => <div data-testid="unified-variations">{variationAccountTarget?.itemId || 'account'}</div> }));
 vi.mock('./PackageCommercialHistory', () => ({ default: () => null }));
 vi.mock('./PackageVariationAccount', () => ({ default: () => null }));
 vi.mock('../commercialAssistant/usePackageWorkspaceAssistantScope', () => ({ usePackageWorkspaceAssistantScope: () => {} }));
@@ -46,5 +47,21 @@ describe('SubcontractPackageWorkspace authoritative commercial refresh', () => {
     const calls = hydration.mock.calls.length;
     act(() => notifyCommercialChanged({ developmentId: 'dev-1', packageId: 'package-2', action: 'approved' }));
     expect(hydration).toHaveBeenCalledTimes(calls);
+  });
+
+  it('keeps legacy Variation Account deep links in the single package Variations workspace', async () => {
+    await act(async () => {
+      root.render(<SubcontractPackageWorkspace
+        order={order}
+        initialTab="variation-account"
+        variationAccountTarget={{ itemId: 'va-22' }}
+      />);
+      await Promise.resolve();
+    });
+    expect(host.querySelector('[data-testid="unified-variations"]').textContent).toBe('va-22');
+    const tabs = [...host.querySelectorAll('[aria-label="Package sections"] button')].map(button => button.textContent);
+    expect(tabs).toContain('Variations');
+    expect(tabs).not.toContain('Commercial Events');
+    expect(tabs).not.toContain('Variation Account');
   });
 });

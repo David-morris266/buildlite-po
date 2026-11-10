@@ -8,20 +8,17 @@ import SubcontractPackageOverview, {
   SubcontractPackageSummary,
 } from './SubcontractPackageOverview';
 import { buildPackageViewModel } from '../payments/subcontractPackage';
-import PackageCommercialEvents from './PackageCommercialEvents';
 import PackageCommercialHistory from './PackageCommercialHistory';
 import { usePackageWorkspaceAssistantScope } from '../commercialAssistant/usePackageWorkspaceAssistantScope';
 import { mergeHydratedPackageIntoOrder, usePaymentCertificateServerHydration } from '../payments/usePaymentCertificateServerHydration';
-import PackageVariationAccount from './PackageVariationAccount';
 import { subscribeCommercialChanged } from '../commercial/commercialEvents';
-import DirectVariationOrderPanel from './DirectVariationOrderPanel';
+import PackageVariationsWorkspace from './PackageVariationsWorkspace';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'matrix', label: 'Order Matrix' },
   { id: 'certificates', label: 'Certificates' },
-  { id: 'variations', label: 'Commercial Events' },
-  { id: 'variation-account', label: 'Variation Account' },
+  { id: 'variations', label: 'Variations' },
   { id: 'history', label: 'History' },
 ];
 
@@ -78,7 +75,7 @@ export default function SubcontractPackageWorkspace({
   );
 
   useEffect(() => {
-    setActiveTab(initialTab);
+    setActiveTab(initialTab === 'variation-account' ? 'variations' : initialTab);
   }, [initialTab]);
 
   useEffect(() => subscribeCommercialChanged((event) => {
@@ -104,6 +101,12 @@ export default function SubcontractPackageWorkspace({
       setActiveTab('variations');
     }
   }, [commercialEventTarget?.eventId, commercialEventTarget?.navigationKey]);
+
+  useEffect(() => {
+    if (variationAccountTarget?.itemId || navigationContext?.variationAccountTarget?.itemId) {
+      setActiveTab('variations');
+    }
+  }, [variationAccountTarget?.itemId, navigationContext?.variationAccountTarget?.itemId]);
 
   useEffect(() => {
     if (certificateTarget?.certificateId) {
@@ -255,27 +258,20 @@ export default function SubcontractPackageWorkspace({
         ) : null}
 
         {activeTab === 'variations' ? (
-          <PackageCommercialEvents
+          <PackageVariationsWorkspace
             order={authoritativeOrder}
+            pkg={pkg}
             refreshToken={commercialEventRefresh}
             commercialEventTarget={commercialEventTarget}
+            variationAccountTarget={variationAccountTarget || navigationContext?.variationAccountTarget || null}
             commercialEventsLoading={commercialEventsLoading}
             commercialEventsReady={commercialEventsReady}
             onCommercialEventsChanged={() =>
               setCommercialEventRefresh((value) => value + 1)
             }
             onNavigateToLinkedCommercialEvent={onNavigateToLinkedCommercialEvent}
+            onOpenCertificates={() => setActiveTab('certificates')}
           />
-        ) : null}
-
-        {activeTab === 'variation-account' ? (
-          <>
-            <DirectVariationOrderPanel order={authoritativeOrder} packageId={pkg.packageUuid || pkg.id} />
-            <PackageVariationAccount
-              packageId={pkg.packageUuid || pkg.id}
-              focusItemId={variationAccountTarget?.itemId || navigationContext?.variationAccountTarget?.itemId || null}
-            />
-          </>
         ) : null}
 
         {activeTab === 'history' ? (

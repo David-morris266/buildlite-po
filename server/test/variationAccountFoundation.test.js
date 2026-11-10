@@ -141,8 +141,10 @@ test('authenticated tenant route creates and reads only its package Variation Ac
   assert.equal(created.status,201,created.text);assert.equal(created.body.item.qsForecast,17000);
   const listed=await request(app).get(`/api/variation-account?packageId=${a.pkg.id}`).set('X-BuildLite-Client-Id',a.client.id);
   assert.equal(listed.status,200,listed.text);assert.ok(listed.body.items.some(item=>item.id===created.body.item.id));
+  assert.equal(listed.body.packageExposure.calculation,'cvr_change_exposure');assert.equal(listed.body.packageExposure.scope,'live_package_before_period_absorption');assert.equal(listed.body.packageExposure.ready,true);
+  assert.ok(listed.body.packageExposure.evidence.some(item=>item.variationAccountItemId===created.body.item.id));
   const cross=await request(app).get(`/api/variation-account?packageId=${b.pkg.id}`).set('X-BuildLite-Client-Id',a.client.id);
-  assert.equal(cross.status,200);assert.deepEqual(cross.body.items,[]);
+  assert.equal(cross.status,200);assert.deepEqual(cross.body.items,[]);assert.equal(cross.body.packageExposure,null);
 });
 
 test('Submitted CE creates one identity-retaining VA forecast without changing CE or contractual authority',async t=>{

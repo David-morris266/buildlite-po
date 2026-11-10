@@ -9,7 +9,13 @@ const clientId=req=>req.buildliteAuth.clientId;
 const respond=(res,result)=>res.status(result.status).json(result.ok?{item:result.item}:{message:result.message});
 
 router.get('/',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_VIEW),async(req,res)=>{
-  try { res.json({items:await repository.listItems(clientId(req),{packageId:req.query.packageId,status:req.query.status||null},req.buildliteAuth)}); }
+  try {
+    const items=await repository.listItems(clientId(req),{packageId:req.query.packageId,status:req.query.status||null},req.buildliteAuth);
+    const packageExposure=req.query.status
+      ? null
+      : await repository.buildPackageExposureProjection(clientId(req),req.query.packageId,items,req.buildliteAuth);
+    res.json({items,packageExposure});
+  }
   catch(error){res.status(error.status||500).json({message:error.message||'Failed to load Variation Account.'});}
 });
 router.post('/',requirePermission(PERMISSIONS.VARIATION_ACCOUNT_CREATE),async(req,res)=>{

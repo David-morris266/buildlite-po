@@ -68,8 +68,43 @@ async function listItems(clientId, { packageId, status = null } = {}, auth, db =
       exposureClassification: live?.exposureClassification || null,
       effectiveVaExposure: live?.effectiveVaExposure ?? null,
       vaExposureUplift: live?.vaExposureUplift ?? null,
+      contractorClaim: live?.contractorClaim ?? null,
+      cumulativeLockedCertification: live?.cumulativeLockedCertification ?? null,
     };
   }));
+}
+
+async function buildPackageExposureProjection(clientId, packageId, items, auth, db = null) {
+  requireActor(auth, PERMISSIONS.VARIATION_ACCOUNT_VIEW);
+  const run=runWith(db);
+  const pkg=(await run('SELECT id,development_id FROM packages WHERE client_id=$1 AND id=$2',[clientId,packageId])).rows[0];
+  if(!pkg)return null;
+  const events=await require('./commercialEventRepository').listCommercialEvents(clientId,{packageUuid:packageId},db);
+  const projectionItems=items.map(item=>({...item,variationAccountItemId:item.id}));
+  const projection=require('./cvrChangeExposure').buildChangeExposureByCostCode(events,projectionItems,[]);
+  const byCostCode=[...projection.totals.entries()].map(([costCode,value])=>({
+    costCode,
+    unresolvedExposure:Number(value),
+    evidenceCount:(projection.evidence.get(costCode)||[]).length,
+  }));
+  const evidence=[...projection.evidence.entries()].flatMap(([costCode,entries])=>entries.map(entry=>({
+    costCode,
+    linked:Boolean(entry.linked),
+    commercialEventId:entry.commercialEvent?.id || null,
+    variationAccountItemId:entry.va?.id || null,
+    resultingExposure:Number(entry.resultingExposure || 0),
+    expectedTreatment:entry.expectedTreatment || null,
+    suppressedByTreatment:Boolean(entry.suppressedByTreatment),
+  })));
+  return {
+    scope:'live_package_before_period_absorption',
+    calculation:'cvr_change_exposure',
+    ready:projection.blockers.length===0,
+    unresolvedExposure:projection.blockers.length?null:money(byCostCode.reduce((sum,row)=>sum+row.unresolvedExposure,0)),
+    byCostCode,
+    evidence,
+    blockers:projection.blockers,
+  };
 }
 
 async function getItem(clientId, id, auth, db = null) {
@@ -225,4 +260,4 @@ async function transitionItem(clientId,id,action,body,auth) {
   }catch(error){await db.query('ROLLBACK');throw error;}finally{db.release();}
 }
 
-module.exports={listItems,getItem,createItem,createFromSubmittedCommercialEvent,updateForecast,updateChangeIdentity,listChangeIdentitySources,recordContractorPosition,transitionItem,mapItem};
+module.exports={listItems,buildPackageExposureProjection,getItem,createItem,createFromSubmittedCommercialEvent,updateForecast,updateChangeIdentity,listChangeIdentitySources,recordContractorPosition,transitionItem,mapItem};

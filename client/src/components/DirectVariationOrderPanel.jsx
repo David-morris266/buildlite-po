@@ -4,7 +4,7 @@ import { createDirectVariationOrder, listDirectVariationOrderOverlaps } from '..
 import { listVariationAccount } from '../api/variationAccounts';
 import VariationOrderDrawer from './VariationOrderDrawer';
 
-export default function DirectVariationOrderPanel({ order, packageId }) {
+export default function DirectVariationOrderPanel({ order, packageId, onChanged = null }) {
   const allowed = useBuildLitePermission('vo.create');
   const [form, setForm] = useState(null);
   const [variationOrder, setVariationOrder] = useState(null);
@@ -44,6 +44,7 @@ export default function DirectVariationOrderPanel({ order, packageId }) {
       });
       setVariationOrder(created);
       setForm(null);
+      onChanged?.(created);
     } catch (cause) {
       setError(cause.message);
     } finally {
@@ -86,7 +87,7 @@ export default function DirectVariationOrderPanel({ order, packageId }) {
       ) : (
         <button type="button" onClick={() => setForm({ description: '', amount: '', reason: '', treatment: 'independent', itemId: '' })}>Create Variation Order</button>
       )}
-      <VariationOrderDrawer open={Boolean(variationOrder)} variationOrder={variationOrder} onChanged={setVariationOrder} onClose={() => setVariationOrder(null)} />
+      <VariationOrderDrawer open={Boolean(variationOrder)} variationOrder={variationOrder} onChanged={(next) => { setVariationOrder(next); onChanged?.(next); }} onClose={() => setVariationOrder(null)} />
     </section>
   );
 }

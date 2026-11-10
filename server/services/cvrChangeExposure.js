@@ -15,7 +15,7 @@ function directionalEnvelope(values) {
 function exposureIdentity(item) {
   const ceId = item?.commercialEvent?.id || item?.va?.sourceCommercialEventId;
   if (ceId) return `ce:${ceId}`;
-  const vaId = item?.va?.variationAccountItemId;
+  const vaId = item?.va?.variationAccountItemId || item?.va?.id;
   return vaId ? `va:${vaId}` : null;
 }
 
@@ -55,7 +55,7 @@ function buildChangeExposureByCostCode(events = [], variationItems = [], absorbe
     const held = treatment === 'hold' || treatment === 'exclude';
     const envelope = held ? { ok: true, value: 0 } : directionalEnvelope([expected, va.vaExposureUplift]);
     if (!envelope.ok) {
-      blockers.push({ source: 'changeExposure', reason: 'linked_exposure_opposing_signs', commercialEventId: ceId, variationAccountItemId: va.variationAccountItemId });
+      blockers.push({ source: 'changeExposure', reason: 'linked_exposure_opposing_signs', commercialEventId: ceId, variationAccountItemId: va.variationAccountItemId || va.id || null });
       continue;
     }
     add(key, envelope.value, { linked: true, commercialEvent: ce, va, expectedLiability: expected, expectedTreatment: treatment, resultingExposure: envelope.value, suppressedByTreatment: held });
