@@ -134,11 +134,12 @@ function readerAuth(auth) {
 
 async function createItem(clientId, packageId, body, auth) {
   requireActor(auth, PERMISSIONS.VARIATION_ACCOUNT_CREATE);
-  const description=text(body.description), forecast=Number(body.qsForecast);
+  const description=text(body.description), forecast=Number(body.qsForecast), reason=text(body.reason);
   const contractor=body.contractorValue==null||body.contractorValue===''?null:Number(body.contractorValue);
   if(!description)return fail(400,'Description is required.');
   if(!Number.isFinite(forecast))return fail(400,'QS Forecast must be a valid signed amount.');
   if(contractor!=null&&!Number.isFinite(contractor))return fail(400,'Contractor value must be a valid signed amount.');
+  if(!reason)return fail(400,'An assessment reason is required.');
   const db=await pool.connect();
   try {
     await db.query('BEGIN');
@@ -154,13 +155,13 @@ async function createItem(clientId, packageId, body, auth) {
       [clientId,pkg.development_id,packageId,pkg.cost_code,reference,values.contractorReference,description,values.contractor,values.forecast,sourceCommercialEventId,auth.userId,auth.membershipId,auth.providerUserId,auth.displayName])).rows[0];
     await db.query(`INSERT INTO package_variation_account_forecast_history
       (client_id,variation_account_item_id,prior_qs_forecast,new_qs_forecast,reason,item_version,actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name)
-      VALUES($1,$2,NULL,$3,$4,1,$5,$6,$7,$8)`,[clientId,item.id,values.forecast,text(body.reason)||'Initial QS forecast',auth.userId,auth.membershipId,auth.providerUserId,auth.displayName]);
+      VALUES($1,$2,NULL,$3,$4,1,$5,$6,$7,$8)`,[clientId,item.id,values.forecast,reason,auth.userId,auth.membershipId,auth.providerUserId,auth.displayName]);
     if(values.contractor!=null)await db.query(`INSERT INTO package_variation_account_contractor_positions
       (client_id,variation_account_item_id,contractor_value,contractor_reference,reason,item_version,actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name)
-      VALUES($1,$2,$3,$4,$5,1,$6,$7,$8,$9)`,[clientId,item.id,values.contractor,values.contractorReference,text(body.contractorReason)||'Initial contractor position',auth.userId,auth.membershipId,auth.providerUserId,auth.displayName]);
+      VALUES($1,$2,$3,$4,$5,1,$6,$7,$8,$9)`,[clientId,item.id,values.contractor,values.contractorReference,text(body.contractorReason)||reason,auth.userId,auth.membershipId,auth.providerUserId,auth.displayName]);
     await db.query(`INSERT INTO package_variation_account_lifecycle_audit
       (client_id,variation_account_item_id,action,prior_status,new_status,reason,item_version,actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name)
-      VALUES($1,$2,'created',NULL,'active',$3,1,$4,$5,$6,$7)`,[clientId,item.id,text(body.creationReason)||'Variation Account item created',auth.userId,auth.membershipId,auth.providerUserId,auth.displayName]);
+      VALUES($1,$2,'created',NULL,'active',$3,1,$4,$5,$6,$7)`,[clientId,item.id,text(body.creationReason)||reason,auth.userId,auth.membershipId,auth.providerUserId,auth.displayName]);
     await db.query('COMMIT');
     return {ok:true,status:201,item:await getItem(clientId,item.id,readerAuth(auth))};
   } catch(error) { await db.query('ROLLBACK'); throw error; } finally { db.release(); }

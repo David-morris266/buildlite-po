@@ -33,6 +33,7 @@ const CRITICAL_ROUTE_PERMISSIONS = Object.freeze({
   'POST /api/variation-orders/:id/issue': P.VO_ISSUE,
   'POST /api/variation-orders/:id/approve-and-issue': `${P.VO_APPROVE}&${P.VO_ISSUE}`,
   'POST /api/variation-account/:id/authority-allocations': P.VARIATION_ACCOUNT_AUTHORITY_ALLOCATE,
+  'POST /api/variation-account': P.VARIATION_ACCOUNT_CREATE,
   'POST /api/variation-account/:id/authority-substitutions': P.VARIATION_ACCOUNT_AUTHORITY_ALLOCATE,
   'POST /api/variation-account/from-commercial-event/:commercialEventId': P.VARIATION_ACCOUNT_CREATE,
   'POST /api/variation-account/:id/authority-allocations/:allocationId/reverse': P.VARIATION_ACCOUNT_AUTHORITY_ALLOCATE,

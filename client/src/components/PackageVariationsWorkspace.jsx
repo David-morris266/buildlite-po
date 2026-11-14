@@ -7,7 +7,7 @@ import {
   listCertificateReadyVariationOrderLines,
   listVariationOrders,
 } from '../api/variationOrders';
-import { loadPackageVariationAccount } from '../api/variationAccounts';
+import { createVariationAccountItem, loadPackageVariationAccount } from '../api/variationAccounts';
 import PackageCommercialEvents from './PackageCommercialEvents';
 import DirectVariationOrderPanel from './DirectVariationOrderPanel';
 import PackageVariationAccount from './PackageVariationAccount';
@@ -21,6 +21,10 @@ const money = value => new Intl.NumberFormat('en-GB', {
 const signedMoney = value => {
   const amount = Number(value) || 0;
   return `${amount > 0 ? '+' : amount < 0 ? '-' : ''}${money(Math.abs(amount))}`;
+};
+
+const blankIndependentVariation = {
+  description: '', contractorReference: '', contractorValue: '', qsForecast: '', reason: '',
 };
 
 function TypeLabel({ kind }) {
@@ -42,6 +46,7 @@ export default function PackageVariationsWorkspace({
 }) {
   const packageId = pkg?.packageUuid || pkg?.id || order?.packageUuid || order?.packageId || order?.id;
   const canViewVa = useBuildLitePermission('variation_account.view');
+  const canCreateVa = useBuildLitePermission('variation_account.create');
   const [variationOrders, setVariationOrders] = useState([]);
   const [variationItems, setVariationItems] = useState([]);
   const [packageExposure, setPackageExposure] = useState(null);
@@ -57,6 +62,9 @@ export default function PackageVariationsWorkspace({
   const [selectedVo, setSelectedVo] = useState(null);
   const [voError, setVoError] = useState('');
   const [localRefresh, setLocalRefresh] = useState(0);
+  const [independentVariation, setIndependentVariation] = useState(blankIndependentVariation);
+  const [creatingVariation, setCreatingVariation] = useState(false);
+  const [createVariationError, setCreateVariationError] = useState('');
 
   const events = useMemo(() => {
     void refreshToken;
@@ -151,6 +159,32 @@ export default function PackageVariationsWorkspace({
     setActionPanel('ce');
   }
 
+  async function createIndependentVariation(event) {
+    event.preventDefault();
+    setCreatingVariation(true);
+    setCreateVariationError('');
+    try {
+      const item = await createVariationAccountItem({
+        packageId,
+        description: independentVariation.description.trim(),
+        contractorReference: independentVariation.contractorReference.trim() || null,
+        contractorValue: independentVariation.contractorValue === '' ? null : Number(independentVariation.contractorValue),
+        qsForecast: Number(independentVariation.qsForecast),
+        reason: independentVariation.reason.trim(),
+        contractorReason: independentVariation.reason.trim(),
+        creationReason: independentVariation.reason.trim(),
+      });
+      setIndependentVariation(blankIndependentVariation);
+      setSelectedVaTarget({ itemId: item.id });
+      setActionPanel('va');
+      setLocalRefresh(value => value + 1);
+    } catch (cause) {
+      setCreateVariationError(cause.message || 'The independent variation could not be created.');
+    } finally {
+      setCreatingVariation(false);
+    }
+  }
+
   return <div className="po-variation-account">
     <header className="po-variation-account__header">
       <div>
@@ -161,6 +195,7 @@ export default function PackageVariationsWorkspace({
       <div className="po-variation-account__actions">
         <button type="button" className="po-list-btn-secondary" onClick={() => setActionPanel('ce')}>New / review CE</button>
         <button type="button" className="po-list-btn-secondary" onClick={() => setActionPanel('vo')}>Create Variation Order</button>
+        {canCreateVa ? <button type="button" className="po-list-btn-secondary" onClick={() => { setCreateVariationError(''); setActionPanel('add-va'); }}>Add Variation</button> : null}
         {canViewVa ? <button type="button" className="po-list-btn-secondary" onClick={() => setActionPanel('va')}>Manage QS assessment</button> : null}
         <button type="button" className="po-list-btn-secondary" onClick={onOpenCertificates}>Open Certificates</button>
       </div>
@@ -193,7 +228,7 @@ export default function PackageVariationsWorkspace({
             <td><TypeLabel kind={row.kind} /></td>
             <td>{row.description}{row.related.length ? <small>Related: {row.related.join(', ')}</small> : null}</td>
             <td>{row.costCodes.join(', ') || '—'}</td>
-            <td>{row.contractorClaim == null ? '—' : signedMoney(row.contractorClaim)}{row.contractorPosition != null ? <small>Recorded position {signedMoney(row.contractorPosition)}</small> : null}</td>
+            <td>{row.contractorClaim == null ? '—' : signedMoney(row.contractorClaim)}{row.applicationClaim != null ? <small>Payment application claim {signedMoney(row.applicationClaim)}{row.contractorClaim != null && Number(row.applicationClaim) !== Number(row.contractorClaim) ? ' — differs from recorded position' : ''}</small> : null}</td>
             <td>{row.forecast == null ? '—' : signedMoney(row.forecast)}</td>
             <td>{row.claimAssessmentDifference == null ? '—' : signedMoney(row.claimAssessmentDifference)}</td>
             <td>{row.instructed == null ? '—' : signedMoney(row.instructed)}</td>
@@ -207,9 +242,20 @@ export default function PackageVariationsWorkspace({
       </table></div>}
 
     {actionPanel ? <section className="po-variation-account__workbench" aria-label="Variation account workbench">
-      <header><h3>{actionPanel === 'ce' ? 'Commercial Event workflow' : actionPanel === 'vo' ? 'Variation Order workflow' : 'QS assessment and authority'}</h3><button type="button" className="po-cert-workspace__link" onClick={() => setActionPanel(null)}>Close workbench</button></header>
+      <header><h3>{actionPanel === 'ce' ? 'Commercial Event workflow' : actionPanel === 'vo' ? 'Variation Order workflow' : actionPanel === 'add-va' ? 'Add independent variation' : 'QS assessment and authority'}</h3><button type="button" className="po-cert-workspace__link" onClick={() => setActionPanel(null)}>Close workbench</button></header>
       {actionPanel === 'ce' ? <PackageCommercialEvents order={order} refreshToken={refreshToken + localRefresh} commercialEventTarget={selectedCeTarget} commercialEventsLoading={commercialEventsLoading} commercialEventsReady={commercialEventsReady} onCommercialEventsChanged={() => { setLocalRefresh(value => value + 1); onCommercialEventsChanged?.(); }} onNavigateToLinkedCommercialEvent={onNavigateToLinkedCommercialEvent} /> : null}
       {actionPanel === 'vo' ? <DirectVariationOrderPanel order={order} packageId={packageId} onChanged={() => setLocalRefresh(value => value + 1)} /> : null}
+      {actionPanel === 'add-va' ? <form className="po-cert-application__form" onSubmit={createIndependentVariation}>
+        <p>Record the contractor's position and the QS forecast as one independent package variation. This does not create a Commercial Event or Variation Order.</p>
+        {createVariationError ? <div role="alert" className="po-list-feedback po-list-feedback--error">{createVariationError}</div> : null}
+        <label><span>Description</span><input aria-label="Independent variation description" className="input" value={independentVariation.description} onChange={event => setIndependentVariation(value => ({ ...value, description: event.target.value }))} /></label>
+        <label><span>Contractor / supporting reference (optional)</span><input aria-label="Independent variation supporting reference" className="input" value={independentVariation.contractorReference} onChange={event => setIndependentVariation(value => ({ ...value, contractorReference: event.target.value }))} /></label>
+        <label><span>Contractor claimed value (optional)</span><input aria-label="Independent variation contractor claimed value" className="input" type="number" step="0.01" value={independentVariation.contractorValue} onChange={event => setIndependentVariation(value => ({ ...value, contractorValue: event.target.value }))} /></label>
+        <label><span>QS assessment / forecast</span><input aria-label="Independent variation QS assessment" className="input" type="number" step="0.01" value={independentVariation.qsForecast} onChange={event => setIndependentVariation(value => ({ ...value, qsForecast: event.target.value }))} /></label>
+        <label><span>Package cost code</span><input aria-label="Independent variation package cost code" className="input" value={pkg?.costCode || order?.costCode || ''} readOnly /></label>
+        <label><span>Reason / assessment basis</span><input aria-label="Independent variation reason" className="input" value={independentVariation.reason} onChange={event => setIndependentVariation(value => ({ ...value, reason: event.target.value }))} /></label>
+        <div><button type="submit" disabled={creatingVariation || !independentVariation.description.trim() || independentVariation.qsForecast === '' || !independentVariation.reason.trim()}>{creatingVariation ? 'Adding…' : 'Add Variation'}</button><button type="button" className="po-cert-workspace__link" disabled={creatingVariation} onClick={() => { setIndependentVariation(blankIndependentVariation); setCreateVariationError(''); setActionPanel(null); }}>Cancel</button></div>
+      </form> : null}
       {actionPanel === 'va' ? <PackageVariationAccount packageId={packageId} focusItemId={selectedVaTarget?.itemId || null} /> : null}
     </section> : null}
 

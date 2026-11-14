@@ -81,12 +81,20 @@ test('Migration 033 applies with zero invented account/link rows and correct lea
 test('QS creates positive variation and negative credit with stable package numbering and distinct values',async t=>{
   if(!isDbConfigured())return t.skip();
   const positive=await repository.createItem(a.client.id,a.pkg.id,{description:'Drainage design changes',contractorReference:'GW-VAR-01',contractorValue:20000,qsForecast:17000,reason:'QS assessment'},qsAuth);
-  assert.equal(positive.ok,true,positive.message);assert.equal(positive.item.reference,'VA-0001');assert.equal(positive.item.contractorValue,20000);assert.equal(positive.item.qsForecast,17000);assert.equal(positive.item.forecastHistory.length,1);assert.equal(positive.item.contractorPositionHistory.length,1);assert.equal(positive.item.createdBy.providerUserId,qsAuth.providerUserId);
+  assert.equal(positive.ok,true,positive.message);assert.equal(positive.item.reference,'VA-0001');assert.equal(positive.item.contractorValue,20000);assert.equal(positive.item.qsForecast,17000);assert.equal(positive.item.costCode,a.pkg.cost_code);assert.equal(positive.item.sourceCommercialEventId,null);assert.equal(positive.item.forecastHistory.length,1);assert.equal(positive.item.forecastHistory[0].reason,'QS assessment');assert.equal(positive.item.contractorPositionHistory.length,1);assert.equal(positive.item.contractorPositionHistory[0].reason,'QS assessment');assert.equal(positive.item.createdBy.providerUserId,qsAuth.providerUserId);
   const credit=await repository.createItem(a.client.id,a.pkg.id,{description:'Omitted scope credit',contractorValue:-3000,qsForecast:-2500,reason:'Credit assessment'},qsAuth);
   assert.equal(credit.item.reference,'VA-0002');assert.equal(credit.item.qsForecast,-2500);
   const other=await repository.createItem(b.client.id,b.pkg.id,{description:'Tenant B variation',qsForecast:500,reason:'Initial assessment'},b.auth);
   assert.equal(other.item.reference,'VA-0001');
   assert.equal(await repository.getItem(b.client.id,positive.item.id,b.auth),null);
+});
+
+test('independent variation creation requires an assessment reason and fails without a partial record',async t=>{
+  if(!isDbConfigured())return t.skip();
+  const before=Number((await pool.query('SELECT count(*) n FROM package_variation_account_items WHERE client_id=$1 AND package_id=$2',[a.client.id,a.pkg.id])).rows[0].n);
+  const result=await repository.createItem(a.client.id,a.pkg.id,{description:'Unreasoned claim',contractorValue:8500,qsForecast:6200},qsAuth);
+  assert.equal(result.status,400);assert.match(result.message,/assessment reason/i);
+  assert.equal(Number((await pool.query('SELECT count(*) n FROM package_variation_account_items WHERE client_id=$1 AND package_id=$2',[a.client.id,a.pkg.id])).rows[0].n),before);
 });
 
 test('QS Forecast and confirmed contractor changes append immutable histories',async t=>{

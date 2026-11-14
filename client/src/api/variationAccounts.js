@@ -3,6 +3,7 @@ async function json(response){const body=await response.json().catch(()=>({}));i
 const base=id=>`${API_BASE}/api/variation-account/${encodeURIComponent(id)}`;
 export async function loadPackageVariationAccount(packageId){const body=await json(await fetch(`${API_BASE}/api/variation-account?packageId=${encodeURIComponent(packageId)}`));return {items:body.items||[],packageExposure:body.packageExposure||null};}
 export async function listVariationAccount(packageId){return (await loadPackageVariationAccount(packageId)).items;}
+export async function createVariationAccountItem(payload){const body=await json(await fetch(`${API_BASE}/api/variation-account`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}));return body.item;}
 export async function createVariationAccountForecastFromCommercialEvent(commercialEventId,payload){const body=await json(await fetch(`${API_BASE}/api/variation-account/from-commercial-event/${encodeURIComponent(commercialEventId)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}));return body.item;}
 export async function reviseVariationForecast(id,payload){const body=await json(await fetch(`${base(id)}/forecast`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}));return body.item;}
 export async function updateVariationChangeIdentity(id,payload){const body=await json(await fetch(`${base(id)}/change-identity`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}));return body.item;}

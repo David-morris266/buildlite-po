@@ -88,12 +88,13 @@ export function buildPackageVariationRows({ events, variationOrders, variationIt
     reference: item.reference,
     description: item.description,
     costCodes: [item.costCode].filter(Boolean),
-    contractorClaim: item.contractorClaim,
+    contractorClaim: item.contractorValue,
+    applicationClaim: item.contractorClaim,
     contractorPosition: item.contractorValue,
     forecast: item.qsForecast,
-    claimAssessmentDifference: item.contractorClaim == null || item.qsForecast == null
+    claimAssessmentDifference: item.contractorValue == null || item.qsForecast == null
       ? null
-      : Number(item.contractorClaim) - Number(item.qsForecast),
+      : Number(item.contractorValue) - Number(item.qsForecast),
     instructed: item.authority?.effectiveVoAuthority,
     certified: null,
     unresolved: exposureForVa(item.id)?.resultingExposure ?? null,

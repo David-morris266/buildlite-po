@@ -11,10 +11,12 @@ const mocks = vi.hoisted(() => ({
   certification: [],
   packageExposure: { ready: true, unresolvedExposure: 0, evidence: [], blockers: [] },
   canViewVa: true,
+  canCreateVa: true,
   getVo: vi.fn(),
+  createVa: vi.fn(),
 }));
 
-vi.mock('../auth/BuildLiteAuthProvider', () => ({ useBuildLitePermission: permission => permission === 'variation_account.view' ? mocks.canViewVa : true }));
+vi.mock('../auth/BuildLiteAuthProvider', () => ({ useBuildLitePermission: permission => permission === 'variation_account.view' ? mocks.canViewVa : permission === 'variation_account.create' ? mocks.canCreateVa : true }));
 vi.mock('../commercial/commercialEvents', () => ({ subscribeCommercialChanged: () => () => {} }));
 vi.mock('../commercialEvents/commercialEventStore', () => ({
   listCommercialEventsByPackage: () => mocks.events,
@@ -24,7 +26,10 @@ vi.mock('../api/variationOrders', () => ({
   listCertificateReadyVariationOrderLines: async () => ({ lines: mocks.certification }),
   getVariationOrder: (...args) => mocks.getVo(...args),
 }));
-vi.mock('../api/variationAccounts', () => ({ loadPackageVariationAccount: async () => ({ items: mocks.items, packageExposure: mocks.packageExposure }) }));
+vi.mock('../api/variationAccounts', () => ({
+  loadPackageVariationAccount: async () => ({ items: mocks.items, packageExposure: mocks.packageExposure }),
+  createVariationAccountItem: (...args) => mocks.createVa(...args),
+}));
 vi.mock('./PackageCommercialEvents', () => ({ default: () => <div>CE workbench</div> }));
 vi.mock('./DirectVariationOrderPanel', () => ({ default: () => <div>VO workbench</div> }));
 vi.mock('./PackageVariationAccount', () => ({ default: ({ focusItemId }) => <div>VA workbench {focusItemId}</div> }));
@@ -46,7 +51,7 @@ const order = {
     currentContract: 1125,
   },
 };
-const pkg = { id: 'pkg-1', packageUuid: 'pkg-1', originalOrderValue: 1000, currentContractValue: 1125 };
+const pkg = { id: 'pkg-1', packageUuid: 'pkg-1', costCode: '5470', originalOrderValue: 1000, currentContractValue: 1125 };
 
 const directVo = {
   id: 'vo-direct', packageId: 'pkg-1', orderKey: order.orderKey,
@@ -70,7 +75,9 @@ describe('unified package Variation Account', () => {
     mocks.certification = [];
     mocks.packageExposure = { ready: true, unresolvedExposure: 0, evidence: [], blockers: [] };
     mocks.canViewVa = true;
+    mocks.canCreateVa = true;
     mocks.getVo.mockReset();
+    mocks.createVa.mockReset();
     host = document.createElement('div');
     document.body.appendChild(host);
     root = createRoot(host);
@@ -182,7 +189,7 @@ describe('unified package Variation Account', () => {
 
   it('shows server-owned linked exposure and focuses the exact VA assessment', async () => {
     mocks.events = [{ id: 'ce-1', eventNumber: 'CE-0001', description: 'Linked risk', status: 'submitted', value: 10000, costCode: '5470' }];
-    mocks.items = [{ id: 'va-1', reference: 'VA-0001', description: 'Assessed risk', costCode: '5470', contractorClaim: 8000, qsForecast: 6000, status: 'active', forecastStatus: 'assessed', sourceCommercialEventId: 'ce-1', authority: { allocations: [] } }];
+    mocks.items = [{ id: 'va-1', reference: 'VA-0001', description: 'Assessed risk', costCode: '5470', contractorValue: 8000, contractorClaim: 8000, qsForecast: 6000, status: 'active', forecastStatus: 'assessed', sourceCommercialEventId: 'ce-1', authority: { allocations: [] } }];
     mocks.packageExposure = { ready: true, unresolvedExposure: 10000, blockers: [], evidence: [
       { commercialEventId: 'ce-1', variationAccountItemId: 'va-1', costCode: '5470', linked: true, resultingExposure: 10000 },
     ] };
@@ -244,6 +251,100 @@ describe('unified package Variation Account', () => {
     const create = [...host.querySelectorAll('button')].find(button => button.textContent === 'Create Variation Order');
     await act(async () => create.click());
     expect(host.textContent).toContain('VO workbench');
+  });
+
+  it('creates an independent package variation with distinct contractor and QS values and focuses it', async () => {
+    const created = {
+      id: 'va-independent', reference: 'VA-0001', description: 'Additional drainage claim',
+      costCode: '5470', contractorValue: 8500, qsForecast: 6200, status: 'active',
+      sourceCommercialEventId: null, authority: { allocations: [] },
+    };
+    mocks.createVa.mockImplementation(async () => {
+      mocks.items = [created];
+      return created;
+    });
+    await render();
+
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Add Variation').click());
+    const setValue = async (label, value) => {
+      const input = host.querySelector(`[aria-label="${label}"]`);
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        setter.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    };
+    await setValue('Independent variation description', 'Additional drainage claim');
+    await setValue('Independent variation supporting reference', 'BFD-CLAIM-02');
+    await setValue('Independent variation contractor claimed value', '8500');
+    await setValue('Independent variation QS assessment', '6200');
+    await setValue('Independent variation reason', 'Measured scope supports the QS assessment');
+
+    expect(host.querySelector('[aria-label="Independent variation package cost code"]').value).toBe('5470');
+    await act(async () => host.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    expect(mocks.createVa).toHaveBeenCalledWith({
+      packageId: 'pkg-1', description: 'Additional drainage claim', contractorReference: 'BFD-CLAIM-02',
+      contractorValue: 8500, qsForecast: 6200,
+      reason: 'Measured scope supports the QS assessment',
+      contractorReason: 'Measured scope supports the QS assessment',
+      creationReason: 'Measured scope supports the QS assessment',
+    });
+    expect(host.textContent).toContain('VA workbench va-independent');
+    expect(host.textContent).toContain('VA-0001');
+    expect(host.textContent).toContain('+£8,500.00');
+    expect(host.textContent).toContain('+£6,200.00');
+    expect(mocks.items[0].sourceCommercialEventId).toBeNull();
+  });
+
+  it('uses recorded contractor position as the claim and keeps differing application evidence separate', async () => {
+    mocks.items = [{
+      id: 'va-claim', reference: 'VA-0002', description: 'Drainage quotation', costCode: '5470',
+      contractorValue: 8500, contractorClaim: 8100, qsForecast: 6200, status: 'active',
+      forecastStatus: 'assessed', authority: { allocations: [] },
+    }];
+    await render();
+    const row = [...host.querySelectorAll('tbody > tr')].find(entry => entry.textContent.includes('VA-0002'));
+    expect(row.textContent).toContain('+£8,500.00');
+    expect(row.textContent).toContain('Payment application claim +£8,100.00 — differs from recorded position');
+    expect(row.textContent).toContain('+£2,300.00');
+  });
+
+  it('preserves missing, explicit nil and signed omission contractor positions', () => {
+    const rows = buildPackageVariationRows({ events: [], variationOrders: [], certification: [], variationItems: [
+      { id: 'missing', reference: 'VA-M', contractorValue: null, contractorClaim: 100, qsForecast: 50, authority: { allocations: [] } },
+      { id: 'nil', reference: 'VA-0', contractorValue: 0, contractorClaim: null, qsForecast: 0, authority: { allocations: [] } },
+      { id: 'omission', reference: 'VA-N', contractorValue: -8500, contractorClaim: -8000, qsForecast: -6200, authority: { allocations: [] } },
+    ] });
+    expect(rows[0]).toMatchObject({ contractorClaim: null, applicationClaim: 100, claimAssessmentDifference: null });
+    expect(rows[1]).toMatchObject({ contractorClaim: 0, applicationClaim: null, claimAssessmentDifference: 0 });
+    expect(rows[2]).toMatchObject({ contractorClaim: -8500, applicationClaim: -8000, claimAssessmentDifference: -2300 });
+  });
+
+  it('permits an independent forecast risk without a contractor position', async () => {
+    const created = { id: 'va-risk', reference: 'VA-0003', description: 'Independent risk', costCode: '5470', contractorValue: null, qsForecast: 4000, status: 'active', authority: { allocations: [] } };
+    mocks.createVa.mockResolvedValue(created);
+    await render();
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Add Variation').click());
+    const setValue = async (label, value) => {
+      const input = host.querySelector(`[aria-label="${label}"]`);
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    };
+    await setValue('Independent variation description', 'Independent risk');
+    await setValue('Independent variation QS assessment', '4000');
+    await setValue('Independent variation reason', 'QS forecast risk without contractor submission');
+    const submit = host.querySelector('form button[type="submit"]');
+    expect(submit.disabled).toBe(false);
+    await act(async () => submit.click());
+    expect(mocks.createVa).toHaveBeenCalledWith(expect.objectContaining({ contractorValue: null, qsForecast: 4000 }));
+  });
+
+  it('does not expose independent variation creation without create permission', async () => {
+    mocks.canCreateVa = false;
+    await render();
+    expect([...host.querySelectorAll('button')].some(button => button.textContent === 'Add Variation')).toBe(false);
   });
 
   it('fails closed when an exact VO resolves to another package', async () => {
