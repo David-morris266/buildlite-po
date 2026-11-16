@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useBuildLitePermission } from '../auth/BuildLiteAuthProvider';
 import {
   addApplicationVariation,
+  matchApplicationVariation,
   listApplicationVariations,
   listPackageVariationAccount,
   listPaymentApplications,
@@ -49,6 +50,7 @@ function hasDirectSourceOverlap(item, commercialLines = []) {
 export default function PaymentCertificateVariationsWorkspace({ packageId, certificate, editable, onChanged }) {
   const canCreate = useBuildLitePermission('variation_account.create');
   const canAssess = useBuildLitePermission('variation_account.assess');
+  const claimEditable = editable && String(certificate?.status || '').toLowerCase() === 'draft';
   const [application, setApplication] = useState(null);
   const [lines, setLines] = useState([]);
   const [items, setItems] = useState([]);
@@ -98,6 +100,30 @@ export default function PaymentCertificateVariationsWorkspace({ packageId, certi
     finally { setBusy(false); }
   };
 
+  const recordExistingClaim = (item, values, existingLineId) => run(async () => {
+    if (!claimEditable || !canCreate || !application) return;
+    let lineId = existingLineId;
+    if (!lineId) {
+      const line = await addApplicationVariation(packageId, application.id, {
+        contractorReference: item.reference,
+        description: item.description,
+        contractorValue: Number(values.contractorValue),
+        previousClaim: Number(values.previous),
+        currentClaim: Number(values.current),
+        cumulativeClaim: (Math.round(Number(values.previous) * 100) + Math.round(Number(values.current) * 100)) / 100,
+      });
+      lineId = line.id;
+      // Retain evidence immediately: a failed match must never retry creation.
+      setLines(current => [...current, line]);
+    }
+    try {
+      await matchApplicationVariation(packageId, application.id, lineId, item.variationAccountItemId);
+      setLines(current => current.map(line => line.id === lineId ? { ...line, variationAccountItemId: item.variationAccountItemId } : line));
+    } catch (nextError) {
+      throw new Error(`Claim evidence recorded but not matched. Use Match existing claim to retry without creating another claim. ${nextError.message}`);
+    }
+  });
+
   const addVariation = () => {
     const current = Number(capture.currentClaim);
     return run(async () => {
@@ -136,7 +162,7 @@ export default function PaymentCertificateVariationsWorkspace({ packageId, certi
   const totals = relevant.reduce((result, item) => {
     const current = item.assessment ? Number(item.assessment.currentAssessment || 0) : Number(drafts[item.variationAccountItemId]?.amount || 0);
     const evidence = evidenceByItem.get(item.variationAccountItemId);
-    result.claim += Number(item.inCurrentApplication ? item.contractorClaim || 0 : 0);
+    result.claim += Number(lineByItem.get(item.variationAccountItemId)?.currentClaim ?? 0);
     result.previous += Number(item.previousCertified || 0);
     result.current += current;
     result.toDate += Number(item.previousCertified || 0) + current;
@@ -176,12 +202,12 @@ export default function PaymentCertificateVariationsWorkspace({ packageId, certi
 
     {unresolved.length ? <div className="po-cert-variations-workspace__tasks" role="region" aria-label="Variations requiring assessment">
       <h4>Assess application variations</h4>
-      {unresolved.map(line => <UnresolvedLine key={line.id} line={line} candidates={candidates} busy={busy} canAssess={canCreate && canAssess} onAssess={payload => run(() => reconcileAndAssessCertificateVariation(packageId, certificate.id, application.id, line.id, payload))} />)}
+      {unresolved.map(line => <UnresolvedLine key={line.id} line={line} candidates={candidates} busy={busy} canAssess={claimEditable && canCreate && canAssess} onAssess={payload => run(() => reconcileAndAssessCertificateVariation(packageId, certificate.id, application.id, line.id, payload))} />)}
     </div> : null}
 
-    {editable && canAssess && available.length ? <div className="po-cert-variations-workspace__add-existing"><label><span>Add existing variation</span><select className="input" value={addExistingId} onChange={event => setAddExistingId(event.target.value)}><option value="">Select an active variation</option>{available.map(item => <option key={item.id} value={item.id}>{item.reference} — {item.description}</option>)}</select></label><button type="button" disabled={!addExistingId} onClick={() => { setAddedIds(ids => [...ids, addExistingId]); setAddExistingId(''); }}>Add to assessment</button></div> : null}
+    {claimEditable && (canAssess || canCreate) && available.length ? <div className="po-cert-variations-workspace__add-existing"><label><span>Add existing variation</span><select className="input" value={addExistingId} onChange={event => setAddExistingId(event.target.value)}><option value="">Select an active variation</option>{available.map(item => <option key={item.id} value={item.id}>{item.reference} — {item.description}</option>)}</select></label><button type="button" disabled={!addExistingId} onClick={() => { setAddedIds(ids => [...ids, addExistingId]); setAddExistingId(''); }}>Add to assessment</button></div> : null}
 
-    {relevant.length ? <div className="po-table-scroll"><table className="po-data-table po-cert-variations-workspace__table"><thead><tr><th>Variation</th><th>Contractor claim</th><th>Previous</th><th>QS assessment</th><th>To date</th><th>Status / authority</th></tr></thead><tbody>{relevant.map(item => {
+    {relevant.length ? <div className="po-table-scroll"><table className="po-data-table po-cert-variations-workspace__table"><thead><tr><th>Variation</th><th>Application claim</th><th>Previously certified</th><th>QS assessment this certificate</th><th>Cumulative certified</th><th>Claim less assessment</th><th>Status / authority</th></tr></thead><tbody>{relevant.map(item => {
       const draft = drafts[item.variationAccountItemId] || {};
       const current = Number(draft.amount || 0);
       const evidence = evidenceByItem.get(item.variationAccountItemId);
@@ -190,12 +216,17 @@ export default function PaymentCertificateVariationsWorkspace({ packageId, certi
       const cumulativeAssessment = item.assessment?.cumulativeCertified ?? Number(item.previousCertified || 0) + current;
       const status = directSourceOverlap ? { label: 'Already included through another certificate route', tone: 'warning' } : authorityStatus(accountItem, evidence, item.assessment, cumulativeAssessment);
       const line = lineByItem.get(item.variationAccountItemId);
+      const claim = line?.currentClaim;
+      const assessed = item.assessment?.currentAssessment;
       return <tr key={item.variationAccountItemId}>
         <td><strong>{item.reference}</strong><br/>{item.description}<small>{item.inCurrentApplication ? 'Claimed this application' : Number(item.previousCertified) ? 'Previously certified' : 'Added existing variation'} · {forecastLabel(accountItem)}</small></td>
-        <td>{item.inCurrentApplication ? <><strong>{gbp(line?.currentClaim ?? item.contractorClaim)}</strong><small>Cumulative {gbp(line?.cumulativeClaim ?? item.contractorClaim)}</small></> : '—'}</td>
+        <td><small>Recorded contractor position (reference): {item.contractorValue == null ? 'Not recorded' : gbp(item.contractorValue)}</small>
+          {line ? <><strong>Current claim {gbp(claim)}</strong><small>Cumulative application claim {gbp(line.cumulativeClaim)}</small></> : <><span>Application claim not recorded</span>{claimEditable && canCreate && application ? <ExistingVaClaim key={`${packageId}:${certificate.id}:${application.id}:${item.variationAccountItemId}`} item={item} unresolved={unresolved} busy={busy} onRecord={(values, lineId) => recordExistingClaim(item, values, lineId)} /> : null}</>}
+        </td>
         <td>{gbp(item.previousCertified)}</td>
         <td>{editable && canAssess ? <div className="po-cert-variations-workspace__assessment"><input aria-label={`${item.reference} QS assessment this certificate`} className="input" type="number" step="0.01" value={draft.amount ?? ''} onChange={event => setDrafts(all => ({ ...all, [item.variationAccountItemId]: { ...draft, amount: event.target.value } }))}/><input aria-label={`${item.reference} assessment basis`} className="input" placeholder="QS assessment basis" value={draft.basis ?? ''} onChange={event => setDrafts(all => ({ ...all, [item.variationAccountItemId]: { ...draft, basis: event.target.value } }))}/><div><button type="button" disabled={busy || directSourceOverlap || !draft.amount || !String(draft.basis || '').trim()} onClick={() => run(() => accountItem.forecastStatus === 'pending' && item.applicationVariationLineId ? reconcileAndAssessCertificateVariation(packageId, certificate.id, application.id, item.applicationVariationLineId, { candidateId: `va:${item.variationAccountItemId}`, currentAssessment: Number(draft.amount), basis: draft.basis }) : saveVariationAssessment(packageId, certificate.id, { variationAccountItemId: item.variationAccountItemId, applicationVariationLineId: item.applicationVariationLineId, currentAssessment: Number(draft.amount), basis: draft.basis }))}>{item.assessment ? 'Update' : 'Apply'} assessment</button>{item.assessment ? <button type="button" className="po-cert-workspace__link po-cert-workspace__link--danger" disabled={busy} onClick={() => run(() => withdrawVariationAssessment(packageId, certificate.id, item.assessment.id))}>Remove</button> : null}</div></div> : gbp(item.assessment?.currentAssessment)}</td>
         <td>{gbp(item.assessment?.cumulativeCertified ?? Number(item.previousCertified || 0) + current)}</td>
+        <td>{claim == null || assessed == null ? 'Not available' : gbp((Math.round(Number(claim) * 100) - Math.round(Number(assessed) * 100)) / 100)}</td>
         <td><span className={`po-cert-variations-workspace__status po-cert-variations-workspace__status--${status.tone}`}>{status.label}</span><details><summary>View provenance</summary><dl><div><dt>Contractor value</dt><dd>{item.contractorValue == null ? 'Not recorded' : gbp(item.contractorValue)}</dd></div><div><dt>QS Forecast</dt><dd>{accountItem.forecastStatus === 'pending' || accountItem.qsForecast == null ? 'Pending assessment' : gbp(accountItem.qsForecast)}</dd></div><div><dt>Assessment basis</dt><dd>{draft.basis || 'Not recorded'}</dd></div><div><dt>Effective recognised authority</dt><dd>{gbp(accountItem.authority?.effectiveRecognisedAuthority)}</dd></div></dl></details></td>
       </tr>;
     })}</tbody></table></div> : <p>No current variation claims or assessments.</p>}
@@ -216,4 +247,26 @@ function UnresolvedLine({ line, candidates, busy, canAssess, onAssess }) {
       {selection ? <><label><span>QS assessment this certificate</span><input className="input" type="number" step="0.01" value={assessment} onChange={event => setAssessment(event.target.value)} /></label><label><span>Assessment basis</span><input className="input" value={basis} onChange={event => setBasis(event.target.value)} /></label><button type="button" disabled={busy || assessment === '' || !basis.trim()} onClick={() => onAssess({ candidateId: selection, currentAssessment: Number(assessment), basis })}>Apply assessment</button></> : null}
     </section></div> : <strong className="po-cert-variations-workspace__status--warning">Permission required to assess this variation</strong>}
   </article>;
+}
+
+function ExistingVaClaim({ item, unresolved, busy, onRecord }) {
+  const [open, setOpen] = useState(false);
+  const [current, setCurrent] = useState('');
+  const [previous, setPrevious] = useState('0');
+  const [contractorValue, setContractorValue] = useState(item.contractorValue ?? '');
+  const [lineId, setLineId] = useState('');
+  const valid = [current, previous, contractorValue].every(value => value !== '' && Number.isFinite(Number(value)));
+  return <div className="po-cert-variations-workspace__assessment">
+    <button type="button" disabled={busy} onClick={() => setOpen(value => !value)}>Record claim this application</button>
+    {open ? unresolved.length ? <>
+      <p>Unmatched claim evidence exists. Match the appropriate evidence before recording another claim.</p>
+      <label>Unmatched claim evidence<select aria-label={`${item.reference} unmatched claim evidence`} className="input" value={lineId} onChange={event => setLineId(event.target.value)}><option value="">Select recorded claim</option>{unresolved.map(line => <option key={line.id} value={line.id}>{line.contractorReference || line.description} | Current {gbp(line.currentClaim)} | Cumulative {gbp(line.cumulativeClaim)}</option>)}</select></label>
+      <button type="button" disabled={busy || !lineId} onClick={() => onRecord(null, lineId)}>Match existing claim to {item.reference}</button>
+    </> : <>
+      {item.contractorValue == null ? <label>Contractor stated variation value<input aria-label={`${item.reference} contractor stated variation value`} className="input" type="number" step="0.01" value={contractorValue} onChange={event => setContractorValue(event.target.value)} /></label> : null}
+      <label>Current application claim<input aria-label={`${item.reference} current application claim`} className="input" type="number" step="0.01" value={current} onChange={event => setCurrent(event.target.value)} /></label>
+      <label>Previous application claim (contractor evidence, not previous certification)<input aria-label={`${item.reference} previous application claim`} className="input" type="number" step="0.01" value={previous} onChange={event => setPrevious(event.target.value)} /></label>
+      <button type="button" disabled={busy || !valid} onClick={() => onRecord({ current, previous, contractorValue })}>Save application claim</button>
+    </> : null}
+  </div>;
 }
