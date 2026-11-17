@@ -56,7 +56,8 @@ function payLessPayload(row){
 }
 
 async function buildNoticeDocumentRenderPayload(db,client,packageId,certificateId,documentType){
-  const certificateBuilt=await buildPaymentCertificateRenderPayload(db,client,packageId,certificateId);if(!certificateBuilt.ok)return certificateBuilt;
+  // Standalone notices use their own frozen monetary basis and do not render a certificate schedule.
+  const certificateBuilt=await buildPaymentCertificateRenderPayload(db,client,packageId,certificateId,{includeValuationSchedule:documentType==='combined_certificate_payment_notice'});if(!certificateBuilt.ok)return certificateBuilt;
   if(documentType==='pay_less_notice'){
     const row=await issuedPayLessNotice(db,client.id,packageId,certificateId);if(!row)return {ok:false,status:409,message:'An Issued Pay Less Notice snapshot and linked Issued Payment Notice are required before document generation.'};
     const payLess=payLessPayload(row);if(!payLess.workflowSupported)return {ok:false,status:409,message:'Frozen governing terms do not support the Pay Less workflow.'};

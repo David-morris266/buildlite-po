@@ -1,5 +1,6 @@
 const { getBrandContextForClient } = require('./brandProfile');
 const { dateOnly } = require('./paymentCertificateTimetable');
+const { buildValuationSchedule } = require('./paymentCertificateValuationSchedule');
 
 const money=value=>value==null?null:Number(value);
 const object=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{};
@@ -10,11 +11,14 @@ const addressOf=value=>{
     .filter(Boolean).join(', ');
 };
 
-async function buildPaymentCertificateRenderPayload(db, client, packageId, certificateId){
+async function buildPaymentCertificateRenderPayload(db, client, packageId, certificateId, {includeValuationSchedule=true}={}){
   const certificate=(await db.query(`SELECT * FROM package_payment_certificates
     WHERE client_id=$1 AND package_id=$2 AND id=$3`,[client.id,packageId,certificateId])).rows[0];
   if(!certificate)return {ok:false,status:404,message:'Certificate not found.'};
   if(certificate.status!=='locked')return {ok:false,status:409,message:'Only a Locked Payment Certificate can generate a formal document.'};
+  for(const field of ['gross_value','retention','recovery_signed','vat','net_value']) {
+    if(certificate[field]==null || String(certificate[field]).trim()==='' || !Number.isFinite(Number(certificate[field]))) return {ok:false,status:409,message:`Locked financial summary is incomplete: ${field}.`};
+  }
   const pkg=(await db.query(`SELECT * FROM packages WHERE client_id=$1 AND id=$2 AND development_id=$3`,[client.id,packageId,certificate.development_id])).rows[0];
   if(!pkg)return {ok:false,status:404,message:'Package not found.'};
   const development=(await db.query(`SELECT * FROM developments WHERE client_id=$1 AND id=$2`,[client.id,pkg.development_id])).rows[0];
@@ -25,9 +29,17 @@ async function buildPaymentCertificateRenderPayload(db, client, packageId, certi
     WHERE client_id=$1 AND certificate_id=$2 AND stage='locked' ORDER BY captured_at DESC LIMIT 1`,[client.id,certificateId])).rows[0]||null;
   const payload=object(certificate.payload),valuation=object(payload.valuationSnapshot),cells=Array.isArray(valuation.cells)?valuation.cells:[];
   const commercialLines=Array.isArray(payload.commercialLines)?payload.commercialLines:[];
-  const previousCertified=money((await db.query(`SELECT COALESCE(SUM(gross_value),0) value FROM package_payment_certificates
-    WHERE client_id=$1 AND package_id=$2 AND status='locked' AND certificate_number<$3`,[client.id,packageId,certificate.certificate_number])).rows[0].value)||0;
-  const certifiedToDate=previousCertified+(money(certificate.gross_value)||0);
+  const priorCertificates=(await db.query(`SELECT id,certificate_number,gross_value,payload FROM package_payment_certificates
+    WHERE client_id=$1 AND package_id=$2 AND status='locked' AND certificate_number<$3 ORDER BY certificate_number`,[client.id,packageId,certificate.certificate_number])).rows;
+  const decisions=includeValuationSchedule?(await db.query(`SELECT d.* FROM payment_authority_decisions d
+    WHERE d.client_id=$1 AND d.package_id=$2 AND d.certificate_id=$3 ORDER BY d.approved_at,d.id`,[client.id,packageId,certificateId])).rows:[];
+  const decisionLines=decisions.length?(await db.query(`SELECT * FROM payment_authority_decision_lines
+    WHERE client_id=$1 AND package_id=$2 AND certificate_id=$3`,[client.id,packageId,certificateId])).rows:[];
+  let schedule;
+  try { if(includeValuationSchedule) schedule=buildValuationSchedule(certificate,priorCertificates,decisions.map(decision=>({...decision,decision_lines:decisionLines.filter(line=>line.decision_id===decision.id)}))); }
+  catch(error) { return {ok:false,status:409,message:error.message}; }
+  const previousCertified=schedule?schedule.totals.previousCertified:priorCertificates.reduce((sum,row)=>sum+Math.round(Number(row.gross_value)*100),0)/100;
+  const certifiedToDate=schedule?schedule.totals.certifiedToDate:Math.round((previousCertified+money(certificate.gross_value))*100)/100;
   const supplierData={...object(supplier?.payload),name:supplier?.name||pkg.supplier_label||pkg.supplier_id};
   const poData=object(po?.payload),developmentData=object(development?.payload),brand=await getBrandContextForClient(client.id,client,db);
   const application=object(payload.lockedApplicationSnapshot),terms=object(payload.lockedGoverningTermsSnapshot);
@@ -45,12 +57,13 @@ async function buildPaymentCertificateRenderPayload(db, client, packageId, certi
   return {ok:true,documentReference:reference,recipientSnapshot:presentation.payee,sourceSnapshotIds:{
     valuationCapturedAt:valuation.capturedAt||null,applicationId:application.application?.id||application.id||null,
     governingTermsVersionId:terms.termsVersionId||null,deadlineSnapshotId:timetable?.id||null,
+    paymentAuthorityDecisionIds:decisions.map(decision=>decision.id),
   },renderPayload:{schemaVersion:1,templateVersion:'payment-certificate-v1',document:{type:'payment_certificate',reference,certificateNumber:Number(certificate.certificate_number),generatedAt:null},presentation,
     authority:{certificateId:certificate.id,packageId:pkg.id,developmentId:certificate.development_id,status:'locked',certificateVersion:Number(certificate.version),certificateDate:dateOnly(certificate.certificate_date),contractualValuationDate:dateOnly(certificate.contractual_valuation_date),submittedBy:certificate.submitted_by||null,submittedAt:certificate.submitted_at||null,approvedBy:certificate.approved_by||null,approvedAt:certificate.approved_at||null},
     application:{reference:application.application?.applicationReference||application.applicationReference||null,amountApplied:applicationAmount,assessedGross,comparisonBasis:application.comparison?.comparisonBasis||null,comparable:applicationComparable,difference:applicationDifference,differenceAmount:applicationComparable?Math.abs(applicationDifference):null,differenceDirection:applicationComparable?(applicationDifference<0?'lower':applicationDifference>0?'higher':'equal'):null},
     financials:{previousCertified, grossThisCertificate:money(certificate.gross_value),certifiedToDate,retention:money(certificate.retention),recoveries:money(certificate.recovery_signed),vat:money(certificate.vat),netPayment:money(certificate.net_value)},
-    valuation:{cells:cells.map(cell=>({plot:cell.plotLabel||cell.plotKey||'',stage:cell.stageLabel||cell.stageKey||'',contractValue:money(cell.contractValue),previousCertified:money(cell.previousValue)||0,thisCertificate:money(cell.thisCertificateValue)||0,certifiedToDate:money(cell.certifiedToDateValue)||0}))},
-    commercialLines:commercialLines.map(line=>({type:line.sourceType||line.lineType||'Commercial adjustment',reference:line.sourceReference||line.eventNumber||line.variationOrderReference||'',description:line.description||'',amount:money(line.amountThisCertificate??line.amount)||0})),
+    valuation:{schedule,cells:cells.map(cell=>({plot:cell.plotLabel||cell.plotKey||'',stage:cell.stageLabel||cell.stageKey||'',contractValue:money(cell.contractValue),previousCertified:money(cell.previousValue),thisCertificate:money(cell.thisCertificateValue),certifiedToDate:money(cell.certifiedToDateValue)}))},
+    commercialLines:commercialLines.filter(line=>line.lineType==='recoveryDeduction').map(line=>({type:'Recovery / contra deduction (outside gross)',reference:line.sourceReference||line.eventNumber||line.variationOrderReference||'',description:line.description||'',amount:money(line.amountThisCertificate)})),
     terms:{familyName:terms.familyName||null,versionLabel:terms.versionLabel||null,revisionNumber:terms.revisionNumber||null,source:terms.source||null},
     timetable:{valuationDate:dateOnly(timetable?.contractual_valuation_date||certificate.contractual_valuation_date),dueDate:dateOnly(timetable?.due_date),paymentNoticeDeadline:dateOnly(timetable?.payment_notice_deadline),finalDateForPayment:dateOnly(timetable?.final_date_for_payment),payLessDeadline:dateOnly(timetable?.pay_less_notice_deadline),state:timetable?'locked_snapshot':'not_captured'},
   }};

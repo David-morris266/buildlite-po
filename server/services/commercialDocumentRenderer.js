@@ -4,6 +4,7 @@ const puppeteer=require('puppeteer');
 const Handlebars=require('../hbs-helpers');
 
 const TEMPLATE_DIR=path.join(__dirname,'..','templates','commercial-documents');
+Handlebars.registerPartial('certificate-valuation-schedule',fs.readFileSync(path.join(TEMPLATE_DIR,'certificate-valuation-schedule.hbs'),'utf8'));
 const templates={payment_certificate:'payment-certificate-v1.hbs',payment_notice:'payment-notice-v1.hbs',combined_certificate_payment_notice:'combined-certificate-payment-notice-v1.hbs',pay_less_notice:'pay-less-notice-v1.hbs'};
 
 function renderCommercialDocumentHtml(documentType,payload){

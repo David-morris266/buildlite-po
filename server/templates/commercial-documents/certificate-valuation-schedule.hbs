@@ -1,0 +1,10 @@
+<h2>Valuation detail</h2>
+{{#if valuation.schedule.available}}
+{{#if valuation.schedule.historyIncomplete}}<p>{{valuation.schedule.message}} Previous and cumulative line detail may be incomplete; gross totals use locked certificate financial summaries.</p>{{/if}}
+<table class="valuation-schedule"><thead><tr><th>Valuation / Reference</th><th>Description / Authority</th><th class="money">Contract value</th><th class="money">Previous certified</th><th class="money">This certificate</th><th class="money">Certified to date</th></tr></thead><tbody>
+{{#if valuation.schedule.orderedWorksZero}}<tr><td>Ordered works</td><td>Explicitly confirmed at zero for this certificate</td><td>&mdash;</td><td class="money">{{#if valuation.schedule.zeroOrderedHistoryKnown}}{{formatMoney 0 "GBP"}}{{else}}&mdash;{{/if}}</td><td class="money">{{formatMoney 0 "GBP"}}</td><td class="money">{{#if valuation.schedule.zeroOrderedHistoryKnown}}{{formatMoney 0 "GBP"}}{{else}}&mdash;{{/if}}</td></tr>{{/if}}
+{{#each valuation.schedule.rows}}<tr><td>{{kind}}<br>{{reference}}</td><td>{{description}}<br><span class="muted">{{authority}}</span></td><td class="money">{{#if hasContractValue}}{{formatMoney contractValue "GBP"}}{{else}}&mdash;{{/if}}</td><td class="money">{{#if hasPrevious}}{{formatMoney previousCertified "GBP"}}{{else}}&mdash;{{/if}}</td><td class="money">{{formatMoney thisCertificate "GBP"}}</td><td class="money">{{#if hasCumulative}}{{formatMoney certifiedToDate "GBP"}}{{else}}&mdash;{{/if}}</td></tr>{{/each}}
+<tr class="valuation-total"><td colspan="3">Total gross — locked financial summaries</td><td class="money">{{formatMoney valuation.schedule.totals.previousCertified "GBP"}}</td><td class="money">{{formatMoney valuation.schedule.totals.thisCertificate "GBP"}}</td><td class="money">{{formatMoney valuation.schedule.totals.certifiedToDate "GBP"}}</td></tr>
+</tbody></table>
+
+{{else}}<p>Detailed valuation schedule unavailable: incomplete historical frozen evidence.</p>{{/if}}
