@@ -96,6 +96,7 @@ export default function PaymentCertificateVariationsWorkspace({ packageId, certi
         amount: item.assessment?.currentAssessment ?? '', basis: item.assessment?.basis ?? '',
       }])));
       setLoadedScope(scope);
+      return nextReadiness.items || [];
     } catch (nextError) {
       if (request === requestSequence.current) throw nextError;
     }
@@ -204,13 +205,57 @@ export default function PaymentCertificateVariationsWorkspace({ packageId, certi
     }, true);
   };
 
+  const refreshAssessment = async (item, draft) => {
+    const request = requestSequence.current;
+    await refreshCertificatesForPackage(packageId);
+    if (request !== requestSequence.current) throw new Error('The application changed while refreshing assessment evidence.');
+    const refreshed = await load();
+    if (!refreshed) throw new Error('The application changed while refreshing assessment evidence.');
+    onChanged?.();
+    const saved = refreshed.find(row => row.variationAccountItemId === item.variationAccountItemId)?.assessment;
+    const confirmed = saved && Math.round(Number(saved.currentAssessment) * 100) === Math.round(Number(draft.amount) * 100)
+      && String(saved.basis || '').trim() === String(draft.basis || '').trim();
+    return { ok: Boolean(confirmed), verified: true, message: 'Saved evidence refreshed. This assessment was not confirmed; review the saved values before saving again.' };
+  };
+
+  const saveQsAssessment = async (item, accountItem, draft) => {
+    const request = requestSequence.current;
+    let acknowledged = false;
+    setBusy(true);
+    try {
+      if (!claimEditable || !canAssess) return { ok: false, message: 'Only a loaded Draft certificate with assessment permission can be edited.' };
+      if (accountItem.forecastStatus === 'pending' && item.applicationVariationLineId) {
+        await reconcileAndAssessCertificateVariation(packageId, certificate.id, application.id, item.applicationVariationLineId, {
+          candidateId: `va:${item.variationAccountItemId}`, currentAssessment: Number(draft.amount), basis: draft.basis,
+        });
+      } else {
+        await saveVariationAssessment(packageId, certificate.id, {
+          variationAccountItemId: item.variationAccountItemId, applicationVariationLineId: item.applicationVariationLineId,
+          currentAssessment: Number(draft.amount), basis: draft.basis,
+        });
+      }
+      acknowledged = true;
+      if (request !== requestSequence.current) throw new Error('The application changed while saving.');
+      const result = await refreshAssessment(item, draft);
+      if (!result.ok) throw new Error('The refreshed evidence does not confirm the requested assessment.');
+      return result;
+    } catch (saveError) {
+      const rejected = !acknowledged && [400, 401, 403, 404, 409, 422].includes(saveError.status);
+      const reason = saveError.status === 403 ? 'You do not have permission to save QS assessments.'
+        : /provenance/i.test(saveError.message) ? 'The claim link is no longer valid for this application. Refresh the current application evidence before saving.' : saveError.message;
+      return { ok: false, uncertain: !rejected, message: rejected
+        ? reason
+        : `Save outcome needs verification. The server may have saved the assessment. Refresh saved evidence before trying again. ${saveError.message}` };
+    } finally { setBusy(false); }
+  };
+
   const totals = relevant.reduce((result, item) => {
-    const current = item.assessment ? Number(item.assessment.currentAssessment || 0) : Number(drafts[item.variationAccountItemId]?.amount || 0);
+    const current = Number(item.assessment?.currentAssessment || 0);
     const evidence = evidenceByItem.get(item.variationAccountItemId);
     result.claim += Number(lineByItem.get(item.variationAccountItemId)?.currentClaim ?? 0);
     result.previous += Number(item.previousCertified || 0);
     result.current += current;
-    result.toDate += Number(item.previousCertified || 0) + current;
+    result.toDate += Number(item.assessment?.cumulativeCertified ?? Number(item.previousCertified || 0) + current);
     result.unapproved += Number(evidence?.unapprovedAmount || 0);
     if (current && !evidence) result.unapprovedPending = true;
     return result;
@@ -254,7 +299,7 @@ export default function PaymentCertificateVariationsWorkspace({ packageId, certi
 
     {relevant.length ? <div className="po-table-scroll"><table className="po-data-table po-cert-variations-workspace__table"><thead><tr><th>Variation</th><th>Application claim</th><th>Previously certified</th><th>QS assessment this certificate</th><th>Cumulative certified</th><th>Claim less assessment</th><th>Status / authority</th></tr></thead><tbody>{relevant.map(item => {
       const draft = drafts[item.variationAccountItemId] || {};
-      const current = Number(draft.amount || 0);
+      const current = Number(item.assessment?.currentAssessment || 0);
       const evidence = evidenceByItem.get(item.variationAccountItemId);
       const accountItem = items.find(entry => entry.id === item.variationAccountItemId) || item;
       const directSourceOverlap = hasDirectSourceOverlap(accountItem, certificate?.commercialLines);
@@ -269,15 +314,46 @@ export default function PaymentCertificateVariationsWorkspace({ packageId, certi
           {line ? <><strong>Current claim {gbp(claim)}</strong><small>Cumulative application claim {gbp(line.cumulativeClaim)}</small></> : <><span>Application claim not recorded</span>{claimEditable && canCreate && application ? <ExistingVaClaim key={`${packageId}:${certificate.id}:${application.id}:${item.variationAccountItemId}`} item={item} unresolved={unresolved} busy={busy} onRecord={(values, lineId) => recordExistingClaim(item, values, lineId)} /> : null}</>}
         </td>
         <td>{gbp(item.previousCertified)}</td>
-        <td>{editable && canAssess ? <div className="po-cert-variations-workspace__assessment"><input aria-label={`${item.reference} QS assessment this certificate`} className="input" type="number" step="0.01" value={draft.amount ?? ''} onChange={event => setDrafts(all => ({ ...all, [item.variationAccountItemId]: { ...draft, amount: event.target.value } }))}/><input aria-label={`${item.reference} assessment basis`} className="input" placeholder="QS assessment basis" value={draft.basis ?? ''} onChange={event => setDrafts(all => ({ ...all, [item.variationAccountItemId]: { ...draft, basis: event.target.value } }))}/><div><button type="button" disabled={busy || directSourceOverlap || !draft.amount || !String(draft.basis || '').trim()} onClick={() => run(() => accountItem.forecastStatus === 'pending' && item.applicationVariationLineId ? reconcileAndAssessCertificateVariation(packageId, certificate.id, application.id, item.applicationVariationLineId, { candidateId: `va:${item.variationAccountItemId}`, currentAssessment: Number(draft.amount), basis: draft.basis }) : saveVariationAssessment(packageId, certificate.id, { variationAccountItemId: item.variationAccountItemId, applicationVariationLineId: item.applicationVariationLineId, currentAssessment: Number(draft.amount), basis: draft.basis }))}>{item.assessment ? 'Update' : 'Apply'} assessment</button>{item.assessment ? <button type="button" className="po-cert-workspace__link po-cert-workspace__link--danger" disabled={busy} onClick={() => run(() => withdrawVariationAssessment(packageId, certificate.id, item.assessment.id))}>Remove</button> : null}</div></div> : gbp(item.assessment?.currentAssessment)}</td>
+        <td><strong>Saved assessment {gbp(current)}</strong>{editable && canAssess ? <AssessmentEditor key={`${scope}:${item.variationAccountItemId}`} reference={item.reference} draft={draft} assessment={item.assessment} busy={busy} editable={claimEditable} overlap={directSourceOverlap} onChange={patch => setDrafts(all => ({ ...all, [item.variationAccountItemId]: { ...draft, ...patch } }))} onSave={() => saveQsAssessment(item, accountItem, draft)} onVerify={requested => refreshAssessment(item, requested)} /> : <small>Assessment editing requires a Draft certificate and assessment permission.</small>}{editable && canAssess && item.assessment ? <button type="button" className="po-cert-workspace__link po-cert-workspace__link--danger" disabled={busy} onClick={() => run(() => withdrawVariationAssessment(packageId, certificate.id, item.assessment.id))}>Remove</button> : null}</td>
         <td>{gbp(item.assessment?.cumulativeCertified ?? Number(item.previousCertified || 0) + current)}</td>
         <td>{claim == null || assessed == null ? 'Not available' : gbp((Math.round(Number(claim) * 100) - Math.round(Number(assessed) * 100)) / 100)}</td>
-        <td><span className={`po-cert-variations-workspace__status po-cert-variations-workspace__status--${status.tone}`}>{status.label}</span><details><summary>View provenance</summary><dl><div><dt>Contractor value</dt><dd>{item.contractorValue == null ? 'Not recorded' : gbp(item.contractorValue)}</dd></div><div><dt>QS Forecast</dt><dd>{accountItem.forecastStatus === 'pending' || accountItem.qsForecast == null ? 'Pending assessment' : gbp(accountItem.qsForecast)}</dd></div><div><dt>Assessment basis</dt><dd>{draft.basis || 'Not recorded'}</dd></div><div><dt>Effective recognised authority</dt><dd>{gbp(accountItem.authority?.effectiveRecognisedAuthority)}</dd></div></dl></details></td>
+        <td><span className={`po-cert-variations-workspace__status po-cert-variations-workspace__status--${status.tone}`}>{status.label}</span><details><summary>View provenance</summary><dl><div><dt>Contractor value</dt><dd>{item.contractorValue == null ? 'Not recorded' : gbp(item.contractorValue)}</dd></div><div><dt>QS Forecast</dt><dd>{accountItem.forecastStatus === 'pending' || accountItem.qsForecast == null ? 'Pending assessment' : gbp(accountItem.qsForecast)}</dd></div><div><dt>Assessment basis</dt><dd>{item.assessment?.basis || 'Not recorded'}</dd></div><div><dt>Effective recognised authority</dt><dd>{gbp(accountItem.authority?.effectiveRecognisedAuthority)}</dd></div></dl></details></td>
       </tr>;
     })}</tbody></table></div> : <p>No current variation claims or assessments.</p>}
 
     <dl className="po-cert-variations-workspace__totals" aria-label="Variation assessment summary"><div><dt>Contractor claims this period</dt><dd>{gbp(totals.claim)}</dd></div><div><dt>QS assessment this certificate</dt><dd>{gbp(totals.current)}</dd></div><div><dt>Previously certified</dt><dd>{gbp(totals.previous)}</dd></div><div><dt>Certified to date</dt><dd>{gbp(totals.toDate)}</dd></div><div><dt>Unapproved variation assessment</dt><dd>{totals.unapprovedPending ? 'Calculated after save' : gbp(totals.unapproved)}</dd></div></dl>
   </section>;
+}
+
+function AssessmentEditor({ reference, draft, assessment, busy, editable, overlap, onChange, onSave, onVerify }) {
+  const [state, setState] = useState(null);
+  const amount = draft.amount ?? '';
+  const basis = String(draft.basis || '');
+  const dirty = String(amount) !== String(assessment?.currentAssessment ?? '') || basis !== String(assessment?.basis || '');
+  const unavailable = !editable ? 'Only a loaded Draft certificate can be edited.'
+    : overlap ? 'Already included through another certificate route; this assessment cannot be saved here.'
+    : amount === '' || !Number.isFinite(Number(amount)) || Number(amount) === 0 ? 'Enter a non-zero signed QS assessment.'
+    : !basis.trim() ? 'Enter an assessment reason / basis before saving.' : '';
+  const change = patch => { if (!state?.uncertain) setState(null); onChange(patch); };
+  const submit = async verify => {
+    const requested = verify ? state?.requested || { ...draft } : { ...draft };
+    setState({ saving: true, uncertain: verify, requested });
+    try {
+      const result = await (verify ? onVerify(requested) : onSave());
+      setState({ ...result, requested });
+    } catch (error) {
+      setState({ ok: false, uncertain: true, requested, message: `Save outcome needs verification. Saved evidence could not be refreshed: ${error.message}. No write was replayed.` });
+    }
+  };
+  return <div className="po-cert-variations-workspace__assessment">
+    <label><span>QS assessment this certificate (&pound;)</span><input aria-label={`${reference} QS assessment this certificate`} className="input" type="number" step="0.01" disabled={busy || state?.saving || state?.uncertain} value={amount} onChange={event => change({ amount: event.target.value })} /></label>
+    <label><span>Assessment reason / basis (required)</span><input aria-label={`${reference} assessment basis`} className="input" required disabled={busy || state?.saving || state?.uncertain} value={basis} onChange={event => change({ basis: event.target.value })} /></label>
+    {dirty && !state?.saving && !state?.ok && !state?.uncertain ? <small role="status">Unsaved changes</small> : null}
+    {unavailable ? <small>{unavailable}</small> : null}
+    {state?.saving ? <small role="status">{state.uncertain ? 'Refreshing saved assessment evidence' : 'Saving assessment'}</small> : state?.ok ? <small role="status">Assessment saved</small> : state?.ok === false ? <small role="alert">{state.uncertain ? state.message : `Save failed: ${state.message}`}</small> : null}
+    <button type="button" disabled={busy || state?.saving || state?.uncertain || Boolean(unavailable)} onClick={() => submit(false)}>Save QS assessment</button>
+    {state?.uncertain ? <button type="button" disabled={busy || state.saving} onClick={() => submit(true)}>Refresh saved evidence</button> : null}
+  </div>;
 }
 
 function UnresolvedLine({ line, candidates, busy, canAssess, onAssess }) {
@@ -289,7 +365,7 @@ function UnresolvedLine({ line, candidates, busy, canAssess, onAssess }) {
     <div className="po-cert-variations-workspace__task-summary"><strong>{line.contractorReference || 'New variation'} — {line.description}</strong><span>Contractor claims {gbp(line.currentClaim)} this application · {gbp(line.cumulativeClaim)} cumulative</span></div>
     {canAssess ? <div className="po-cert-variations-workspace__choices"><section className="po-cert-variations-workspace__choice" aria-label="Assess variation">
       <h5>Commercial treatment</h5><label><span>Variation</span><select className="input" value={selection} onChange={event => setSelection(event.target.value)}><option value="">Select treatment</option>{approved.map(candidate => <option key={candidate.id} value={candidate.id} disabled={candidate.reviewRequired}>{candidate.reference} — {candidate.description}{candidate.currentAuthority == null ? ' — Needs review' : ` — current approved authority ${gbp(candidate.currentAuthority)}`}</option>)}<option value="new">New / unapproved variation</option></select></label>
-      {selection ? <><label><span>QS assessment this certificate</span><input className="input" type="number" step="0.01" value={assessment} onChange={event => setAssessment(event.target.value)} /></label><label><span>Assessment basis</span><input className="input" value={basis} onChange={event => setBasis(event.target.value)} /></label><button type="button" disabled={busy || assessment === '' || !basis.trim()} onClick={() => onAssess({ candidateId: selection, currentAssessment: Number(assessment), basis })}>Apply assessment</button></> : null}
+      {selection ? <><label><span>QS assessment this certificate (&pound;)</span><input className="input" type="number" step="0.01" value={assessment} onChange={event => setAssessment(event.target.value)} /></label><label><span>Assessment reason / basis (required)</span><input className="input" value={basis} onChange={event => setBasis(event.target.value)} /></label>{!basis.trim() ? <small>Enter an assessment reason / basis before saving.</small> : null}<button type="button" disabled={busy || assessment === '' || !basis.trim()} onClick={() => onAssess({ candidateId: selection, currentAssessment: Number(assessment), basis })}>Save QS assessment</button></> : null}
     </section></div> : <strong className="po-cert-variations-workspace__status--warning">Permission required to assess this variation</strong>}
   </article>;
 }

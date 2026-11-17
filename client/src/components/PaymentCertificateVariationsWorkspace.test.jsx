@@ -90,7 +90,7 @@ describe('PaymentCertificateVariationsWorkspace simplified workflow',()=>{
     const inputs=[...host.querySelectorAll('.po-cert-variations-workspace__task input')];
     await input(inputs[0],'2500');
     await input(inputs[1],'Measured work complete');
-    await act(async()=>{button('Apply assessment').click();await Promise.resolve();});
+    await act(async()=>{button('Save QS assessment').click();await Promise.resolve();});
     expect(mocks.reconcile).toHaveBeenCalledWith('pkg-1','cert-1','app-1','line-1',{candidateId:'authority:ce-9',currentAssessment:2500,basis:'Measured work complete'});
     expect(mocks.refresh).toHaveBeenCalledWith('pkg-1');
   });
@@ -99,7 +99,7 @@ describe('PaymentCertificateVariationsWorkspace simplified workflow',()=>{
     mocks.candidates.mockResolvedValue({candidates:[{id:'authority:ce-9',kind:'existing_approved',reference:'CE-0009',description:'Ambiguous',currentAuthority:null,reviewRequired:true,reviewReason:'Multiple issued lines require review.'}]});
     await render();
     expect(host.textContent).toContain('Needs review');
-    expect(button('Apply assessment')).toBeUndefined();
+    expect(button('Save QS assessment')).toBeUndefined();
   });
 
   it('offers a plain new/unapproved route without requiring a forecast',async()=>{
@@ -258,5 +258,78 @@ describe('application revision synchronisation',()=>{
     await render();mocks.match.mockImplementation(async()=>{mocks.applications.mockResolvedValue([rev2]);throw new Error('Frozen or superseded application variation evidence is immutable.');});
     await createClaim();expect(mocks.add).toHaveBeenCalledTimes(1);expect(mocks.match).toHaveBeenCalledTimes(1);expect(host.textContent).toContain('application has changed');
     await act(async()=>button('Record claim this application').click());expect(host.querySelector('[aria-label="VA-0001 unmatched claim evidence"]')).toBeNull();
+  });
+});
+
+
+describe('persisted QS assessment and row feedback',()=>{
+  const item={variationAccountItemId:'va-1',reference:'VA-0001',description:'Pipework',contractorValue:8500,qsForecast:6200,previousCertified:0,inCurrentApplication:true,applicationVariationLineId:'claim-1',assessment:null};
+  let persisted;
+  beforeEach(()=>{
+    persisted=null;
+    mocks.lines.mockResolvedValue([{id:'claim-1',variationAccountItemId:'va-1',currentClaim:8500,cumulativeClaim:8500}]);
+    mocks.candidates.mockResolvedValue({candidates:[]});mocks.account.mockResolvedValue([{id:'va-1',forecastStatus:'assessed',qsForecast:6200}]);
+    mocks.assessments.mockImplementation(async()=>({items:[{...item,assessment:persisted}]}));
+    mocks.save.mockReset().mockImplementation(async(_pkg,_cert,body)=>{persisted={id:'assessment-1',currentAssessment:body.currentAssessment,basis:body.basis,cumulativeCertified:body.currentAssessment,status:'draft'};return {assessment:persisted};});
+    mocks.refresh.mockReset().mockResolvedValue();
+  });
+  const row=()=>host.querySelector('tbody tr');
+  const summary=()=>host.querySelector('[aria-label="Variation assessment summary"]');
+  async function edit(amount='6200',basis='Measured completed work'){
+    await input(host.querySelector('[aria-label="VA-0001 QS assessment this certificate"]'),amount);
+    await input(host.querySelector('[aria-label="VA-0001 assessment basis"]'),basis);
+  }
+  it('visibly labels both fields and explains blank and whitespace-only basis without sending a request',async()=>{
+    await render();await edit('6200','   ');
+    expect(row().textContent).toContain('QS assessment this certificate (\u00a3)');
+    expect(row().textContent).toContain('Assessment reason / basis (required)');
+    expect(row().textContent).toContain('Enter an assessment reason / basis before saving');
+    expect(button('Save QS assessment').disabled).toBe(true);expect(mocks.save).not.toHaveBeenCalled();
+    await input(host.querySelector('[aria-label="VA-0001 assessment basis"]'),'');expect(button('Save QS assessment').disabled).toBe(true);
+  });
+  it('never presents typed values as saved assessment, cumulative certified, difference or summary',async()=>{
+    await render();await edit();
+    expect(row().textContent).toContain('Unsaved changes');expect(row().textContent).toContain('Saved assessment \u00a30.00');
+    expect(row().children[4].textContent).toBe('\u00a30.00');expect(row().children[5].textContent).toBe('Not available');
+    expect(summary().textContent).toContain('QS assessment this certificate\u00a30.00');
+    expect(summary().textContent).toContain('Certified to date\u00a30.00');expect(summary().textContent).toContain('Contractor claims this period\u00a38,500.00');
+  });
+  it('saves 6200, verifies reload, shows success and retains exact application-line provenance',async()=>{
+    await render();await edit();await act(async()=>button('Save QS assessment').click());
+    expect(mocks.save).toHaveBeenCalledWith('pkg-1','cert-1',{variationAccountItemId:'va-1',applicationVariationLineId:'claim-1',currentAssessment:6200,basis:'Measured completed work'});
+    expect(row().textContent).toContain('Assessment saved');expect(row().children[4].textContent).toBe('\u00a36,200.00');expect(row().children[5].textContent).toBe('\u00a32,300.00');
+    expect(summary().textContent).toContain('QS assessment this certificate\u00a36,200.00');
+    await act(async()=>root.unmount());host.remove();await render();expect(row().textContent).toContain('Saved assessment \u00a36,200.00');
+  });
+  it('shows saving while pending and disables a second submission',async()=>{
+    await render();await edit();let resolveSave;mocks.save.mockImplementation(()=>new Promise(resolve=>{resolveSave=resolve;}));
+    await act(async()=>button('Save QS assessment').click());expect(row().textContent).toContain('Saving assessment');expect(button('Save QS assessment').disabled).toBe(true);
+    persisted={id:'assessment-1',currentAssessment:6200,cumulativeCertified:6200,basis:'Measured completed work'};
+    await act(async()=>resolveSave({assessment:persisted}));expect(row().textContent).toContain('Assessment saved');expect(mocks.save).toHaveBeenCalledTimes(1);
+  });
+  it('updates the same assessment route while displaying only the previous saved totals until save',async()=>{
+    persisted={id:'assessment-1',currentAssessment:5000,cumulativeCertified:5000,basis:'Earlier measurement'};await render();await edit();
+    expect(summary().textContent).toContain('QS assessment this certificate\u00a35,000.00');
+    await act(async()=>button('Save QS assessment').click());expect(mocks.save).toHaveBeenCalledTimes(1);expect(persisted.id).toBe('assessment-1');expect(mocks.add).not.toHaveBeenCalled();
+  });
+  it.each([[403,'Forbidden','permission'],[409,'Cumulative certification would exceed the current QS Forecast.','QS Forecast'],[400,'Application variation provenance is not valid for this certificate and VA item.','claim link']])('shows row-level rejection for status %s',async(status,message,expected)=>{
+    await render();await edit();mocks.save.mockRejectedValue(Object.assign(new Error(message),{status}));
+    await act(async()=>button('Save QS assessment').click());expect(row().textContent).toContain('Save failed:');expect(row().textContent).toContain(expected);expect(persisted).toBeNull();
+    expect(summary().textContent).toContain('QS assessment this certificate\u00a30.00');
+  });
+  it('explains source overlap and keeps saving unavailable',async()=>{
+    mocks.account.mockResolvedValue([{id:'va-1',authority:{allocations:[{variationOrderLineId:'vo-line'}]}}]);
+    host=document.createElement('div');document.body.appendChild(host);root=createRoot(host);
+    await act(async()=>root.render(<PaymentCertificateVariationsWorkspace packageId="pkg-1" certificate={{...certificate,commercialLines:[{sourceType:'variationOrder',variationOrderLineId:'vo-line'}]}} editable/>));await settle();await edit();
+    expect(button('Save QS assessment').disabled).toBe(true);expect(row().textContent).toContain('another certificate route');expect(mocks.save).not.toHaveBeenCalled();
+  });
+  it('treats a committed save followed by refresh failure as uncertain and verifies with GETs without replay',async()=>{
+    await render();await edit();mocks.refresh.mockRejectedValueOnce(new Error('Read failed'));
+    await act(async()=>button('Save QS assessment').click());
+    expect(persisted.currentAssessment).toBe(6200);expect(row().textContent).toContain('Save outcome needs verification');expect(button('Save QS assessment').disabled).toBe(true);
+    expect(summary().textContent).toContain('QS assessment this certificate\u00a30.00');
+    await act(async()=>button('Refresh saved evidence').click());
+    expect(mocks.save).toHaveBeenCalledTimes(1);expect(row().textContent).toContain('Assessment saved');
+    expect(summary().textContent).toContain('QS assessment this certificate\u00a36,200.00');
   });
 });
