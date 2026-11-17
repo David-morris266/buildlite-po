@@ -178,6 +178,7 @@ export default function PaymentCertificateDetail({
   onDeleteRequest,
 }) {
   const [refreshToken, setRefreshToken] = useState(0);
+  const [applicationRefreshKey, setApplicationRefreshKey] = useState(0);
   const [dialog, setDialog] = useState(null);
   const [rejectComment, setRejectComment] = useState('');
   const [draftSavedAt, setDraftSavedAt] = useState(null);
@@ -229,6 +230,11 @@ export default function PaymentCertificateDetail({
   function refresh() {
     setRefreshToken((value) => value + 1);
     onProgressChanged?.();
+  }
+
+  function handleApplicationChanged() {
+    setApplicationRefreshKey(value => value + 1);
+    refresh();
   }
 
   function handleProgressChange(patch) {
@@ -401,7 +407,7 @@ export default function PaymentCertificateDetail({
           certificate={certificate}
           assessmentGross={summary?.totals?.grossWorksThisCertificate ?? certificate.grossValue}
           editable={editable}
-          onChanged={refresh}
+          onChanged={handleApplicationChanged}
           onComparisonChanged={handleApplicationComparisonChanged}
         />
       </div> : null}
@@ -434,6 +440,7 @@ export default function PaymentCertificateDetail({
             packageId={authoritativePackageId}
             certificate={certificate}
             editable={editable}
+            applicationRefreshKey={applicationRefreshKey}
             onChanged={refresh}
           />
         </div>

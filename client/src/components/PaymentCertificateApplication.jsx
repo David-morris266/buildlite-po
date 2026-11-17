@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPaymentApplication, listPaymentApplications, revisePaymentApplication } from '../api/paymentApplications';
 import { APPLICATION_BASES, comparePaymentApplication, validatePaymentApplicationBasis } from '../payments/paymentApplicationComparison';
 import PaymentApplicationVariations from './PaymentApplicationVariations';
@@ -26,11 +26,14 @@ export default function PaymentCertificateApplication({ packageId, certificate, 
   const [error,setError]=useState('');
   const [fieldErrors,setFieldErrors]=useState({});
   const [advanced,setAdvanced]=useState(false);
+  const applicationRequest = useRef(0);
 
   useEffect(()=>{
+    const request = ++applicationRequest.current;
     if (frozen?.application) { setApplication(frozen.application); return; }
     if (!packageId || !certificate?.id) return;
-    listPaymentApplications(packageId,certificate.id).then((items)=>setApplication(items.find((item)=>item.status==='recorded')||null)).catch((err)=>setError(err.message));
+    listPaymentApplications(packageId,certificate.id).then((items)=>{if(request===applicationRequest.current)setApplication(items.find((item)=>item.status==='recorded')||null);}).catch((err)=>{if(request===applicationRequest.current)setError(err.message);});
+    return ()=>{applicationRequest.current += 1;};
   },[packageId,certificate?.id,certificate?.version,frozen?.application?.id]);
 
   useEffect(()=>{ if(application && editable) setForm({...initial,...application,receivedAt:String(application.receivedAt||'').slice(0,10)}); },[application?.id,editable]);
@@ -39,7 +42,7 @@ export default function PaymentCertificateApplication({ packageId, certificate, 
   const field=(key)=>(event)=>{const value=event.target.value;setForm((current)=>({...current,[key]:value}));setFieldErrors((current)=>{if(!current[key])return current;const next={...current};delete next[key];return next;});};
   const changeBasis=(event)=>{setForm((current)=>({...current,applicationBasis:event.target.value}));setFieldErrors({});setError('');};
   const moneyField=(key,label)=><label><span>{label} <span aria-hidden="true">*</span></span><input className="input" type="number" step="0.01" required aria-invalid={Boolean(fieldErrors[key])} aria-describedby={fieldErrors[key]?`${key}-error`:undefined} value={form[key]??''} onChange={field(key)} />{fieldErrors[key]?<small id={`${key}-error`} className="po-cert-application__field-error">{fieldErrors[key]}</small>:null}</label>;
-  const save=async()=>{const completeness=validatePaymentApplicationBasis(form);setFieldErrors(completeness.errors);if(!completeness.valid){setError('Complete the required application amounts before saving.');return;}setBusy(true);setError('');try{const body={...form,certificateId:certificate.id,actor:localStorage.getItem('userName')||localStorage.getItem('userEmail')||null};const saved=application?await revisePaymentApplication(packageId,application.id,body):await createPaymentApplication(packageId,body);setApplication(saved);onChanged?.();}catch(err){setError(err.message);}finally{setBusy(false);}};
+  const save=async()=>{const completeness=validatePaymentApplicationBasis(form);setFieldErrors(completeness.errors);if(!completeness.valid){setError('Complete the required application amounts before saving.');return;}const request=++applicationRequest.current;setBusy(true);setError('');try{const body={...form,certificateId:certificate.id,actor:localStorage.getItem('userName')||localStorage.getItem('userEmail')||null};const saved=application?await revisePaymentApplication(packageId,application.id,body):await createPaymentApplication(packageId,body);if(request===applicationRequest.current){setApplication(saved);onChanged?.();}}catch(err){if(request===applicationRequest.current)setError(err.message);}finally{setBusy(false);}};
 
   return <section className="po-module-card po-cert-application">
     <div className="po-cert-application__heading"><div><h3>Subcontractor Application</h3><p>Record what the subcontractor applied for.</p></div></div>

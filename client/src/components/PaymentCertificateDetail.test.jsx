@@ -57,12 +57,15 @@ vi.mock('./PaymentCertificateRecoveryDeductions', () => ({
 }));
 
 let applicationComparisonCallback = null;
-vi.mock('./PaymentCertificateApplication', () => ({ default: ({ onComparisonChanged }) => {
+let applicationSavedCallback = null;
+let variationRefreshKey = null;
+vi.mock('./PaymentCertificateApplication', () => ({ default: ({ onComparisonChanged, onChanged }) => {
+  applicationSavedCallback = onChanged;
   applicationComparisonCallback = onComparisonChanged;
   return <div>Subcontractor Application</div>;
 } }));
 vi.mock('./PaymentCertificateVariationAssessments', () => ({ default: () => <div>Variation Account assessment</div> }));
-vi.mock('./PaymentCertificateVariationsWorkspace', () => ({ default: () => <div>Stage 3 variation workspace</div> }));
+vi.mock('./PaymentCertificateVariationsWorkspace', () => ({ default: ({ applicationRefreshKey }) => { variationRefreshKey = applicationRefreshKey; return <div>Stage 3 variation workspace</div>; } }));
 vi.mock('./PaymentCertificateSourceAuthority', () => ({ default: () => <div>Source authority</div> }));
 vi.mock('./PaymentCertificateVariationOrders', () => ({ default: () => <div>Variation orders</div> }));
 vi.mock('./PaymentCertificateTerms', () => ({ default: () => <div>Governing Terms</div> }));
@@ -159,6 +162,15 @@ describe('PaymentCertificateDetail workflow feedback', () => {
       matrixReady: true,
     });
   }
+
+  it('explicitly invalidates Stage 3 after Stage 1 saves without changing certificate version', () => {
+    setDraftCertificate();
+    renderDetail();
+    expect(variationRefreshKey).toBe(0);
+    act(() => applicationSavedCallback());
+    expect(variationRefreshKey).toBe(1);
+    expect(getCertificate().version).toBeUndefined();
+  });
 
   it('shows Delete Draft when the Draft has never been submitted', () => {
     setDraftCertificate();

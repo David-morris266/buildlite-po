@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useBuildLitePermission } from '../auth/BuildLiteAuthProvider';
 import {
   addApplicationVariation,
@@ -47,10 +47,13 @@ function hasDirectSourceOverlap(item, commercialLines = []) {
   ));
 }
 
-export default function PaymentCertificateVariationsWorkspace({ packageId, certificate, editable, onChanged }) {
+export default function PaymentCertificateVariationsWorkspace({ packageId, certificate, editable, onChanged, applicationRefreshKey = 0 }) {
   const canCreate = useBuildLitePermission('variation_account.create');
   const canAssess = useBuildLitePermission('variation_account.assess');
-  const claimEditable = editable && String(certificate?.status || '').toLowerCase() === 'draft';
+  const scope = `${packageId}:${certificate?.id}:${applicationRefreshKey}`;
+  const [loadedScope, setLoadedScope] = useState(null);
+  const requestSequence = useRef(0);
+  const claimEditable = editable && String(certificate?.status || '').toLowerCase() === 'draft' && loadedScope === scope;
   const [application, setApplication] = useState(null);
   const [lines, setLines] = useState([]);
   const [items, setItems] = useState([]);
@@ -66,25 +69,42 @@ export default function PaymentCertificateVariationsWorkspace({ packageId, certi
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
+    const request = ++requestSequence.current;
+    setLoadedScope(null);
+    setApplication(null);
+    setLines([]);
+    setShowCapture(false);
+    setCapture(blankVariation);
+    setApprovedClaim(blankApprovedClaim);
     if (!packageId || !certificate?.id) return;
-    const [applications, nextReadiness, nextItems, nextCandidates] = await Promise.all([
-      listPaymentApplications(packageId, certificate.id),
-      listVariationAssessments(packageId, certificate.id),
-      listPackageVariationAccount(packageId),
-      listCertificateVariationCandidates(packageId, certificate.id),
-    ]);
-    const nextApplication = applications.find(entry => entry.status === 'recorded') || null;
-    setApplication(nextApplication);
-    setLines(nextApplication ? await listApplicationVariations(packageId, nextApplication.id) : []);
-    setItems(nextItems);
-    setCandidates(nextCandidates.candidates || []);
-    setReadiness(nextReadiness.items || []);
-    setDrafts(Object.fromEntries((nextReadiness.items || []).map(item => [item.variationAccountItemId, {
-      amount: item.assessment?.currentAssessment ?? '', basis: item.assessment?.basis ?? '',
-    }])));
-  }, [packageId, certificate?.id]);
+    try {
+      const [applications, nextReadiness, nextItems, nextCandidates] = await Promise.all([
+        listPaymentApplications(packageId, certificate.id),
+        listVariationAssessments(packageId, certificate.id),
+        listPackageVariationAccount(packageId),
+        listCertificateVariationCandidates(packageId, certificate.id),
+      ]);
+      const nextApplication = applications.find(entry => entry.status === 'recorded') || null;
+      const nextLines = nextApplication ? await listApplicationVariations(packageId, nextApplication.id) : [];
+      if (request !== requestSequence.current) return;
+      setApplication(nextApplication);
+      setLines(nextLines);
+      setItems(nextItems);
+      setCandidates(nextCandidates.candidates || []);
+      setReadiness(nextReadiness.items || []);
+      setDrafts(Object.fromEntries((nextReadiness.items || []).map(item => [item.variationAccountItemId, {
+        amount: item.assessment?.currentAssessment ?? '', basis: item.assessment?.basis ?? '',
+      }])));
+      setLoadedScope(scope);
+    } catch (nextError) {
+      if (request === requestSequence.current) throw nextError;
+    }
+  }, [packageId, certificate?.id, scope]);
 
-  useEffect(() => { load().catch(nextError => setError(nextError.message)); }, [load, certificate?.version]);
+  useEffect(() => {
+    load().catch(nextError => setError(nextError.message));
+    return () => { requestSequence.current += 1; };
+  }, [load, certificate?.version]);
 
   const lineByItem = useMemo(() => new Map(lines.filter(line => line.variationAccountItemId).map(line => [line.variationAccountItemId, line])), [lines]);
   const evidenceByItem = useMemo(() => new Map((certificate?.sourceAuthority?.evidence?.variationAssessments || []).map(entry => [entry.variationAccountItemId, entry])), [certificate?.sourceAuthority]);
@@ -93,14 +113,38 @@ export default function PaymentCertificateVariationsWorkspace({ packageId, certi
   const unresolved = lines.filter(line => !line.variationAccountItemId);
   const approvedCandidates = candidates.filter(candidate => candidate.kind === 'existing_approved');
 
-  const run = async action => {
+  const run = async (action, applicationWrite = false) => {
     setBusy(true); setError('');
-    try { await action(); await refreshCertificatesForPackage(packageId); await load(); onChanged?.(); }
-    catch (nextError) { setError(nextError.message); }
+    const request = requestSequence.current;
+    const assertCurrent = () => {
+      if (request !== requestSequence.current) throw new Error('Application revision changed.');
+    };
+    try {
+      if (applicationWrite) {
+        if (!claimEditable || !application) return;
+        const latest = (await listPaymentApplications(packageId, certificate.id)).find(entry => entry.status === 'recorded');
+        assertCurrent();
+        if (latest?.id !== application.id) throw new Error('Application revision changed.');
+      }
+      await action(assertCurrent);
+      assertCurrent();
+      await refreshCertificatesForPackage(packageId);
+      assertCurrent();
+      await load(); onChanged?.();
+    }
+    catch (nextError) {
+      if (/application revision changed|frozen|superseded/i.test(nextError.message)) {
+        setError('The application has changed or is no longer editable. Refreshing the current revision. No claim request has been replayed; check recorded evidence before trying again.');
+        // An old operation must not start a load for its obsolete scope.
+        if (request === requestSequence.current) {
+          try { await load(); } catch (refreshError) { setError(`The application has changed. Current evidence could not be refreshed: ${refreshError.message}. Do not repeat the claim until it has been checked.`); }
+        }
+      } else setError(nextError.message);
+    }
     finally { setBusy(false); }
   };
 
-  const recordExistingClaim = (item, values, existingLineId) => run(async () => {
+  const recordExistingClaim = (item, values, existingLineId) => run(async assertCurrent => {
     if (!claimEditable || !canCreate || !application) return;
     let lineId = existingLineId;
     if (!lineId) {
@@ -112,31 +156,34 @@ export default function PaymentCertificateVariationsWorkspace({ packageId, certi
         currentClaim: Number(values.current),
         cumulativeClaim: (Math.round(Number(values.previous) * 100) + Math.round(Number(values.current) * 100)) / 100,
       });
+      assertCurrent();
       lineId = line.id;
       // Retain evidence immediately: a failed match must never retry creation.
       setLines(current => [...current, line]);
     }
     try {
       await matchApplicationVariation(packageId, application.id, lineId, item.variationAccountItemId);
+      assertCurrent();
       setLines(current => current.map(line => line.id === lineId ? { ...line, variationAccountItemId: item.variationAccountItemId } : line));
     } catch (nextError) {
       throw new Error(`Claim evidence recorded but not matched. Use Match existing claim to retry without creating another claim. ${nextError.message}`);
     }
-  });
+  }, true);
 
   const addVariation = () => {
     const current = Number(capture.currentClaim);
-    return run(async () => {
+    return run(async assertCurrent => {
       await addApplicationVariation(packageId, application.id, { ...capture, previousClaim: 0, cumulativeClaim: current, currentClaim: current });
+      assertCurrent();
       setCapture(blankVariation); setShowCapture(false);
-    });
+    }, true);
   };
 
   const addApprovedClaim = () => {
     const candidate = approvedCandidates.find(entry => entry.id === approvedClaim.candidateId);
     if (!candidate || candidate.reviewRequired) return;
     const current = Number(approvedClaim.currentClaim);
-    return run(async () => {
+    return run(async assertCurrent => {
       const line = await addApplicationVariation(packageId, application.id, {
         contractorReference: approvedClaim.contractorReference,
         description: candidate.description,
@@ -145,18 +192,16 @@ export default function PaymentCertificateVariationsWorkspace({ packageId, certi
         currentClaim: current,
         cumulativeClaim: current,
       });
-      try {
-        await reconcileAndAssessCertificateVariation(packageId, certificate.id, application.id, line.id, {
-          candidateId: candidate.id,
-          currentAssessment: Number(approvedClaim.assessment),
-          basis: approvedClaim.basis,
-        });
-      } catch (nextError) {
-        await load();
-        throw nextError;
-      }
+      assertCurrent();
+      setLines(current => [...current, line]);
+      await reconcileAndAssessCertificateVariation(packageId, certificate.id, application.id, line.id, {
+        candidateId: candidate.id,
+        currentAssessment: Number(approvedClaim.assessment),
+        basis: approvedClaim.basis,
+      });
+      assertCurrent();
       setApprovedClaim(blankApprovedClaim);
-    });
+    }, true);
   };
 
   const totals = relevant.reduce((result, item) => {
@@ -174,11 +219,11 @@ export default function PaymentCertificateVariationsWorkspace({ packageId, certi
   return <section className="po-module-card po-cert-variations-workspace">
     <header className="po-cert-variations-workspace__header">
       <div><p className="po-cert-detail__eyebrow">Stage 3</p><h3>Variations</h3><p>Review contractor claims and record the QS assessment. BuildLite manages the underlying authority trail.</p></div>
-      {editable && application && canCreate ? <button type="button" className="po-list-btn-secondary" onClick={() => setShowCapture(open => !open)}>+ Add new / unapproved variation</button> : null}
+      {claimEditable && application && canCreate ? <button type="button" className="po-list-btn-secondary" onClick={() => setShowCapture(open => !open)}>+ Add new / unapproved variation</button> : null}
     </header>
-    {!application ? <div className="po-list-feedback" role="status">Record the subcontractor application in Stage 1 before adding application variations.</div> : null}
+    {loadedScope !== scope ? <div role="status">Refreshing current application revision...</div> : !application ? <div className="po-list-feedback" role="status">Record the subcontractor application in Stage 1 before adding application variations.</div> : null}
     {error ? <div role="alert" className="po-list-feedback po-list-feedback--error">{error}</div> : null}
-    {editable && application && canCreate && canAssess && !unresolved.length && approvedCandidates.length ? <section className="po-cert-variations-workspace__tasks" aria-label="Existing approved variations">
+    {claimEditable && application && canCreate && canAssess && !unresolved.length && approvedCandidates.length ? <section className="po-cert-variations-workspace__tasks" aria-label="Existing approved variations">
       <h4>Existing approved variation</h4>
       <p>Select a known approved variation, record the contractor claim and make this certificate's QS assessment. BuildLite keeps the underlying authority linkage.</p>
       <label><span>Approved variation</span><select aria-label="Existing approved variation" className="input" value={approvedClaim.candidateId} onChange={event => setApprovedClaim({ ...blankApprovedClaim, candidateId: event.target.value })}><option value="">Select approved variation</option>{approvedCandidates.map(candidate => <option key={candidate.id} value={candidate.id} disabled={candidate.reviewRequired}>{candidate.reference} — {candidate.description}{candidate.reviewRequired ? ' — Needs review' : ` — current approved authority ${gbp(candidate.currentAuthority)}`}</option>)}</select></label>
@@ -192,7 +237,7 @@ export default function PaymentCertificateVariationsWorkspace({ packageId, certi
         <div><button type="button" disabled={busy || !approvedClaim.contractorReference.trim() || approvedClaim.contractorValue === '' || approvedClaim.currentClaim === '' || approvedClaim.assessment === '' || !approvedClaim.basis.trim()} onClick={addApprovedClaim}>Add claim and assessment</button><button type="button" className="po-cert-workspace__link" onClick={() => setApprovedClaim(blankApprovedClaim)}>Cancel</button></div>
       </div> : null}
     </section> : null}
-    {showCapture ? <div className="po-cert-variations-workspace__capture">
+    {showCapture && claimEditable && application ? <div className="po-cert-variations-workspace__capture">
       <label><span>Contractor reference</span><input className="input" value={capture.contractorReference} onChange={event => setCapture({ ...capture, contractorReference: event.target.value })} /></label>
       <label><span>Description</span><input className="input" value={capture.description} onChange={event => setCapture({ ...capture, description: event.target.value })} /></label>
       <label><span>Contractor value</span><input className="input" type="number" step="0.01" value={capture.contractorValue} onChange={event => setCapture({ ...capture, contractorValue: event.target.value })} /></label>
@@ -202,7 +247,7 @@ export default function PaymentCertificateVariationsWorkspace({ packageId, certi
 
     {unresolved.length ? <div className="po-cert-variations-workspace__tasks" role="region" aria-label="Variations requiring assessment">
       <h4>Assess application variations</h4>
-      {unresolved.map(line => <UnresolvedLine key={line.id} line={line} candidates={candidates} busy={busy} canAssess={claimEditable && canCreate && canAssess} onAssess={payload => run(() => reconcileAndAssessCertificateVariation(packageId, certificate.id, application.id, line.id, payload))} />)}
+      {unresolved.map(line => <UnresolvedLine key={line.id} line={line} candidates={candidates} busy={busy} canAssess={claimEditable && canCreate && canAssess} onAssess={payload => run(() => reconcileAndAssessCertificateVariation(packageId, certificate.id, application.id, line.id, payload), true)} />)}
     </div> : null}
 
     {claimEditable && (canAssess || canCreate) && available.length ? <div className="po-cert-variations-workspace__add-existing"><label><span>Add existing variation</span><select className="input" value={addExistingId} onChange={event => setAddExistingId(event.target.value)}><option value="">Select an active variation</option>{available.map(item => <option key={item.id} value={item.id}>{item.reference} — {item.description}</option>)}</select></label><button type="button" disabled={!addExistingId} onClick={() => { setAddedIds(ids => [...ids, addExistingId]); setAddExistingId(''); }}>Add to assessment</button></div> : null}

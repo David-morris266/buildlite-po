@@ -6,11 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   permissions: new Set(['variation_account.create', 'variation_account.assess']),
   applications: vi.fn(), lines: vi.fn(), candidates: vi.fn(), account: vi.fn(), assessments: vi.fn(),
-  add: vi.fn(), match: vi.fn(), reconcile: vi.fn(), save: vi.fn(), withdraw: vi.fn(), refresh: vi.fn(),
+  createApplication: vi.fn(), reviseApplication: vi.fn(), add: vi.fn(), match: vi.fn(), reconcile: vi.fn(), save: vi.fn(), withdraw: vi.fn(), refresh: vi.fn(),
 }));
 vi.mock('../auth/BuildLiteAuthProvider', () => ({ useBuildLitePermission: p => mocks.permissions.has(p) }));
 vi.mock('../api/paymentApplications', () => ({
-  listPaymentApplications: mocks.applications, listApplicationVariations: mocks.lines,
+  createPaymentApplication: mocks.createApplication, revisePaymentApplication: mocks.reviseApplication, listPaymentApplications: mocks.applications, listApplicationVariations: mocks.lines,
   listPackageVariationAccount: mocks.account, addApplicationVariation: mocks.add, matchApplicationVariation: mocks.match,
 }));
 vi.mock('../api/paymentCertificates', () => ({
@@ -20,6 +20,7 @@ vi.mock('../api/paymentCertificates', () => ({
 }));
 vi.mock('../payments/paymentCertificateServerCache', () => ({ refreshCertificatesForPackage: mocks.refresh }));
 import PaymentCertificateVariationsWorkspace from './PaymentCertificateVariationsWorkspace';
+import PaymentCertificateApplication from './PaymentCertificateApplication';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let host; let root;
@@ -200,5 +201,62 @@ describe('VA claim display and permission boundaries',()=>{
     mocks.lines.mockResolvedValue([{id:'zero',variationAccountItemId:'va-1',currentClaim:0,cumulativeClaim:0}]);
     await act(async()=>root.render(<PaymentCertificateVariationsWorkspace packageId="pkg-1" certificate={{...certificate,version:2}} editable/>));await settle();
     expect(host.textContent).toContain('Current claim \u00a30.00');expect(host.textContent).not.toContain('Application claim not recorded');
+  });
+});
+
+
+describe('application revision synchronisation',()=>{
+  const item={variationAccountItemId:'va-1',reference:'VA-0001',description:'Pipework',contractorValue:8500,previousCertified:0,assessment:{currentAssessment:6200,cumulativeCertified:6200}};
+  const rev1={id:'app-1',status:'recorded',revisionNumber:1,applicationReference:'Central App 1',receivedAt:'2026-11-01',applicationBasis:'current_period_gross',currentPeriodGrossClaimed:8500};
+  const rev2={...rev1,id:'app-2',revisionNumber:2};
+  beforeEach(()=>{
+    mocks.applications.mockResolvedValue([rev1]);mocks.lines.mockResolvedValue([]);
+    mocks.account.mockResolvedValue([{id:'va-1',reference:'VA-0001',status:'active'}]);mocks.assessments.mockResolvedValue({items:[item]});mocks.candidates.mockResolvedValue({candidates:[]});
+    mocks.match.mockReset().mockResolvedValue({});mocks.add.mockReset().mockImplementation(async(_pkg,_app,body)=>({id:'new-line',...body}));
+  });
+  async function createClaim(){
+    await act(async()=>button('Record claim this application').click());
+    await input(host.querySelector('[aria-label="VA-0001 current application claim"]'),'8500');
+    await act(async()=>button('Save application claim').click());
+  }
+  it('Stage 1 revision refreshes the still-mounted Stage 3 and subsequent writes use Revision 2',async()=>{
+    let active=rev1;mocks.applications.mockImplementation(async()=>[active]);
+    mocks.reviseApplication.mockImplementation(async()=>{active=rev2;return rev2;});
+    function Cycle(){const [key,setKey]=React.useState(0);return <><PaymentCertificateApplication packageId="pkg-1" certificate={certificate} editable assessmentGross={6200} onChanged={()=>setKey(v=>v+1)}/><PaymentCertificateVariationsWorkspace packageId="pkg-1" certificate={certificate} editable applicationRefreshKey={key}/></>;}
+    host=document.createElement('div');document.body.appendChild(host);root=createRoot(host);
+    await act(async()=>root.render(<Cycle/>));await settle();
+    await act(async()=>button('Record revised application').click());await settle();
+    await createClaim();
+    expect(mocks.add).toHaveBeenCalledWith('pkg-1','app-2',expect.anything());expect(mocks.match).toHaveBeenCalledWith('pkg-1','app-2','new-line','va-1');
+  });
+  it('ignores delayed Revision 1 evidence after Revision 2 has loaded',async()=>{
+    let resolveOld;
+    mocks.lines.mockImplementation((_pkg,app)=>app==='app-1'?new Promise(resolve=>{resolveOld=resolve;}):Promise.resolve([]));
+    await render();
+    mocks.applications.mockResolvedValue([rev2]);
+    await act(async()=>root.render(<PaymentCertificateVariationsWorkspace packageId="pkg-1" certificate={certificate} editable applicationRefreshKey={1}/>));await settle();
+    await act(async()=>resolveOld([{id:'old-line',variationAccountItemId:'va-1',currentClaim:999,cumulativeClaim:999}]));
+    expect(host.textContent).not.toContain('Current claim');
+    await createClaim();expect(mocks.add).toHaveBeenCalledWith('pkg-1','app-2',expect.anything());
+  });
+  it('preflights a silently superseded revision without sending a claim POST',async()=>{
+    await render();mocks.applications.mockResolvedValue([rev2]);await createClaim();
+    expect(mocks.add).not.toHaveBeenCalled();expect(mocks.match).not.toHaveBeenCalled();expect(host.textContent).toContain('application has changed');
+  });
+  it('refreshes a frozen response contextually without replaying creation',async()=>{
+    await render();mocks.add.mockImplementation(async()=>{mocks.applications.mockResolvedValue([rev2]);throw new Error('Frozen or superseded application variation evidence is immutable.');});
+    await createClaim();expect(host.textContent).toContain('application has changed');expect(mocks.add).toHaveBeenCalledTimes(1);expect(mocks.match).not.toHaveBeenCalled();expect(mocks.lines).toHaveBeenCalledWith('pkg-1','app-2');
+  });
+  it('does not match a created line if its application changes while creation is pending',async()=>{
+    let resolveCreate;await render();mocks.add.mockImplementation(()=>new Promise(resolve=>{resolveCreate=resolve;}));
+    await createClaim();mocks.applications.mockResolvedValue([rev2]);
+    await act(async()=>root.render(<PaymentCertificateVariationsWorkspace packageId="pkg-1" certificate={certificate} editable applicationRefreshKey={1}/>));await settle();
+    await act(async()=>resolveCreate({id:'old-created',currentClaim:8500,cumulativeClaim:8500}));
+    expect(mocks.add).toHaveBeenCalledTimes(1);expect(mocks.match).not.toHaveBeenCalled();expect(host.querySelector('[aria-label="VA-0001 unmatched claim evidence"]')).toBeNull();
+  });
+  it('refreshes after frozen matching without offering superseded evidence for recovery',async()=>{
+    await render();mocks.match.mockImplementation(async()=>{mocks.applications.mockResolvedValue([rev2]);throw new Error('Frozen or superseded application variation evidence is immutable.');});
+    await createClaim();expect(mocks.add).toHaveBeenCalledTimes(1);expect(mocks.match).toHaveBeenCalledTimes(1);expect(host.textContent).toContain('application has changed');
+    await act(async()=>button('Record claim this application').click());expect(host.querySelector('[aria-label="VA-0001 unmatched claim evidence"]')).toBeNull();
   });
 });
