@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ApplicationPageHeader from './layout/ApplicationPageHeader';
 import PaymentCertificateValuationGrid from './PaymentCertificateValuationGrid';
+import PaymentCertificateZeroOrderedWorks from './PaymentCertificateZeroOrderedWorks';
 import PaymentCertificateCommercialEvents from './PaymentCertificateCommercialEvents';
 import PaymentCertificateRecoveryDeductions from './PaymentCertificateRecoveryDeductions';
 import PaymentCertificateVariationOrders from './PaymentCertificateVariationOrders';
@@ -273,7 +274,7 @@ export default function PaymentCertificateDetail({
   }
 
   async function handleSubmitConfirm() {
-    if (lifecycleBusy) return;
+    if (lifecycleBusy || !summary?.totals) return;
     setLifecycleBusy(true);
     try {
       const result = await Promise.resolve(
@@ -415,6 +416,7 @@ export default function PaymentCertificateDetail({
       {editable ? (
         <section className="po-module-card po-cert-detail__matrix" hidden={editable && activeStage !== 'ordered-works'}>
           <h3 className="po-matrix-section__title">Valuation Matrix</h3>
+          {!summary?.matrix || certificate.variationOnlyConfirmation ? <PaymentCertificateZeroOrderedWorks key={certificate.id} order={order} certificate={certificate} matrixReady={summary?.matrixReady === true} matrix={summary?.matrix} onChanged={refresh}/> : <>
           <p className="po-cert-detail__matrix-lead">
             Click to select · double-click to open Stage Details · once open, click any cell to update the panel.
           </p>
@@ -431,6 +433,7 @@ export default function PaymentCertificateDetail({
             matrixError={summary?.matrixError || null}
             onProgressChange={handleProgressChange}
           />
+          </>}
         </section>
       ) : null}
 
@@ -451,6 +454,7 @@ export default function PaymentCertificateDetail({
           certificate={certificate}
           totals={summary?.totals}
           applicationComparison={applicationComparison}
+          valuationUnavailableReason={summary?.valuationUnavailableReason}
           onEditStage={setActiveStage}
         />
       ) : null}

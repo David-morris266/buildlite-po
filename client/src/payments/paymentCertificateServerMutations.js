@@ -297,6 +297,7 @@ export async function updateCertificateMetadataOnServer(
         ...(Object.prototype.hasOwnProperty.call(patch, 'contractualValuationDate')
           ? { contractualValuationDate: patch.contractualValuationDate || null }
           : {}),
+        ...(Object.prototype.hasOwnProperty.call(patch, 'zeroOrderedWorksConfirmed') ? {zeroOrderedWorksConfirmed:patch.zeroOrderedWorksConfirmed} : {}),
       },
     }),
   });

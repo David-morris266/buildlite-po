@@ -556,6 +556,10 @@ export default function PaymentCertificateValuationGrid({
     );
   }
 
+  if (certificate?.status === 'locked' && certificate.valuationSnapshot?.valuationBasis === 'variation_only') {
+    return <p className="po-cert-detail__matrix-lead">Frozen variation-only valuation: ordered works assessed at £0. No Order Matrix was used.</p>;
+  }
+
   if (!grid) {
     return (
       <p className="po-cert-detail__matrix-lead">

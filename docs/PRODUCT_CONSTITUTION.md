@@ -129,6 +129,12 @@ Orientation only. Detail and UAT evidence stay in `CURRENT_STATE.md`.
 
 ## 5. Durable deferred / parked register
 
+### Variation-only payment certificates — owner-authorised 17 November 2026
+
+A Draft certificate may use a variation-only valuation when an authoritative matrix read confirms absence, no ordered-work progress or conflicting certification evidence exists, and the QS explicitly confirms ordered works assessed at £0 for that certificate. Absence alone never establishes zero. Loading, failed or unresolved matrix evidence remains blocked. Existing persisted variation assessments, retention, recoveries, VAT and approval authority remain governed by their existing rules. The overall application is compared once; variation claims are supporting evidence, not additional gross.
+
+The confirmation uses the existing versioned certificate payload and authenticated audit. It is revalidated for submission/locking and frozen in the valuation snapshot. No fictitious matrix, commitment, CE, VO or authority is created. Historic evidence is unchanged. Independent review PASS; authorised for commit and push. No migration or hosted change is included. Wave C3 remains paused.
+
 Importance: **V1 blocker** (hosted trial) · **V1 important** · **post-pilot** · **future** · **needs human decision**.
 
 | ID | Topic | Original authority | Current status | Importance | Dependency / decision | Target disposition | Notes |

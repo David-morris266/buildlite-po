@@ -72,6 +72,7 @@ const FORBIDDEN_PATCH_KEYS = new Set([
   "audit",
   "auditHistory",
   "valuationSnapshot",
+  "variationOnlyConfirmation",
   "totals",
 ]);
 

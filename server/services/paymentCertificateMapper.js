@@ -77,6 +77,7 @@ function rowToDocument(row, auditRows = [], extras = {}) {
     progress: payload.progress && typeof payload.progress === "object" ? payload.progress : {},
     commercialLines: Array.isArray(payload.commercialLines) ? payload.commercialLines : [],
     valuationSnapshot: payload.valuationSnapshot || null,
+    variationOnlyConfirmation: payload.variationOnlyConfirmation || null,
     sourceAuthority: payload.sourceAuthoritySnapshot || extras.sourceAuthority || (row.status === "locked"
       ? require('./paymentCertificateSourceAuthority').legacySourceAuthority()
       : null),
@@ -98,6 +99,7 @@ function rowToDocument(row, auditRows = [], extras = {}) {
     retentionRate: frozen.retentionRate,
     vatRate: frozen.vatRate,
     totals: extras.totals || (row.status === "locked" ? frozen : null),
+    valuationUnavailableReason: extras.errors?.[0] || null,
     version: row.version,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),

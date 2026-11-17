@@ -32,7 +32,7 @@ export function dateLabel(value) {
 }
 
 export function buildReconcileFacts({ totals, sourceAuthority, applicationComparison }) {
-  const variationPence = toPence(sourceAuthority?.variationAssessmentGross);
+  const variationPence = sourceAuthority?.variationAssessmentGross == null ? null : toPence(sourceAuthority.variationAssessmentGross);
   const commercialPence = toPence(totals?.commercialEventGrossThisCertificate);
   const supportedPence = (sourceAuthority?.evidence?.variationAssessments || []).reduce(
     (sum, item) => sum + toPence(item.signedAmount) - toPence(item.unapprovedAmount),
@@ -40,15 +40,15 @@ export function buildReconcileFacts({ totals, sourceAuthority, applicationCompar
   );
 
   return {
-    applicationGross: applicationComparison?.comparable
+    applicationGross: applicationComparison?.applicationCurrentGross != null
       ? Number(applicationComparison.applicationCurrentGross)
       : null,
     difference: applicationComparison?.comparable
       ? Number(applicationComparison.difference)
       : null,
     orderedWorks: totals?.matrixGrossThisCertificate,
-    variationAssessments: fromPence(variationPence),
-    otherAssessedItems: fromPence(commercialPence - variationPence),
+    variationAssessments: variationPence == null ? null : fromPence(variationPence),
+    otherAssessedItems: variationPence == null || totals?.commercialEventGrossThisCertificate == null ? null : fromPence(commercialPence - variationPence),
     supportedAssessment: fromPence(supportedPence),
   };
 }
@@ -70,13 +70,14 @@ export default function PaymentCertificateReconcile({
   certificate,
   totals,
   applicationComparison,
+  valuationUnavailableReason,
   onEditStage,
 }) {
   const sourceAuthority = certificate?.sourceAuthority || {};
   const facts = buildReconcileFacts({ totals, sourceAuthority, applicationComparison });
   const timetable = certificate?.paymentTimetable;
   const dates = timetable?.readiness === 'ready' ? timetable.dates : null;
-  const unapproved = Number(sourceAuthority.unapprovedCertifiedGross) || 0;
+  const unapproved = sourceAuthority.unapprovedCertifiedGross == null ? null : Number(sourceAuthority.unapprovedCertifiedGross);
   const retentionErrors = totals?.retentionErrors || [];
   const retentionRate = totals?.retentionRate ?? certificate?.retentionRate;
   const vatRate = totals?.vatRate ?? certificate?.vatRate;
@@ -93,7 +94,7 @@ export default function PaymentCertificateReconcile({
 
       {!applicationComparison?.comparable ? (
         <div className="po-list-feedback po-list-feedback--warning" role="status">
-          Resolve before release: no comparable contractor application is currently available.
+          {valuationUnavailableReason || applicationComparison?.reason || 'Resolve before release: no comparable contractor application is currently available.'}
         </div>
       ) : null}
 
@@ -109,7 +110,7 @@ export default function PaymentCertificateReconcile({
           <MoneyRows rows={[
             { label: 'Ordered Works', value: formatMoneyLabel(facts.orderedWorks) },
             { label: 'Variation assessments', value: signedMoney(facts.variationAssessments) },
-            ...(facts.otherAssessedItems !== 0 ? [{ label: 'Other assessed commercial items', value: signedMoney(facts.otherAssessedItems) }] : []),
+            ...(facts.otherAssessedItems != null && facts.otherAssessedItems !== 0 ? [{ label: 'Other assessed commercial items', value: signedMoney(facts.otherAssessedItems) }] : []),
             { label: 'Gross assessment', value: formatMoneyLabel(totals?.grossWorksThisCertificate), emphasis: true },
           ]} />
         </section>

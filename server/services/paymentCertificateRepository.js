@@ -28,6 +28,7 @@ const { buildPaymentCertificateSourceAuthority } = require('./paymentCertificate
 const { listPaymentDiscoveredItems, lockPaymentDiscoveredItems } = require('./paymentDiscoveredRepository');
 const {listAssessments:listVariationAssessments,lockAssessments:lockVariationAssessments}=require('./variationAccountCertificateAssessmentRepository');
 const {loadVariationAssessmentAuthority}=require('./variationAccountCertificateAuthority');
+const {variationOnlyError}=require('./variationOnlyValuation');
 const { snapshotForPackage } = require("./subcontractTermsRepository");
 const {
   timetableForRead,
@@ -248,6 +249,7 @@ function lockedDocumentsFromRows(rows) {
         certificateNumber: row.certificate_number,
         status: row.status,
         grossValue: row.gross_value,
+        matrixGross: row.matrix_gross ?? null,
         retention: row.retention,
         retentionRate: row.retention_rate,
         progress: payload.progress || {},
@@ -268,6 +270,7 @@ function payloadFromRow(row) {
     submissionGoverningTermsSnapshot: payload.submissionGoverningTermsSnapshot || null,
     lockedGoverningTermsSnapshot: payload.lockedGoverningTermsSnapshot || null,
     sourceAuthoritySnapshot: payload.sourceAuthoritySnapshot || null,
+    variationOnlyConfirmation: payload.variationOnlyConfirmation || null,
   };
 }
 
@@ -282,7 +285,7 @@ async function hydrateDocument(clientId, row, dbClient = null, extras = {}) {
 async function computeLiveTotals(clientId, packageId, row, allRows, dbClient = null) {
   const payload = payloadFromRow(row);
   const matrix = await loadMatrixDocument(clientId, packageId, dbClient);
-  if (!matrix) return { totals: null };
+  if (!matrix && !payload.variationOnlyConfirmation) return { totals: null };
   const pos = await loadPackagePos(clientId, packageId, dbClient);
   const locked = lockedDocumentsFromRows(allRows).filter(
     (item) => item.certificateNumber < row.certificate_number
@@ -290,10 +293,15 @@ async function computeLiveTotals(clientId, packageId, row, allRows, dbClient = n
   const paymentDiscoveredItems = await listPaymentDiscoveredItems(clientId,packageId,row.id,dbClient);
   const variationAssessments=await listVariationAssessments(clientId,packageId,row.id,dbClient);
   const variationAuthorityClassifications=await loadVariationAssessmentAuthority(clientId,packageId,row.id,variationAssessments,dbClient);
+  if (payload.variationOnlyConfirmation) {
+    const error=variationOnlyError({matrix,progress:payload.progress,confirmation:payload.variationOnlyConfirmation,lockedCertificates:locked,valuationSnapshot:payload.valuationSnapshot});
+    if(error)return {totals:null,errors:[error]};
+  }
   const discoveredLines = paymentDiscoveredItems.map(item=>({id:`payment-discovered:${item.id}`,lineType:'valueInclusion',sourceType:'paymentDiscovered',amountThisCertificate:item.signedAmount}));
   const variationLines=variationAssessments.map(item=>({id:`variation-assessment:${item.id}`,lineType:'valueInclusion',sourceType:'variationAccountAssessment',amountThisCertificate:item.currentAssessment}));
   const live = buildLiveValuation({
     matrix,
+    variationOnlyConfirmation: payload.variationOnlyConfirmation,
     progress: payload.progress,
     commercialLines: [...payload.commercialLines,...discoveredLines,...variationLines],
     lockedCertificates: locked,
@@ -481,6 +489,17 @@ async function patchCertificateForPackage(clientId, packageId, certificateId, bo
         : currentPayload.commercialLines;
 
     const matrix = await loadMatrixDocument(clientId, packageId, dbClient);
+    let confirmation=currentPayload.variationOnlyConfirmation;
+    if(parsed.zeroOrderedWorksConfirmed !== undefined){
+      if(!auth?.userId || !auth?.membershipId || !auth?.providerUserId){await dbClient.query('ROLLBACK');return {ok:false,status:401,message:'Authenticated QS identity is required for zero-ordered-works confirmation.'};}
+      if(parsed.zeroOrderedWorksConfirmed && Object.keys(currentPayload.progress || {}).length){await dbClient.query('ROLLBACK');return {ok:false,status:409,message:'Existing ordered-work progress prevents zero-ordered-works confirmation.'};}
+      confirmation=parsed.zeroOrderedWorksConfirmed ? {orderedWorks:0,confirmedAt:new Date().toISOString(),confirmedBy:{userId:auth.userId,membershipId:auth.membershipId,providerUserId:auth.providerUserId,displayName:auth.displayName}} : null;
+    }
+    if(confirmation){
+      const prior=lockedDocumentsFromRows(await listCertificateRows(clientId,packageId,dbClient)).filter(item=>item.certificateNumber<row.certificate_number);
+      const error=variationOnlyError({matrix,progress:nextProgress,confirmation,lockedCertificates:prior,valuationSnapshot:currentPayload.valuationSnapshot});
+      if(error){await dbClient.query('ROLLBACK');return {ok:false,status:409,message:error};}
+    }
     if ((parsed.progressEntries || parsed.commercialLines) && matrix) {
       const live = buildLiveValuation({
         matrix,
@@ -495,7 +514,7 @@ async function patchCertificateForPackage(clientId, packageId, certificateId, bo
         await dbClient.query("ROLLBACK");
         return { ok: false, status: 400, message: live.errors[0], errors: live.errors };
       }
-    } else if ((parsed.progressEntries || parsed.commercialLines) && !matrix) {
+    } else if ((parsed.progressEntries || parsed.commercialLines) && !matrix && !confirmation) {
       await dbClient.query("ROLLBACK");
       return { ok: false, status: 400, message: "A plot-stage order matrix is required." };
     }
@@ -538,6 +557,7 @@ async function patchCertificateForPackage(clientId, packageId, certificateId, bo
         JSON.stringify({
           progress: nextProgress,
           commercialLines: nextLines,
+          variationOnlyConfirmation: confirmation,
           submissionApplicationSnapshot: currentPayload.submissionApplicationSnapshot,
           lockedApplicationSnapshot: currentPayload.lockedApplicationSnapshot,
           submissionGoverningTermsSnapshot: currentPayload.submissionGoverningTermsSnapshot,
@@ -557,6 +577,7 @@ async function patchCertificateForPackage(clientId, packageId, certificateId, bo
       clientId,
       certificateId,
       action: parsed.contractualValuationDate !== undefined ? "payment_cycle_updated" : "edited",
+      comment: parsed.zeroOrderedWorksConfirmed !== undefined ? JSON.stringify({zeroOrderedWorksConfirmed:parsed.zeroOrderedWorksConfirmed,confirmation}) : '',
       actor,
       priorStatus: CERTIFICATE_STATUSES.draft,
       newStatus: CERTIFICATE_STATUSES.draft,
@@ -702,7 +723,7 @@ async function prepareApprovalInputs(dbClient, {
 }) {
   const payload = payloadFromRow(row);
   const matrix = await loadMatrixDocument(clientId, packageId, dbClient);
-  if (requireMatrix && !matrix) {
+  if (requireMatrix && !matrix && !payload.variationOnlyConfirmation) {
     return { ok: false, status: 400, message: "A plot-stage order matrix is required." };
   }
 
@@ -729,12 +750,14 @@ async function prepareApprovalInputs(dbClient, {
   const variationAssessments=await listVariationAssessments(clientId,packageId,row.id,dbClient);
   const variationAuthorityClassifications=await loadVariationAssessmentAuthority(clientId,packageId,row.id,variationAssessments,dbClient);
 
-  if (!matrix) {
-    return { ok: true, payload, matrix: null, pos, locked };
+  if (payload.variationOnlyConfirmation) {
+    const error=variationOnlyError({matrix,progress:payload.progress,confirmation:payload.variationOnlyConfirmation,lockedCertificates:locked,valuationSnapshot:payload.valuationSnapshot});
+    if(error)return {ok:false,status:409,message:error};
   }
 
   const snapshot = buildValuationSnapshot({
     matrix,
+    variationOnlyConfirmation:payload.variationOnlyConfirmation,
     progress: payload.progress,
     commercialLines: [...payload.commercialLines,...paymentDiscoveredItems.map(item=>({id:`payment-discovered:${item.id}`,lineType:'valueInclusion',sourceType:'paymentDiscovered',amountThisCertificate:item.signedAmount,description:item.description})),...variationAssessments.map(item=>({id:`variation-assessment:${item.id}`,lineType:'valueInclusion',sourceType:'variationAccountAssessment',amountThisCertificate:item.currentAssessment,description:'Variation Account assessment'}))],
     lockedCertificates: locked,

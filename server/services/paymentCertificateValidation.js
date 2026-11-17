@@ -191,6 +191,7 @@ function collectForbiddenPatchKeys(body = {}) {
 
 function validateDraftPatchBody(body = {}) {
   const errors = [];
+  if (Object.prototype.hasOwnProperty.call(body,'zeroOrderedWorksConfirmed') && typeof body.zeroOrderedWorksConfirmed !== 'boolean') errors.push('zeroOrderedWorksConfirmed must be a boolean.');
   const forbidden = collectForbiddenPatchKeys(body);
   if (forbidden.length) {
     errors.push(`These fields cannot be patched: ${forbidden.join(", ")}`);
@@ -233,6 +234,7 @@ function validateDraftPatchBody(body = {}) {
     commercialLines,
     certificateDate: candidate.certificateDate,
     contractualValuationDate: candidate.contractualValuationDate,
+    zeroOrderedWorksConfirmed: body.zeroOrderedWorksConfirmed,
   };
 }
 

@@ -12,6 +12,8 @@
 
 ## Current persistence boundary (Doc 67)
 
+**Variation-only certificate implementation (17 November 2026; independent review PASS):** no schema migration. The existing `package_payment_certificates.payload.variationOnlyConfirmation` stores `orderedWorks: 0`, server-generated `confirmedAt`, and authenticated `confirmedBy` identity. Only the versioned Draft certificate PATCH accepts the boolean `zeroOrderedWorksConfirmed` command; clients cannot patch the stored confirmation object. Confirmation/removal is recorded in the existing certificate audit. Submission preserves the confirmation; locking freezes `valuationBasis: variation_only` and the confirmation in the existing `valuationSnapshot`, with genuinely empty cells and null matrix identity. Existing numeric totals columns and authority snapshots are unchanged in meaning. Existing rows are not backfilled or reinterpreted.
+
 Postgres is already the authority for:
 
 | Migration | Tables | Sprint |

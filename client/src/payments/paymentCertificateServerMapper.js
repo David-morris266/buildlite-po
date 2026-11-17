@@ -82,6 +82,8 @@ export function normalizeServerPaymentCertificate(document) {
         ? document.commercial_lines
         : [],
     valuationSnapshot: document.valuationSnapshot || document.valuation_snapshot || null,
+    variationOnlyConfirmation: document.variationOnlyConfirmation || null,
+    valuationUnavailableReason: document.valuationUnavailableReason || null,
     submissionApplicationSnapshot: document.submissionApplicationSnapshot || document.submission_application_snapshot || null,
     lockedApplicationSnapshot: document.lockedApplicationSnapshot || document.locked_application_snapshot || null,
     submissionGoverningTermsSnapshot: document.submissionGoverningTermsSnapshot || document.submission_governing_terms_snapshot || null,

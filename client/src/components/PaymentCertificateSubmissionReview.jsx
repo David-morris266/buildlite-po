@@ -99,7 +99,7 @@ export default function PaymentCertificateSubmissionReview({
           <strong>Submit this certificate for approval</strong>
           <p>It will become read-only until approved or returned to Draft. Final financial and source-authority evidence is frozen when it is approved and locked.</p>
         </div>
-        {canSubmit ? <button type="button" className="po-btn-primary" onClick={onSubmit} disabled={busy}>Submit for Approval</button> : <p className="po-cert-detail__readonly-note">You do not have permission to submit this certificate for approval.</p>}
+        {canSubmit ? <button type="button" className="po-btn-primary" onClick={onSubmit} disabled={busy || !totals}>Submit for Approval</button> : <p className="po-cert-detail__readonly-note">You do not have permission to submit this certificate for approval.</p>}
       </div>
     </section>
   );

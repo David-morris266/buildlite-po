@@ -21,6 +21,7 @@ const {
   normalizePlotKey,
   normalizeStageKey,
 } = require("./paymentCertificateCellIdentity");
+const { variationOnlyError } = require('./variationOnlyValuation');
 
 function toNumber(value) {
   const parsed = Number(value);
@@ -247,12 +248,17 @@ function buildCertificateWorksTotals(cells, {
 
 function buildLiveValuation({
   matrix,
+  variationOnlyConfirmation = null,
   progress = {},
   commercialLines = [],
   lockedCertificates = [],
   pos = [],
 }) {
-  const indexed = indexMatrixCells(matrix);
+  if (variationOnlyConfirmation || !matrix) {
+    const error = variationOnlyError({matrix, progress, confirmation: variationOnlyConfirmation, lockedCertificates});
+    if (error) return {ok:false,errors:[error]};
+  }
+  const indexed = matrix ? indexMatrixCells(matrix) : {ok:true,cells:[]};
   if (!indexed.ok) {
     return { ok: false, errors: indexed.errors };
   }
@@ -324,6 +330,10 @@ function buildLiveValuation({
     retentionRate: rates.retentionRate,
     ...retentionPosition,
   });
+  if (variationOnlyConfirmation) {
+    totals.previousCertified = retentionPosition.previousGross;
+    totals.certifiedToDate = roundMoney(retentionPosition.previousGross + totals.grossWorksThisCertificate);
+  }
 
   if (totals.retentionErrors.length) {
     return { ok: false, errors: totals.retentionErrors, cells, totals };
@@ -340,6 +350,7 @@ function buildLiveValuation({
 
 function buildValuationSnapshot({
   matrix,
+  variationOnlyConfirmation = null,
   progress,
   commercialLines,
   lockedCertificates,
@@ -348,6 +359,7 @@ function buildValuationSnapshot({
 }) {
   const live = buildLiveValuation({
     matrix,
+    variationOnlyConfirmation,
     progress,
     commercialLines,
     lockedCertificates,
@@ -360,8 +372,9 @@ function buildValuationSnapshot({
     snapshot: {
       snapshotVersion: VALUATION_SNAPSHOT_VERSION,
       capturedAt: capturedAt || new Date().toISOString(),
-      matrixId: matrix.id || null,
-      matrixVersion: matrix.version ?? null,
+      matrixId: matrix?.id || null,
+      matrixVersion: matrix?.version ?? null,
+      ...(variationOnlyConfirmation ? {valuationBasis:'variation_only',variationOnlyConfirmation} : {}),
       totals: live.totals,
       cells: live.cells,
     },

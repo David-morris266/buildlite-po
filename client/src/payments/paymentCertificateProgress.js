@@ -520,13 +520,13 @@ export function summarizeCertificateProgress(orderKey, certificateId, order = nu
   const lockedWithSnapshot =
     isApprovedCommercialCertificate(certificate) &&
     Array.isArray(certificate.valuationSnapshot?.cells) &&
-    certificate.valuationSnapshot.cells.length > 0;
+    (certificate.valuationSnapshot.cells.length > 0 || certificate.valuationSnapshot.valuationBasis === 'variation_only');
 
   if (lockedWithSnapshot) {
     const grid = buildValuationGridFromSnapshot(certificate);
     const currentContractValue =
       buildPackageCommercialDisplayFields(order || { orderKey }).currentPackageValue;
-    const previousGrossWorks = calculatePreviousApprovedGrossWorks(orderKey, certificate);
+    const previousGrossWorks = readStoredCertificateMoney(certificate.valuationSnapshot?.totals?.previousCertified) ?? calculatePreviousApprovedGrossWorks(orderKey, certificate);
     const snapshotTotals = certificate.valuationSnapshot?.totals || {};
     const frozenGross =
       readStoredCertificateMoney(certificate.grossValue) ??
@@ -593,6 +593,24 @@ export function summarizeCertificateProgress(orderKey, certificateId, order = nu
   const matrixResolution = resolveOrderMatrixForPackage(order || orderKey, order?.developmentId);
   const matrixReady = matrixResolution.ready;
   const matrix = matrixReady ? matrixResolution.matrix : null;
+  if (matrixReady && matrix && certificate.variationOnlyConfirmation) {
+    return {certificate,grid:null,totals:null,matrix,matrixReady:true,matrixLoadState:matrixResolution.loadState,
+      valuationUnavailableReason:'An Order Matrix now exists. Remove the zero-ordered-works confirmation before using matrix valuation.'};
+  }
+
+  // Confirmed absence and unavailable evidence are different. Use server-composed
+  // money for this basis; never substitute typed assessment values or a fake matrix.
+  if (matrixReady && !matrix) {
+    const valid = certificate.variationOnlyConfirmation && !Object.keys(certificate.progress || {}).length && certificate.totals;
+    const previousGrossWorks = certificate.totals?.previousCertified ?? calculatePreviousApprovedGrossWorks(orderKey, certificate);
+    const currentContractValue = buildPackageCommercialDisplayFields(order || {orderKey}).currentPackageValue;
+    const gross = valid ? certificate.totals.grossWorksThisCertificate : null;
+    return {certificate,grid:null,matrix:null,matrixReady:true,matrixLoadState:matrixResolution.loadState,
+      matrixError:null,variationOnly:Boolean(valid),
+      valuationUnavailableReason:valid ? null : certificate.valuationUnavailableReason || 'Confirm zero ordered works for this certificate before reconciling a variation-only valuation.',
+      totals:valid ? {...certificate.totals,previousCertified:previousGrossWorks,certifiedToDate:roundMoney(previousGrossWorks+gross),currentContractValue,
+        remainingContract:currentContractValue == null ? null : roundMoney(currentContractValue-previousGrossWorks-gross)} : null};
+  }
 
   if (!matrixReady) {
     if (
