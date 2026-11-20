@@ -10,13 +10,20 @@ async function start() {
   const { init } = require('./db');
   await init();
   const app = createApp();
-  return app.listen(PORT, () => {
+  const runner = await require('./services/paymentNoticePreparationRunner').startPreparationRunner();
+  const server = app.listen(PORT, () => {
       console.log(`✅ Server running on http://localhost:${PORT}`);
   });
+  server.stopNoticePreparation = runner.stop;
+  return server;
 }
 
 if (require.main === module) {
-  start().catch((err) => {
+  start().then(server => {
+    let stopping=false;
+    const stop=async()=>{if(stopping)return;stopping=true;await Promise.all([new Promise(resolve=>server.close(resolve)),server.stopNoticePreparation()]);await require('./db').pool.end();};
+    process.once('SIGTERM',stop);process.once('SIGINT',stop);
+  }).catch((err) => {
     console.error("❌ DB init failed:", err);
     process.exit(1);
   });

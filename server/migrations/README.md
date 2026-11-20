@@ -178,3 +178,11 @@ Adds dedicated Plot Master authority for Admin, Commercial Director, Commercial 
 `065_first_platform_operator_bootstrap.sql` records the first configured platform operator identity through an append-only bootstrap audit without granting tenant authority.
 
 `066_tenant_branding_assets.sql` adds immutable tenant-owned company-logo assets, an optimistic current-branding reference and append-only authenticated branding audit. It performs no legacy URL/path import, no customer-logo backfill and no commercial-document rewrite. PostgreSQL stores the pilot binary behind a storage-provider boundary that can later point the same asset UUID at object storage.
+
+### 072_payment_notice_preparation.sql
+
+Adds immutable approval-linked notice instructions, leased preparation jobs, integrity links and manual-recovery guards/audit. It performs no historical backfill, notice issue, service, email or Accounts payment writes. Pending/running/completed preparation blocks competing manual creation unless the approval is reversed. Definitively failed jobs permit the existing authorised manual notice route. Recovery fences running jobs and permanently blocks further automation for that certificate once manual notice history exists; original instructions and evidence remain unchanged.
+
+The existing `npm run migrate` process (`server/scripts/migrate.js`) executes each SQL file and its `schema_migrations` entry inside one `BEGIN`/`COMMIT`, with rollback on failure. Migration 072 uses that transaction boundary; do not execute selected statements independently. API `db.init()` is not the migration runner. Hosted execution requires separate approval and target-database verification; no hosted execution is implied by this entry.
+
+**Release restriction:** `BUILDLITE_NOTICE_PREPARATION_ENABLED` must remain false/unset in every hosted environment until an authorised issue route exists and activation is explicitly approved. Deploying this schema/code does not authorise activation.

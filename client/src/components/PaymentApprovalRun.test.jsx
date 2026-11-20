@@ -5,8 +5,8 @@ import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 let permissions=[];
 vi.mock('../auth/BuildLiteAuthProvider',()=>({useBuildLitePermission:value=>permissions.includes(value)}));
-const api=vi.hoisted(()=>({getPaymentApprovalQueue:vi.fn(),approveSubmittedCertificate:vi.fn(),rejectCertificateForPackage:vi.fn()}));
-vi.mock('../api/paymentAuthority',()=>({getPaymentApprovalQueue:api.getPaymentApprovalQueue,approveSubmittedCertificate:api.approveSubmittedCertificate}));
+const api=vi.hoisted(()=>({getPaymentApprovalQueue:vi.fn(),approveSubmittedCertificate:vi.fn(),rejectCertificateForPackage:vi.fn(),retryNoticePreparation:vi.fn()}));
+vi.mock('../api/paymentAuthority',()=>({getPaymentApprovalQueue:api.getPaymentApprovalQueue,approveSubmittedCertificate:api.approveSubmittedCertificate,retryNoticePreparation:api.retryNoticePreparation}));
 vi.mock('../api/paymentCertificates',()=>({rejectCertificateForPackage:api.rejectCertificateForPackage}));
 import PaymentApprovalRun from './PaymentApprovalRun';
 
@@ -51,8 +51,28 @@ describe('Slice 1 notice disclosure',()=>{
    await act(async()=>button(row,'Review').click());
    const detail=container.querySelector('.payment-approval-detail');expect(detail.textContent).toContain('Bound subcontract Rev 1');expect(detail.textContent).toContain('Frozen valuation basis');expect(detail.textContent).toContain('PN-TEST');expect(detail.textContent).toContain('Review notice configuration.');expect(detail.textContent).toContain('Service unverified');
    await act(async()=>container.querySelector('input[aria-label="Select certificate 1"]').click());await act(async()=>button(container,'Approve & Authorise Selected').click());
-   const dialog=container.querySelector('[role="dialog"]');expect(dialog.textContent).toContain('Bound subcontract Rev 1');expect(dialog.textContent).toContain('does not authorise, issue or send a new notice');
+   const dialog=container.querySelector('[role="dialog"]');expect(dialog.textContent).toContain('Bound subcontract Rev 1');expect(dialog.textContent).toContain('does not issue or send a new notice');
    expect(api.approveSubmittedCertificate).not.toHaveBeenCalled();
   } finally {await act(async()=>app.unmount());container.remove();vi.clearAllMocks();}
+ });
+});
+
+describe('Slice 2 preparation authority disclosure',()=>{
+ it('includes explicit preparation consent in the existing approval only when offered by the server',async()=>{
+  permissions=['payment_approval_run.view','certificate.lock','payment_authority.approve'];
+  api.getPaymentApprovalQueue.mockResolvedValue([{...base,noticePreparationOffer:{outcome:'prepare',notifiedSum:43776,basis:'Frozen certificate valuation basis',disclosureHash:'server-disclosure'}}]);api.approveSubmittedCertificate.mockResolvedValue({ok:true});
+  const container=document.createElement('div');document.body.append(container);const app=createRoot(container);
+  try{await act(async()=>{app.render(<PaymentApprovalRun/>);await Promise.resolve();});await act(async()=>container.querySelector('input[aria-label="Select certificate 1"]').click());await act(async()=>button(container,'Approve & Authorise Selected').click());
+  const dialog=container.querySelector('[role="dialog"]');expect(dialog.textContent).toContain('Also authorise automatic preparation');expect(dialog.textContent).toContain('Frozen certificate valuation basis');expect(dialog.textContent).toContain('unissued and unsent');
+  await act(async()=>button(container,'Approve & Authorise',true).click());expect(api.approveSubmittedCertificate).toHaveBeenCalledOnce();expect(api.approveSubmittedCertificate.mock.calls[0][0].confirmNoticePreparation).toBe(true);expect(api.approveSubmittedCertificate.mock.calls[0][0].noticePreparationDisclosureHash).toBe('server-disclosure');
+  }finally{await act(async()=>app.unmount());container.remove();vi.clearAllMocks();}
+ });
+ it('shows durable failure owner and permits only preparation/document-capable users to retry the same instruction',async()=>{
+  permissions=['payment_approval_run.view','payment_notice.prepare','document.generate'];const failed={instructionId:'instruction-1',status:'failed',reasons:[],owner:{displayName:'Commercial approver'},failures:[{reason:'Renderer unavailable'}]};
+  api.getPaymentApprovalQueue.mockResolvedValue([{...base,workflowState:'authorised',noticePreparation:failed}]);api.retryNoticePreparation.mockResolvedValue({ok:true,message:'Preparation queued'});
+  const container=document.createElement('div');document.body.append(container);const app=createRoot(container);
+  try{await act(async()=>{app.render(<PaymentApprovalRun/>);await Promise.resolve();});await act(async()=>button(container,'Payment Authorised').click());await act(async()=>button(container,'Review').click());expect(container.textContent).toContain('Renderer unavailable');expect(container.textContent).toContain('Commercial approver');await act(async()=>button(container,'Retry PDF preparation').click());expect(api.retryNoticePreparation).toHaveBeenCalledWith('instruction-1');
+  permissions=['payment_approval_run.view'];await act(async()=>app.render(<PaymentApprovalRun/>));expect(button(container,'Retry PDF preparation')).toBeUndefined();
+  }finally{await act(async()=>app.unmount());container.remove();vi.clearAllMocks();}
  });
 });

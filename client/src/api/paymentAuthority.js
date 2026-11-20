@@ -4,3 +4,5 @@ export async function getPaymentApprovalQueue(){return (await json(await fetch(`
 export async function approvePaymentAuthorityRun(payload){return json(await fetch(`${API_BASE}/api/payment-authority/runs`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}));}
 export async function approveSubmittedCertificate(payload){return json(await fetch(`${API_BASE}/api/payment-authority/combined-approvals`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}));}
 export async function reversePaymentAuthority(id,payload){return json(await fetch(`${API_BASE}/api/payment-authority/decisions/${encodeURIComponent(id)}/reverse`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}));}
+
+export async function retryNoticePreparation(id){return json(await fetch(`${API_BASE}/api/payment-authority/notice-preparations/${encodeURIComponent(id)}/retry`,{method:'POST'}));}

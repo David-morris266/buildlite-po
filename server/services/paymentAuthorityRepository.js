@@ -1,3 +1,4 @@
+const preparation = require('./paymentNoticePreparation');
 const { evaluateApprovalNotice, compareNoticeDeadline } = require('./paymentApprovalNoticeEvaluation');
 const { pool, query } = require('../db');
 const { assertServicePermission } = require('../auth/authorization');
@@ -222,6 +223,14 @@ async function listQueue(clientId, auth) {
       workflowState, statusSummary: 'Payment Authorised', paymentAuthority:authorityDecision?{decisionId:authorityDecision.id,runId:authorityDecision.run_id,runReference:authorityDecision.run_reference,authorisedCash:money(authorityDecision.signed_cash_amount),reason:authorityDecision.reason,certificateVersion:Number(authorityDecision.certificate_version),approvedBy:{userId:authorityDecision.approved_by_user_id,membershipId:authorityDecision.approved_by_membership_id,providerUserId:authorityDecision.approved_by_provider_user_id,displayName:authorityDecision.approved_by_display_name,roleKey:authorityDecision.approved_role_key},approvedAt:authorityDecision.approved_at}:null,
       severity: workflowState, ...ready, lines });
   }
+  if(preparation.enabled())for(const item of items){
+    const deadline=(await query(`SELECT * FROM package_payment_certificate_deadline_snapshots WHERE client_id=$1 AND certificate_id=$2 ORDER BY CASE WHEN stage='locked' THEN 0 ELSE 1 END,captured_at DESC LIMIT 1`,[clientId,item.id])).rows[0];
+    const c=(await query('SELECT * FROM package_payment_certificates WHERE client_id=$1 AND id=$2',[clientId,item.id])).rows[0];
+    const preview={...c,status:'locked',gross_value:item.gross,retention:item.retention,recovery_signed:item.recoveries,vat:item.vat,net_value:item.net,payload:{...c.payload,lockedGoverningTermsSnapshot:c.payload?.lockedGoverningTermsSnapshot||c.payload?.submissionGoverningTermsSnapshot}};
+    item.noticePreparationOffer=await preparation.evaluateForApproval({query},clientId,{certificate:preview,deadline,paymentNotice:item.noticeEvaluation.paymentNotice,intended:item.noticeEvaluation.type==='pay_less_notice'?{intended_amount:item.intendedPayment}:null},auth,true);
+    const decision=(await query("SELECT id FROM payment_authority_decisions WHERE client_id=$1 AND certificate_id=$2 AND decision_kind='authority' ORDER BY approved_at DESC LIMIT 1",[clientId,item.id])).rows[0];
+    item.noticePreparation=decision?await preparation.resultForDecision({query},clientId,decision.id):null;
+  }
   const rank = { awaiting_approval: 0, authorised: 1 };
   return items.sort((a, b) => (rank[a.workflowState] - rank[b.workflowState])
     || compareNoticeDeadline(a,b)
@@ -277,13 +286,23 @@ async function reverseDecision(clientId,decisionId,body,auth){
 async function approveDecision(db, clientId, runId, input, auth, options = {}) {
   const facts = await loadLockedFacts(db, clientId, input.certificateId, true);
   if (!facts) return fail(404, 'Certificate not found.');
-  const ready = options.readiness || eligibility(facts);
-  if (!ready.eligible) return fail(409, ready.reasons.join(' '));
+  let ready = options.readiness || eligibility(facts);
+  const plan = preparation.enabled() ? await preparation.evaluateForApproval(db,clientId,facts,auth,input.confirmNoticePreparation) : null;
+  if(plan?.outcome==='prepare' && input.noticePreparationDisclosureHash!==plan.disclosureHash)
+    return fail(409,'Notice preparation disclosure changed or is missing. Refresh Payment Approval before confirming.');
+  if (plan?.outcome === 'prepare' && !ready.eligible) {
+    const remaining = ready.reasons.filter(reason => reason !== 'An Issued Payment Notice is required.');
+    ready = {...ready,eligible:remaining.length===0,reasons:remaining};
+  }
   if (Number(input.certificateVersion) !== Number(facts.certificate.version)) return fail(409, 'Certificate version changed; refresh the Approval Run.');
   const reason = clean(input.reason), key = clean(input.idempotencyKey);
   if (!reason || !key) return fail(400, 'Approval reason and idempotency key are required.');
-  const duplicate = (await db.query('SELECT id FROM payment_authority_decisions WHERE client_id=$1 AND idempotency_key=$2', [clientId, key])).rows[0];
-  if (duplicate) return { ok: true, status: 200, decisionId: duplicate.id, idempotent: true };
+  const duplicate = (await db.query('SELECT id,certificate_id,package_id FROM payment_authority_decisions WHERE client_id=$1 AND idempotency_key=$2', [clientId, key])).rows[0];
+  if (duplicate) {
+    if(duplicate.certificate_id!==input.certificateId || (input.packageId && duplicate.package_id!==input.packageId))return fail(409,'Idempotency key belongs to another certificate/package.');
+    return {ok:true,status:200,decisionId:duplicate.id,idempotent:true,...(preparation.enabled()?{noticePreparation:await preparation.resultForDecision(db,clientId,duplicate.id)}:{})};
+  }
+  if (!ready.eligible) return fail(409, ready.reasons.join(' '));
   const cash = toPence(input.cashAmount), remainingCash = toPence(ready.intendedPayment) - toPence(facts.priorCash);
   if (!cash || Math.sign(cash) !== Math.sign(remainingCash) || Math.abs(cash) > Math.abs(remainingCash)) return fail(409, 'Cash authority exceeds the unresolved intended payment.');
   const requested = new Map((input.lines || []).map(line => [line.assessmentId, line]));
@@ -345,7 +364,8 @@ async function approveDecision(db, clientId, runId, input, auth, options = {}) {
   await db.query(`INSERT INTO payment_authority_audit(client_id,run_id,decision_id,action,detail,actor_user_id,actor_membership_id,
     actor_provider_user_id,actor_display_name) VALUES($1,$2,$3,'approved',$4,$5,$6,$7,$8)`,
     [clientId,runId,decision.id,JSON.stringify({cashAmount:fromPence(cash),warningCodes:(options.approvalWarnings||[]).map(item=>item.code),warningAcknowledgementComment:options.warningComment||null}),...actor(auth)]);
-  return {ok:true,status:201,decisionId:decision.id};
+  const noticePreparation=plan ? await preparation.persist(db,clientId,decision,facts,auth,plan) : null;
+  return {ok:true,status:201,decisionId:decision.id,...(plan?{noticePreparation}:{})};
 }
 
 async function approveSubmittedCertificate(clientId, body, auth, options = {}) {
@@ -353,13 +373,13 @@ async function approveSubmittedCertificate(clientId, body, auth, options = {}) {
   assertServicePermission(auth, PERMISSIONS.PAYMENT_AUTHORITY_APPROVE);
   const certificateId = clean(body.certificateId), packageId = clean(body.packageId), idempotencyKey = clean(body.idempotencyKey);
   if (!certificateId || !packageId || !idempotencyKey) return fail(400, 'Package, certificate and idempotency key are required.');
-  const existing = (await query(`SELECT d.id decision_id,d.certificate_id,d.certificate_version,d.run_id,c.status certificate_status,c.version current_certificate_version
+  const existing = (await query(`SELECT d.id decision_id,d.package_id,d.certificate_id,d.certificate_version,d.run_id,c.status certificate_status,c.version current_certificate_version
     FROM payment_authority_decisions d JOIN package_payment_certificates c ON c.id=d.certificate_id AND c.client_id=d.client_id
     WHERE d.client_id=$1 AND d.idempotency_key=$2`, [clientId, idempotencyKey])).rows[0];
   if (existing) {
-    if (existing.certificate_id !== certificateId) return fail(409, 'Idempotency key belongs to another certificate.');
+    if (existing.certificate_id !== certificateId || existing.package_id !== packageId) return fail(409, 'Idempotency key belongs to another certificate.');
     return { ok: true, status: 200, idempotent: true, decisionId: existing.decision_id, runId: existing.run_id,
-      certificateId, certificateStatus: existing.certificate_status, certificateVersion: Number(existing.current_certificate_version) };
+      certificateId, certificateStatus: existing.certificate_status, certificateVersion: Number(existing.current_certificate_version),...(preparation.enabled()?{noticePreparation:await preparation.resultForDecision({query},clientId,existing.decision_id)}:{}) };
   }
   const db = await pool.connect();
   try {
@@ -368,7 +388,7 @@ async function approveSubmittedCertificate(clientId, body, auth, options = {}) {
     if (!locked.ok) {
       const concurrent = (await db.query('SELECT id,run_id,certificate_id FROM payment_authority_decisions WHERE client_id=$1 AND idempotency_key=$2',[clientId,idempotencyKey])).rows[0];
       await db.query('ROLLBACK');
-      if (concurrent?.certificate_id === certificateId) return {ok:true,status:200,idempotent:true,decisionId:concurrent.id,runId:concurrent.run_id,certificateId,certificateStatus:'locked'};
+      if (concurrent?.certificate_id === certificateId) return {ok:true,status:200,idempotent:true,decisionId:concurrent.id,runId:concurrent.run_id,certificateId,certificateStatus:'locked',...(preparation.enabled()?{noticePreparation:await preparation.resultForDecision({query},clientId,concurrent.id)}:{})};
       return locked;
     }
     if (options.afterLock) await options.afterLock({ db, locked });
@@ -390,12 +410,12 @@ async function approveSubmittedCertificate(clientId, body, auth, options = {}) {
     await db.query(`INSERT INTO payment_authority_audit(client_id,run_id,decision_id,action,detail,actor_user_id,actor_membership_id,actor_provider_user_id,actor_display_name)
       VALUES($1,$2,$3,'run_completed',$4,$5,$6,$7,$8)`, [clientId,run.id,decision.decisionId,JSON.stringify({combinedApproval:true,certificateId}),...actor(auth)]);
     await db.query('COMMIT');
-    return { ok:true,status:201,runId:run.id,decisionId:decision.decisionId,certificateId,certificateStatus:'locked',certificateVersion:Number(locked.row.version),warnings:acknowledgement.evidence };
+    return { ok:true,status:201,runId:run.id,decisionId:decision.decisionId,certificateId,certificateStatus:'locked',certificateVersion:Number(locked.row.version),warnings:acknowledgement.evidence,...(preparation.enabled()?{noticePreparation:decision.noticePreparation}:{}) };
   } catch (error) {
     await db.query('ROLLBACK');
     if (error.code === '23505') {
       const retry = (await query('SELECT id,run_id,certificate_id FROM payment_authority_decisions WHERE client_id=$1 AND idempotency_key=$2',[clientId,idempotencyKey])).rows[0];
-      if (retry?.certificate_id === certificateId) return {ok:true,status:200,idempotent:true,decisionId:retry.id,runId:retry.run_id,certificateId,certificateStatus:'locked'};
+      if (retry?.certificate_id === certificateId) return {ok:true,status:200,idempotent:true,decisionId:retry.id,runId:retry.run_id,certificateId,certificateStatus:'locked',...(preparation.enabled()?{noticePreparation:await preparation.resultForDecision({query},clientId,retry.id)}:{})};
     }
     throw error;
   } finally { db.release(); }
