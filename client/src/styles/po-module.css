@@ -12153,7 +12153,18 @@
   margin-top: 0.25rem;
 }
 
-.payment-approval-table { min-width: 1180px; }
+.payment-approval-table { width: 100%; min-width: 940px; table-layout: fixed; }
+.payment-approval-table th:first-child { width: 44px; }
+.payment-approval-table th:nth-child(2) { width: 19%; }
+.payment-approval-table th:nth-child(3) { width: 14%; }
+.payment-approval-table th:nth-child(8) { width: 17%; }
+.payment-approval-table th:last-child { width: 96px; }
+.payment-approval-table td { overflow-wrap: anywhere; }
+.payment-approval-table__money { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.payment-notice-summary { line-height: 1.35; }
+.payment-notice-summary--urgent { border-left: 3px solid #e5a94d; padding-left: .45rem; }
+.payment-approval-table tr:not(.payment-approval-detail-row) td:last-child { position: sticky; right: 0; z-index: 1; }
+.payment-approval-table tr:not(.payment-approval-detail-row) td:last-child button { display: block; margin: .25rem 0; width: 100%; }
 .payment-approval-table th,
 .payment-approval-table td { padding-left: 10px; padding-right: 10px; }
 .payment-approval-table td { vertical-align: middle; color: #e5edf1; background: #151c20; }
@@ -12162,8 +12173,8 @@
 .payment-approval-row--exception td,
 .payment-approval-table tbody tr.payment-approval-row--exception:hover td { color: #fff7e6; background: #342717; }
 .payment-approval-table td small { display: block; margin-top: .2rem; color: #aebdc6; }
-.payment-approval-table__identity { min-width: 130px; max-width: 185px; }
-.payment-approval-table__certificate { min-width: 145px; }
+.payment-approval-table__identity { min-width: 0; }
+.payment-approval-table__certificate { min-width: 0; }
 .payment-approval-detail-row > td,
 .payment-approval-table tbody tr.payment-approval-detail-row:hover > td { padding: 0; color: #e5edf1; background: #10171b; }
 .payment-approval-detail {

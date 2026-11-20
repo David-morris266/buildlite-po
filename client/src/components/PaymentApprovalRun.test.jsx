@@ -39,13 +39,17 @@ describe('PaymentApprovalRun single commercial approval',()=>{
 });
 
 describe('Slice 1 notice disclosure',()=>{
- it('shows server deadline and bound terms in the row and confirmation without changing the request',async()=>{
+ it('keeps notice rows compact and exposes complete evidence in Review and confirmation',async()=>{
   permissions=['payment_approval_run.view','certificate.lock','payment_authority.approve'];
-  const noticeEvaluation={type:'payment_notice',classification:'future_preparation_supported',terms:{familyName:'Bound subcontract',versionLabel:'Rev 1'},deadline:{date:'2026-11-21',state:'approaching'},notifiedSum:6200,messages:['Review notice configuration.']};
+  const noticeEvaluation={type:'payment_notice',classification:'future_preparation_supported',terms:{familyName:'Bound subcontract',versionLabel:'Rev 1'},deadline:{date:'2026-11-21',state:'approaching'},notifiedSum:6200,basis:'Frozen valuation basis',paymentNotice:{reference:'PN-TEST'},messages:['Review notice configuration.']};
   api.getPaymentApprovalQueue.mockResolvedValue([{...base,noticeEvaluation}]);
   const container=document.createElement('div');document.body.append(container);const app=createRoot(container);
   try {await act(async()=>{app.render(<PaymentApprovalRun/>);await Promise.resolve();});
-   expect(container.textContent).toContain('Bound subcontract Rev 1');expect(container.textContent).toContain('Approaching');expect(container.textContent).toContain('Approaching \u00b7 21 Nov 2026');expect(container.textContent).not.toContain(' ? ');expect(container.textContent).toContain('Proposed notified sum');
+   const row=container.querySelector('tbody tr');
+   expect(row.children).toHaveLength(9);expect(row.querySelector('.payment-notice-summary--urgent')).not.toBeNull();expect(row.textContent).toContain('Due soon 21 Nov 2026');
+   expect(row.textContent).not.toContain('Bound subcontract');expect(row.textContent).not.toContain('Frozen valuation basis');expect(row.textContent).not.toContain('Review notice configuration.');expect(row.textContent).not.toContain('Service unverified');
+   await act(async()=>button(row,'Review').click());
+   const detail=container.querySelector('.payment-approval-detail');expect(detail.textContent).toContain('Bound subcontract Rev 1');expect(detail.textContent).toContain('Frozen valuation basis');expect(detail.textContent).toContain('PN-TEST');expect(detail.textContent).toContain('Review notice configuration.');expect(detail.textContent).toContain('Service unverified');
    await act(async()=>container.querySelector('input[aria-label="Select certificate 1"]').click());await act(async()=>button(container,'Approve & Authorise Selected').click());
    const dialog=container.querySelector('[role="dialog"]');expect(dialog.textContent).toContain('Bound subcontract Rev 1');expect(dialog.textContent).toContain('does not authorise, issue or send a new notice');
    expect(api.approveSubmittedCertificate).not.toHaveBeenCalled();
