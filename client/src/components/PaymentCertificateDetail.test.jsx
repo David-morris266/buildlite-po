@@ -439,7 +439,7 @@ describe('PaymentCertificateDetail workflow feedback', () => {
     expect(text).not.toContain('Subcontractor Application');
     expect(text).not.toContain('Commercial events');
     expect(text).not.toContain('Recovery deductions');
-    expect(text).not.toContain('Payment Notices');
+    expect(text).toContain('Payment Notices');
     expect(text).not.toContain('Commercial Documents');
     expect(document.querySelector('.po-cert-detail__matrix')).toBeNull();
     expect(document.querySelector('.po-cert-approval__valuation')?.textContent).toContain('Valuation grid');

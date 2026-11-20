@@ -509,6 +509,8 @@ export default function PaymentCertificateDetail({
         />
       ) : null}
 
+      {!locked ? <PaymentCertificateNotices certificate={certificate} packageId={authoritativePackageId} refreshKey={refreshToken} /> : null}
+
       {locked ? (
         <PaymentCertificateLockedRecord
           certificate={certificate}
@@ -545,7 +547,7 @@ export default function PaymentCertificateDetail({
           )}
           noticeAndDocuments={(
             <>
-              <PaymentCertificateNotices certificate={certificate} packageId={authoritativePackageId} />
+              <PaymentCertificateNotices certificate={certificate} packageId={authoritativePackageId} refreshKey={refreshToken} />
               <PaymentCertificateDocuments certificate={certificate} packageId={authoritativePackageId} />
             </>
           )}

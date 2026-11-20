@@ -1,6 +1,7 @@
 const { pool, query } = require('../db');
 const { noticeReadiness } = require('./paymentRulesV2');
-const { dateOnly } = require('./paymentCertificateTimetable');
+const { dateOnly, timetableForRead, mapSnapshot: mapTimetableSnapshot } = require('./paymentCertificateTimetable');
+const { buildNoticeReadiness } = require('./paymentNoticeReadiness');
 
 const money = value => { if(value==null||value==='')return null;const n=Number(value); return Number.isFinite(n)?Math.round(n*100)/100:null; };
 const actor = body => body?.actor || body?.updatedBy || body?.createdBy || null;
@@ -44,7 +45,8 @@ async function findNoticeType(clientId,noticeId){
 }
 async function audit(db,clientId,noticeId,action,body,detail={}){await db.query(`INSERT INTO package_payment_notice_audit(client_id,notice_id,action,actor,detail) VALUES($1,$2,$3,$4,$5)`,[clientId,noticeId,action,actor(body),JSON.stringify(detail)]);}
 
-async function getWorkspace(clientId,packageId,certificateId,dbArg=null,asOfDate=null){
+async function getWorkspace(clientId,packageId,certificateId,dbArg=null,asOfDate=null,visibility=null){
+  if(visibility && (!visibility.auth?.userId || String(visibility.auth.clientId)!==String(clientId)))return fail(404,'Certificate not found.');
   const db=dbArg||{query}; const auth=await authority(db,clientId,packageId,certificateId); if(!auth)return fail(404,'Certificate not found.');
   const rows=(await db.query(`SELECT * FROM package_payment_notices WHERE client_id=$1 AND package_id=$2 AND certificate_id=$3 ORDER BY created_at`,[clientId,packageId,certificateId])).rows;
   const notices=[];for(const row of rows)notices.push(await hydrate(db,clientId,row));
@@ -60,7 +62,14 @@ async function getWorkspace(clientId,packageId,certificateId,dbArg=null,asOfDate
   const pl=notices.filter(n=>n.type==='pay_less_notice').at(-1); if(pl?.status==='prepared')payLessState='draft_prepared';if(pl?.status==='issued')payLessState='issued';
   const deadline=dateOnly(applicableSnapshot?.payLessDeadline||auth.deadline?.pay_less_notice_deadline||null);
   if(deadline&&asOfDate&&asOfDate>deadline&&payLessState==='review_required')payLessState='deadline_passed';
-  return {ok:true,certificate:{id:auth.certificate.id,status:auth.certificate.status,number:auth.certificate.certificate_number,net:money(auth.certificate.net_value)},noticeConfiguration:auth.noticeReadiness,
+  let readiness;
+  if(visibility){
+    const timetable=auth.certificate.status==='locked'
+      ?mapTimetableSnapshot(auth.deadline)
+      :await timetableForRead(db,clientId,packageId,auth.certificate);
+    readiness=buildNoticeReadiness({clientId,certificate:auth.certificate,timetable,notices,auth:visibility.auth,now:visibility.now});
+  }
+  return {ok:true,readiness,certificate:{id:auth.certificate.id,status:auth.certificate.status,number:auth.certificate.certificate_number,net:money(auth.certificate.net_value)},noticeConfiguration:auth.noticeReadiness,
     notices,decisions,payLess:{state:payLessState,notifiedSum:applicable??null,intendedPayment:confirmed?.intendedAmount??null,reduction,deadline},asOfDate:asOfDate||null};
 }
 
