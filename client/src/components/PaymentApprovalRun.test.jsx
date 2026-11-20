@@ -37,3 +37,18 @@ describe('PaymentApprovalRun single commercial approval',()=>{
  it('shows a non-actionable Finance handoff to a Commercial Director and authoritative post-release state',async()=>{await act(async()=>button(host,'Payment Authorised').click());const ready=[...host.querySelectorAll('tr')].find(row=>row.textContent.includes('Certificate 4'));await act(async()=>ready.querySelector('button').click());expect(ready.nextSibling.textContent).toContain('Ready for Finance');expect(ready.nextSibling.textContent).toContain('Awaiting Finance acceptance');expect(button(ready.nextSibling,'Open in Accounts')).toBeUndefined();const released=[...host.querySelectorAll('tr')].find(row=>row.textContent.includes('Certificate 6'));await act(async()=>released.querySelector('button').click());expect(released.nextSibling.textContent).toContain('In Accounts');expect(released.nextSibling.textContent).toContain('Not exported');expect(released.nextSibling.textContent).toContain('does not mean posted, paid or bank instructed');});
  it('offers the canonical Accounts route only to a Finance-capable user',async()=>{const onOpenAccounts=vi.fn();permissions=[...permissions,'payment_release.execute'];await act(async()=>root.render(<PaymentApprovalRun onOpenAccounts={onOpenAccounts}/>));await act(async()=>button(host,'Payment Authorised').click());const ready=[...host.querySelectorAll('tr')].find(row=>row.textContent.includes('Certificate 4'));await act(async()=>ready.querySelector('button').click());await act(async()=>button(ready.nextSibling,'Open in Accounts').click());expect(onOpenAccounts).toHaveBeenCalledOnce();});
 });
+
+describe('Slice 1 notice disclosure',()=>{
+ it('shows server deadline and bound terms in the row and confirmation without changing the request',async()=>{
+  permissions=['payment_approval_run.view','certificate.lock','payment_authority.approve'];
+  const noticeEvaluation={type:'payment_notice',classification:'future_preparation_supported',terms:{familyName:'Bound subcontract',versionLabel:'Rev 1'},deadline:{date:'2026-11-21',state:'approaching'},notifiedSum:6200,messages:['Review notice configuration.']};
+  api.getPaymentApprovalQueue.mockResolvedValue([{...base,noticeEvaluation}]);
+  const container=document.createElement('div');document.body.append(container);const app=createRoot(container);
+  try {await act(async()=>{app.render(<PaymentApprovalRun/>);await Promise.resolve();});
+   expect(container.textContent).toContain('Bound subcontract Rev 1');expect(container.textContent).toContain('Approaching');expect(container.textContent).toContain('Approaching \u00b7 21 Nov 2026');expect(container.textContent).not.toContain(' ? ');expect(container.textContent).toContain('Proposed notified sum');
+   await act(async()=>container.querySelector('input[aria-label="Select certificate 1"]').click());await act(async()=>button(container,'Approve & Authorise Selected').click());
+   const dialog=container.querySelector('[role="dialog"]');expect(dialog.textContent).toContain('Bound subcontract Rev 1');expect(dialog.textContent).toContain('does not authorise, issue or send a new notice');
+   expect(api.approveSubmittedCertificate).not.toHaveBeenCalled();
+  } finally {await act(async()=>app.unmount());container.remove();vi.clearAllMocks();}
+ });
+});

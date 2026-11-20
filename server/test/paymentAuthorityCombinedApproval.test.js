@@ -170,3 +170,16 @@ test('exceptional cash authority still requires explicit acknowledgement and rea
   const result=await repository.approveSubmittedCertificate(fixture.ids.client,{...input,warningAcknowledgements:[{code:'cash_differs_from_payment_position',acknowledged:true}],warningComment:'Exceptional cash position approved.'},fixture.auth);
   assert.equal(result.ok,true,result.message);const decision=(await pool.query('SELECT * FROM payment_authority_decisions WHERE id=$1',[result.decisionId])).rows[0];const evidence=decision.source_snapshot.approvalWarnings.find(item=>item.code==='cash_differs_from_payment_position');assert.equal(evidence.classification,'commercial_exception');assert.equal(evidence.acknowledged,true);assert.equal(evidence.acknowledgementComment,'Exceptional cash position approved.');assert.equal(evidence.approver.userId,fixture.ids.user);assert.equal(repository.verifyDecisionSnapshot(decision).valid,true);
 });
+
+
+test('Slice 1 queue exposes frozen deadlines without creating notice or financial facts',async t=>{
+ if(!isDbConfigured())return t.skip();const fixture=await seed('NOTICE-DISCLOSURE');
+ const financialBefore=await counts(fixture.ids.certificate);
+ const noticeCount=async()=>Number((await pool.query('SELECT count(*) n FROM package_payment_notices WHERE client_id=$1',[fixture.ids.client])).rows[0].n);
+ const before=await noticeCount();const rows=await repository.listQueue(fixture.ids.client,fixture.auth);
+ assert.equal(rows.length,1);const row=rows[0];assert.equal(row.eligible,true);
+ assert.equal(row.noticeEvaluation.terms.rulesSchemaVersion,2);assert.equal(row.noticeEvaluation.mode,'certificate_as_payment_notice');
+ assert.equal(row.noticeEvaluation.deadline.date,'2026-10-10');assert.equal(row.noticeEvaluation.clockSource,'server');assert.equal(row.noticeEvaluation.timezone,'Europe/London');
+ assert.equal(row.noticeEvaluation.notifiedSum,row.net);assert.equal(row.noticeEvaluation.automationActive,false);assert.equal(row.noticeEvaluation.serviceState,'unverified');
+ assert.equal(await noticeCount(),before);assert.deepEqual(await counts(fixture.ids.certificate),financialBefore);
+});

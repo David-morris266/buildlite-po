@@ -1,3 +1,4 @@
+const { evaluateApprovalNotice, compareNoticeDeadline } = require('./paymentApprovalNoticeEvaluation');
 const { pool, query } = require('../db');
 const { assertServicePermission } = require('../auth/authorization');
 const { PERMISSIONS } = require('../auth/permissions');
@@ -73,7 +74,7 @@ function eligibility(facts) {
   const intendedPayment = facts.intended ? money(facts.intended.intended_amount) : notifiedSum;
   if (toPence(intendedPayment) < toPence(notifiedSum) && !facts.payLess) reasons.push('A valid Issued Pay Less Notice is required for the reduced intended payment.');
   if (toPence(intendedPayment) === toPence(facts.priorCash)) reasons.push('Payment Authority cash is already fully granted.');
-  return { eligible: reasons.length === 0, reasons, noticeMode: facts.readiness.mode, notifiedSum, intendedPayment, payLessReduction: fromPence(toPence(notifiedSum) - toPence(intendedPayment)) };
+  return { noticeEvaluation: evaluateApprovalNotice(facts), eligible: reasons.length === 0, reasons, noticeMode: facts.readiness.mode, notifiedSum, intendedPayment, payLessReduction: fromPence(toPence(notifiedSum) - toPence(intendedPayment)) };
 }
 
 const APPROVAL_WARNING_DEFINITIONS = Object.freeze({
@@ -150,16 +151,18 @@ async function listQueue(clientId, auth) {
       const assessments=(await query(`SELECT a.*,v.variation_reference,v.description FROM package_variation_account_certificate_assessments a JOIN package_variation_account_items v ON v.id=a.variation_account_item_id AND v.client_id=a.client_id WHERE a.client_id=$1 AND a.certificate_id=$2 AND a.status='draft' ORDER BY v.variation_reference,a.id`,[clientId,id])).rows;
       const facts={certificate:{...raw,status:'locked',net_value:totals?.netPayment||0},deadline,paymentNotice,payLess,intended,assessments,priorCash:0,priorCommercialAuthority:0,readiness:noticeReadiness(deadline?.governing_terms_snapshot||{})};
       const ready=combinedApprovalReadiness(facts),hardBlockers=[];
+      ready.noticeEvaluation=evaluateApprovalNotice({...facts,certificate:{...facts.certificate,net_value:totals?.netPayment ?? null}},auth);
       if(!totals)hardBlockers.push('Authoritative certificate calculation is unavailable.');
       const evidence=sourceAuthority.evidence?.variationAssessments||[];
       const lines=[];
       for(const assessment of assessments){const snapshot=evidence.find(item=>item.id===assessment.id)||{};lines.push({assessmentId:assessment.id,variationAccountItemId:assessment.variation_account_item_id,reference:assessment.variation_reference,description:assessment.description,assessment:money(assessment.signed_current_assessment),appliedPriorAuthority:money(snapshot.priorAuthority||0),supportingSources:snapshot.authorityClassification?.supportingSources||[],authorityEnvelope:money(snapshot.authorityClassification?.effectiveRecognisedAuthority||snapshot.priorAuthority||0),unapprovedAtLock:money(snapshot.unapprovedAmount||0),previouslyResolved:0,unresolvedAmount:money(snapshot.unapprovedAmount||0),existingSupportOptions:await supportOptions({query},clientId,assessment)});}
       const unsupported=money(sourceAuthority.unapprovedCertifiedGross||0),notified=paymentNotice?money(paymentNotice.notified_sum):money(totals?.netPayment||0),intendedPayment=intended?money(intended.intended_amount):notified;
-      items.push({id,certificateId:id,packageId,certificateVersion:Number(document.version),certificateNumber:Number(document.certificateNumber),development:raw.development_name,subcontractor:raw.supplier_label,packageTrade:raw.package_payload?.description||raw.cost_code,costCode:raw.cost_code,dueDate:dateOnly(deadline?.due_date),paymentNoticeDeadline:dateOnly(deadline?.payment_notice_deadline),payLessDeadline:dateOnly(deadline?.pay_less_notice_deadline),finalPaymentDate:dateOnly(deadline?.final_date_for_payment),submittedBy:document.submittedBy,submittedAt:document.submittedAt,contractorApplication:money(application.comparison?.applicationCurrentGross??application.application?.currentPeriodGrossClaimed??0),applicationDifference:money(application.comparison?.difference??0),orderedWorks:money(sourceAuthority.orderedWorkGross??totals?.matrixGrossThisCertificate??0),variations:money(sourceAuthority.variationAssessmentGross??assessments.reduce((sum,item)=>sum+Number(item.signed_current_assessment||0),0)),otherAssessed:money(sourceAuthority.paymentDiscoveredGross||0),appliedPriorAuthority:fromPence(lines.reduce((sum,line)=>sum+toPence(line.appliedPriorAuthority),0)),gross:money(totals?.grossWorksThisCertificate||0),retention:money(totals?.retention||0),recoveries:money(totals?.recoveryDeductionSigned||0),vat:money(totals?.vat||0),net:money(totals?.netPayment||0),notifiedSum:notified,intendedPayment,payLessReduction:fromPence(toPence(notified)-toPence(intendedPayment)),unapprovedAtLock:unsupported,newCommercialAuthorityProposed:unsupported,cashAmountProposed:intendedPayment,priorCashAuthority:0,releaseStatus:'not_released',workflowState:'awaiting_approval',statusSummary:hardBlockers.length?'Approval blocked':ready.warnings.length?`${ready.warnings.length} warning${ready.warnings.length===1?'':'s'}`:'Awaiting Approval',eligible:hardBlockers.length===0,warnings:ready.warnings,hardBlockers,reasons:hardBlockers,lines});
+      items.push({id,certificateId:id,packageId,certificateVersion:Number(document.version),certificateNumber:Number(document.certificateNumber),development:raw.development_name,subcontractor:raw.supplier_label,packageTrade:raw.package_payload?.description||raw.cost_code,costCode:raw.cost_code,dueDate:dateOnly(deadline?.due_date),paymentNoticeDeadline:dateOnly(deadline?.payment_notice_deadline),payLessDeadline:dateOnly(deadline?.pay_less_notice_deadline),finalPaymentDate:dateOnly(deadline?.final_date_for_payment),submittedBy:document.submittedBy,submittedAt:document.submittedAt,contractorApplication:money(application.comparison?.applicationCurrentGross??application.application?.currentPeriodGrossClaimed??0),applicationDifference:money(application.comparison?.difference??0),orderedWorks:money(sourceAuthority.orderedWorkGross??totals?.matrixGrossThisCertificate??0),variations:money(sourceAuthority.variationAssessmentGross??assessments.reduce((sum,item)=>sum+Number(item.signed_current_assessment||0),0)),otherAssessed:money(sourceAuthority.paymentDiscoveredGross||0),appliedPriorAuthority:fromPence(lines.reduce((sum,line)=>sum+toPence(line.appliedPriorAuthority),0)),gross:money(totals?.grossWorksThisCertificate||0),retention:money(totals?.retention||0),recoveries:money(totals?.recoveryDeductionSigned||0),vat:money(totals?.vat||0),net:money(totals?.netPayment||0),notifiedSum:notified,intendedPayment,payLessReduction:fromPence(toPence(notified)-toPence(intendedPayment)),unapprovedAtLock:unsupported,newCommercialAuthorityProposed:unsupported,cashAmountProposed:intendedPayment,priorCashAuthority:0,releaseStatus:'not_released',workflowState:'awaiting_approval',statusSummary:hardBlockers.length?'Approval blocked':ready.warnings.length?`${ready.warnings.length} warning${ready.warnings.length===1?'':'s'}`:'Awaiting Approval',eligible:hardBlockers.length===0,warnings:ready.warnings,hardBlockers,reasons:hardBlockers,noticeEvaluation:ready.noticeEvaluation,lines});
       continue;
     }
     const facts = await loadLockedFacts({ query }, clientId, id);
     const ready = eligibility(facts);
+    ready.noticeEvaluation = evaluateApprovalNotice(facts,auth);
     const authorityDecision = (await query(`SELECT d.id,d.run_id,r.run_reference,d.signed_cash_amount,d.reason,d.certificate_version,
       d.approved_by_user_id,d.approved_by_membership_id,d.approved_by_provider_user_id,d.approved_by_display_name,d.approved_role_key,d.approved_at,
       COALESCE((SELECT SUM(i.signed_released_cash) FROM payment_release_items i
@@ -221,6 +224,7 @@ async function listQueue(clientId, auth) {
   }
   const rank = { awaiting_approval: 0, authorised: 1 };
   return items.sort((a, b) => (rank[a.workflowState] - rank[b.workflowState])
+    || compareNoticeDeadline(a,b)
     || String(a.finalPaymentDate || '9999').localeCompare(String(b.finalPaymentDate || '9999'))
     || Math.abs(b.unapprovedAtLock) - Math.abs(a.unapprovedAtLock));
 }
